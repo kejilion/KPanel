@@ -500,6 +500,8 @@ func cloneSnapshot(source *HostSnapshot) *HostSnapshot {
 		return nil
 	}
 	value := *source
+	value.UnavailableMetrics = append([]string(nil), source.UnavailableMetrics...)
+	value.NodeCapabilities = append([]string(nil), source.NodeCapabilities...)
 	value.Telemetry = cloneTelemetry(source.Telemetry)
 	if source.LightHealth != nil {
 		health := *source.LightHealth

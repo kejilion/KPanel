@@ -1763,14 +1763,16 @@ export const api = {
       }),
     createPairingCode: (): Promise<ClusterPairingCode> =>
       request<ClusterPairingCode>('/cluster/pairing-codes/v2', { method: 'POST' }),
-    createLightEnrollment: (name?: string): Promise<ClusterLightEnrollment> =>
+    createLightEnrollment: (name?: string, platform: 'linux' | 'windows' = 'linux', enableDesktop?: boolean): Promise<ClusterLightEnrollment> =>
       request<ClusterLightEnrollment>('/cluster/light-enrollments', {
         method: 'POST',
-        body: name?.trim() ? { name: name.trim() } : undefined,
+        body: { name: name?.trim() || undefined, platform, enableDesktop },
       }),
     lightBatchEnrollments: (signal?: AbortSignal): Promise<ClusterLightBatchEnrollmentList> =>
       request<ClusterLightBatchEnrollmentList>('/cluster/light-batch-enrollments', { signal }),
     createLightBatchEnrollment: (body: {
+	  enableDesktop?: boolean
+	  platform?: 'linux' | 'windows'
       namePrefix?: string
       maxUses: number
       expiresInSeconds: number
@@ -1815,6 +1817,19 @@ export const api = {
       const url = new URL(buildUrl(`/job-terminals/${kind}/${encodeURIComponent(id)}/input-stream`), window.location.href)
       url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
       return { url: url.toString(), csrf: csrfToken }
+    },
+  },
+  desktops: {
+    policy: (hostId: string, allowed: boolean): Promise<{ allowed: boolean }> => request('/desktop-sessions/policy', { method: 'POST', body: { hostId, allowed } }),
+    credentialStatus: (hostId: string, signal?: AbortSignal): Promise<{ saved: boolean; managed?: boolean; username?: string; domain?: string }> => request('/desktop-sessions/credentials/status', { method: 'POST', body: { hostId }, signal }),
+    saveCredentials: (hostId: string, credentials: { username: string; domain: string; password: string }): Promise<{ saved: boolean; username?: string; domain?: string }> => request('/desktop-sessions/credentials/save', { method: 'POST', body: { hostId, ...credentials } }),
+    clearCredentials: (hostId: string): Promise<{ saved: boolean }> => request('/desktop-sessions/credentials/clear', { method: 'POST', body: { hostId } }),
+    open: (hostId: string, useSavedCredentials = false, useManagedCredentials = false): Promise<{ sessionId: string; nonce: string; credentials?: { username: string; domain: string; password: string } }> => request('/desktop-sessions', { method: 'POST', body: { hostId, useSavedCredentials, ...(useManagedCredentials ? { useManagedCredentials: true } : {}) } }),
+    close: (sessionId: string): Promise<{ closed: boolean }> => request(`/desktop-sessions/${encodeURIComponent(sessionId)}/close`, { method: 'POST' }),
+    socket: (sessionId: string): string => {
+      const url = new URL(buildUrl(`/desktop-sessions/${encodeURIComponent(sessionId)}/stream`), window.location.href)
+      url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+      return url.toString()
     },
   },
   terminals: {

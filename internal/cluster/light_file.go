@@ -28,7 +28,7 @@ func (s *Service) OpenLightFile(ctx context.Context, nodeID string, input LightF
 		return nil, ErrFileRelayUnavailable
 	}
 	record, err := s.light.Host(nodeID)
-	if err != nil {
+	if err != nil || !lightPlatformAllows(record, "files", s.now().UTC()) {
 		return nil, ErrFileRelayUnavailable
 	}
 	key, err := s.light.ReadTerminalPublicKey(record)

@@ -197,6 +197,9 @@ func procdServiceEnabled(root, name string) bool {
 // OpenWrt commonly keeps /var in RAM. Keep this broker's bounded state beside
 // its persistent configuration; neither branding nor a user-supplied path is used.
 func nodeStateDirectory(root string) (string, error) {
+	if path := platformStateDirectory(); path != "" {
+		return path, nil
+	}
 	if !liveProcdRuntime(root) {
 		return healthRootPath(root, "/var/lib/kejilion-node"), nil
 	}

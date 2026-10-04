@@ -134,6 +134,12 @@ const shareSaving = ref(false)
 const shareResetting = ref(false)
 const pairingCode = ref<ClusterPairingCode>()
 const lightEnrollment = ref<ClusterLightEnrollment>()
+const lightEnrollmentPlatform = ref<'linux' | 'windows'>('linux')
+const lightBatchPlatform = ref<'linux' | 'windows'>('linux')
+const lightEnableDesktop = ref(false)
+const lightBatchEnableDesktop = ref(false)
+watch(lightEnableDesktop, () => { if (lightEnrollmentPlatform.value === 'windows') { lightEnrollment.value = undefined; resetLightEnrollmentTracking() } })
+watch(lightBatchEnableDesktop, () => { lightBatchEnrollment.value = undefined; lightBatchCommandCopied.value = false })
 const lightEnrollmentConnected = ref(false)
 const lightEnrollmentState = ref<'waiting' | 'registered' | 'connected' | 'expired'>('waiting')
 type AddMode = 'single' | 'batch'
@@ -200,7 +206,7 @@ const remainingHostCapacity = computed(() => Math.max(
   (inventory.value?.maxHosts || 100) - (inventory.value?.remoteTotal || 0),
 ))
 const addModalDescription = computed(() => addMode.value === 'batch'
-  ? phrase('生成一条可重复执行的轻量节点命令，在多台 Linux 主机上分别运行。')
+  ? phrase('选择目标系统，生成一条可在多台主机上重复使用的接入命令。')
   : phrase('在目标 KPanel 的“集群 → 接入授权”复制接入凭据，然后在此整段粘贴。'))
 const lightEnrollmentPrimaryLabel = computed(() => {
   if (addForm.accessCredential.trim() || !lightEnrollment.value) {
@@ -603,6 +609,8 @@ async function createLightBatchEnrollment(): Promise<void> {
   lightBatchCommandCopied.value = false
   try {
     const enrollment = await api.cluster.createLightBatchEnrollment({
+	  platform: lightBatchPlatform.value,
+      enableDesktop: lightBatchPlatform.value === 'windows' && lightBatchEnableDesktop.value ? true : undefined,
       namePrefix: lightBatchForm.namePrefix.trim() || undefined,
       maxUses: Number(lightBatchForm.maxUses),
       expiresInSeconds: Number(lightBatchForm.expiresInSeconds),
@@ -615,7 +623,9 @@ async function createLightBatchEnrollment(): Promise<void> {
   } catch (reason) {
     toast.danger(
       '批量接入命令生成失败',
-      friendlyError(reason, '请检查接入数量、有效期和当前 KPanel 的 HTTPS 地址。'),
+      reason instanceof ApiError && reason.code === 'cluster_windows_installer_unavailable'
+        ? phrase('Windows 安装包签名尚未配置，暂时无法生成接入命令。')
+        : friendlyError(reason, '请检查接入数量、有效期和当前 KPanel 的 HTTPS 地址。'),
     )
   } finally {
     generatingLightBatchEnrollment.value = false
@@ -649,8 +659,9 @@ async function revokeLightBatchEnrollment(enrollment: ClusterLightBatchEnrollmen
   }
 }
 
-async function createLightEnrollment(): Promise<void> {
+async function createLightEnrollment(platform: 'linux' | 'windows' = lightEnrollmentPlatform.value): Promise<void> {
   if (generatingLightEnrollment.value) return
+	lightEnrollmentPlatform.value = platform
   generatingLightEnrollment.value = true
   lightEnrollment.value = undefined
   resetLightEnrollmentTracking()
@@ -658,6 +669,8 @@ async function createLightEnrollment(): Promise<void> {
     if (!inventory.value) await load()
     lightEnrollment.value = await api.cluster.createLightEnrollment(
       addForm.name.trim() || undefined,
+	  platform,
+      platform === 'windows' && lightEnableDesktop.value ? true : undefined,
     )
     startLightEnrollmentWatch()
   } catch (reason) {
@@ -665,7 +678,9 @@ async function createLightEnrollment(): Promise<void> {
     resetLightEnrollmentTracking()
     toast.danger(
       '轻量节点命令生成失败',
-      friendlyError(reason, '请确认当前 KPanel 已通过 HTTPS 域名访问；轻量节点不使用 HTTP 直连地址。'),
+      reason instanceof ApiError && reason.code === 'cluster_windows_installer_unavailable'
+        ? phrase('Windows 安装包签名尚未配置，暂时无法生成接入命令。')
+        : friendlyError(reason, '请确认当前 KPanel 已通过 HTTPS 域名访问；轻量节点不使用 HTTP 直连地址。'),
     )
   } finally {
     generatingLightEnrollment.value = false
@@ -1996,25 +2011,26 @@ onBeforeUnmount(() => {
             ) }}
           </small>
         </label>
-        <section class="cluster-light-enrollment">
+        <section v-for="platform in (['linux', 'windows'] as const)" :key="platform" class="cluster-light-enrollment">
           <div>
             <Server :size="17" />
             <span>
-              <strong>{{ phrase('非面板 Linux 主机') }}</strong>
-              <small>{{ phrase('无需 Docker；在目标机以 root 执行命令后，将加入摘要监控，并启用远程终端和文件管理（含写入与删除）。') }}</small>
+              <strong>{{ phrase(platform === 'windows' ? 'Windows 主机' : '非面板 Linux 主机') }}</strong>
+              <small>{{ phrase(platform === 'windows' ? '在管理员 PowerShell 执行一行命令，自动安装并接入。加入域的主机默认仅监控；远程桌面需单独启用。' : '无需 Docker；在目标机以 root 执行命令后，将加入摘要监控，并启用远程终端和文件管理（含写入与删除）。') }}</small>
             </span>
             <button
-              v-if="!lightEnrollment"
+              v-if="!lightEnrollment || lightEnrollmentPlatform !== platform"
               class="button button--secondary button--small"
               type="button"
               :disabled="generatingLightEnrollment"
-              @click="createLightEnrollment"
+              @click="createLightEnrollment(platform)"
             >
               <LoaderCircle v-if="generatingLightEnrollment" class="spin" :size="14" />
               <Plus v-else :size="14" /> {{ phrase('生成接入命令') }}
             </button>
           </div>
-          <div v-if="lightEnrollment" class="cluster-light-enrollment__command">
+          <label v-if="platform === 'windows'" class="cluster-windows-desktop-option"><input v-model="lightEnableDesktop" type="checkbox" :disabled="generatingLightEnrollment" />{{ phrase('启用管理员远程桌面（RDP），接入后自动登录') }}<small>{{ phrase('支持的非域 Windows 将启用 RDP 并创建专用本地管理员，保留 UAC、NLA。已有防火墙规则可能允许其他授权账户从网络登录。域机器沿用已有 RDP 设置和账户。') }}</small></label>
+          <div v-if="lightEnrollment && lightEnrollmentPlatform === platform" class="cluster-light-enrollment__command">
             <pre>{{ lightEnrollment.command }}</pre>
             <button class="button button--secondary button--small" type="button" @click="copyLightEnrollment">
               <Copy :size="14" /> {{ phrase('复制命令') }}
@@ -2023,7 +2039,7 @@ onBeforeUnmount(() => {
               class="button button--ghost button--small"
               type="button"
               :disabled="generatingLightEnrollment"
-              @click="createLightEnrollment"
+              @click="createLightEnrollment(platform)"
             >
               <LoaderCircle v-if="generatingLightEnrollment" class="spin" :size="14" />
               <RefreshCw v-else :size="14" /> {{ phrase('重新生成') }}
@@ -2037,7 +2053,7 @@ onBeforeUnmount(() => {
                     ? '节点身份已创建，正在等待首次状态上报…'
                     : lightEnrollmentState === 'expired'
                       ? '命令已过期，请重新生成。'
-                      : '复制命令并在轻量节点以 root 执行，连接成功后这里会自动更新。'
+                      : platform === 'windows' ? '复制命令并在目标机的管理员 PowerShell 执行，首次上报后自动确认连接。' : '复制命令并在轻量节点以 root 执行，连接成功后这里会自动更新。'
               ) }}
             </small>
           </div>
@@ -2052,6 +2068,14 @@ onBeforeUnmount(() => {
         @submit.prevent="createLightBatchEnrollment"
       >
         <div class="cluster-light-batch__fields">
+          <label class="field">
+            {{ phrase('目标系统') }}
+            <select v-model="lightBatchPlatform" :disabled="generatingLightBatchEnrollment" name="cluster-light-batch-platform">
+              <option value="linux">Linux</option>
+              <option value="windows">Windows</option>
+            </select>
+          </label>
+          <label v-if="lightBatchPlatform === 'windows'" class="cluster-windows-desktop-option"><input v-model="lightBatchEnableDesktop" name="cluster-light-batch-desktop" type="checkbox" :disabled="generatingLightBatchEnrollment" />{{ phrase('启用管理员远程桌面（RDP），接入后自动登录') }}<small>{{ phrase('支持的非域 Windows 将启用 RDP 并创建专用本地管理员，保留 UAC、NLA。已有防火墙规则可能允许其他授权账户从网络登录。域机器沿用已有 RDP 设置和账户。') }}</small></label>
           <label class="field">
             {{ phrase('名称前缀（可选）') }}
             <input
@@ -2092,7 +2116,7 @@ onBeforeUnmount(() => {
             <ShieldCheck :size="18" />
             <span>
               <strong>{{ phrase('批量命令已生成') }}</strong>
-              <small>{{ phrase('命令只在本次生成后展示；复制后可在每台目标机以 root 执行。') }}</small>
+              <small>{{ phrase(lightBatchEnrollment.platform === 'windows' ? '命令只在本次生成后展示；复制后可在每台目标机的管理员 PowerShell 执行。' : '命令只在本次生成后展示；复制后可在每台目标机以 root 执行。') }}</small>
             </span>
           </div>
           <pre>{{ lightBatchEnrollment.command }}</pre>
@@ -3031,6 +3055,9 @@ onBeforeUnmount(() => {
   border: 1px solid color-mix(in srgb, var(--brand) 22%, var(--border));
   border-radius: var(--radius-md);
 }
+.cluster-windows-desktop-option { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; }
+.cluster-windows-desktop-option input { width: auto; }
+.cluster-windows-desktop-option small { flex-basis: 100%; color: var(--muted); line-height: 1.5; }
 
 .cluster-light-enrollment > div:first-child {
   display: flex;

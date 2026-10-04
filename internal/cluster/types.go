@@ -39,22 +39,23 @@ const (
 )
 
 var (
-	ErrNotFound               = errors.New("cluster record not found")
-	ErrConflict               = errors.New("cluster record changed")
-	ErrDuplicate              = errors.New("cluster host already exists")
-	ErrHostLimit              = errors.New("cluster host limit reached")
-	ErrInvalidOrigin          = errors.New("invalid cluster origin")
-	ErrLightHTTPSOrigin       = errors.New("light node requires an HTTPS origin")
-	ErrLightBatchInvalid      = errors.New("light node batch enrollment settings are invalid")
-	ErrPrivateOrigin          = errors.New("cluster origin is outside the configured private network allowlist")
-	ErrPairingCode            = errors.New("pairing code is invalid or expired")
-	ErrAuthentication         = errors.New("federation authentication failed")
-	ErrReplay                 = errors.New("federation request replayed")
-	ErrRateLimited            = errors.New("federation request rate limited")
-	ErrProtocolMismatch       = errors.New("federation protocol is incompatible")
-	ErrMutualFilesUnsupported = errors.New("mutual file transfer is unsupported")
-	ErrIdentityMismatch       = errors.New("federation target identity changed")
-	ErrLocalHost              = errors.New("local cluster host cannot be modified")
+	ErrNotFound                    = errors.New("cluster record not found")
+	ErrConflict                    = errors.New("cluster record changed")
+	ErrDuplicate                   = errors.New("cluster host already exists")
+	ErrHostLimit                   = errors.New("cluster host limit reached")
+	ErrInvalidOrigin               = errors.New("invalid cluster origin")
+	ErrLightHTTPSOrigin            = errors.New("light node requires an HTTPS origin")
+	ErrLightBatchInvalid           = errors.New("light node batch enrollment settings are invalid")
+	ErrWindowsInstallerUnavailable = errors.New("Windows node signing identity is not configured")
+	ErrPrivateOrigin               = errors.New("cluster origin is outside the configured private network allowlist")
+	ErrPairingCode                 = errors.New("pairing code is invalid or expired")
+	ErrAuthentication              = errors.New("federation authentication failed")
+	ErrReplay                      = errors.New("federation request replayed")
+	ErrRateLimited                 = errors.New("federation request rate limited")
+	ErrProtocolMismatch            = errors.New("federation protocol is incompatible")
+	ErrMutualFilesUnsupported      = errors.New("mutual file transfer is unsupported")
+	ErrIdentityMismatch            = errors.New("federation target identity changed")
+	ErrLocalHost                   = errors.New("local cluster host cannot be modified")
 )
 
 type HostState string
@@ -73,6 +74,10 @@ const (
 )
 
 type HostSnapshot struct {
+	Platform                 string   `json:"-"`
+	UnavailableMetrics       []string `json:"-"`
+	NodeCapabilities         []string `json:"-"`
+	DesktopUnavailableReason string   `json:"-"`
 	// Health is ephemeral: old centers must still read persisted snapshots on rollback.
 	LightHealth            *contract.LightNodeHealth `json:"-"`
 	Telemetry              contract.HostTelemetry    `json:"telemetry"`
@@ -83,6 +88,12 @@ type HostSnapshot struct {
 }
 
 type Host struct {
+	Platform                    string                    `json:"platform,omitempty"`
+	TerminalShell               string                    `json:"terminalShell,omitempty"`
+	PathStyle                   string                    `json:"pathStyle,omitempty"`
+	UnavailableMetrics          []string                  `json:"unavailableMetrics,omitempty"`
+	DesktopAvailable            bool                      `json:"desktopAvailable"`
+	DesktopUnavailableReason    string                    `json:"desktopUnavailableReason,omitempty"`
 	TrafficPeriod               *contract.TrafficPeriod   `json:"trafficPeriod,omitempty"`
 	LightHealth                 *contract.LightNodeHealth `json:"lightHealth,omitempty"`
 	ID                          string                    `json:"id"`
@@ -124,18 +135,22 @@ func ScopeAllowsFiles(scope string) bool {
 }
 
 type LightEnrollment struct {
+	Platform  string    `json:"platform,omitempty"`
 	ID        string    `json:"id"`
 	Command   string    `json:"command"`
 	ExpiresAt time.Time `json:"expiresAt"`
 }
 
 type CreateLightBatchEnrollmentInput struct {
+	EnableDesktop    bool   `json:"enableDesktop,omitempty"`
+	Platform         string `json:"platform,omitempty"`
 	NamePrefix       string `json:"namePrefix,omitempty"`
 	MaxUses          int    `json:"maxUses,omitempty"`
 	ExpiresInSeconds int    `json:"expiresInSeconds,omitempty"`
 }
 
 type LightBatchEnrollment struct {
+	Platform       string    `json:"platform,omitempty"`
 	ID             string    `json:"id"`
 	Command        string    `json:"command,omitempty"`
 	NamePrefix     string    `json:"namePrefix,omitempty"`
@@ -152,6 +167,7 @@ type LightBatchEnrollmentList struct {
 }
 
 type LightEnrollRequest struct {
+	Platform          string `json:"platform,omitempty"`
 	Token             string `json:"token"`
 	Name              string `json:"name,omitempty"`
 	NodeVersion       string `json:"nodeVersion"`
@@ -179,8 +195,12 @@ type LightFileCapabilityResponse struct {
 }
 
 type LightReportRequest struct {
-	Telemetry contract.HostTelemetry    `json:"telemetry"`
-	Health    *contract.LightNodeHealth `json:"health,omitempty"`
+	DesktopUnavailableReason string                    `json:"desktopUnavailableReason,omitempty"`
+	Platform                 string                    `json:"platform,omitempty"`
+	UnavailableMetrics       []string                  `json:"unavailableMetrics,omitempty"`
+	Capabilities             []string                  `json:"capabilities,omitempty"`
+	Telemetry                contract.HostTelemetry    `json:"telemetry"`
+	Health                   *contract.LightNodeHealth `json:"health,omitempty"`
 }
 
 type LightReportResponse struct {

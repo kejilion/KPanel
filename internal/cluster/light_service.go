@@ -66,8 +66,19 @@ func (s *Service) CreateLightEnrollmentForOrigin(origin string) (LightEnrollment
 }
 
 func (s *Service) CreateLightEnrollmentForOriginAndName(origin, requestedName string) (LightEnrollment, error) {
+	return s.CreateLightEnrollmentForPlatform(origin, requestedName, "linux")
+}
+
+func (s *Service) CreateLightEnrollmentForPlatform(origin, requestedName, platform string) (LightEnrollment, error) {
+	return s.CreateLightEnrollmentWithDesktop(origin, requestedName, platform, false)
+}
+
+func (s *Service) CreateLightEnrollmentWithDesktop(origin, requestedName, platform string, desktop bool) (LightEnrollment, error) {
 	s.mutationMu.Lock()
 	defer s.mutationMu.Unlock()
+	if _, err := s.lightEnrollmentCommandWithDesktop(platform, "", "", desktop); err != nil {
+		return LightEnrollment{}, err
+	}
 	origin, err := validateLightOrigin(origin)
 	if err != nil {
 		return LightEnrollment{}, ErrLightHTTPSOrigin
@@ -100,11 +111,11 @@ func (s *Service) CreateLightEnrollmentForOriginAndName(origin, requestedName st
 		return LightEnrollment{}, err
 	}
 	token := lightTokenPrefix + base64.RawURLEncoding.EncodeToString(wire)
-	command := "bash <(curl -fsSL https://kejilion.sh) kpanel node join '" + token + "'"
-	if name != "" {
-		command += " --name " + shellSingleQuote(name)
+	command, err := s.lightEnrollmentCommandWithDesktop(platform, token, name, desktop)
+	if err != nil {
+		return LightEnrollment{}, err
 	}
-	return LightEnrollment{ID: id, Command: command, ExpiresAt: expiresAt}, nil
+	return LightEnrollment{ID: id, Command: command, ExpiresAt: expiresAt, Platform: platform}, nil
 }
 
 func shellSingleQuote(value string) string {
@@ -125,6 +136,9 @@ func (s *Service) EnrollLightNodeAtOrigin(
 	now := s.now().UTC()
 	if !s.lightEnrolls.Allow(cleanRateSubject(source), now) {
 		return LightEnrollResponse{}, ErrRateLimited
+	}
+	if input.Platform != "" && input.Platform != "linux" && input.Platform != "windows" {
+		return LightEnrollResponse{}, ErrProtocolMismatch
 	}
 	wire, secret, err := parseLightToken(input.Token, now)
 	validatedOrigin, originErr := validateLightOrigin(origin)
@@ -152,7 +166,8 @@ func (s *Service) EnrollLightNodeAtOrigin(
 	}
 	hash := sha256.Sum256(secret)
 	if err := s.light.EnrollHost(wire.ID, hex.EncodeToString(hash[:]), lightHostRecord{
-		ID: nodeID, Name: name, NodeVersion: cleanDisplayText(input.NodeVersion, 64),
+		Platform: input.Platform,
+		ID:       nodeID, Name: name, NodeVersion: cleanDisplayText(input.NodeVersion, 64),
 		CreatedAt: now, UpdatedAt: now,
 	}, reportingKey, terminalPublicKey, now); err != nil {
 		return LightEnrollResponse{}, err
@@ -186,6 +201,12 @@ func (s *Service) AcceptLightReport(auth LightReportAuth, rawBody []byte, input 
 	if err := validateTelemetry(input.Telemetry, now); err != nil {
 		return LightReportResponse{}, err
 	}
+	if err := validateLightPlatform(input); err != nil {
+		return LightReportResponse{}, err
+	}
+	if lightHostIsWindows(record) && input.Platform != "windows" {
+		return LightReportResponse{}, ErrProtocolMismatch
+	}
 	latencyMilliseconds := parseLightReportLatency(auth.ReportLatencyMilliseconds)
 	if latencyMilliseconds == 0 && record.LastSnapshot != nil {
 		// The latency header is optional so an upgraded node can report to an
@@ -194,9 +215,13 @@ func (s *Service) AcceptLightReport(auth LightReportAuth, rawBody []byte, input 
 		latencyMilliseconds = max(0, record.LastSnapshot.LatencyMilliseconds)
 	}
 	snapshot := HostSnapshot{
-		Telemetry:           cloneTelemetry(input.Telemetry),
-		ReceivedAt:          now,
-		LatencyMilliseconds: latencyMilliseconds,
+		Platform:                 input.Platform,
+		UnavailableMetrics:       append([]string(nil), input.UnavailableMetrics...),
+		NodeCapabilities:         append([]string(nil), input.Capabilities...),
+		DesktopUnavailableReason: input.DesktopUnavailableReason,
+		Telemetry:                cloneTelemetry(input.Telemetry),
+		ReceivedAt:               now,
+		LatencyMilliseconds:      latencyMilliseconds,
 	}
 	// Invalid/missing optional health is unknown; it must neither reject core
 	// telemetry nor renew the freshness of a previously healthy observation.
@@ -304,7 +329,23 @@ func (s *Service) publicLightHost(record lightHostRecord, now time.Time) Host {
 		key, err := s.light.ReadTerminalPublicKey(record)
 		fileAvailable = err == nil && len(key) == 32
 	}
-	return publicLightHostWithCapabilities(record, now, terminalAvailable, fileAvailable)
+	host := publicLightHostWithCapabilities(record, now, terminalAvailable, fileAvailable)
+	if lightHostIsWindows(record) && !s.desktopAllowed(record.ID) {
+		host.DesktopUnavailableReason = "desktop_disabled_by_center"
+		return host
+	}
+	if lightHostIsWindows(record) && lightPlatformAllows(record, "desktop", now) {
+		host.DesktopAvailable = s.fileStreamHub.desktopAvailable(record.ID) && record.LastSnapshot.DesktopUnavailableReason == ""
+		if host.DesktopAvailable {
+			host.DesktopUnavailableReason = ""
+		} else {
+			host.DesktopUnavailableReason = "desktop_broker_unavailable"
+			if record.LastSnapshot.DesktopUnavailableReason != "" {
+				host.DesktopUnavailableReason = record.LastSnapshot.DesktopUnavailableReason
+			}
+		}
+	}
+	return host
 }
 
 func publicLightHost(record lightHostRecord, now time.Time, terminalAvailable bool) Host {
@@ -335,7 +376,7 @@ func publicLightHostWithCapabilities(record lightHostRecord, now time.Time, term
 			state = HostOffline
 		}
 	}
-	return Host{
+	host := Host{
 		LightHealth: health,
 		ID:          record.ID, Name: record.Name, Kind: HostKindLightNode,
 		TransportSecurity: TransportSecurityTLS, RemoteNodeID: record.ID,
@@ -347,6 +388,8 @@ func publicLightHostWithCapabilities(record lightHostRecord, now time.Time, term
 		LastError: record.LastError, ResourceVersion: record.ResourceVersion,
 		CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt,
 	}
+	applyLightPlatform(&host, record, now)
+	return host
 }
 
 func parseLightToken(token string, now time.Time) (lightTokenWire, []byte, error) {

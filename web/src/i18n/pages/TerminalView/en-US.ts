@@ -1,6 +1,21 @@
 import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
+  ["等待登录","Awaiting sign-in"],
+  ["远程桌面服务未就绪，请检查节点连接、RDP 设置和证书。","Remote desktop is not ready. Check the node connection, RDP settings and certificate."],
+  ["此节点尚未启用远程桌面能力。","Remote desktop is not enabled on this node."],
+  ["此节点尚未启用命令行能力，或终端服务未就绪。","Command line access is not enabled or the terminal service is not ready."],
+  ["选择连接方式","Choose connection type"],
+  ["命令行（PowerShell）","Command line (PowerShell)"],
+  ["远程桌面（RDP）","Remote desktop (RDP)"],
+  ["中心已禁用此主机的远程桌面。","Remote desktop for this host is disabled by the center."],
+  ["请先在 Windows 设置中启用远程桌面。","Enable Remote Desktop in Windows settings first."],
+  ["Windows 远程桌面服务尚未运行。","The Windows Remote Desktop service is not running."],
+  ["Windows 远程桌面证书不可用。","The Windows Remote Desktop certificate is unavailable."],
+  ["无法读取 Windows 远程桌面配置。","Cannot read the Windows Remote Desktop configuration."],
+  ["远程桌面策略保存失败，请重试。","Could not save the remote desktop policy. Please retry."],
+  ["允许此主机远程桌面","Allow remote desktop for this host"],
+  ["禁用此主机远程桌面","Disable remote desktop for this host"],
   ['关闭未确认，会话已保留。请检查目标主机连接后重试。', 'Close was not confirmed. The session is retained. Check the host connection and retry.'],
   ['重试关闭', 'Retry close'],
   ['正在关闭终端', 'Closing terminal'],

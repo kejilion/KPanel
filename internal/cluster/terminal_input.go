@@ -16,6 +16,9 @@ func (s *Service) TerminalSupportsSequencedInput(hostID, sessionID string) bool 
 // stream, without waiting for its ACK. Callers dispatch in order and bound the
 // number of outstanding waiters. No unsequenced fallback is ever attempted.
 func (s *Service) BeginTerminalInput(ctx context.Context, hostID, sessionID string, frame terminal.InputFrame) (func() error, error) {
+	if !s.lightControlAllowed(hostID, "terminal") {
+		return nil, ErrTerminalUnavailable
+	}
 	if !frame.Valid() {
 		return nil, terminal.ErrInputSequence
 	}

@@ -16,8 +16,6 @@ import (
 	"github.com/flynn/noise"
 )
 
-const defaultTerminalConfigPath = "/etc/kejilion-node/terminal.json"
-
 type terminalConfig struct {
 	SchemaVersion int    `json:"schemaVersion"`
 	PrivateKey    string `json:"privateKey"`
@@ -52,6 +50,9 @@ func readTerminalConfigMode(path string, allowPending bool) (terminalConfig, ter
 		return terminalConfig{}, terminalIdentity{}, err
 	}
 	defer file.Close()
+	if err := validatePlatformConfig(file, true); err != nil {
+		return terminalConfig{}, terminalIdentity{}, err
+	}
 	after, err := file.Stat()
 	if err != nil || !os.SameFile(before, after) || after.Size() > 8192 {
 		return terminalConfig{}, terminalIdentity{}, errors.New("terminal configuration file is invalid")
@@ -90,6 +91,9 @@ func decodeTerminalKey(value string) ([]byte, error) {
 }
 
 func writeTerminalConfigAtomic(path string, config terminalConfig) error {
+	if handled, err := writePlatformConfig(path, config, true); handled {
+		return err
+	}
 	if !filepath.IsAbs(path) {
 		return errors.New("terminal configuration path must be absolute")
 	}

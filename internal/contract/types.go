@@ -48,22 +48,24 @@ type Capability struct {
 }
 
 type SystemSummary struct {
-	Hostname      string                  `json:"hostname"`
-	OS            string                  `json:"os"`
-	OSID          string                  `json:"osId,omitempty"`
-	OSLike        []string                `json:"osLike,omitempty"`
-	Kernel        string                  `json:"kernel"`
-	Architecture  string                  `json:"architecture"`
-	UptimeSeconds uint64                  `json:"uptimeSeconds"`
-	Load          LoadSummary             `json:"load"`
-	CPU           CPUSummary              `json:"cpu"`
-	Memory        MemorySummary           `json:"memory"`
-	Disks         []DiskSummary           `json:"disks"`
-	DiskIO        DiskIOSummary           `json:"diskIo"`
-	Network       NetworkSummary          `json:"network"`
-	PublicNetwork PublicNetworkSummary    `json:"publicNetwork"`
-	Management    SystemManagementSummary `json:"management"`
-	CollectedAt   time.Time               `json:"collectedAt"`
+	Platform           string                  `json:"platform,omitempty"`
+	UnavailableMetrics []string                `json:"unavailableMetrics,omitempty"`
+	Hostname           string                  `json:"hostname"`
+	OS                 string                  `json:"os"`
+	OSID               string                  `json:"osId,omitempty"`
+	OSLike             []string                `json:"osLike,omitempty"`
+	Kernel             string                  `json:"kernel"`
+	Architecture       string                  `json:"architecture"`
+	UptimeSeconds      uint64                  `json:"uptimeSeconds"`
+	Load               LoadSummary             `json:"load"`
+	CPU                CPUSummary              `json:"cpu"`
+	Memory             MemorySummary           `json:"memory"`
+	Disks              []DiskSummary           `json:"disks"`
+	DiskIO             DiskIOSummary           `json:"diskIo"`
+	Network            NetworkSummary          `json:"network"`
+	PublicNetwork      PublicNetworkSummary    `json:"publicNetwork"`
+	Management         SystemManagementSummary `json:"management"`
+	CollectedAt        time.Time               `json:"collectedAt"`
 }
 
 // SystemManagementSummary describes configuration observed on the host. It is

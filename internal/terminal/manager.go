@@ -138,6 +138,9 @@ func New(config Config) *Manager {
 }
 
 func starterWithParent(rows, columns uint16, parentUnit string) (Process, error) {
+	if process, err, handled := platformStarter(rows, columns); handled {
+		return process, err
+	}
 	shell := "/bin/bash"
 	if _, err := os.Stat(shell); err != nil {
 		shell = "/bin/sh"

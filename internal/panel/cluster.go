@@ -23,6 +23,7 @@ const (
 	lightBatchEnrollEndpoint    = cluster.LightBatchEnrollPath
 	lightReportEndpoint         = "/api/v3/federation/light/report"
 	lightFileCapabilityEndpoint = cluster.LightFileCapabilityPath
+	lightCapabilitiesEndpoint   = cluster.LightCapabilitiesPath
 )
 
 type clusterTelemetrySource struct {
@@ -97,6 +98,7 @@ func (s *Server) Close() error {
 	s.closeRemoteDownloadJobs()
 	s.terminalStreams.closeAll()
 	s.closeTerminalSessions()
+	s.closeDesktopSessions()
 	s.closeFileShareStreams()
 	// Cluster-owned relay connections can outlive HTTP shutdown. Close their
 	// transport before waiting for handlers, or restore restarts can deadlock.
@@ -332,6 +334,11 @@ func (s *Server) handleClusterHostDelete(w http.ResponseWriter, r *http.Request,
 		s.writeClusterError(w, r, err)
 		return
 	}
+	if s.desktopCredentials != nil {
+		if err := s.desktopCredentials.DeleteHost(id); err != nil {
+			result.CredentialRemoved = false
+		}
+	}
 	change["remoteRevoked"] = result.RemoteRevoked
 	change["credentialRemoved"] = result.CredentialRemoved
 	_ = s.audit(r, session.User.ID, "cluster.host.delete", "cluster-host", id, "success", change)
@@ -371,7 +378,9 @@ func (s *Server) handleLightEnrollmentCreate(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	var input struct {
-		Name string `json:"name"`
+		Name          string `json:"name"`
+		Platform      string `json:"platform,omitempty"`
+		EnableDesktop bool   `json:"enableDesktop,omitempty"`
 	}
 	if r.ContentLength > 0 {
 		if err := s.decodeJSON(w, r, &input); err != nil {
@@ -391,7 +400,7 @@ func (s *Server) handleLightEnrollmentCreate(w http.ResponseWriter, r *http.Requ
 		s.writeClusterError(w, r, cluster.ErrLightHTTPSOrigin)
 		return
 	}
-	enrollment, err := s.cluster.CreateLightEnrollmentForOriginAndName(origin, input.Name)
+	enrollment, err := s.cluster.CreateLightEnrollmentWithDesktop(origin, input.Name, input.Platform, input.EnableDesktop)
 	if err != nil {
 		_ = s.audit(r, session.User.ID, "cluster.light-enrollment.create", "cluster-node", s.cluster.NodeID(), "failure", nil)
 		s.writeClusterError(w, r, err)
@@ -855,7 +864,7 @@ func mustReadLimited(input io.Reader, limit int64) []byte {
 func isLightNodeRequest(r *http.Request) bool {
 	return r.Method == http.MethodPost &&
 		(r.URL.Path == lightEnrollEndpoint || r.URL.Path == lightBatchEnrollEndpoint ||
-			r.URL.Path == lightReportEndpoint || r.URL.Path == lightFileCapabilityEndpoint)
+			r.URL.Path == lightReportEndpoint || r.URL.Path == lightFileCapabilityEndpoint || r.URL.Path == lightCapabilitiesEndpoint)
 }
 
 func (s *Server) handleLightNodeFederation(w http.ResponseWriter, r *http.Request) {
@@ -864,6 +873,23 @@ func (s *Server) handleLightNodeFederation(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	switch r.URL.Path {
+	case lightCapabilitiesEndpoint:
+		body, err := readLimitedJSONBody(w, r, 32)
+		if err != nil {
+			return
+		}
+		response, err := s.cluster.ProbeLightCapabilities(cluster.LightReportAuth{
+			Source: s.remoteIP(r), NodeID: strings.TrimSpace(r.Header.Get("X-KPanel-Light-Node-ID")),
+			Timestamp: strings.TrimSpace(r.Header.Get("X-KPanel-Timestamp")),
+			RequestID: strings.TrimSpace(r.Header.Get("X-KPanel-Request-ID")),
+			Signature: strings.TrimSpace(r.Header.Get("X-KPanel-Signature")),
+		}, body)
+		if err != nil {
+			s.writeClusterError(w, r, err)
+			return
+		}
+		w.Header().Set(cluster.LightResponseCapabilitiesHeader, strings.Join(response.Capabilities, ","))
+		s.writeJSON(w, http.StatusOK, response)
 	case lightEnrollEndpoint:
 		var input cluster.LightEnrollRequest
 		if err := decodeLimitedJSON(w, r, cluster.MaxPairBytes, &input); err != nil {
@@ -883,7 +909,7 @@ func (s *Server) handleLightNodeFederation(w http.ResponseWriter, r *http.Reques
 		}
 		// Rolling-upgrade hint: old lightweight nodes ignore this response
 		// header, while new nodes opt into the optional SSH event field.
-		w.Header().Set(cluster.LightResponseCapabilitiesHeader, cluster.SSHLoginCapability+","+cluster.LightHealthCapability+","+cluster.ServiceChecksCapability)
+		w.Header().Set(cluster.LightResponseCapabilitiesHeader, strings.Join(cluster.LightCenterCapabilities(), ","))
 		_ = s.audit(r, "", "cluster.light-node.enroll", "cluster-host", response.NodeID, "success", map[string]any{
 			"protocol": cluster.LightNodeProtocol,
 		})
@@ -905,7 +931,7 @@ func (s *Server) handleLightNodeFederation(w http.ResponseWriter, r *http.Reques
 			s.writeClusterError(w, r, err)
 			return
 		}
-		w.Header().Set(cluster.LightResponseCapabilitiesHeader, cluster.SSHLoginCapability+","+cluster.LightHealthCapability+","+cluster.ServiceChecksCapability)
+		w.Header().Set(cluster.LightResponseCapabilitiesHeader, strings.Join(cluster.LightCenterCapabilities(), ","))
 		_ = s.audit(r, "", "cluster.light-node.batch-enroll", "cluster-host", response.NodeID, "success", map[string]any{
 			"batchEnrollmentId": policyID,
 			"protocol":          cluster.LightNodeProtocol,
@@ -941,7 +967,7 @@ func (s *Server) handleLightNodeFederation(w http.ResponseWriter, r *http.Reques
 			s.writeClusterError(w, r, err)
 			return
 		}
-		w.Header().Set(cluster.LightResponseCapabilitiesHeader, cluster.SSHLoginCapability+","+cluster.LightHealthCapability+","+cluster.ServiceChecksCapability)
+		w.Header().Set(cluster.LightResponseCapabilitiesHeader, strings.Join(cluster.LightCenterCapabilities(), ","))
 		s.writeJSON(w, http.StatusOK, response)
 	case lightFileCapabilityEndpoint:
 		rawBody, err := readLimitedJSONBody(w, r, cluster.MaxPairBytes)
@@ -1060,6 +1086,8 @@ func (s *Server) writeClusterError(w http.ResponseWriter, r *http.Request, err e
 		status, code, title = http.StatusUnprocessableEntity, "cluster_light_https_required", "Light node HTTPS origin is required"
 	case errors.Is(err, cluster.ErrLightBatchInvalid):
 		status, code, title = http.StatusUnprocessableEntity, "cluster_light_batch_invalid", "Light node batch enrollment settings are invalid"
+	case errors.Is(err, cluster.ErrWindowsInstallerUnavailable):
+		status, code, title = http.StatusServiceUnavailable, "cluster_windows_installer_unavailable", "Windows node signing identity is not configured"
 	case errors.Is(err, cluster.ErrPrivateOrigin):
 		status, code, title = http.StatusUnprocessableEntity, "cluster_origin_blocked", "Cluster origin is blocked"
 	case errors.Is(err, cluster.ErrPairingCode):

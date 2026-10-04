@@ -1,6 +1,10 @@
 import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
+  ["选择磁盘", "Choose a drive"],
+  ["选择磁盘中的照片或视频文件夹，也可以从文件管理中打开图库。", "Choose a photo or video folder on a drive, or open it in Gallery from Files."],
+  ["请先选择磁盘中的文件夹，再上传照片和视频。", "Choose a folder on a drive before uploading photos and videos."],
+  ["所选主机已移除或不存在，请重新选择主机。", "The selected host was removed or does not exist. Select another host."],
   ["图库", "Gallery"],
   ["张照片", "photos"],
   ["段视频", "videos"],

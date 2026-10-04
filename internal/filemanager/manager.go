@@ -59,7 +59,7 @@ var (
 
 type Manager struct {
 	root           string
-	rootFS         *os.Root
+	rootFS         *fileRoot
 	protected      []string
 	readOnly       []string
 	trashRoot      string
@@ -76,7 +76,10 @@ type Manager struct {
 }
 
 type Config struct {
-	Root             string
+	Root string
+	// VolumeRoots maps drive letters to mounted local roots on Windows. Empty
+	// with Root="/" discovers fixed disks; tests may bind isolated directories.
+	VolumeRoots      map[string]string
 	ProtectedVirtual []string
 	ReadOnlyVirtual  []string
 	TrashVirtual     string
@@ -99,7 +102,7 @@ type trashMetadata struct {
 }
 
 func New(config Config) (*Manager, error) {
-	if strings.TrimSpace(config.Root) == "" || !filepath.IsAbs(config.Root) {
+	if strings.TrimSpace(config.Root) == "" || (!filepath.IsAbs(config.Root) && !platformVirtualRoot(config.Root)) {
 		return nil, errors.New("file manager root must be absolute")
 	}
 	if config.Now == nil {
@@ -112,7 +115,7 @@ func New(config Config) (*Manager, error) {
 		config.MaxCopyBytes = maxCopyBytes
 	}
 	rootPath := filepath.Clean(config.Root)
-	rootFS, err := os.OpenRoot(rootPath)
+	rootFS, err := openFileRoot(config.Root, config.VolumeRoots)
 	if err != nil {
 		return nil, fmt.Errorf("open file manager root: %w", err)
 	}
@@ -189,6 +192,9 @@ func (m *Manager) ListPage(
 	virtual string,
 	options ListOptions,
 ) (contract.FileDirectory, error) {
+	if directory, err, handled := m.listPlatformRoot(ctx, virtual, options); handled {
+		return directory, err
+	}
 	if options.Limit <= 0 || options.Limit > MaxDirectoryEntries {
 		options.Limit = MaxDirectoryEntries
 	}
@@ -443,7 +449,7 @@ func (m *Manager) WriteText(
 		return contract.FileEntry{}, ErrConflict
 	}
 	parentVirtual := path.Dir(normalized)
-	temp, tempVirtual, err := m.createTemp(parentVirtual, ".kpanel-edit-")
+	temp, tempVirtual, err := m.createTempWithSourceAccess(parentVirtual, ".kpanel-edit-", source)
 	if err != nil {
 		return contract.FileEntry{}, err
 	}
@@ -526,18 +532,23 @@ func (m *Manager) Upload(
 	} else if !errors.Is(statErr, os.ErrNotExist) {
 		return contract.FileEntry{}, statErr
 	}
-	temp, tempVirtual, err := m.createTemp(normalizedDirectory, ".kpanel-upload-")
+	var source *os.File
+	if existing != nil {
+		source, err = m.rootFS.Open(rootName(targetVirtual))
+		if err != nil {
+			return contract.FileEntry{}, err
+		}
+		defer source.Close()
+		opened, statErr := source.Stat()
+		if statErr != nil || !os.SameFile(existing, opened) {
+			return contract.FileEntry{}, ErrConflict
+		}
+	}
+	temp, tempVirtual, err := m.createTempWithSourceAccess(normalizedDirectory, ".kpanel-upload-", source)
 	if err != nil {
 		return contract.FileEntry{}, err
 	}
 	if existing != nil {
-		source, openErr := m.rootFS.Open(rootName(targetVirtual))
-		if openErr != nil {
-			temp.Close()
-			_ = m.rootFS.Remove(rootName(tempVirtual))
-			return contract.FileEntry{}, openErr
-		}
-		defer source.Close()
 		if err := temp.Chmod(existing.Mode().Perm()); err != nil {
 			temp.Close()
 			_ = m.rootFS.Remove(rootName(tempVirtual))
@@ -901,8 +912,13 @@ func (m *Manager) rename(
 	if err := m.mutationError(targetNormalized); err != nil {
 		return contract.FileEntry{}, err
 	}
-	if _, err := m.rootFS.Lstat(rootName(targetNormalized)); err == nil {
-		return contract.FileEntry{}, ErrAlreadyExists
+	if targetInfo, err := m.rootFS.Lstat(rootName(targetNormalized)); err == nil {
+		// Windows resolves case-only spellings to the existing source. Keep the
+		// requested basename and allow only that exact object; the no-replace
+		// rename below still rejects a different object appearing concurrently.
+		if normalizedSource == targetNormalized || platformPathKey(normalizedSource) != platformPathKey(targetNormalized) || !os.SameFile(sourceInfo, targetInfo) {
+			return contract.FileEntry{}, ErrAlreadyExists
+		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return contract.FileEntry{}, err
 	}
@@ -976,7 +992,7 @@ func (m *Manager) moveOne(
 			return contract.FileEntry{}, err
 		}
 		tempVirtual := joinVirtual(normalizedTarget, ".kpanel-copy-"+randomID())
-		if err := m.copyTree(ctx, normalizedSource, tempVirtual, budget); err != nil {
+		if err := m.copyTreeWithAccess(ctx, normalizedSource, tempVirtual, budget, true); err != nil {
 			_ = m.rootFS.RemoveAll(rootName(tempVirtual))
 			return contract.FileEntry{}, err
 		}
@@ -1116,7 +1132,7 @@ func (m *Manager) trashOne(
 			return "", err
 		}
 		tempVirtual := joinVirtual(m.trashRoot, ".kpanel-copy-"+randomID())
-		if err := m.copyTree(ctx, normalized, tempVirtual, budget); err != nil {
+		if err := m.copyTreeWithAccess(ctx, normalized, tempVirtual, budget, true); err != nil {
 			_ = m.rootFS.RemoveAll(rootName(tempVirtual))
 			return "", err
 		}
@@ -1311,7 +1327,7 @@ func (m *Manager) restoreTrash(
 			return contract.FileEntry{}, err
 		}
 		tempVirtual := joinVirtual(parentVirtual, ".kpanel-copy-"+randomID())
-		if err := m.copyTree(ctx, sourceVirtual, tempVirtual, budget); err != nil {
+		if err := m.copyTreeWithAccess(ctx, sourceVirtual, tempVirtual, budget, true); err != nil {
 			_ = m.rootFS.RemoveAll(rootName(tempVirtual))
 			return contract.FileEntry{}, err
 		}
@@ -1400,13 +1416,13 @@ func (m *Manager) chmodOne(virtual, rawMode string) (contract.FileEntry, error) 
 }
 
 func (m *Manager) createTemp(directoryVirtual, prefix string) (*os.File, string, error) {
+	return m.createTempWithSourceAccess(directoryVirtual, prefix, nil)
+}
+
+func (m *Manager) createTempWithSourceAccess(directoryVirtual, prefix string, source *os.File) (*os.File, string, error) {
 	for attempt := 0; attempt < 32; attempt++ {
 		tempVirtual := joinVirtual(directoryVirtual, prefix+randomID())
-		file, err := m.rootFS.OpenFile(
-			rootName(tempVirtual),
-			os.O_RDWR|os.O_CREATE|os.O_EXCL,
-			0600,
-		)
+		file, err := createFileWithSourceAccess(m.rootFS, rootName(tempVirtual), os.O_RDWR|os.O_CREATE|os.O_EXCL, 0600, source)
 		if err == nil {
 			return file, tempVirtual, nil
 		}
@@ -1455,6 +1471,13 @@ func (m *Manager) resolveExisting(virtual string) (string, string, error) {
 	if m.isProtected(normalized) {
 		return "", "", ErrProtected
 	}
+	normalized, err = m.platformCanonical(normalized)
+	if err != nil {
+		return "", "", err
+	}
+	if m.isProtected(normalized) {
+		return "", "", ErrProtected
+	}
 	relative := strings.TrimPrefix(normalized, "/")
 	absolute := m.root
 	if relative != "" {
@@ -1490,7 +1513,7 @@ func (m *Manager) resolveExisting(virtual string) (string, string, error) {
 
 func (m *Manager) isProtected(virtual string) bool {
 	for _, protected := range m.protected {
-		if virtual == protected || isWithin(virtual, protected) {
+		if platformPathKey(virtual) == platformPathKey(protected) || isWithin(virtual, protected) {
 			return true
 		}
 	}
@@ -1514,7 +1537,7 @@ func (m *Manager) mutationError(virtual string) error {
 		return ErrProtected
 	}
 	for _, readOnly := range m.readOnly {
-		if virtual == readOnly || isWithin(virtual, readOnly) || isWithin(readOnly, virtual) {
+		if platformPathKey(virtual) == platformPathKey(readOnly) || isWithin(virtual, readOnly) || isWithin(readOnly, virtual) {
 			return ErrReadOnly
 		}
 	}
@@ -1533,6 +1556,9 @@ func normalizeVirtual(value string) (string, error) {
 		if component == "." || component == ".." {
 			return "", ErrInvalidPath
 		}
+		if component != "" && !platformNameValid(component) {
+			return "", ErrInvalidPath
+		}
 	}
 	normalized := path.Clean(value)
 	if !strings.HasPrefix(normalized, "/") {
@@ -1544,13 +1570,14 @@ func normalizeVirtual(value string) (string, error) {
 func validateName(value string) error {
 	if value == "" || value == "." || value == ".." || len(value) > 255 ||
 		strings.ContainsAny(value, `/\`) || strings.ContainsRune(value, 0) ||
-		isInternalComponent(value) {
+		isInternalComponent(value) || !platformNameValid(value) {
 		return ErrInvalidPath
 	}
 	return nil
 }
 
 func isInternalComponent(value string) bool {
+	value = platformPathKey(value)
 	return strings.HasPrefix(value, ".kpanel-edit-") ||
 		strings.HasPrefix(value, ".kpanel-upload-") ||
 		strings.HasPrefix(value, ".kpanel-copy-") ||
@@ -1574,6 +1601,7 @@ func rootName(virtual string) string {
 }
 
 func isWithin(candidate, parent string) bool {
+	candidate, parent = platformPathKey(candidate), platformPathKey(parent)
 	return strings.HasPrefix(candidate, strings.TrimSuffix(parent, "/")+"/")
 }
 
@@ -1617,7 +1645,7 @@ func contentShareVersion(
 	if initialResourceVersion != expectedResourceVersion {
 		return "", ErrConflict
 	}
-	initialIdentity, ok := shareFileIdentity(initial)
+	initialIdentity, ok := shareFileIdentity(initial, file)
 	if !ok {
 		return "", ErrConflict
 	}
@@ -1641,7 +1669,7 @@ func contentShareVersion(
 	if err != nil {
 		return "", err
 	}
-	currentIdentity, ok := shareFileIdentity(current)
+	currentIdentity, ok := shareFileIdentity(current, file)
 	if !ok || !os.SameFile(initial, current) ||
 		resourceVersion(virtual, current) != initialResourceVersion ||
 		currentIdentity != initialIdentity {
@@ -1835,6 +1863,17 @@ func (m *Manager) copyTree(
 	sourceVirtual, targetVirtual string,
 	budget *copyBudget,
 ) error {
+	return m.copyTreeWithAccess(ctx, sourceVirtual, targetVirtual, budget, false)
+}
+
+// Cross-volume moves (including trash and restore) retain the existing DACL.
+// Ordinary copies intentionally keep the destination's inheritance policy.
+func (m *Manager) copyTreeWithAccess(
+	ctx context.Context,
+	sourceVirtual, targetVirtual string,
+	budget *copyBudget,
+	preserveAccess bool,
+) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -1851,7 +1890,20 @@ func (m *Manager) copyTree(
 		return ErrTooLarge
 	}
 	if info.IsDir() {
-		if err := m.rootFS.Mkdir(rootName(targetVirtual), info.Mode().Perm()); err != nil {
+		directory, err := m.rootFS.Open(rootName(sourceVirtual))
+		if err != nil {
+			return err
+		}
+		defer directory.Close()
+		openedInfo, err := directory.Stat()
+		if err != nil || !os.SameFile(info, openedInfo) || !openedInfo.IsDir() {
+			return ErrConflict
+		}
+		var accessSource *os.File
+		if preserveAccess {
+			accessSource = directory
+		}
+		if err := mkdirWithSourceAccess(m.rootFS, rootName(targetVirtual), info.Mode().Perm(), accessSource); err != nil {
 			return err
 		}
 		targetDirectory, err := m.rootFS.Open(rootName(targetVirtual))
@@ -1865,23 +1917,15 @@ func (m *Manager) copyTree(
 		if err := targetDirectory.Close(); err != nil {
 			return err
 		}
-		directory, err := m.rootFS.Open(rootName(sourceVirtual))
-		if err != nil {
-			return err
-		}
-		defer directory.Close()
-		openedInfo, err := directory.Stat()
-		if err != nil || !os.SameFile(info, openedInfo) || !openedInfo.IsDir() {
-			return ErrConflict
-		}
 		for {
 			values, readErr := directory.ReadDir(256)
 			for _, value := range values {
-				if err := m.copyTree(
+				if err := m.copyTreeWithAccess(
 					ctx,
 					joinVirtual(sourceVirtual, value.Name()),
 					joinVirtual(targetVirtual, value.Name()),
 					budget,
+					preserveAccess,
 				); err != nil {
 					return err
 				}
@@ -1910,11 +1954,11 @@ func (m *Manager) copyTree(
 	if err != nil || !os.SameFile(info, openedInfo) || !openedInfo.Mode().IsRegular() {
 		return ErrConflict
 	}
-	output, err := m.rootFS.OpenFile(
-		rootName(targetVirtual),
-		os.O_CREATE|os.O_EXCL|os.O_WRONLY,
-		info.Mode().Perm(),
-	)
+	var accessSource *os.File
+	if preserveAccess {
+		accessSource = input
+	}
+	output, err := createFileWithSourceAccess(m.rootFS, rootName(targetVirtual), os.O_WRONLY|os.O_CREATE|os.O_EXCL, info.Mode().Perm(), accessSource)
 	if err != nil {
 		return err
 	}

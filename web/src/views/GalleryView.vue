@@ -23,6 +23,7 @@ import {
   FolderPlus,
   Grid2x2,
   Grid3x3,
+  HardDrive,
   ImagePlus,
   Images,
   LayoutGrid,
@@ -141,18 +142,24 @@ const windowed = ref(false)
 
 const hostId = computed(() => typeof route.query.hostId === 'string' ? route.query.hostId : '')
 const fileAPI = computed(() => fileAPIForHost(hostId.value))
+const hosts = ref<ClusterHost[]>([])
+const hostsLoaded = ref(false)
+const activeHost = computed(() => hosts.value.find((host) => host.id === hostId.value))
+const isWindowsHost = computed(() => activeHost.value?.pathStyle === 'windows-volumes')
+const galleryHome = computed(() => isWindowsHost.value ? '/' : preferences.root)
 const currentPath = computed(() => {
   const requested = typeof route.query.path === 'string' ? normalizeGalleryRoot(route.query.path) : undefined
-  return requested || preferences.root
+  return requested || galleryHome.value
 })
-// The library folder is a path, so it names the same place on every host: opening the
-// gallery from a remote file pane starts at that host's own copy of it.
-const isLibraryRoot = computed(() => currentPath.value === preferences.root)
-const insideLibrary = computed(() => isWithinGalleryRoot(preferences.root, currentPath.value))
+const isWindowsVolumeList = computed(() => isWindowsHost.value && currentPath.value === '/')
+const volumes = ref<FileEntry[]>([])
+// Windows enters through its actual volume list. Explicit file-pane paths stay
+// on that host; the Panel's Linux library preference never supplies a Windows path.
+const isLibraryRoot = computed(() => !isWindowsHost.value && currentPath.value === preferences.root)
+const insideLibrary = computed(() => !isWindowsHost.value && isWithinGalleryRoot(preferences.root, currentPath.value))
 const trail = computed(() => galleryPathTrail(insideLibrary.value ? preferences.root : '/', currentPath.value))
 
 // Hosts the gallery can switch to; also gives a remote host its name instead of its opaque id.
-const hosts = ref<ClusterHost[]>([])
 const hostsLoading = ref(false)
 const hostsError = ref(false)
 const hostSwitcher = ref<InstanceType<typeof HostSwitcher>>()
@@ -235,6 +242,7 @@ const viewerIndex = computed(() => {
 const viewerCoverOptions = computed(() => coverOptionsFor(viewerIndex.value >= 0 ? visibleItems.value[viewerIndex.value] : undefined))
 const selectedEntries = computed(() => allItems.value.filter((item) => selected.value.has(item.entry.path)).map((item) => item.entry))
 const title = computed(() => {
+  if (isWindowsVolumeList.value) return phrase('图库')
   if (isLibraryRoot.value) return phrase('图库')
   return galleryBaseName(currentPath.value)
 })
@@ -462,6 +470,8 @@ function revealInFiles(path: string): void {
 }
 
 async function load(options: { quiet?: boolean } = {}): Promise<void> {
+  // Resolve the remote platform before choosing a default directory.
+  if (hostId.value && !hostsLoaded.value) return
   loadController?.abort()
   const controller = new AbortController()
   loadController = controller
@@ -474,6 +484,17 @@ async function load(options: { quiet?: boolean } = {}): Promise<void> {
   }
   loadError.value = ''
   try {
+    if (hostId.value && !activeHost.value && !route.query.path) {
+      throw new Error(phrase('所选主机已移除或不存在，请重新选择主机。'))
+    }
+    if (isWindowsVolumeList.value) {
+      const directory = await api.list('/', undefined, controller.signal)
+      if (sequence !== loadSequence || unmounted || controller.signal.aborted) return
+      volumes.value = directory.entries.filter((entry) => entry.kind === 'directory')
+        .sort((left, right) => left.name.localeCompare(right.name, undefined, { numeric: true }))
+      snapshot.value = { path, exists: true, items: [], albums: [], truncated: false, scanning: false, failedAlbums: 0 }
+      return
+    }
     await loadGalleryFolder({ list: api.list, text: api.text }, path, (next) => {
       if (sequence !== loadSequence || unmounted) return
       // A refresh keeps the current page until the whole scan is in, so album
@@ -515,6 +536,7 @@ async function loadHosts(): Promise<void> {
     hostsError.value = true
   } finally {
     hostsLoading.value = false
+    hostsLoaded.value = true
   }
 }
 
@@ -558,8 +580,16 @@ function onHostSelected(host: ClusterHost): void {
   void router.push({ name: 'gallery', query: host.isLocal ? {} : { hostId: host.id } })
 }
 
-watch([currentPath, hostId], ([, nextHost], [, previousHost]) => {
-  if (nextHost !== previousHost) snapshot.value = undefined
+watch([currentPath, hostId, hostsLoaded], ([nextPath, nextHost], [previousPath, previousHost]) => {
+  if (nextPath === previousPath && nextHost === previousHost && !nextHost) return
+  if (nextHost !== previousHost) {
+    loadController?.abort()
+    loadController = undefined
+    ++loadSequence
+    snapshot.value = undefined
+    volumes.value = []
+    loading.value = true
+  }
   albumDialog.value = undefined
   deleteDialog.value = undefined
   moveDialog.value = undefined
@@ -675,6 +705,10 @@ async function ensureFolder(path: string, folderHostId = hostId.value): Promise<
 }
 
 function enqueueUploads(files: Iterable<File>): void {
+  if (isWindowsVolumeList.value) {
+    toast.show(phrase('请先选择磁盘中的文件夹，再上传照片和视频。'))
+    return
+  }
   const candidates = [...files]
   const media = candidates.filter(isGalleryUploadCandidate)
   const skipped = candidates.length - media.length
@@ -1143,6 +1177,7 @@ let unsubscribeChanges: (() => void) | undefined
 
 onMounted(() => {
   void loadHosts()
+  if (!hostId.value) void load()
   windowed.value = Boolean(page.value?.closest('.desktop-window__body'))
   if (typeof IntersectionObserver !== 'undefined') {
     // Inside a desktop window the gallery scrolls its own frame, which would clip a viewport root.
@@ -1161,7 +1196,6 @@ onMounted(() => {
     if (touched) scheduleReload()
   })
   document.addEventListener('pointerdown', closeMenus)
-  void load()
 })
 
 watch(desktopWindowActive, (active) => {
@@ -1225,7 +1259,7 @@ onBeforeUnmount(() => {
             </template>
           </nav>
           <h1 class="gallery-hero__title">{{ title }}</h1>
-          <p v-if="snapshot?.exists" class="gallery-hero__meta">
+          <p v-if="snapshot?.exists && !isWindowsVolumeList" class="gallery-hero__meta">
             {{ summary }}<span v-if="snapshot.scanning" class="gallery-hero__scanning"> · 正在汇总相册…</span>
           </p>
           <p class="gallery-hero__path">
@@ -1249,14 +1283,14 @@ onBeforeUnmount(() => {
         </div>
         <div class="gallery-hero__actions">
           <button
-            v-if="snapshot?.exists"
+            v-if="snapshot?.exists && !isWindowsVolumeList"
             class="button button--secondary button--small"
             type="button"
             @click="openAlbumDialog({ mode: 'create', parent: currentPath })"
           >
             <FolderPlus :size="16" /> 新建相册
           </button>
-          <button class="button button--primary button--small" type="button" :disabled="!snapshot" @click="uploadInput?.click()">
+          <button class="button button--primary button--small" type="button" :disabled="!snapshot || isWindowsVolumeList" @click="uploadInput?.click()">
             <Upload :size="16" /> 上传照片和视频
           </button>
           <div class="gallery-hero__more">
@@ -1331,6 +1365,20 @@ onBeforeUnmount(() => {
       <LoadingState v-if="loading && !snapshot" :rows="3" cards label="正在读取图库" />
       <ErrorState v-else-if="loadError && !snapshot" :message="loadError" title="图库读取失败" @retry="load()" />
 
+      <section v-else-if="isWindowsVolumeList && snapshot" class="gallery-empty gallery-volumes">
+        <span class="gallery-empty__art" aria-hidden="true"><HardDrive :size="40" :stroke-width="1.6" /></span>
+        <h2>{{ phrase('选择磁盘') }}</h2>
+        <p>{{ phrase('选择磁盘中的照片或视频文件夹，也可以从文件管理中打开图库。') }}</p>
+        <div class="gallery-empty__actions">
+          <button v-for="volume in volumes" :key="volume.path" class="button button--secondary" type="button" @click="openFolder(volume.path)">
+            <HardDrive :size="16" aria-hidden="true" /> {{ volume.name }}
+          </button>
+          <button class="button button--secondary" type="button" @click="revealInFiles('/')">
+            <FolderOpen :size="16" aria-hidden="true" /> 在文件管理中打开
+          </button>
+        </div>
+      </section>
+
       <section v-else-if="snapshot && !snapshot.exists" class="gallery-empty">
         <span class="gallery-empty__art" aria-hidden="true"><Images :size="40" :stroke-width="1.6" /></span>
         <h2>{{ isLibraryRoot ? '开始建立你的图库' : '这个文件夹不存在' }}</h2>
@@ -1345,7 +1393,7 @@ onBeforeUnmount(() => {
           <button v-if="isLibraryRoot && !hostId" class="button button--secondary" type="button" @click="openLocationDialog()">
             <MapPin :size="16" /> 更改图库位置
           </button>
-          <button v-else-if="!isLibraryRoot" class="button button--secondary" type="button" @click="openFolder(preferences.root)">
+          <button v-else-if="!isLibraryRoot" class="button button--secondary" type="button" @click="openFolder(galleryHome)">
             <Images :size="16" /> 返回图库
           </button>
         </div>

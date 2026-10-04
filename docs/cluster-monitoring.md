@@ -188,6 +188,8 @@ Ed25519 签名。新前端调用 `/api/v1/cluster/pairing-codes/v2`，不会把�
 
 ### 3.3 轻量节点（遥测 `light-v1`，终端复用 v2 Noise）
 
+Windows 轻量节点候选复用同一 `light_node` 配额、遥测 HMAC、Noise 终端/文件/历史链路，增加显式平台与能力协商。添加主机窗口提供单台/批量 Windows PowerShell 接入以及可选管理员桌面；安装器固定当前 KPanel Release，验证签名与发布者后才执行。中心未配置信任发布者时明确拒绝生成命令。旧中心在消费令牌前拒绝 Windows 接入，中心回滚后 Windows 管理连接失败关闭。正式签名和原生 Windows 验收仍待完成；能力与限制以 [Windows 轻量节点设计](windows-light-node-design.md) 为准。
+
 管理员在“集群 → 添加主机 → 非面板 Linux 主机”生成一次性命令：
 
 ```bash

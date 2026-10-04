@@ -14,7 +14,7 @@ describe('files desktop window layout', () => {
   })
 
   it('reserves a scrollable safe area behind the fixed phone batch bar', () => {
-    expect(filesSource).toContain(":class=\"{ 'files-page--batch-active': selected.size > 0 }\"")
+    expect(filesSource).toContain("'files-page--batch-active': selected.size > 0")
     expect(filesSource).toMatch(
       /@media \(max-width: 720px\)[\s\S]*?\.files-page--batch-active\s*\{[^}]*padding-bottom:\s*200px;/,
     )

@@ -150,7 +150,10 @@ func (s *Service) terminalHostCredential(id string) (hostRecordV2, v2Credential,
 }
 
 func (s *Service) TerminalOpen(ctx context.Context, hostID string, input TerminalOpenRequest) (TerminalOpenResponse, error) {
-	if _, err := s.light.Host(hostID); err == nil {
+	if record, err := s.light.Host(hostID); err == nil {
+		if !lightPlatformAllows(record, "terminal", s.now().UTC()) {
+			return TerminalOpenResponse{}, ErrTerminalUnavailable
+		}
 		if input.Rows == 0 || input.Columns == 0 || input.Rows > 500 || input.Columns > 1000 {
 			return TerminalOpenResponse{}, errors.New("invalid terminal dimensions")
 		}
@@ -197,6 +200,9 @@ func (s *Service) TerminalOutput(ctx context.Context, hostID string, input Termi
 }
 
 func (s *Service) TerminalInput(ctx context.Context, hostID string, input TerminalInputRequest) error {
+	if !s.lightControlAllowed(hostID, "terminal") {
+		return ErrTerminalUnavailable
+	}
 	if t := s.streams.terminal(hostID, input.SessionID); t != nil {
 		return t.input(ctx, input)
 	}
@@ -214,6 +220,9 @@ func (s *Service) TerminalInput(ctx context.Context, hostID string, input Termin
 }
 
 func (s *Service) TerminalResize(ctx context.Context, hostID string, input TerminalResizeRequest) error {
+	if !s.lightControlAllowed(hostID, "terminal") {
+		return ErrTerminalUnavailable
+	}
 	if t := s.streams.terminal(hostID, input.SessionID); t != nil {
 		return t.resize(ctx, input)
 	}

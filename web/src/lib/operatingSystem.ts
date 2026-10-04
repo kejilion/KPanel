@@ -10,6 +10,7 @@ export interface OperatingSystemIdentity {
 }
 
 const identities: Array<OperatingSystemIdentity & { ids: string[]; names: string[] }> = [
+  { key: 'windows', label: 'Windows', ids: ['windows'], names: ['windows'] },
   { key: 'ubuntu', label: 'Ubuntu', ids: ['ubuntu'], names: ['ubuntu'] },
   { key: 'debian', label: 'Debian', ids: ['debian'], names: ['debian'] },
   { key: 'centos', label: 'CentOS', ids: ['centos'], names: ['centos'] },

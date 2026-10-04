@@ -83,6 +83,39 @@ afterEach(() => {
 })
 
 describe('light node enrollment form', () => {
+  it('includes desktop opt-in in the Windows batch command request', async () => {
+    wrapper=mount(ClusterView,{attachTo:document.body,global:{stubs:{RouterLink:true}}})
+    await flushPromises();await wrapper.get('.cluster-hero__add').trigger('click')
+    Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find(button=>button.textContent?.includes('批量接入'))!.click()
+    await flushPromises()
+    const platform=document.querySelector<HTMLSelectElement>('[name="cluster-light-batch-platform"]')!
+    platform.value='windows';platform.dispatchEvent(new Event('change',{bubbles:true}));await flushPromises()
+    const option=document.querySelector<HTMLInputElement>('[name="cluster-light-batch-desktop"]')!
+    option.checked=true;option.dispatchEvent(new Event('change',{bubbles:true}));await flushPromises()
+    document.querySelector<HTMLFormElement>('#cluster-batch-add-form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}))
+    await flushPromises()
+    expect(mocks.createLightBatchEnrollment).toHaveBeenCalledWith(expect.objectContaining({platform:'windows',enableDesktop:true}))
+  })
+  it('offers a Windows one-command entry below Linux and generates PowerShell for the selected platform', async () => {
+    wrapper = mount(ClusterView, { attachTo: document.body, global: { stubs: { RouterLink: true } } })
+    await flushPromises()
+    await wrapper.get('.cluster-hero__add').trigger('click')
+    const cards=Array.from(document.querySelectorAll<HTMLElement>('.cluster-light-enrollment'))
+    expect(cards).toHaveLength(2)
+    expect(cards[0]!.textContent).toContain('Linux')
+    expect(cards[1]!.textContent).toContain('Windows 主机')
+    mocks.createLightEnrollment.mockResolvedValue({id:'windows-node',platform:'windows',command:'verified PowerShell command',expiresAt:'2026-09-12T10:05:00Z'})
+    const desktopOption=cards[1]!.querySelector<HTMLInputElement>('input[type="checkbox"]')!
+    desktopOption.checked=true
+    desktopOption.dispatchEvent(new Event('change',{bubbles:true}))
+    await flushPromises()
+    cards[1]!.querySelector<HTMLButtonElement>('button')!.click()
+    await flushPromises()
+    expect(mocks.createLightEnrollment).toHaveBeenCalledWith(undefined,'windows',true)
+    expect(cards[1]!.textContent).toContain('管理员 PowerShell')
+    expect(cards[1]!.textContent).toContain('verified PowerShell command')
+    expect(cards[0]!.textContent).not.toContain('verified PowerShell command')
+  })
   it('shows reported public IPs in the host address position without making them links', async () => {
     items = [reportedNode({ ipv4: '198.51.100.20', ipv6: '2001:db8::20' })]
     wrapper = mount(ClusterView, { attachTo: document.body, global: { stubs: { RouterLink: true } } })
@@ -178,6 +211,8 @@ describe('light node enrollment form', () => {
     await flushPromises()
 
     expect(mocks.createLightBatchEnrollment).toHaveBeenCalledWith({
+      platform: 'linux',
+      enableDesktop: undefined,
       namePrefix: undefined,
       maxUses: 100,
       expiresInSeconds: 86_400,

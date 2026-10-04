@@ -42,6 +42,7 @@ const linuxMark: OperatingSystemMark = {
 }
 
 const icons: Record<string, OperatingSystemMark> = {
+  windows: { svg: '<svg viewBox="0 0 24 24"><path d="M2 2h9v9H2zM13 2h9v9h-9zM2 13h9v9H2zM13 13h9v9h-9z"/></svg>', accent: '0078D4' },
   ubuntu: { svg: cleanBrandSvg(ubuntuSvg), accent: 'E95420' },
   debian: { svg: cleanBrandSvg(debianSvg), accent: 'A81D33' },
   centos: { svg: cleanBrandSvg(centosSvg), accent: '262577' },

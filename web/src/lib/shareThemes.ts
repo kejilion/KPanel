@@ -96,7 +96,7 @@ export function shareThemeModelV2(snapshot: PublicClusterShareSnapshot, locale: 
           usedText: known ? formatBytes(raw.memory.usedBytes) : '—', totalText: known ? formatBytes(raw.memory.totalBytes) : '—' },
         disk: { text: host.disk, ratio: ratio(raw.disk.usagePercent, known), usedBytes: finite(raw.disk.usedBytes, known), totalBytes: finite(raw.disk.totalBytes, known),
           usedText: known ? formatBytes(raw.disk.usedBytes) : '—', totalText: known ? formatBytes(raw.disk.totalBytes) : '—' },
-        load: known ? { one: raw.load.one, five: raw.load.five, fifteen: raw.load.fifteen } : null,
+        load: known && raw.load ? { one: raw.load.one, five: raw.load.five, fifteen: raw.load.fifteen } : null,
         uptimeSeconds: finite(raw.uptimeSeconds, known),
         network: { down: { bytesPerSecond: finite(raw.network.receiveBytesPerSecond, known), text: known ? `${formatBytes(raw.network.receiveBytesPerSecond)}/s` : '—' },
           up: { bytesPerSecond: finite(raw.network.transmitBytesPerSecond, known), text: known ? `${formatBytes(raw.network.transmitBytesPerSecond)}/s` : '—' } },

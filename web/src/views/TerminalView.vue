@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch, type ComponentPublicInstance } from 'vue'
+import { computed, defineAsyncComponent, inject, nextTick, onBeforeUnmount, onMounted, ref, watch, type ComponentPublicInstance } from 'vue'
 import { useRoute } from 'vue-router'
-import { ListChecks, LoaderCircle, Menu, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, Search, SquareTerminal, X } from '@lucide/vue'
+import { ListChecks, LoaderCircle, Menu, Monitor, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, Search, SquareTerminal, X } from '@lucide/vue'
+import ModalDialog from '@/components/common/ModalDialog.vue'
+import { translatePhrase } from '@/i18n/phrase'
 import BatchTerminalPanel from '@/components/terminal/BatchTerminalPanel.vue'
 import HostTerminal from '@/components/terminal/HostTerminal.vue'
 import TerminalQuickCommands from '@/components/terminal/TerminalQuickCommands.vue'
@@ -30,6 +32,7 @@ const desktopWindowCloseGuards = inject(desktopWindowCloseGuardKey, undefined)
 let unregisterWindowCloseGuard: (() => void) | undefined
 
 interface OpenTerminal {
+	kind: 'terminal' | 'desktop'
   id: string
   hostId: string
   hostName: string
@@ -37,7 +40,7 @@ interface OpenTerminal {
   // when it opened, so closing one never renames the others.
   ordinal: number
   offset: number
-  state: 'connecting' | 'connected' | 'reconnecting' | 'finished'
+  state: 'pending' | 'connecting' | 'connected' | 'reconnecting' | 'finished'
   closing?: boolean
   closeFailed?: boolean
 }
@@ -50,6 +53,31 @@ interface HostTerminalHandle {
 }
 
 const inventory = ref<ClusterHostList>()
+const HostDesktop = defineAsyncComponent(() => import('@/components/terminal/HostDesktop.vue').then(module => module.default))
+const choosingHost = ref<ClusterHost>()
+const phrase = (value: string): string => { locale.value; return translatePhrase(value) }
+const isWindows = (host: ClusterHost): boolean => host.platform === 'windows' || host.lastSnapshot?.telemetry.osId === 'windows'
+const hostConnectable = (host: ClusterHost): boolean => host.terminalAvailable || !!host.desktopAvailable
+const desktopReason = (host: ClusterHost): string => phrase(({
+  desktop_disabled_by_center: '中心已禁用此主机的远程桌面。',
+  desktop_rdp_disabled: '请先在 Windows 设置中启用远程桌面。',
+  desktop_rdp_service_stopped: 'Windows 远程桌面服务尚未运行。',
+  desktop_rdp_certificate_unavailable: 'Windows 远程桌面证书不可用。',
+  desktop_rdp_configuration_unavailable: '无法读取 Windows 远程桌面配置。',
+  desktop_not_enabled: '此节点尚未启用远程桌面能力。',
+} as Record<string,string>)[host.desktopUnavailableReason || ''] || '远程桌面服务未就绪，请检查节点连接、RDP 设置和证书。')
+const desktopPolicyBusy = ref(false)
+const desktopPolicyError = ref('')
+async function toggleDesktopPolicy(host: ClusterHost): Promise<void> {
+  desktopPolicyBusy.value = true
+  desktopPolicyError.value = ''
+  try {
+    await api.desktops.policy(host.id, host.desktopUnavailableReason === 'desktop_disabled_by_center')
+    await loadHosts()
+    if (choosingHost.value?.id === host.id) choosingHost.value = inventory.value?.items.find(item => item.id === host.id)
+  } catch { desktopPolicyError.value = phrase('远程桌面策略保存失败，请重试。') }
+  finally { desktopPolicyBusy.value = false }
+}
 const sessions = ref<OpenTerminal[]>([])
 const activeSessionId = ref('')
 const loading = ref(true)
@@ -99,7 +127,8 @@ const hosts = computed(() => {
 const activeSession = computed(() => sessions.value.find((item) => item.id === activeSessionId.value))
 const selectedBatchHosts = computed(() => orderedHosts.value.filter((host) => selectedBatchHostIDs.value.has(host.id)))
 const activeInteractiveSessionCount = computed(() => sessions.value.filter((item) => item.state !== 'finished').length)
-const batchSessionCapacity = computed(() => Math.max(0, 4 - activeInteractiveSessionCount.value))
+const activeTerminalSessionCount = computed(() => sessions.value.filter((item) => item.kind === 'terminal' && item.state !== 'finished').length)
+const batchSessionCapacity = computed(() => Math.max(0, 4 - activeTerminalSessionCount.value))
 
 const hostOperatingSystemIdentity = (host: ClusterHost) =>
   detectOperatingSystemIdentity(host.lastSnapshot?.telemetry)
@@ -134,15 +163,15 @@ function requestedTerminalHost(): ClusterHost | undefined {
   const hostId = route.query.hostId
   // The shared route can already point at another page while this view unmounts.
   if (route.path !== '/terminal' || typeof hostId !== 'string' || !hostId) return undefined
-  return inventory.value?.items.find((host) => host.id === hostId && host.terminalAvailable)
+  return inventory.value?.items.find((host) => host.id === hostId && (isWindows(host) || hostConnectable(host)))
 }
 
 function sessionLabel(item: OpenTerminal): string {
-  return item.ordinal > 1 ? `${item.hostName} ${item.ordinal}` : item.hostName
+  return item.kind === 'desktop' ? `${item.hostName} · RDP` : item.ordinal > 1 ? `${item.hostName} ${item.ordinal}` : item.hostName
 }
 
 function nextOrdinal(hostId: string): number {
-  const taken = new Set(sessions.value.filter((item) => item.hostId === hostId).map((item) => item.ordinal))
+  const taken = new Set(sessions.value.filter((item) => item.hostId === hostId && item.kind === 'terminal').map((item) => item.ordinal))
   let ordinal = 1
   while (taken.has(ordinal)) ordinal += 1
   return ordinal
@@ -151,26 +180,38 @@ function nextOrdinal(hostId: string): number {
 // Choosing a host goes to its terminal: the active one if it is on that host,
 // otherwise the one opened last. Only a host without a terminal gets a new one.
 async function openHost(host: ClusterHost): Promise<void> {
-  const onHost = sessions.value.filter((item) => item.hostId === host.id)
+  if (isWindows(host)) { desktopPolicyError.value = ''; choosingHost.value = host; return }
+  await connectHost(host, 'terminal')
+}
+
+async function connectHost(host: ClusterHost, kind: OpenTerminal['kind']): Promise<void> {
+  choosingHost.value = undefined
+  const onHost = sessions.value.filter((item) => item.hostId === host.id && item.kind === kind)
   const existing = onHost.find((item) => item.id === activeSessionId.value) ?? onHost.at(-1)
   if (existing) {
     selectSession(existing.id)
     mobileConnectionsOpen.value = false
     return
   }
-  await openSession(host)
+  await openSession(host, kind)
 }
 
-
-async function openSession(host: ClusterHost): Promise<void> {
-  if (!host.terminalAvailable || openingHostId.value) return
+async function openSession(host: ClusterHost, kind: OpenTerminal['kind'] = 'terminal'): Promise<void> {
+  if ((kind === 'terminal' ? !host.terminalAvailable : !host.desktopAvailable) || openingHostId.value) return
   mobileConnectionsOpen.value = false
   openingHostId.value = host.id
   errorMessage.value = ''
   limitReached.value = false
   try {
+    if (kind === 'desktop') {
+      const item: OpenTerminal = { kind, id: `desktop-${crypto.randomUUID()}`, hostId: host.id, hostName: host.name, ordinal: 1, offset: 0, state: 'pending' }
+      sessions.value.push(item)
+      activeSessionId.value = item.id
+      quickCommandsOpen.value = false
+      return
+    }
     const opened = await api.terminals.open(host.id, 30, 120)
-    const item: OpenTerminal = { id: opened.sessionId, hostId: host.id, hostName: host.name, ordinal: nextOrdinal(host.id), offset: opened.offset, state: 'connecting' }
+    const item: OpenTerminal = { kind, id: opened.sessionId, hostId: host.id, hostName: host.name, ordinal: nextOrdinal(host.id), offset: opened.offset, state: 'connecting' }
     sessions.value.push(item)
     activeSessionId.value = item.id
   } catch (reason) {
@@ -326,7 +367,7 @@ function toggleBatchHost(host: ClusterHost): void {
 
 function hostStateLabel(host: ClusterHost): string {
   locale.value
-  if (!host.terminalAvailable) {
+  if (!hostConnectable(host)) {
     return host.kind === 'light_node'
       ? t('terminal.hostState.monitoringOnly')
       : t('terminal.hostState.repairPairing')
@@ -353,6 +394,7 @@ function hostDescription(host: ClusterHost): string {
 
 function sessionStateLabel(state: OpenTerminal['state']): string {
   locale.value
+  if (state === 'pending') return phrase('等待登录')
   if (state === 'connected') return t('terminal.connected')
   if (state === 'finished') return t('terminal.finished')
   if (state === 'reconnecting') return t('terminal.reconnecting')
@@ -394,6 +436,16 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="page terminal-page" :data-locale="locale">
+    <ModalDialog :open="!!choosingHost" :title="phrase('选择连接方式')" :description="choosingHost?.name" size="small" @close="choosingHost = undefined">
+      <div v-if="choosingHost" class="terminal-connection-options">
+        <button class="button button--secondary" :disabled="!choosingHost.terminalAvailable" @click="connectHost(choosingHost, 'terminal')"><SquareTerminal :size="20" />{{ phrase('命令行（PowerShell）') }}</button>
+        <small v-if="!choosingHost.terminalAvailable">{{ phrase('此节点尚未启用命令行能力，或终端服务未就绪。') }}</small>
+        <button class="button button--secondary" :disabled="!choosingHost.desktopAvailable" @click="connectHost(choosingHost, 'desktop')"><Monitor :size="20" />{{ phrase('远程桌面（RDP）') }}</button>
+        <small v-if="!choosingHost.desktopAvailable">{{ desktopReason(choosingHost) }}</small>
+        <button class="button button--secondary button--small" :disabled="desktopPolicyBusy" @click="toggleDesktopPolicy(choosingHost)">{{ phrase(choosingHost.desktopUnavailableReason === 'desktop_disabled_by_center' ? '允许此主机远程桌面' : '禁用此主机远程桌面') }}</button>
+        <small v-if="desktopPolicyError" role="alert">{{ desktopPolicyError }}</small>
+      </div>
+    </ModalDialog>
     <PageHeader title="多主机终端" description="通过集群加密通道连接本机、已授权 KPanel 节点和轻量节点，无需开放额外 SSH 或公网端口。" />
 
     <div v-if="errorMessage" class="terminal-alert" role="alert">{{ errorMessage }}</div>
@@ -483,12 +535,12 @@ onBeforeUnmount(() => {
                 :class="{
                   'is-active': activeSession?.hostId === host.id,
                   'is-opening': openingHostId === host.id,
-                  'is-unavailable': !host.terminalAvailable,
+                  'is-unavailable': !hostConnectable(host),
                   'has-new': host.terminalAvailable,
                 }"
                 type="button"
                 :disabled="openingHostId === host.id"
-                :aria-disabled="!host.terminalAvailable"
+                :aria-disabled="!isWindows(host) && !hostConnectable(host)"
                 :title="hostDescription(host)"
                 :aria-label="hostDescription(host)"
                 @click="openHost(host)"
@@ -507,8 +559,8 @@ onBeforeUnmount(() => {
                     <span
                       class="terminal-host__state"
                       :class="{
-                        'is-ready': host.terminalAvailable,
-                        'is-attention': !host.terminalAvailable && host.kind !== 'light_node',
+                        'is-ready': hostConnectable(host),
+                        'is-attention': !hostConnectable(host) && host.kind !== 'light_node',
                       }"
                     >
                       <i aria-hidden="true" />
@@ -525,7 +577,7 @@ onBeforeUnmount(() => {
                 :disabled="Boolean(openingHostId)"
                 :title="t('terminal.newSessionOnHost', { host: host.name })"
                 :aria-label="t('terminal.newSessionOnHost', { host: host.name })"
-                @click="openSession(host)"
+                @click="openSession(host, 'terminal')"
               >
                 <Plus :size="16" />
               </button>
@@ -554,7 +606,7 @@ onBeforeUnmount(() => {
             :class="{ 'is-active': activeSession?.hostId === host.id }"
             type="button"
             :disabled="openingHostId === host.id"
-            :aria-disabled="!host.terminalAvailable"
+            :aria-disabled="!isWindows(host) && !hostConnectable(host)"
             :title="hostDescription(host)"
             :aria-label="hostDescription(host)"
             @click="openHost(host)"
@@ -565,7 +617,7 @@ onBeforeUnmount(() => {
               :label="hostOperatingSystemIdentity(host).label"
               :show-tooltip="false"
             />
-            <i :class="{ 'is-ready': host.terminalAvailable }" aria-hidden="true" />
+            <i :class="{ 'is-ready': hostConnectable(host) }" aria-hidden="true" />
           </button>
         </div>
       </aside>
@@ -605,7 +657,7 @@ onBeforeUnmount(() => {
             <div v-for="item in sessions" :key="item.id" class="terminal-tab" :class="{ 'is-active': item.id === activeSessionId }" :title="`${sessionLabel(item)} · ${sessionStateLabel(item.state)}`">
               <button type="button" class="terminal-tab__select" @click="selectSession(item.id)">
               <span class="terminal-tab__status" :class="`is-${item.state}`" aria-hidden="true" />
-              <SquareTerminal :size="14" /><span class="terminal-tab__name">{{ sessionLabel(item) }}</span>
+              <Monitor v-if="item.kind === 'desktop'" :size="14" /><SquareTerminal v-else :size="14" /><span class="terminal-tab__name">{{ sessionLabel(item) }}</span>
               <span class="sr-only">{{ sessionStateLabel(item.state) }}</span>
               </button>
               <button type="button" class="terminal-tab__close" :disabled="item.closing" aria-label="关闭终端" @click="closeSession(item.id)" @keydown.enter.prevent="closeSession(item.id)" @keydown.space.prevent="closeSession(item.id)">
@@ -616,16 +668,19 @@ onBeforeUnmount(() => {
           </nav>
           <TerminalToolbar
             :fullscreen="workspaceFullscreen"
-            quick-commands
+            :quick-commands="activeSession?.kind !== 'desktop'"
             :quick-commands-expanded="quickCommandsOpen"
             @toggle-quick-commands="toggleQuickCommands"
             @toggle-fullscreen="toggleWorkspaceFullscreen"
           />
         </div>
         <div v-if="!sessions.length" class="terminal-empty"><span><SquareTerminal :size="32" /></span><h2>{{ t('terminal.emptyTitle') }}</h2><p>{{ t('terminal.emptyDescription') }}</p></div>
-        <HostTerminal v-for="item in sessions" v-show="item.id === activeSessionId" :key="item.id" :ref="(instance) => setTerminalRef(item.id, instance)" :session-id="item.id" :host-name="sessionLabel(item)" :initial-offset="item.offset" @state-change="updateSessionState(item, $event)" />
+        <template v-for="item in sessions" :key="item.id">
+          <HostTerminal v-if="item.kind === 'terminal'" v-show="item.id === activeSessionId" :ref="(instance) => setTerminalRef(item.id, instance)" :session-id="item.id" :host-name="sessionLabel(item)" :initial-offset="item.offset" @state-change="updateSessionState(item, $event)" />
+          <HostDesktop v-else v-show="item.id === activeSessionId" :ref="(instance) => setTerminalRef(item.id, instance)" :host-id="item.hostId" :host-name="sessionLabel(item)" :active="item.id === activeSessionId" @state-change="updateSessionState(item, $event)" />
+        </template>
         <TerminalQuickCommands
-          :open="quickCommandsOpen && terminalMode === 'interactive'"
+          :open="quickCommandsOpen && terminalMode === 'interactive' && activeSession?.kind !== 'desktop'"
           :disabled="!activeSession || activeSession.state === 'finished'"
           @close="closeQuickCommands"
           @execute="executeQuickCommand"
@@ -671,6 +726,9 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.terminal-connection-options { display: grid; gap: 12px; }
+.terminal-connection-options .button { justify-content: flex-start; min-height: 52px; }
+.terminal-connection-options small { color: var(--muted); line-height: 1.6; }
 .terminal-page { min-height:calc(100vh - 100px); gap:18px; }
 .terminal-alert { border:1px solid color-mix(in srgb,var(--danger) 34%,var(--border)); border-radius:10px; padding:11px 13px; color:var(--danger); background:color-mix(in srgb,var(--danger) 8%,var(--surface)); }
 .terminal-alert button { margin-left:8px; padding:4px 8px; border:1px solid currentColor; border-radius:var(--radius-sm); color:inherit; background:transparent; font:inherit; font-size:14px; cursor:pointer; }
@@ -757,6 +815,7 @@ onBeforeUnmount(() => {
 .terminal-tabs { display:flex; min-width:0; flex:1; gap:5px; overflow-x:auto; scrollbar-width:thin; }
 /* Follows the last tab, and stays on the visible edge once the tabs scroll. */
 .terminal-stage :deep(.host-terminal) { grid-row:2; grid-column:1; border:0; border-radius:0; box-shadow:none; }
+.terminal-stage :deep(.host-desktop) { grid-row:2; grid-column:1; }
 .terminal-stage :deep(.terminal-quick-commands) { grid-row:2; grid-column:2; }
 .terminal-tab { display:flex; flex:0 0 auto; align-items:center; gap:7px; max-width:220px; border:1px solid var(--terminal-shell-border,#29383a); border-radius:8px; padding:7px 9px; color:var(--terminal-shell-muted,#8a9695); background:var(--terminal-shell-panel,#111a1d); }
 .terminal-tab.is-active { color:var(--terminal-shell-text,#d8dddc); border-color:var(--brand); }

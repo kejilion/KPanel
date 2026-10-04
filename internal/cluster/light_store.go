@@ -35,6 +35,7 @@ type lightEnrollmentRecord struct {
 }
 
 type lightHostRecord struct {
+	Platform            string        `json:"-"`
 	ID                  string        `json:"id"`
 	Name                string        `json:"name"`
 	CredentialFile      string        `json:"credentialFile"`

@@ -74,7 +74,7 @@ type publicClusterShareHost struct {
 	OS                     string                     `json:"os,omitempty"`
 	Architecture           string                     `json:"architecture,omitempty"`
 	UptimeSeconds          uint64                     `json:"uptimeSeconds,omitempty"`
-	Load                   publicClusterShareLoad     `json:"load,omitempty"`
+	Load                   *publicClusterShareLoad    `json:"load"`
 	CPU                    publicClusterShareCPU      `json:"cpu,omitempty"`
 	Memory                 publicClusterShareCapacity `json:"memory,omitempty"`
 	Disk                   publicClusterShareCapacity `json:"disk,omitempty"`
@@ -368,8 +368,10 @@ func (s *Server) clusterShareSnapshot(ctx context.Context, value store.ClusterSh
 			item.OS = telemetry.OS
 			item.Architecture = telemetry.Architecture
 			item.UptimeSeconds = telemetry.UptimeSeconds
-			item.Load = publicClusterShareLoad{
-				One: telemetry.Load.One, Five: telemetry.Load.Five, Fifteen: telemetry.Load.Fifteen,
+			if host.Platform != "windows" && !strings.EqualFold(telemetry.OSID, "windows") {
+				item.Load = &publicClusterShareLoad{
+					One: telemetry.Load.One, Five: telemetry.Load.Five, Fifteen: telemetry.Load.Fifteen,
+				}
 			}
 			item.CPU = publicClusterShareCPU{Cores: telemetry.CPU.Cores, UsagePercent: telemetry.CPU.UsagePercent}
 			item.Memory = publicClusterShareCapacity{

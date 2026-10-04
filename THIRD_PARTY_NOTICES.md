@@ -24,6 +24,8 @@ KPanel.
 | `vue` | `3.5.40` | MIT | [`LICENSES/vue-MIT.txt`](LICENSES/vue-MIT.txt) |
 | `vue-router` | `4.6.4` | MIT | [`LICENSES/vue-router-MIT.txt`](LICENSES/vue-router-MIT.txt) |
 
+| `@devolutions/iron-remote-desktop-rdp` / `@devolutions/iron-remote-desktop` | `0.7.0` / `0.11.0` | MIT (selected from MIT OR Apache-2.0) | [`LICENSES/IronRDP-MIT.txt`](LICENSES/IronRDP-MIT.txt) |
+
 Transitive dependency versions and license identifiers are recorded in
 `go.sum` and `web/package-lock.json`. Release container images additionally
 publish an SBOM. Each component remains governed by its own license.

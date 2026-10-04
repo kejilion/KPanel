@@ -101,6 +101,8 @@ const clusterHosts = [
 ]
 
 describe('GalleryView host switcher', () => {
+  const windowsHost = { id: 'win-1', name: 'Windows', isLocal: false, kind: 'light_node', state: 'online', fileManagementAvailable: true, pathStyle: 'windows-volumes' }
+
   afterEach(() => {
     vi.restoreAllMocks()
     document.body.querySelectorAll('.host-switcher__menu').forEach((menu) => menu.remove())
@@ -116,6 +118,98 @@ describe('GalleryView host switcher', () => {
     await flushPromises()
     return [...document.body.querySelectorAll<HTMLButtonElement>('[data-host-id]')]
   }
+
+  it('waits for platform discovery and lists Windows drives without scanning them or assuming C:', async () => {
+    let resolveHosts!: (value: never) => void
+    vi.spyOn(api.cluster, 'hosts').mockReturnValue(new Promise((resolve) => { resolveHosts = resolve }) as never)
+    harness.tree['/'] = [folder('/E'), folder('/D')]
+    harness.tree['/D'] = [folder('/D/Pictures')]
+    harness.tree['/D/Pictures'] = [media('/D/Pictures/photo.jpg')]
+    const view = await mountGallery('/gallery?hostId=win-1')
+    expect(harness.list).not.toHaveBeenCalled()
+    resolveHosts({ items: [...clusterHosts, windowsHost] } as never)
+    await flushPromises()
+    expect(harness.list.mock.calls.map(([path]) => path)).toEqual(['/'])
+    expect(view.get('.gallery-volumes').text()).toContain('选择磁盘')
+    expect(view.get('.gallery-hero__actions .button--primary').attributes('disabled')).toBeDefined()
+    expect(view.findAll('button').some((button) => button.text() === '新建相册')).toBe(false)
+    const drives = view.findAll('.gallery-volumes button')
+    expect(drives.slice(0, 2).map((button) => button.text())).toEqual(['D', 'E'])
+    await drives[0]!.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query).toEqual({ hostId: 'win-1', path: '/D' })
+    expect(view.find('.gallery-volumes').exists()).toBe(false)
+    expect(view.findAll('.gallery-tile')).toHaveLength(1)
+  })
+
+  it('keeps a Windows file-pane folder on its host and restores the Linux library when switching', async () => {
+    harness.tree['/E/Photos'] = [media('/E/Photos/photo.jpg')]
+    const view = await mountWithHosts('/gallery?hostId=win-1&path=%2FE%2FPhotos', [...clusterHosts, windowsHost])
+    expect(harness.list.mock.calls.map(([path]) => path)).toEqual(['/E/Photos'])
+    expect(router.currentRoute.value.query).toEqual({ hostId: 'win-1', path: '/E/Photos' })
+    expect(view.findAll('.gallery-tile')).toHaveLength(1)
+    harness.list.mockClear()
+    ;(await openPicker(view)).find((row) => row.dataset.hostId === 'edge-1')!.click()
+    await flushPromises()
+    expect(router.currentRoute.value.query).toEqual({ hostId: 'edge-1' })
+    expect(harness.list.mock.calls[0]?.[0]).toBe('/home/gallery')
+  })
+
+  it('discards a late local snapshot when Windows is opened before platform discovery completes', async () => {
+    let resolveHosts!: (value: never) => void
+    let resolveLocal!: (value: FileDirectory) => void
+    vi.spyOn(api.cluster, 'hosts').mockReturnValue(new Promise((resolve) => { resolveHosts = resolve }) as never)
+    harness.list.mockImplementationOnce(() => new Promise((resolve) => { resolveLocal = resolve }))
+    harness.tree['/E/Photos'] = [media('/E/Photos/windows.jpg')]
+    const view = await mountGallery()
+    await router.push('/gallery?hostId=win-1&path=%2FE%2FPhotos')
+    await flushPromises()
+    resolveLocal({ path: '/home/gallery', entries: [media('/home/gallery/local.jpg')], offset: 0, truncated: false, readAt: '2026-10-03T00:00:00Z' })
+    await flushPromises()
+    expect(view.findAll('.gallery-tile')).toHaveLength(0)
+    resolveHosts({ items: [...clusterHosts, windowsHost] } as never)
+    await flushPromises()
+    expect(view.findAll('.gallery-tile')).toHaveLength(1)
+    expect(view.findAllComponents({ name: 'GalleryTile' }).map((tile) => tile.props('item').entry.path)).toEqual(['/E/Photos/windows.jpg'])
+    expect(harness.list.mock.calls.some(([path]) => path === '/E/Photos')).toBe(true)
+  })
+
+  it('returns from a missing Windows folder to its drive list, not the Linux library', async () => {
+    harness.tree['/'] = [folder('/E')]
+    const view = await mountWithHosts('/gallery?hostId=win-1&path=%2FE%2Fmissing', [...clusterHosts, windowsHost])
+    expect(view.text()).toContain('这个文件夹不存在')
+    await view.findAll('button').find((button) => button.text() === '返回图库')!.trigger('click')
+    await flushPromises()
+    expect(view.find('.gallery-volumes').exists()).toBe(true)
+    expect(harness.list.mock.calls.some(([path]) => path === '/home/gallery')).toBe(false)
+  })
+
+  it('shows a recoverable Windows drive-list error and refuses an unknown host default', async () => {
+    harness.tree['/'] = [folder('/E')]
+    harness.list.mockRejectedValueOnce(new ApiError('Drive listing unavailable', 503, 'unavailable'))
+    const view = await mountWithHosts('/gallery?hostId=win-1', [...clusterHosts, windowsHost])
+    expect(view.text()).toContain('图库读取失败')
+    await view.get('.error-state button').trigger('click')
+    await flushPromises()
+    expect(view.find('.gallery-volumes').exists()).toBe(true)
+    harness.list.mockClear()
+    await router.push('/gallery?hostId=missing')
+    await flushPromises()
+    expect(view.text()).toContain('所选主机已移除或不存在')
+    expect(harness.list).not.toHaveBeenCalled()
+  })
+
+  it('rejects dropping uploads onto the virtual drive list without invoking a file write', async () => {
+    harness.tree['/'] = [folder('/E')]
+    const view = await mountWithHosts('/gallery?hostId=win-1', [...clusterHosts, windowsHost])
+    await view.get('.gallery-page').trigger('drop', {
+      dataTransfer: { types: ['Files'], files: [new File(['photo'], 'photo.jpg', { type: 'image/jpeg' })] },
+    })
+    await flushPromises()
+    expect(harness.toast.show).toHaveBeenCalledWith('请先选择磁盘中的文件夹，再上传照片和视频。')
+    expect(harness.upload).not.toHaveBeenCalled()
+    expect(harness.action).not.toHaveBeenCalled()
+  })
 
   it('removes the previous host snapshot while the next host loads or fails', async () => {
     const view = await mountWithHosts()

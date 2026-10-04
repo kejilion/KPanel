@@ -613,6 +613,10 @@ const visualClusterHosts = [
 
 let mockTerminalSessionCounter = 0
 const mockTerminalSessions = new Map()
+// Preview-only metadata. Submitted passwords are discarded and never persisted or logged.
+const mockDesktopCredentials = new Map()
+const mockDesktopSessions = new Set()
+let mockDesktopSessionCounter = 0
 
 let mockLightBatchEnrollmentCounter = 1
 let mockLightBatchEnrollments = [
@@ -1546,7 +1550,8 @@ createServer(async (request, response) => {
   if (await mockShareThemes(request, response, url, send, readJSON)) return
   if (await mockScenePacks(request, response, url, send, readJSON)) return
   if (await mockDesktopWallpapers(request, response, url, send)) return
-  if (await mockGallery(request, response, url, send, readJSON)) return
+  const windowsFileHost = visualClusterHosts.some((host) => host.id === url.searchParams.get('hostId') && host.pathStyle === 'windows-volumes')
+  if (await mockGallery(request, response, url, send, readJSON, windowsFileHost)) return
   // Appearance sync reads this on every page; without it previews show a load failure toast.
   if (url.pathname === '/api/v1/settings/appearance' && request.method === 'GET') {
     send(response, 200, mockAppearance)
@@ -1586,7 +1591,13 @@ createServer(async (request, response) => {
     } else if (remote && id === 'f'.repeat(32)) {
       send(response, 426, { title: '当前节点版本尚不支持远程历史，请升级节点后重试。', code: 'monitoring_upgrade_required' })
     } else {
-      send(response, 200, mockMonitoringHistory(url, remote))
+      const history = mockMonitoringHistory(url, remote)
+      const windowsHost = visualClusterHosts.find((host) => host.id === id && host.platform === 'windows')
+      if (remote && windowsHost) {
+        history.unavailableMetrics = windowsHost.unavailableMetrics || ['load', 'swap', 'diskIO', 'networkConnections']
+        history.containers = []
+      }
+      send(response, 200, history)
     }
     return
   }
@@ -2399,6 +2410,60 @@ createServer(async (request, response) => {
     })
     return
   }
+  if (request.method === 'POST' && url.pathname.startsWith('/api/v1/desktop-sessions')) {
+    const input = await readJSON(request)
+    const close = url.pathname.match(/^\/api\/v1\/desktop-sessions\/([^/]+)\/close$/)
+    if (close) {
+      mockDesktopSessions.delete(close[1])
+      send(response, 200, { closed: true })
+      return
+    }
+    const host = visualClusterHosts.find((item) => item.id === input.hostId && item.platform === 'windows')
+    if (!host) { send(response, 404, { code: 'desktop_not_found' }); return }
+    const metadata = mockDesktopCredentials.get(host.id)
+    if (url.pathname === '/api/v1/desktop-sessions/credentials/status') {
+      send(response, 200, metadata || { saved: false, managed: Boolean(host.desktopManaged) })
+      return
+    }
+    if (url.pathname === '/api/v1/desktop-sessions/credentials/save') {
+      if (typeof input.username !== 'string' || !input.username.trim() || input.username.length > 256 || typeof input.domain !== 'string' || input.domain.length > 256 || typeof input.password !== 'string' || !input.password || input.password.length > 1024) {
+        send(response, 422, { code: 'validation_failed' })
+        return
+      }
+      const saved = { saved: true, username: input.username.trim(), domain: input.domain.trim() }
+      input.password = ''
+      mockDesktopCredentials.set(host.id, saved)
+      send(response, 200, saved)
+      return
+    }
+    if (url.pathname === '/api/v1/desktop-sessions/credentials/clear') {
+      mockDesktopCredentials.delete(host.id)
+      send(response, 200, { saved: false })
+      return
+    }
+    if (url.pathname === '/api/v1/desktop-sessions/policy') {
+      host.desktopAvailable = Boolean(input.allowed)
+      host.desktopUnavailableReason = input.allowed ? '' : 'desktop_disabled_by_center'
+      send(response, 200, { allowed: Boolean(input.allowed) })
+      return
+    }
+    if (url.pathname === '/api/v1/desktop-sessions') {
+      if (!host.desktopAvailable) { send(response, 409, { code: 'desktop_unavailable' }); return }
+      if (input.useSavedCredentials && !metadata) { send(response, 409, { code: 'desktop_credentials_missing' }); return }
+      if (input.useManagedCredentials && !host.desktopManaged) { send(response, 502, { code: 'desktop_managed_unavailable' }); return }
+      if (mockDesktopSessions.size >= 4) { send(response, 429, { code: 'desktop_limit' }); return }
+      const sessionId = `visual-desktop-${++mockDesktopSessionCounter}`
+      mockDesktopSessions.add(sessionId)
+      send(response, 201, {
+        sessionId, nonce: 'mock-preview-only',
+        ...(input.useSavedCredentials ? { credentials: { username: metadata.username, domain: metadata.domain, password: 'mock-preview-not-a-real-password' } } : {}),
+        ...(input.useManagedCredentials ? { credentials: { username: 'kp_rdp_preview', domain: '.', password: 'mock-preview-not-a-real-password' } } : {}),
+      })
+      return
+    }
+    send(response, 404, { code: 'desktop_not_found' })
+    return
+  }
   if (request.method === 'POST' && url.pathname === '/api/v1/terminal-sessions') {
     const input = await readJSON(request)
     const host = input.hostId === 'local'
@@ -2579,6 +2644,17 @@ createServer(async (request, response) => {
     send(response, 200, mockTerminalCommandSnapshot())
     return
   }
+  if (request.method === 'POST' && url.pathname === '/api/v1/cluster/light-enrollments') {
+    const input = await readJSON(request)
+    send(response, 201, {
+      id: '8'.repeat(32), platform: input.platform === 'windows' ? 'windows' : 'linux',
+      command: input.platform === 'windows'
+        ? "Write-Output 'KPanel mock preview only: generate an installation command from your real panel.'"
+        : "printf '%s\\n' 'KPanel mock preview only: generate an installation command from your real panel.'",
+      expiresAt: new Date(Date.now() + 300_000).toISOString(),
+    })
+    return
+  }
   if (request.method === 'GET' && url.pathname === '/api/v1/cluster/light-batch-enrollments') {
     send(response, 200, { items: mockLightBatchEnrollments, total: mockLightBatchEnrollments.length })
     return
@@ -2597,7 +2673,10 @@ createServer(async (request, response) => {
     const now = new Date()
     const enrollment = {
       id,
-      command: `bash <(curl -fsSL https://kejilion.sh) kpanel node join 'kpb1.preview-${mockLightBatchEnrollmentCounter}'`,
+      platform: input.platform === 'windows' ? 'windows' : 'linux',
+      command: input.platform === 'windows'
+        ? "Write-Output 'KPanel mock preview only: generate an installation command from your real panel.'"
+        : `bash <(curl -fsSL https://kejilion.sh) kpanel node join 'kpb1.preview-${mockLightBatchEnrollmentCounter}'`,
       ...(String(input.namePrefix || '').trim() ? { namePrefix: String(input.namePrefix).trim() } : {}),
       maxUses,
       usedCount: 0,
