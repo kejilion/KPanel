@@ -2,6 +2,7 @@ import { createServer } from 'node:http'
 import { mockMonitoringHistory } from './mock-monitoring-history.mjs'
 import { mockBackups } from './mock-backups.mjs'
 import { mockEditorFiles, handleMockEditor } from './mock-file-editor.mjs'
+import { mockOfficeFiles, handleMockOffice } from './mock-office.mjs'
 import { mockShareThemes, activeShareTheme } from './mock-share-themes.mjs'
 import { mockScenePacks } from './mock-scene-packs.mjs'
 import { mockDesktopWallpapers } from './mock-desktop-wallpapers.mjs'
@@ -111,6 +112,7 @@ function mockDockerStats(item) {
 let mockRemoteDownloadJobCounter = 0
 const mockFiles = [
   ...mockEditorFiles,
+  ...mockOfficeFiles,
   ...[
     ['settings.json', true], ['report.csv', true], ['data.sqlite', false],
     ['slides.pptx', false], ['installer.deb', false], ['certificate.pem', true],
@@ -1875,6 +1877,7 @@ createServer(async (request, response) => {
     send(response, entry ? 200 : 404, entry || { title: '文件不存在', status: 404, code: 'not_found' })
     return
   }
+  if (await handleMockOffice(request, response, url, { send, readJSON })) return
   if (await handleMockEditor(request, response, url, { send, readJSON })) return
   if (request.method === 'GET' && url.pathname === '/api/v1/files/content') {
     if (url.searchParams.get('path') === '/kpanel-desktop.webp') {

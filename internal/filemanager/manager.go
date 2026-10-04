@@ -1439,11 +1439,12 @@ func (m *Manager) entry(virtual string, info os.FileInfo) contract.FileEntry {
 	}
 	owner, group := fileOwner(info)
 	editable, previewable := viewerSupport(info.Name(), mimeType, info.Size(), kind)
+	officeEditable := kind == "file" && info.Size() <= MaxOfficeBytes && officeKind(info.Name()) != ""
 	return contract.FileEntry{
 		Name: filepath.Base(virtual), Path: virtual, Kind: kind, MIME: mimeType,
 		SizeBytes: info.Size(), Mode: info.Mode().String(), Owner: owner, Group: group,
 		ModifiedAt: info.ModTime().UTC(), ResourceVersion: resourceVersion(virtual, info),
-		Editable: editable, Previewable: previewable,
+		Editable: editable, Previewable: previewable || officeEditable, OfficeEditable: officeEditable,
 	}
 }
 

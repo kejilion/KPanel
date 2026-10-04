@@ -2287,7 +2287,44 @@ export interface FileEntry {
   resourceVersion: string
   editable: boolean
   previewable: boolean
+  officeEditable?: boolean
 }
+
+export interface OfficeDocument {
+  entry: FileEntry
+  kind: 'docx' | 'xlsx' | 'pptx'
+  contentVersion: string
+  sections: OfficeSection[]
+  notes: string[]
+}
+export interface OfficeSection {
+  name: string
+  items: OfficeItem[]
+  width?: number
+  height?: number
+  rows?: number
+  columns?: number
+}
+export interface OfficeItem {
+  id?: string
+  kind: 'text' | 'cell' | 'image' | 'table'
+  text: string
+  editable: boolean
+  row?: number
+  column?: number
+  x?: number
+  y?: number
+  width?: number
+  height?: number
+  bold?: boolean
+  italic?: boolean
+  fontSize?: number
+  align?: string
+  image?: string
+  formula?: string
+  table?: OfficeItem[][]
+}
+export interface OfficeEdit { id: string; text: string }
 
 export interface FileEntryBatchResult {
   entries: FileEntry[]

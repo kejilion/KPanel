@@ -61,6 +61,8 @@ import type {
   FileDirectory,
   FileDownloadTicket,
   FileEntry,
+  OfficeDocument,
+  OfficeEdit,
   FileEntryBatchResult,
   FileRemoteDownloadEvent,
   FileRemoteDownloadInput,
@@ -2278,6 +2280,16 @@ export const api = {
           signal,
         })
       ).text(),
+    office: (path: string, fileHostId?: string | null, signal?: AbortSignal): Promise<OfficeDocument> =>
+      request<OfficeDocument>('/files/content', {
+        query: { path, mode: 'office', disposition: 'inline' }, fileHostId, signal,
+      }),
+    writeOffice: (path: string, officeEdits: OfficeEdit[], expectedResourceVersion: string,
+      expectedContentVersion: string, fileHostId?: string | null): Promise<FileWriteResult> =>
+      request<FileWriteResult>('/files/content', {
+        method: 'PUT', query: { path }, fileHostId,
+        body: { officeEdits, expectedResourceVersion, expectedContentVersion },
+      }),
     write: (
       path: string,
       content: string,

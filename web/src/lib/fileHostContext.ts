@@ -16,6 +16,9 @@ export function fileAPIForHost(hostId = '') {
     changeArchiveJob: (id: string, operation: 'cancel' | 'clear') => files.changeArchiveJob(id, operation, hostId),
     thumbnailUrl: (path: string, version: string) => files.thumbnailUrl(path, version, hostId),
     text: (path: string, signal?: AbortSignal) => files.text(path, hostId, signal),
+    office: (path: string, signal?: AbortSignal) => files.office(path, hostId, signal),
+    writeOffice: (path: string, edits: Parameters<typeof files.writeOffice>[1], version: string, contentVersion: string) =>
+      files.writeOffice(path, edits, version, contentVersion, hostId),
     write: (path: string, content: string, version: string) => files.write(path, content, version, hostId),
     action: (input: Parameters<typeof files.action>[0], signal?: AbortSignal) => files.action(input, signal, hostId),
     trash: () => files.trash(hostId),
