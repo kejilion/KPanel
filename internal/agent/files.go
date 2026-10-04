@@ -437,7 +437,7 @@ func (s *Server) fileRead(w http.ResponseWriter, r *http.Request, requestID stri
 		return
 	}
 	readMode := values.Get("mode")
-	if readMode != "" && readMode != "text" && readMode != "thumbnail" {
+	if readMode != "" && readMode != "text" && readMode != "thumbnail" && readMode != "office" {
 		writeProblem(w, requestID, http.StatusBadRequest, "invalid_file_mode", "文件读取模式无效", "")
 		return
 	}
@@ -474,6 +474,20 @@ func (s *Server) fileRead(w http.ResponseWriter, r *http.Request, requestID stri
 	}
 	transferContext, cancel := context.WithTimeout(r.Context(), transferTimeout)
 	defer cancel()
+	if readMode == "office" {
+		if r.Method != http.MethodGet || disposition != "inline" {
+			writeProblem(w, requestID, http.StatusBadRequest, "invalid_file_mode", "文件读取模式无效", "")
+			return
+		}
+		doc, err := s.files.ReadOffice(transferContext, values.Get("path"))
+		if err != nil {
+			writeFileProblem(w, requestID, err)
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		writeJSON(w, http.StatusOK, doc)
+		return
+	}
 	var file io.ReadSeekCloser
 	var entry contract.FileEntry
 	var err error
@@ -698,7 +712,13 @@ func (s *Server) fileWrite(w http.ResponseWriter, r *http.Request, requestID str
 		writeProblem(w, requestID, http.StatusBadRequest, "invalid_request", "文件内容无效", "")
 		return
 	}
-	entry, err := s.files.WriteText(r.Context(), r.URL.Query().Get("path"), input)
+	var entry contract.FileEntry
+	var err error
+	if input.OfficeEdits != nil || input.ExpectedContentVersion != "" {
+		entry, err = s.files.WriteOffice(r.Context(), r.URL.Query().Get("path"), input)
+	} else {
+		entry, err = s.files.WriteText(r.Context(), r.URL.Query().Get("path"), input)
+	}
 	if err != nil {
 		writeFileProblem(w, requestID, err)
 		return
@@ -999,6 +1019,10 @@ func writeFileProblem(w http.ResponseWriter, requestID string, err error) {
 		status, code, title = http.StatusUnprocessableEntity, "file_trash_not_restorable", "回收站项目无法恢复"
 	case errors.Is(err, filemanager.ErrInvalidArchive):
 		status, code, title = http.StatusUnprocessableEntity, "file_archive_invalid", "压缩包格式或内容无效"
+	case errors.Is(err, filemanager.ErrOfficeUnsupported):
+		status, code, title = http.StatusUnprocessableEntity, "office_unsupported", "文档结构暂不支持"
+	case errors.Is(err, filemanager.ErrOfficeInvalidEdit):
+		status, code, title = http.StatusUnprocessableEntity, "office_edit_invalid", "只能修改支持的文本内容"
 	case errors.Is(err, filemanager.ErrNotDirectory),
 		errors.Is(err, filemanager.ErrNotRegular):
 		status, code, title = http.StatusUnprocessableEntity, "file_type_invalid", "文件类型不支持此操作"

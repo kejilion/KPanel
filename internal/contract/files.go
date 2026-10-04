@@ -21,6 +21,7 @@ type FileEntry struct {
 	ResourceVersion string    `json:"resourceVersion"`
 	Editable        bool      `json:"editable"`
 	Previewable     bool      `json:"previewable"`
+	OfficeEditable  bool      `json:"officeEditable,omitempty"`
 	// ShareVersion is an Agent-local, content-bound proof used by public file shares.
 	// It is deliberately excluded from ordinary file API responses.
 	ShareVersion string `json:"-"`
@@ -162,8 +163,53 @@ type FileActionResult struct {
 }
 
 type FileWriteRequest struct {
-	Content                 string `json:"content"`
-	ExpectedResourceVersion string `json:"expectedResourceVersion"`
+	Content                 string       `json:"content"`
+	ExpectedResourceVersion string       `json:"expectedResourceVersion"`
+	OfficeEdits             []OfficeEdit `json:"officeEdits,omitempty"`
+	ExpectedContentVersion  string       `json:"expectedContentVersion,omitempty"`
+}
+
+// Office documents expose a bounded content view, never executable HTML or file URLs.
+type OfficeDocument struct {
+	Entry          FileEntry       `json:"entry"`
+	Kind           string          `json:"kind"`
+	ContentVersion string          `json:"contentVersion"`
+	Sections       []OfficeSection `json:"sections"`
+	Notes          []string        `json:"notes"`
+}
+
+type OfficeSection struct {
+	Name    string       `json:"name"`
+	Items   []OfficeItem `json:"items"`
+	Width   float64      `json:"width,omitempty"`
+	Height  float64      `json:"height,omitempty"`
+	Rows    int          `json:"rows,omitempty"`
+	Columns int          `json:"columns,omitempty"`
+}
+
+type OfficeItem struct {
+	ID       string         `json:"id,omitempty"`
+	Kind     string         `json:"kind"`
+	Text     string         `json:"text"`
+	Editable bool           `json:"editable"`
+	Row      int            `json:"row,omitempty"`
+	Column   int            `json:"column,omitempty"`
+	X        float64        `json:"x,omitempty"`
+	Y        float64        `json:"y,omitempty"`
+	Width    float64        `json:"width,omitempty"`
+	Height   float64        `json:"height,omitempty"`
+	Bold     bool           `json:"bold,omitempty"`
+	Italic   bool           `json:"italic,omitempty"`
+	FontSize float64        `json:"fontSize,omitempty"`
+	Align    string         `json:"align,omitempty"`
+	Image    string         `json:"image,omitempty"`
+	Formula  string         `json:"formula,omitempty"`
+	Table    [][]OfficeItem `json:"table,omitempty"`
+}
+
+type OfficeEdit struct {
+	ID   string `json:"id"`
+	Text string `json:"text"`
 }
 
 type FileWriteResult struct {

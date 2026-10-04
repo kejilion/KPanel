@@ -123,6 +123,7 @@ import type {
 } from '@/types/api'
 
 const FileEditorWorkspace = defineAsyncComponent(() => import('@/components/files/FileEditorWorkspace.vue'))
+const OfficeWorkspace = defineAsyncComponent(() => import('@/components/files/OfficeWorkspace.vue'))
 const route = useRoute()
 const router = useRouter()
 const desktopWindowActive = inject(desktopWindowActiveKey, computed(() => true))
@@ -170,7 +171,7 @@ function requestedFilePath(value: unknown): string | undefined {
   }
   return candidate
 }
-type PreviewMode = 'text' | 'image' | 'audio' | 'video' | 'pdf' | 'metadata'
+type PreviewMode = 'text' | 'office' | 'image' | 'audio' | 'video' | 'pdf' | 'metadata'
 type ArchiveFormat = 'tar.gz' | 'zip' | 'tar'
 type FileViewMode = 'list' | 'grid'
 
@@ -655,6 +656,7 @@ const allTrashSelected = computed(
 const previewMode = computed<PreviewMode>(() => {
   const entry = previewEntry.value
   if (!entry) return 'metadata'
+  if (entry.officeEditable) return 'office'
   if (entry.editable) return 'text'
   if (entry.mime?.startsWith('image/')) return 'image'
   if (entry.mime?.startsWith('audio/')) return 'audio'
@@ -3621,6 +3623,15 @@ onBeforeUnmount(() => {
         @saving="previewSaving = $event"
         @saved="loadDirectory()"
         @close="closePreview"
+      />
+      <OfficeWorkspace
+        v-else-if="previewEntry && previewMode === 'office'"
+        :key="`${fileHostId}:${previewEntry.path}`"
+        :entry="previewEntry"
+        :host-id="fileHostId"
+        @dirty="previewDirty = $event"
+        @saving="previewSaving = $event"
+        @saved="loadDirectory()"
       />
       <div v-else-if="previewEntry" class="media-viewer" :class="`media-viewer--${previewMode}`">
         <div v-if="previewMode === 'video'" class="media-player">

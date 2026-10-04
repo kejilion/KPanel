@@ -586,6 +586,13 @@ func (s *Server) handleFileWrite(w http.ResponseWriter, r *http.Request) {
 	}
 	target := r.URL.Query().Get("path")
 	change := map[string]any{"bytes": len(input.Content), "resourceVersion": input.ExpectedResourceVersion}
+	if input.OfficeEdits != nil {
+		bytes := 0
+		for _, edit := range input.OfficeEdits {
+			bytes += len(edit.Text)
+		}
+		change["bytes"], change["officeEdits"] = bytes, len(input.OfficeEdits)
+	}
 	if err := s.audit(r, session.User.ID, "file.write", "file", target, "intent", change); err != nil {
 		s.writeProblem(w, r, http.StatusServiceUnavailable, "audit_unavailable", "Audit storage unavailable", "")
 		return
