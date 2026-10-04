@@ -32,4 +32,12 @@ describe('operator latency presentation', () => {
     expect(latestOperatorLatency(series[0]!)).toBe(12.5)
     expect(latestOperatorLatency(series[1]!)).toBeNull()
   })
+
+  it('reports the median of the latest interval when it was recorded', () => {
+    const point = { collectedAt: '2026-08-03T00:00:00Z', latencyMilliseconds: 480, medianMilliseconds: 21, minimumMilliseconds: 18 }
+    expect(latestOperatorLatency({ ...series[0]!, points: [point] })).toBe(21)
+    expect(latestOperatorLatency({ ...series[0]!, points: [{ ...point, medianMilliseconds: null }] })).toBe(480)
+    expect(latestOperatorLatency({ ...series[0]!, points: [{ ...point, latencyMilliseconds: null }] })).toBeNull()
+    expect(latestOperatorLatency({ ...series[0]!, points: [] })).toBeUndefined()
+  })
 })

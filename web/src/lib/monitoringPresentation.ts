@@ -187,3 +187,11 @@ export function sliceMonitoringHistory(
     })),
   }
 }
+
+// The 90th percentile of band highs. A chart's value axis keeps room for the
+// usual peaks while a rare spike is clipped instead of flattening every line.
+export function bandCeiling(highs: readonly number[]): number {
+  const sorted = highs.filter((value) => Number.isFinite(value)).sort((left, right) => left - right)
+  if (!sorted.length) return Number.NEGATIVE_INFINITY
+  return sorted[Math.max(0, Math.ceil(sorted.length * 0.9) - 1)]!
+}

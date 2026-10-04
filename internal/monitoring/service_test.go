@@ -830,15 +830,21 @@ func TestLongBucketKeepsWeightedCPUAveragePeaksAndAvailability(t *testing.T) {
 
 	latencyA := 20.0
 	latencyB := 30.0
-	latency := appendOperatorLatencyBucket(nil, contract.MonitoringOperatorLatencyPoint{
-		CollectedAt: at, LatencyMilliseconds: &latencyA, SuccessCount: 10, FailureCount: 2,
-	}, 6*time.Hour)
-	latency = appendOperatorLatencyBucket(latency, contract.MonitoringOperatorLatencyPoint{
-		CollectedAt: at.Add(time.Hour), LatencyMilliseconds: &latencyB, SuccessCount: 8, FailureCount: 4,
-	}, 6*time.Hour)
+	medianA, minimumA, medianB, minimumB := 18.0, 15.0, 25.0, 22.0
+	latency := latencyBucket(6*time.Hour,
+		latencyBucketInput{contract.MonitoringOperatorLatencyPoint{
+			CollectedAt: at, LatencyMilliseconds: &latencyA, SuccessCount: 10, FailureCount: 2,
+		}, &medianA, &minimumA},
+		latencyBucketInput{contract.MonitoringOperatorLatencyPoint{
+			CollectedAt: at.Add(time.Hour), LatencyMilliseconds: &latencyB, SuccessCount: 8, FailureCount: 4,
+		}, &medianB, &minimumB},
+	)
+	// The hour with 10 answers outweighs the hour with 8: its median is the
+	// bucket's. The peak and the counts merge as before.
 	if len(latency) != 1 || latency[0].LatencyMilliseconds == nil ||
 		*latency[0].LatencyMilliseconds != 30 || latency[0].SuccessCount != 18 ||
-		latency[0].FailureCount != 6 {
+		latency[0].FailureCount != 6 || latency[0].MedianMilliseconds == nil || *latency[0].MedianMilliseconds != 18 ||
+		latency[0].MinimumMilliseconds == nil || *latency[0].MinimumMilliseconds != 15 {
 		t.Fatalf("unexpected long latency bucket: %#v", latency)
 	}
 }
@@ -1109,18 +1115,17 @@ func TestBucketAggregationKeepsResourcePeaksAndLatestCounters(t *testing.T) {
 
 	latencyA := 12.5
 	latencyB := 30.25
-	latency := appendOperatorLatencyBucket(nil, contract.MonitoringOperatorLatencyPoint{
-		CollectedAt: at, LatencyMilliseconds: &latencyA,
-	}, time.Minute)
-	latency = appendOperatorLatencyBucket(latency, contract.MonitoringOperatorLatencyPoint{
-		CollectedAt: at.Add(20 * time.Second), LatencyMilliseconds: nil,
-	}, time.Minute)
-	latency = appendOperatorLatencyBucket(latency, contract.MonitoringOperatorLatencyPoint{
-		CollectedAt: at.Add(40 * time.Second), LatencyMilliseconds: &latencyB,
-	}, time.Minute)
+	latency := latencyBucket(time.Minute,
+		latencyBucketInput{contract.MonitoringOperatorLatencyPoint{CollectedAt: at, LatencyMilliseconds: &latencyA}, &latencyA, &latencyA},
+		latencyBucketInput{contract.MonitoringOperatorLatencyPoint{CollectedAt: at.Add(20 * time.Second), LatencyMilliseconds: nil}, nil, nil},
+		latencyBucketInput{contract.MonitoringOperatorLatencyPoint{CollectedAt: at.Add(40 * time.Second), LatencyMilliseconds: &latencyB}, &latencyB, &latencyB},
+	)
+	// A timeout adds no latency sample; two answers give the lower median.
 	if len(latency) != 1 || latency[0].LatencyMilliseconds == nil ||
 		*latency[0].LatencyMilliseconds != latencyB ||
-		!latency[0].CollectedAt.Equal(at.Add(40*time.Second)) {
+		!latency[0].CollectedAt.Equal(at.Add(40*time.Second)) ||
+		latency[0].MedianMilliseconds == nil || *latency[0].MedianMilliseconds != latencyA ||
+		latency[0].MinimumMilliseconds == nil || *latency[0].MinimumMilliseconds != latencyA {
 		t.Fatalf("latency bucket did not preserve successful peak: %#v", latency)
 	}
 }
@@ -1476,9 +1481,12 @@ func maximumRollupRecord(at time.Time) diskRecord {
 	record.Host.DiskReadPeakRate = 1 << 30
 	record.Host.DiskWritePeakRate = 1 << 30
 	for _, target := range DefaultChecks() {
+		// An even sample count averages two values, so the median can carry
+		// more digits than any measurement; budget for that.
+		median, minimum := 999.9999995, 999.9999995
 		record.OperatorLatency = append(record.OperatorLatency, diskOperatorLatencyPoint{
 			ID: target.ID, LatencyMilliseconds: 999.9, Reachable: true,
-			SuccessCount: 6, FailureCount: 6,
+			SuccessCount: 6, FailureCount: 6, MedianMilliseconds: &median, MinimumMilliseconds: &minimum,
 		})
 	}
 	for index := 0; index < defaultMaxContainers; index++ {
@@ -1526,4 +1534,20 @@ func maximumRawRecord(at time.Time) diskRecord {
 		record.OperatorLatency = nil
 	}
 	return record
+}
+
+type latencyBucketInput struct {
+	point   contract.MonitoringOperatorLatencyPoint
+	median  *float64
+	minimum *float64
+}
+
+func latencyBucket(width time.Duration, inputs ...latencyBucketInput) []contract.MonitoringOperatorLatencyPoint {
+	series := &contract.MonitoringOperatorLatencySeries{}
+	builder := &latencySeriesBuilder{series: series}
+	for _, input := range inputs {
+		builder.add(input.point, input.median, input.minimum, width)
+	}
+	builder.finish()
+	return series.Points
 }

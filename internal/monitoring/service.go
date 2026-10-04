@@ -134,6 +134,11 @@ type diskOperatorLatencyPoint struct {
 	Reachable           bool    `json:"r,omitempty"`
 	SuccessCount        int     `json:"s,omitempty"`
 	FailureCount        int     `json:"f,omitempty"`
+	// Hourly rollups keep the median and minimum of the hour's successful
+	// samples beside the maximum in m. Raw samples and rollups written before
+	// these fields existed leave them unset; older binaries ignore them.
+	MedianMilliseconds  *float64 `json:"md,omitempty"`
+	MinimumMilliseconds *float64 `json:"mn,omitempty"`
 }
 
 type diskHostPoint struct {
@@ -804,10 +809,10 @@ func (s *Service) queryHistory(
 	var previousHost contract.MonitoringHostPoint
 	hasPreviousHost := false
 	previousContainers := make(map[string]contract.MonitoringContainerPoint)
-	operatorLatencySeries := make(map[string]*contract.MonitoringOperatorLatencySeries)
+	operatorLatencySeries := make(map[string]*latencySeriesBuilder)
 	for index := range result.OperatorLatency {
 		series := &result.OperatorLatency[index]
-		operatorLatencySeries[series.ID] = series
+		operatorLatencySeries[series.ID] = &latencySeriesBuilder{series: series}
 	}
 	scan := s.scanRecords
 	if hourly {
@@ -899,11 +904,17 @@ func (s *Service) queryHistory(
 					point.FailureCount = 1
 				}
 			}
+			median, minimum := latency.MedianMilliseconds, latency.MinimumMilliseconds
 			if latency.Reachable {
 				value := latency.LatencyMilliseconds
 				point.LatencyMilliseconds = &value
+				// A raw sample is its own median and minimum. Hourly rollups
+				// carry theirs, or nothing when written before they existed.
+				if !hourly {
+					median, minimum = &value, &value
+				}
 			}
-			series.Points = appendOperatorLatencyBucket(series.Points, point, bucket)
+			series.add(point, median, minimum, bucket)
 		}
 	}
 	scanned, skipped, err := scan(ctx, start, end, consume)
@@ -915,6 +926,9 @@ func (s *Service) queryHistory(
 			!current.CollectedAt.Before(start) && !current.CollectedAt.After(end) {
 			consume(current)
 		}
+	}
+	for _, series := range operatorLatencySeries {
+		series.finish()
 	}
 	result.ScannedBytes = scanned
 	result.SkippedLines = skipped
@@ -1099,30 +1113,94 @@ func checkCatalog(targets []Check) []contract.MonitoringOperatorLatencySeries {
 	return series
 }
 
-func appendOperatorLatencyBucket(
-	points []contract.MonitoringOperatorLatencyPoint,
+// latencySample is one successful measurement, or one hour's median standing
+// for the probes that answered in that hour.
+type latencySample struct {
+	value  float64
+	weight int
+}
+
+// latencySeriesBuilder merges check results into chart points of one bucket
+// width. Each point keeps the highest latency, as before, and gains the
+// weighted median and the minimum of what its bucket covered.
+type latencySeriesBuilder struct {
+	series  *contract.MonitoringOperatorLatencySeries
+	samples []latencySample
+	minimum *float64
+}
+
+func (b *latencySeriesBuilder) add(
 	point contract.MonitoringOperatorLatencyPoint,
+	median *float64,
+	minimum *float64,
 	width time.Duration,
-) []contract.MonitoringOperatorLatencyPoint {
+) {
+	points := b.series.Points
 	bucket := point.CollectedAt.Unix() / int64(width.Seconds())
-	if len(points) == 0 ||
-		points[len(points)-1].CollectedAt.Unix()/int64(width.Seconds()) != bucket {
+	if len(points) == 0 || points[len(points)-1].CollectedAt.Unix()/int64(width.Seconds()) != bucket {
+		b.closeBucket()
 		points = append(points, point)
 		if len(points) > maxHistoryPoints {
 			copy(points, points[len(points)-maxHistoryPoints:])
 			points = points[:maxHistoryPoints]
 		}
-		return points
+		b.series.Points = points
+	} else {
+		last := &points[len(points)-1]
+		last.SuccessCount += point.SuccessCount
+		last.FailureCount += point.FailureCount
+		if point.LatencyMilliseconds != nil &&
+			(last.LatencyMilliseconds == nil || *point.LatencyMilliseconds > *last.LatencyMilliseconds) {
+			last.LatencyMilliseconds = point.LatencyMilliseconds
+		}
+		last.CollectedAt = point.CollectedAt
 	}
-	last := &points[len(points)-1]
-	last.SuccessCount += point.SuccessCount
-	last.FailureCount += point.FailureCount
-	if point.LatencyMilliseconds != nil &&
-		(last.LatencyMilliseconds == nil || *point.LatencyMilliseconds > *last.LatencyMilliseconds) {
-		last.LatencyMilliseconds = point.LatencyMilliseconds
+	if median != nil {
+		b.samples = append(b.samples, latencySample{value: *median, weight: max(1, point.SuccessCount)})
 	}
-	last.CollectedAt = point.CollectedAt
-	return points
+	if minimum != nil && (b.minimum == nil || *minimum < *b.minimum) {
+		value := *minimum
+		b.minimum = &value
+	}
+}
+
+// closeBucket writes the open bucket's median and minimum to its point.
+func (b *latencySeriesBuilder) closeBucket() {
+	points := b.series.Points
+	if len(points) > 0 {
+		last := &points[len(points)-1]
+		if median, ok := weightedMedian(b.samples); ok {
+			last.MedianMilliseconds = &median
+		}
+		last.MinimumMilliseconds = b.minimum
+	}
+	b.samples = b.samples[:0]
+	b.minimum = nil
+}
+
+func (b *latencySeriesBuilder) finish() { b.closeBucket() }
+
+// weightedMedian returns the value at the middle of the combined weight. Over
+// single measurements this is the lower median; over hourly medians it is an
+// estimate, since the hours' individual samples are no longer available.
+func weightedMedian(samples []latencySample) (float64, bool) {
+	total := 0
+	for _, sample := range samples {
+		total += sample.weight
+	}
+	if total == 0 {
+		return 0, false
+	}
+	sorted := append([]latencySample(nil), samples...)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].value < sorted[j].value })
+	half := (total + 1) / 2
+	for _, sample := range sorted {
+		half -= sample.weight
+		if half <= 0 {
+			return sample.value, true
+		}
+	}
+	return sorted[len(sorted)-1].value, true
 }
 
 func appendHostBucket(

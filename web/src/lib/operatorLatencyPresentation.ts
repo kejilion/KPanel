@@ -23,6 +23,10 @@ export function mergeOperatorLatencyVisibility(
   return next
 }
 
+// The latest point's typical latency: its median where recorded, otherwise
+// the single value older rollups kept. null still means every probe failed.
 export function latestOperatorLatency(series: MonitoringOperatorLatencySeries): number | null | undefined {
-  return series.points.at(-1)?.latencyMilliseconds
+  const point = series.points.at(-1)
+  if (!point || point.latencyMilliseconds === null) return point?.latencyMilliseconds
+  return point.medianMilliseconds ?? point.latencyMilliseconds
 }

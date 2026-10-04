@@ -324,9 +324,14 @@ const operatorLatencyChart = computed<TrendSeries[]>(() => operatorLatencyRoutes
   .map((series) => ({
     label: operatorLatencyLabel(series),
     color: monitoringCheckColor(series.id),
-    points: series.points.flatMap((point) => point.latencyMilliseconds === null
-      ? []
-      : [{ at: point.collectedAt, value: point.latencyMilliseconds }]),
+    // The line is the median where recorded, with the band from lowest to
+    // highest; intervals only older rollups cover keep their single value.
+    points: series.points.flatMap((point) => {
+      if (point.latencyMilliseconds === null) return []
+      const median = point.medianMilliseconds
+      if (median === undefined || median === null) return [{ at: point.collectedAt, value: point.latencyMilliseconds }]
+      return [{ at: point.collectedAt, value: median, low: point.minimumMilliseconds ?? median, high: point.latencyMilliseconds }]
+    }),
   }))
   .filter((series) => series.points.length > 0))
 const operatorLatencyVisibleCount = computed(() => operatorLatencyRoutes.value
@@ -1201,7 +1206,7 @@ onBeforeUnmount(() => {
               <button type="button" @click="showAllOperatorLatency(false)">全隐藏</button>
             </div>
           </div>
-          <p class="operator-latency-note">每 5 分钟统一采样；超时记为缺测，不记作 0 ms。曲线支持拖拽框选并沿用上方时间范围。</p>
+          <p class="operator-latency-note">每 5 分钟统一采样；超时记为缺测，不记作 0 ms。曲线是区间内的中位延迟，显示 3 条以内时色带标出最低到最高；曲线支持拖拽框选并沿用上方时间范围。</p>
           <TrendChart
             v-if="operatorLatencyChart.length"
             :series="operatorLatencyChart"

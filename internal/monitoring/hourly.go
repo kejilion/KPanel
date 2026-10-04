@@ -15,6 +15,10 @@ import (
 
 const maxHistoricalContainerMetadataBytes = 64
 
+// An hour holds 12 samples at the 5-minute default. The bound only matters
+// if the interval is shortened; later samples then no longer move the median.
+const maxHourlyLatencySamples = 120
+
 type hourlyContainerAccumulator struct {
 	point    diskContainerPoint
 	seenAt   time.Time
@@ -39,6 +43,8 @@ type hourlyAccumulator struct {
 	previousContainers map[string]hourlyPreviousContainer
 	latency            map[string]diskOperatorLatencyPoint
 	latencyOrder       []string
+	// Successful samples of the hour per check, bounded, for the median.
+	latencySamples map[string][]float64
 }
 
 func emptyHourlyAccumulator(hour time.Time) *hourlyAccumulator {
@@ -48,6 +54,7 @@ func emptyHourlyAccumulator(hour time.Time) *hourlyAccumulator {
 		previousContainers: make(map[string]hourlyPreviousContainer, maxScannedSeries),
 		latency:            make(map[string]diskOperatorLatencyPoint, MaxChecks),
 		latencyOrder:       make([]string, 0, MaxChecks),
+		latencySamples:     make(map[string][]float64, MaxChecks),
 	}
 }
 
@@ -108,6 +115,9 @@ func (a *hourlyAccumulator) add(record diskRecord) {
 		}
 	}
 	for _, latency := range record.OperatorLatency {
+		if latency.Reachable && len(a.latencySamples[latency.ID]) < maxHourlyLatencySamples {
+			a.latencySamples[latency.ID] = append(a.latencySamples[latency.ID], latency.LatencyMilliseconds)
+		}
 		current, exists := a.latency[latency.ID]
 		success, failure := latency.SuccessCount, latency.FailureCount
 		if success == 0 && failure == 0 {
@@ -214,7 +224,11 @@ func (a *hourlyAccumulator) finalized() diskRecord {
 	}
 	record.OperatorLatency = make([]diskOperatorLatencyPoint, 0, len(a.latency))
 	for _, id := range a.latencyOrder {
-		record.OperatorLatency = append(record.OperatorLatency, a.latency[id])
+		point := a.latency[id]
+		if median, minimum, ok := medianAndMinimum(a.latencySamples[id]); ok {
+			point.MedianMilliseconds, point.MinimumMilliseconds = &median, &minimum
+		}
+		record.OperatorLatency = append(record.OperatorLatency, point)
 	}
 	return record
 }
@@ -565,4 +579,20 @@ func (s *Service) scanHourlyRecords(
 		scanned += shard.size
 	}
 	return scanned, skipped, nil
+}
+
+// medianAndMinimum reports the median and the smallest of samples. The input is
+// left unsorted because the accumulator keeps appending to it.
+func medianAndMinimum(samples []float64) (median, minimum float64, ok bool) {
+	if len(samples) == 0 {
+		return 0, 0, false
+	}
+	sorted := append([]float64(nil), samples...)
+	sort.Float64s(sorted)
+	middle := len(sorted) / 2
+	median = sorted[middle]
+	if len(sorted)%2 == 0 {
+		median = (sorted[middle-1] + sorted[middle]) / 2
+	}
+	return median, sorted[0], true
 }

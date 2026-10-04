@@ -49,6 +49,50 @@ describe('TrendChart', () => {
     wrapper.unmount()
   })
 
+  it('draws a clipped band and shows its range while few series carry one', async () => {
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(elementBox)
+    const banded = (label: string): TrendSeries => ({
+      label,
+      color: 'blue',
+      // Twelve 5-minute points; the sixth spikes to 900 ms.
+      points: Array.from({ length: 12 }, (_, index) => ({
+        at: new Date(Date.UTC(2026, 7, 5, 0, index * 5)).toISOString(),
+        value: 20 + (index % 3), low: 18, high: index === 5 ? 900 : 40,
+      })),
+    })
+    const wrapper = mount(TrendChart, {
+      props: { series: [banded('电信 · 北京')], formatter: (value: number) => `${value} ms` },
+    })
+    const band = wrapper.get('.trend-chart__band')
+    expect(band.attributes('d')).toMatch(/^M.+Z$/)
+    expect(band.attributes('clip-path')).toMatch(/^url\(#trend-chart-plot-\d+\)$/)
+    // The 900 ms peak is above the 90th percentile ceiling, so the axis stays
+    // near the median line and the band is clipped.
+    const ticks = wrapper.findAll('.trend-chart__tick').map((tick) => Number.parseFloat(tick.text()))
+    expect(Math.max(...ticks)).toBeLessThan(900)
+
+    wrapper.get('svg').element.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, clientX: 360, clientY: 80 }))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('.trend-chart__tooltip').text()).toContain('22 ms18 ms–900 ms')
+
+    await wrapper.setProps({ series: ['甲', '乙', '丙', '丁'].map(banded) })
+    expect(wrapper.findAll('.trend-chart__band')).toHaveLength(0)
+    expect(wrapper.findAll('.trend-chart__line')).toHaveLength(4)
+    wrapper.unmount()
+  })
+
+  it('draws no band for plain series', () => {
+    const wrapper = mount(TrendChart, {
+      props: { series: [{ label: 'CPU', color: 'red', points: [
+        { at: '2026-08-05T00:00:00Z', value: 20 },
+        { at: '2026-08-05T00:05:00Z', value: 30 },
+      ] }] },
+    })
+    expect(wrapper.find('.trend-chart__band').exists()).toBe(false)
+    expect(wrapper.find('clipPath').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('can hide a duplicate persistent legend without disabling the chart', () => {
     const wrapper = mount(TrendChart, {
       props: {
