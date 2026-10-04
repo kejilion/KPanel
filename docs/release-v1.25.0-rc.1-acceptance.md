@@ -117,7 +117,7 @@
 首个时间是重放业务候选保留的原 author date；本轮实际重放时间2026-10-04T10:20:51+08:00。前述 L3/预检失败属于发布流程拦截，均未逃逸到公开失败版本或生产；不能计为产品变更失败，不能把 preview 标签计入生产吞吐。
 
 <!-- kpanel-release-process-metrics:start -->
-- 已记录发布流程异常或无效证据拦截次数：18
+- 已记录发布流程异常或无效证据拦截次数：19
 - 其中生产写操作开始后异常次数：0
 <!-- kpanel-release-process-metrics:end -->
 
@@ -193,10 +193,10 @@
   {
     "fingerprint": "evidence/l3-harvest/read-before-copy-complete",
     "position": "before-production-write",
-    "count": 1,
-    "impact": "本机在scp完成前校验r2 checksum文件，文件尚未落盘；无效校验未采纳",
-    "recoveryEvidence": "tool chunk a404c7; both failed remote evidence checksum lists verified after completed scp",
-    "permanentAction": "发布责任人：读取操作数先由rg/git目录清单资格化，实际argv/文件schema来自唯一入口；网络及取证使用已核代理/有界命令和完成后摘要校验。2026-10-11前复核；退出条件为对应真实入口成功且失败原件保留。重复指纹须在下一次L3生产写入前修复唯一入口并补回归，本RC禁止生产。",
+    "count": 2,
+    "impact": "本机在scp完成前校验r2 checksum文件，文件尚未落盘；无效校验未采纳；收尾push仍运行时提前读取未落盘state，Get-Content与collector参数失败，同属读取完成状态前消费证据；无错误main/产品写入。",
+    "recoveryEvidence": "tool chunk a404c7; both failed remote evidence checksum lists verified after completed scp; tool chunks 664b8e(session98059), 19cf2a(premature state/collector fail), e7e6a6(terminal push PASS)",
+    "permanentAction": "发布责任人：读取操作数先由rg/git目录清单资格化，实际argv/文件schema来自唯一入口；网络及取证使用已核代理/有界命令和完成后摘要校验。2026-10-11前复核；退出条件为对应真实入口成功且失败原件保留。重复指纹须在下一次L3生产写入前修复唯一入口并补回归，本RC禁止生产。 所有依赖动作必须显式验证前置工具exit_code/终态；返回session_id时先等待完成，再读取state或生成collector argv。",
     "historicalReleases": []
   },
   {
