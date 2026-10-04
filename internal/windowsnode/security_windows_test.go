@@ -146,41 +146,11 @@ func TestProtectedDescriptorBoundaries(t *testing.T) {
 		})
 	}
 }
-func TestUnsignedExecutableFailsClosed(t *testing.T) {
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if VerifySignature(exe, TrustPolicy{Publisher: "CN=KPanel Test"}) == nil {
-		t.Fatal("unsigned executable accepted")
-	}
-	if VerifySignature(exe, TrustPolicy{}) == nil {
-		t.Fatal("missing publisher accepted")
-	}
-}
 func TestNativeReadOnlyPlatformFacts(t *testing.T) {
 	if DataDir() == "" || InstallDir() == "" {
 		t.Fatal("known folder unavailable")
 	}
 	if _, err := DomainJoined(); err != nil {
 		t.Fatal(err)
-	}
-}
-
-// An optional already-installed, signed executable exercises the positive
-// WinTrust signer extraction without downloading or trusting a test CA.
-func TestNativeSignedFixture(t *testing.T) {
-	path, publisher := os.Getenv("KPANEL_TEST_SIGNED_EXE"), os.Getenv("KPANEL_TEST_SIGNED_PUBLISHER")
-	if path == "" || publisher == "" {
-		t.Skip("no signed local fixture specified")
-	}
-	if err := VerifySignature(path, TrustPolicy{Publisher: publisher}); err != nil {
-		t.Fatal(err)
-	}
-	if VerifySignature(path, TrustPolicy{Publisher: "CN=Wrong publisher"}) == nil {
-		t.Fatal("valid chain allowed the wrong publisher")
-	}
-	if VerifySignature(path, TrustPolicy{Publisher: publisher, ProfileOID: "1.2.3.4.5.6.7.8.9"}) == nil {
-		t.Fatal("valid chain allowed the wrong signing profile")
 	}
 }

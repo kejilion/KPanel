@@ -27,7 +27,7 @@ export function mergeWindowsRelease(source, destination) {
   if (hashes.size !== windowsNodeAssets.length) throw new Error('Incomplete Windows checksum manifest');
   for (const name of windowsNodeAssets) {
     const digest = createHash('sha256').update(readFileSync(resolve(source, name))).digest('hex');
-    if (digest !== hashes.get(name)) throw new Error('Windows signed artifact checksum mismatch: ' + name);
+    if (digest !== hashes.get(name)) throw new Error('Windows artifact checksum mismatch: ' + name);
   }
   const combinedPath = resolve(destination, 'SHA256SUMS');
   const combined = readFileSync(combinedPath, 'utf8');
@@ -40,6 +40,6 @@ export function mergeWindowsRelease(source, destination) {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  if (process.argv.length !== 4) throw new Error('Usage: ' + basename(process.argv[1]) + ' <signed-artifact-directory> <release-directory>');
+  if (process.argv.length !== 4) throw new Error('Usage: ' + basename(process.argv[1]) + ' <artifact-directory> <release-directory>');
   mergeWindowsRelease(resolve(process.argv[2]), resolve(process.argv[3]));
 }

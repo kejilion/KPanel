@@ -39,18 +39,16 @@ jobs:
       - name: Verify native Windows boundaries and release scripts
         shell: pwsh
         run: |
-          $env:KPANEL_TEST_SIGNED_EXE = Join-Path $PSHOME 'pwsh.exe'
-          $fixtureSignature = Get-AuthenticodeSignature -LiteralPath $env:KPANEL_TEST_SIGNED_EXE
-          if ($fixtureSignature.Status -ne 'Valid' -or $null -eq $fixtureSignature.SignerCertificate) { throw 'A trusted local signing fixture is required.' }
-          $env:KPANEL_TEST_SIGNED_PUBLISHER = $fixtureSignature.SignerCertificate.Subject
           go test ./internal/windowsnode ./internal/desktopbridge
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go test ./internal/cluster -run '^TestWindows(Bootstrap|Enrollment|DesktopEnrollment)'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           go test -v ./cmd/kejilion-node ./internal/hostpty ./internal/terminal ./internal/systeminfo ./internal/filemanager -run '^TestWindows'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           go vet ./internal/windowsnode ./internal/desktopbridge ./cmd/kejilion-node ./internal/hostpty ./internal/terminal ./internal/systeminfo ./internal/filemanager
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ./scripts/tests/windows-node-release.test.ps1
-          ./scripts/tests/windows-installer-signature.test.ps1
+          ./scripts/tests/windows-installer-integrity.test.ps1
           node --test scripts/tests/merge-windows-release.test.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Compile both Windows node architectures

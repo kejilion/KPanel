@@ -46,7 +46,7 @@ var (
 	ErrInvalidOrigin               = errors.New("invalid cluster origin")
 	ErrLightHTTPSOrigin            = errors.New("light node requires an HTTPS origin")
 	ErrLightBatchInvalid           = errors.New("light node batch enrollment settings are invalid")
-	ErrWindowsInstallerUnavailable = errors.New("Windows node signing identity is not configured")
+	ErrWindowsInstallerUnavailable = errors.New("Windows node release version is not available")
 	ErrPrivateOrigin               = errors.New("cluster origin is outside the configured private network allowlist")
 	ErrPairingCode                 = errors.New("pairing code is invalid or expired")
 	ErrAuthentication              = errors.New("federation authentication failed")

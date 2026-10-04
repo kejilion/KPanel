@@ -21,13 +21,13 @@
 - 用户确认的交互：Windows 与 Linux 同列在终端左侧主机列表，点击 Windows 主机后先选择
   “命令行（PowerShell）”或“远程桌面（RDP）”，随后在右侧打开所选会话。
 - 集群添加弹窗在 Linux 接入入口下增加 Windows 入口；单台和批量均生成一行管理员 PowerShell 命令，
-  自动下载、校验、安装与接入。执行安装脚本前先完成签名及发布者校验。
+  自动下载、校验、安装与接入。执行安装脚本前先完成固定版本官方 HTTPS 来源及 SHA-256 校验。
 - 首批验证 amd64；安装器作为 KPanel Release 资产。`scriptLinkageState=not-required`（无需发布脚本），
   脚本基线仍固定 `c981fb6c8b481981ac7a006e102e111e435f6d30` / SHA-256
   `0eb9a82860e6cf6cf76d4f946782a02fd90bef8e7be5a3fa724b93920d8e35cb`。
 - 允许修改节点、相关后端、Web、Windows 安装构建与本设计；不修改版本号、历史发布记录、Linux 脚本。
   仅形成独立本地候选，不推送、不合并 main、不打标签、不发布或部署。
-- 生命周期与宿主权限按 L3 风险设计；开发执行变更门禁、平台测试、独立复核。正式 L3、签名发行物、
+- 生命周期与宿主权限按 L3 风险设计；开发执行变更门禁、平台测试、独立复核。正式 L3、公开校验和发行物、
   Windows Server 干净实例安装/重启验收分别记录，缺少证据不解释为通过。
 - 可见交互在精确候选提交后提供 UI Mock acceptance 预览；该证据不能证明真实 RDP 或系统服务生命周期。
 
@@ -35,7 +35,7 @@
 
 用户要求 `rc2 加入Windows节点全部功能`，本轮从已批准主线 `4f4996da03523a7d0dd788a28e0b57e9decaf045` 在 `feature/windows-node-rc2` 重放聚合候选 `8554b904916f7c19c787a748e836f63369d79e2b` 的完整产品差异。原聚合候选中的旧审计 run-11/run-12 不覆盖当前主线同名记录；旧证据仅作为复核输入，新覆盖须绑定整合提交。
 
-范围包含 P1–P4、托管管理员/保存账户 RDP 和 Windows 多卷图库；终端冲突保留当前主线同主机多终端、编号复用、刷新回收及输入协议，RDP 每主机一个独立页签，配额独立。当前状态为开发整合，签名配置、正式签名资产与第 21 节原生验收未确认，不声明 Windows 全功能已准入或 RC2 已发布。安装器沿用 KPanel Release 来源，`scriptLinkageState=not-required`，不改 Linux 脚本。最终发布由独立发布责任任务完成。
+范围包含 P1–P4、托管管理员/保存账户 RDP 和 Windows 多卷图库；终端冲突保留当前主线同主机多终端、编号复用、刷新回收及输入协议，RDP 每主机一个独立页签，配额独立。RC3 移除外部签名机制并以未签名 Windows 测试附件发行；第 21 节原生验收由用户后续承担，状态 owner-deferred/尚未验证，不以源码/CI 通过宣称真机已准入。RC2 签名检查失败原件和不可变 tag 保留，不宣称 RC2 已发布。安装器沿用 KPanel Release 来源，`scriptLinkageState=not-required`，不改 Linux 脚本。最终发布由独立发布责任任务完成。
 
 ## 1. 目标与原则
 
@@ -45,7 +45,7 @@
 2. **轻量。** 不新增第三方 Go 依赖（`golang.org/x/sys` 已覆盖所需 API）；采集不用 WMI，稳态不派生子进程；
    常驻进程与 Linux 一致：4 个服务加 1 个计划任务；远程桌面不新增进程。
 3. **安全水位不低于 Linux 轻量节点。** 只出站 HTTPS；低权限遥测与 SYSTEM broker 分离；私钥只有 SYSTEM 可读；
-   发布物同时校验 SHA-256 和 Authenticode；不开放任何本地监听端口或命名管道。
+   发布物校验固定官方 HTTPS 来源与 SHA-256；不开放任何本地监听端口或命名管道。
 4. **稳定。** 服务失败自动恢复；更新失败自动回滚；重启、休眠、Windows 更新后无需人工介入即可恢复上报。
 5. **不设操作护栏，但保留攻击面防护。** 遵守 `PROJECT_RULES.md` 第 2、3 节：管理员通过终端仍拥有 SYSTEM
    能力；本文的限制只针对未授权访问、注入、篡改、泄密和资源耗尽。
@@ -190,10 +190,9 @@ Windows 主机 ─────────────────────�
 界面在原 Linux 接入卡下显示 Windows 卡，批量接入可选目标系统。
 
 一行命令先下载固定 KPanel Release 版本的 `install-windows.ps1` 到受保护的 Program Files 临时目录，
-校验 Authenticode、发布者 Subject 和可选 profile EKU OID 后才调用脚本；不得直接执行下载文本。
-令牌、名称和信任策略以 UTF-8 Base64 表达式编码，避免 PowerShell Unicode 引号被解释为语法。
-中心通过 `KEJILION_PANEL_WINDOWS_NODE_PUBLISHER` 配置信任发布者，缺失时生成接口失败关闭，
-可选 `KEJILION_PANEL_WINDOWS_NODE_PROFILE_OID` 进一步绑定签名 profile。
+创建暂存目录前验证祖先 owner/ACL，并在创建时封闭 SYSTEM/Administrators ACL；从同一固定 tag 下载唯一 SHA256SUMS 条目，脚本摘要匹配后才调用。不得直接执行下载文本。
+令牌和名称以 UTF-8 Base64 表达式编码，避免 PowerShell Unicode 引号被解释为语法。
+无需发布者/profile 配置。未签名产物依赖官方 HTTPS 与同源清单，仅提供完整性保证。
 
 ### 5.2 安装器步骤
 
@@ -201,8 +200,8 @@ Windows 主机 ─────────────────────�
 2. 检测版本（`RtlGetVersion` 等价信息）、架构（`IsWow64Process2`）、版本类型；不在支持矩阵内时明确失败。
 3. 下载 `SHA256SUMS`（≤ 64 KiB）和 `kejilion-node-windows-<arch>.exe` 到受保护的临时目录；
    与 Linux 相同，`latest` 只解析一次并固定到 `releases/download/v<semver>/`。
-4. 校验 SHA-256，再用 Windows 信任 API 校验 Authenticode、发布者 Subject 与可选 profile EKU OID。任一失败即中止。
-   不固定会每日轮换的叶证书指纹；发布必须带可信时间戳，轮换发布主体/profile 属显式策略变更。
+4. 校验脚本自身与 EXE 的唯一 SHA-256 条目、文件限额与 reparse/目录权限；任一失败即中止。
+   移除 Authenticode 强制机制，不改 ExecutionPolicy 或系统保护；旧 trust.json 不再读取。
 5. 按 4.2 创建目录与 ACL，安装二进制。
 6. 通过受保护、SYSTEM-only 的 bootstrap handoff 完成接入、收据与服务安装，由二进制通过
    `svc/mgr` 注册服务：ImagePath 带引号；自动启动；服务 SID 类型；所需特权；失败恢复动作
@@ -306,8 +305,8 @@ Windows 接入请求带 `platform=windows`；旧中心严格解析请求，因�
 | 触发 | 计划任务 `\KPanel\KejilionNodeUpdate`，SYSTEM；开机 15–30 分钟后首次运行，之后每小时；随机延迟 0–15 分钟；不允许多实例并行；单次最长 30 分钟 |
 | 通道 | 只跟踪稳定版，与 Linux 相同；中心不推送更新，不支持远程切换版本 |
 | 检查 | 先下载 `SHA256SUMS`；本平台摘要未变化则结束 |
-| 校验 | SHA-256 + Authenticode 固定发布者；再在暂存目录执行新二进制的 `version`，确认协议与运行时代数不降级 |
-| 替换 | 稳定 bootstrap 入口与受保护更新事务记录配合；在停止服务前完成下载、签名和摘要校验，替换故障恢复旧二进制 |
+| 校验 | 固定官方 HTTPS + SHA-256；再在暂存目录执行新二进制的 `version`，确认协议与运行时代数不降级 |
+| 替换 | 稳定 bootstrap 入口与受保护更新事务记录配合；在停止服务前完成下载、目录权限和摘要校验，替换故障恢复旧二进制 |
 | 重启 | 启动已安装的服务；30 秒内全部已启用服务连续 3 秒处于 SCM `active` 才通过健康检查；此状态不证明网络接入成功 |
 | 回滚 | 任一已启用服务健康检查失败：恢复 `.old` 并重启旧服务；更新状态记录 `failed` / `rollback`，事务记录保留恢复所需的摘要 |
 | 状态 | `update-status.json` 沿用现有字段与枚举；不保存 stderr、URL 或凭据 |
@@ -550,7 +549,7 @@ spike 结论不达标就终止 P4，P1–P3 不受影响。
 | `internal/cluster/types.go` | Host DTO 增加 `platform`、`terminalShell`、`pathStyle`；P4 增加 `desktopAvailable` |
 | `internal/cluster/file_stream_transport.go`、`desktop_stream.go` | 增加独立 `light-desktop-control` / `light-desktop-data` 角色 |
 | `internal/panel` | P4 增加桌面会话 API 与 WebSocket 端点 |
-| `.github/workflows/release.yml` | 构建、签名 `kejilion-node-windows-{amd64,arm64}.exe`，写入 `SHA256SUMS` |
+| `.github/workflows/release.yml` | 构建并校验 `kejilion-node-windows-{amd64,arm64}.exe`，写入 `SHA256SUMS` |
 | CI | 增加 Windows 构建，以及 `cmd/kejilion-node`、`internal/systeminfo`、`internal/hostpty`、`internal/filemanager` 的 Windows 单元测试 |
 | `web/src/lib/operatingSystem.ts` | 增加 Windows 识别 |
 | `web/src/lib/batchCompletion.ts` | PowerShell 包装与 int32 退出码 |
@@ -584,12 +583,12 @@ spike 结论不达标就终止 P4，P1–P3 不受影响。
 | DLL 劫持 | 静态 Go 二进制；全部用 `NewLazySystemDLL`；二进制只放 `%ProgramFiles%` | 代码检查禁止 `NewLazyDLL`；实机用 Procmon 检查加载路径 |
 | 密钥文件 ACL 被放宽 | 启动前 `GetSecurityInfo` 校验，失败拒绝启动 | 改坏 ACL 后启动必须失败 |
 | 文件管理路径绕过（8.3、ADS、设备路径、UNC、末尾点） | 第 10 节拒绝规则；规范路径比较 | 表驱动测试覆盖每一类 |
-| 供应链篡改 | SHA-256 + Authenticode 固定发布者；更新不降级 | 篡改字节、换签名、旧版本三类测试都必须拒绝 |
+| 供应链篡改 | 固定官方 HTTPS + SHA-256；更新不降级，同源清单不提供独立发布者证明 | 篡改字节、不受信来源、旧版本都必须拒绝 |
 | 令牌泄露 | 不进注册表和服务参数；环境变量选项；短有效期建议 | 安装后检查注册表与服务配置不含令牌 |
 | 伪造遥测或重放 | 沿用 HMAC、时间窗、重放缓存 | 沿用现有测试 |
 | 中心被攻破 | 与 Linux 相同：可在节点获得 SYSTEM。远程桌面额外暴露“看屏幕、操作已登录会话”的能力，因此默认不安装 | 文档与接入界面明确说明 |
 | 加入域的机器上的横向移动 | 安装时检测入域；建议只装遥测（D3） | 实机检查默认能力 |
-| 杀毒软件或 EDR 误报导致节点被隔离 | 签名；VERSIONINFO；不加壳；发布前提交 Defender 误报复核 | 首批实机上 Defender 默认策略不告警 |
+| 杀毒软件或 EDR 误报导致节点被隔离 | 未签名状态明确告知；不加壳，不关闭系统保护 | Defender/SmartScreen/WDAC/AppLocker 兼容性尚未验证，由用户后续真机验收 |
 | 终端子进程残留 | Job Object `KILL_ON_JOB_CLOSE` | 在终端中启动后台进程后关闭会话，进程必须消失 |
 | 远程桌面被用作端口转发 | 目标固定为本机 RDP 端口 | 篡改请求指定其他地址必须失败 |
 
@@ -643,7 +642,7 @@ spike 结论不达标就终止 P4，P1–P3 不受影响。
 网络入侵风险：第 16 节。
 受影响业务域与用户旅程：集群接入、集群列表与详情、终端与批量执行、文件管理、历史监控、通知、P4 远程桌面。
 桌面/移动端、键盘/焦点、多语言和失败反馈：沿用现有页面；新增文案三语同步；远程桌面以桌面端为主。
-证据：自动测试（Windows CI 单元测试与契约测试）、隔离真机（第 21 节矩阵）、公开产物（签名 Release 资产与安装器）、
+证据：自动测试（Windows CI 单元测试与契约测试）、隔离真机（第 21 节矩阵）、公开产物（未签名 Release 资产、安装器与校验和）、
       生产部署安全核对（不适用于节点本身，适用于中心发布）。
 ```
 
@@ -651,7 +650,7 @@ spike 结论不达标就终止 P4，P1–P3 不受影响。
 
 | 期次 | 内容 | 主要位置 | 等级 |
 | --- | --- | --- | --- |
-| P0 | Linux 资源基线；签名证书就绪；Windows CI 构建 | CI、`release.yml` | L1 |
+| P0 | Linux 资源基线；官方来源与校验和契约；Windows CI 构建 | CI、`release.yml` | L1 |
 | P1 | Windows 采集器；ACL 校验替换全部 fail-open 分支；服务安装与生命周期命令；Go 更新器与计划任务；健康映射；安装器；中心 `windows-node-v1`、PowerShell 接入命令、Windows 图标、隐藏负载、“计划任务”文案 | `cmd/kejilion-node`、`internal/systeminfo`、`internal/cluster`、`web/src` | L3 |
 | P2 | ConPTY 终端与 Job Object；PowerShell 批量包装；多卷文件管理与路径规则；历史采样 | `internal/hostpty`、`internal/terminal`、`internal/filemanager`、`internal/agent`、`web/src` | L3 |
 | P3 | 登录事件；ICMP 探测与运营商延迟 | `internal/cluster/sshlogin`、`internal/monitoring` | L2 |
@@ -691,8 +690,8 @@ spike 结论不达标就终止 P4，P1–P3 不受影响。
 | --- | --- | --- |
 | 传输 | 允许 `http://`（自动转为 `ws://`）；有 `--ignore-unsafe-cert`；长期 token 放在 URL 查询参数 | 只允许 HTTPS；Noise 身份绑定；HMAC 时间窗与防重放 |
 | 进程权限 | 整个 agent 是一个 LocalSystem 进程 | 四服务权限拆分 |
-| 安装 | 通过 nssm 2.24 注册服务；安装脚本下载 agent 与 nssm 时都不校验 | 原生 `svc/mgr`；SHA-256 + Authenticode |
-| 更新 | 9-23 起校验 GitHub API 返回的 digest；服务端可远程切换版本 | 同源 SHA-256 + 签名；中心不推送更新 |
+| 安装 | 通过 nssm 2.24 注册服务；安装脚本下载 agent 与 nssm 时都不校验 | 原生 `svc/mgr`；固定官方 HTTPS + SHA-256 |
+| 更新 | 9-23 起校验 GitHub API 返回的 digest；服务端可远程切换版本 | 固定官方 HTTPS + 同源 SHA-256；中心不推送更新 |
 | 密钥 | token 作为参数存进服务注册表 | 带 ACL 的文件 |
 | 远程命令 | 独立 `agent.exec`：无超时、输出无上限、命令原文写日志 | 复用有界终端会话；审计不记录输入输出 |
 | 终端 | PATH 查找 `powershell.exe`；工作目录为安装目录；无 Job Object | 绝对路径与属主校验；Job Object |
@@ -712,8 +711,8 @@ IronRDP WASM 加自研 Go RDCleanPath 桥，作为第 13 节方案的先例。
 
 | 编号 | 问题 | 影响 | 当前决定或前置事项 |
 | --- | --- | --- | --- |
-| D1 | 代码签名证书 | 发布前置条件 | CI 已接入 Azure Artifact Signing，默认关闭 Windows 发行；主体资格、费用、凭据、发布者配置及真实签名产物仍待就绪 |
-| D2 | 安装器来源 | `scriptLinkageState`、下载可用性 | KPanel Release 签名资产；当前没有镜像选项，无需 `kejilion/sh` 同步发布 |
+| D1 | 外部签名机制 | 用户已要求删除 | RC3 删除 Azure/Authenticode/Publisher/Profile 依赖；保留 HTTPS/摘要/ACL/回滚，不提供证书发布者身份证明 |
+| D2 | 安装器来源 | `scriptLinkageState`、下载可用性 | KPanel Release 固定官方 HTTPS 与校验和资产；当前没有镜像选项，无需 `kejilion/sh` 同步发布 |
 | D3 | 加入域的机器默认能力 | 默认风险 | 默认只装遥测，显式参数才装终端、文件；接入窗口勾选仅追加 `desktop`，不扩大其他能力 |
 | D4 | 首批版本与架构 | 实机矩阵规模 | amd64 原生测试、amd64/arm64 编译；arm64 未实机验收 |
 | D5 | 远程桌面中心可见性 | 前端体积与复杂度 | 中心可见 RDP 流（与终端一致），不承诺浏览器到节点端到端保密 |

@@ -26,11 +26,11 @@ import (
 )
 
 type windowsInstallRequest struct {
-	EnableDesktop bool                    `json:"enableDesktop,omitempty"`
-	Token         string                  `json:"token"`
-	Name          string                  `json:"name,omitempty"`
-	Capabilities  string                  `json:"capabilities,omitempty"`
-	Trust         windowsnode.TrustPolicy `json:"trust"`
+	EnableDesktop bool   `json:"enableDesktop,omitempty"`
+	Token         string `json:"token"`
+	Name          string `json:"name,omitempty"`
+	Capabilities  string `json:"capabilities,omitempty"`
+	SHA256        string `json:"sha256"`
 }
 
 func runPlatformCommand(arguments []string) (bool, error) {
@@ -110,9 +110,6 @@ func installWindowsNode(arguments []string) (resultErr error) {
 	if !validEnrollmentName(request.Name) {
 		return errors.New("invalid node name")
 	}
-	if err := request.Trust.Validate(); err != nil {
-		return err
-	}
 	executable, err := os.Executable()
 	if err != nil {
 		return err
@@ -121,7 +118,7 @@ func installWindowsNode(arguments []string) (resultErr error) {
 	if !strings.EqualFold(filepath.Clean(executable), expected) {
 		return errors.New("installer executable must be in protected Program Files directory")
 	}
-	if err := windowsnode.VerifySignature(executable, request.Trust); err != nil {
+	if err := windowsnode.VerifyChecksum(executable, request.SHA256); err != nil {
 		return err
 	}
 	release, err := windowsnode.AcquireLifecycle()
@@ -200,24 +197,14 @@ func bootstrapWindowsNode() (resultErr error) {
 	if err := windowsnode.InitializeDirectories(); err != nil {
 		return err
 	}
-	if err := request.Trust.Validate(); err != nil {
-		return err
-	}
 	for _, name := range []string{"kejilion-node.exe", "kejilion-node-bootstrap.exe"} {
 		path := filepath.Join(windowsnode.InstallDir(), name)
-		if err := windowsnode.VerifySignature(path, request.Trust); err != nil {
+		if err := windowsnode.VerifyChecksum(path, request.SHA256); err != nil {
 			return err
 		}
 		if err := windowsnode.SecureProgramFile(path); err != nil {
 			return err
 		}
-	}
-	policy, err := json.Marshal(request.Trust)
-	if err != nil {
-		return err
-	}
-	if err := windowsnode.WriteAtomic(filepath.Join(windowsnode.DataDir(), "trust.json"), policy, windowsnode.SystemOnly); err != nil {
-		return err
 	}
 	capabilities, err := installationCapabilities(request)
 	if err != nil {
@@ -314,17 +301,6 @@ func readWindowsLoginEvent() (*contract.SSHLoginEvent, error) {
 	}
 	return &event, nil
 }
-func readWindowsTrust() (windowsnode.TrustPolicy, error) {
-	data, err := windowsnode.ReadFile(filepath.Join(windowsnode.DataDir(), "trust.json"), 2048, windowsnode.SystemOnly)
-	if err != nil {
-		return windowsnode.TrustPolicy{}, err
-	}
-	var policy windowsnode.TrustPolicy
-	if json.Unmarshal(data, &policy) != nil {
-		return policy, errors.New("invalid publisher trust policy")
-	}
-	return policy, policy.Validate()
-}
 func windowsServicesHealthy(ctx context.Context) error {
 	config, _, err := readConfig(defaultConfigPath)
 	if err != nil {
@@ -384,12 +360,7 @@ func runWindowsUpdate() (resultErr error) {
 	defer func() { resultErr = errors.Join(resultErr, release()) }()
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Minute)
 	defer cancel()
-	policy, err := readWindowsTrust()
-	if err != nil {
-		return err
-	}
 	updater := windowsnode.NewUpdater(windowsServicesHealthy)
-	updater.Policy = policy
 	if err := updater.Recover(ctx); err != nil {
 		return err
 	}
@@ -404,7 +375,9 @@ func runWindowsUpdate() (resultErr error) {
 	}
 	writeStatus("running", "")
 	live := filepath.Join(windowsnode.InstallDir(), "kejilion-node.exe")
-	if err := windowsnode.VerifySignature(live, policy); err != nil {
+	// Legacy trust.json is no longer read. The protected directory/ACL remains
+	// the local authority; downloads are pinned and hashed before execution.
+	if err := windowsnode.ValidatePath(live, windowsnode.ProgramRead); err != nil {
 		writeStatus("failed", "checksum")
 		return err
 	}
@@ -431,7 +404,7 @@ func runWindowsUpdate() (resultErr error) {
 		return nil
 	}
 	next := filepath.Join(windowsnode.InstallDir(), "staging", "kejilion-node.exe.next")
-	if err := windowsnode.VerifySignature(next, policy); err != nil {
+	if err := windowsnode.VerifyChecksum(next, digest); err != nil {
 		writeStatus("failed", "checksum")
 		return err
 	}

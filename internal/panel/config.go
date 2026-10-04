@@ -19,31 +19,29 @@ import (
 var cookieNamePattern = regexp.MustCompile(`^[!#$%&'*+\-.^_` + "`" + `|~0-9A-Za-z]+$`)
 
 type Config struct {
-	WindowsNodePublisher  string        `json:"windowsNodePublisher"`
-	WindowsNodeProfileOID string        `json:"windowsNodeProfileOid"`
-	Listen                string        `json:"listen"`
-	DataDir               string        `json:"dataDir"`
-	StorePath             string        `json:"storePath"`
-	BootstrapTokenPath    string        `json:"bootstrapTokenPath"`
-	TOTPKeyPath           string        `json:"totpKeyPath"`
-	AgentSocket           string        `json:"agentSocket"`
-	AgentTokenFile        string        `json:"agentTokenFile"`
-	UpdateFreezeFile      string        `json:"updateFreezeFile"`
-	WebRoot               string        `json:"webRoot"`
-	PublicURL             string        `json:"publicUrl"`
-	PasskeyOrigin         string        `json:"passkeyOrigin,omitempty"`
-	AllowIPHosts          bool          `json:"allowIpHosts"`
-	SecureCookie          bool          `json:"secureCookie"`
-	CookieName            string        `json:"cookieName"`
-	SessionTTL            time.Duration `json:"-"`
-	SessionTTLText        string        `json:"sessionTtl"`
-	LoginWindow           time.Duration `json:"-"`
-	LoginWindowText       string        `json:"loginWindow"`
-	MaxLoginFailures      int           `json:"maxLoginFailures"`
-	MaxRequestBytes       int64         `json:"maxRequestBytes"`
-	MaxAgentBytes         int64         `json:"maxAgentBytes"`
-	TrustedProxyCIDRs     []string      `json:"trustedProxyCidrs"`
-	ClusterPrivateCIDRs   []string      `json:"clusterPrivateCidrs"`
+	Listen              string        `json:"listen"`
+	DataDir             string        `json:"dataDir"`
+	StorePath           string        `json:"storePath"`
+	BootstrapTokenPath  string        `json:"bootstrapTokenPath"`
+	TOTPKeyPath         string        `json:"totpKeyPath"`
+	AgentSocket         string        `json:"agentSocket"`
+	AgentTokenFile      string        `json:"agentTokenFile"`
+	UpdateFreezeFile    string        `json:"updateFreezeFile"`
+	WebRoot             string        `json:"webRoot"`
+	PublicURL           string        `json:"publicUrl"`
+	PasskeyOrigin       string        `json:"passkeyOrigin,omitempty"`
+	AllowIPHosts        bool          `json:"allowIpHosts"`
+	SecureCookie        bool          `json:"secureCookie"`
+	CookieName          string        `json:"cookieName"`
+	SessionTTL          time.Duration `json:"-"`
+	SessionTTLText      string        `json:"sessionTtl"`
+	LoginWindow         time.Duration `json:"-"`
+	LoginWindowText     string        `json:"loginWindow"`
+	MaxLoginFailures    int           `json:"maxLoginFailures"`
+	MaxRequestBytes     int64         `json:"maxRequestBytes"`
+	MaxAgentBytes       int64         `json:"maxAgentBytes"`
+	TrustedProxyCIDRs   []string      `json:"trustedProxyCidrs"`
+	ClusterPrivateCIDRs []string      `json:"clusterPrivateCidrs"`
 }
 
 func DefaultConfig() Config {
@@ -83,7 +81,14 @@ func LoadConfig(path string) (Config, error) {
 		}
 		decoder := json.NewDecoder(bytes.NewReader(content))
 		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&config); err != nil {
+		// Ignore only the two retired Windows trust keys during migration;
+		// unrelated unknown fields still fail strict configuration decoding.
+		fileConfig := struct {
+			*Config
+			RetiredPublisher json.RawMessage `json:"windowsNodePublisher"`
+			RetiredProfile   json.RawMessage `json:"windowsNodeProfileOid"`
+		}{Config: &config}
+		if err := decoder.Decode(&fileConfig); err != nil {
 			return Config{}, fmt.Errorf("decode config file: %w", err)
 		}
 	}
@@ -98,8 +103,6 @@ func LoadConfig(path string) (Config, error) {
 	applyStringEnv("KEJILION_PANEL_UPDATE_FREEZE_FILE", &config.UpdateFreezeFile)
 	applyStringEnv("KEJILION_PANEL_WEB_ROOT", &config.WebRoot)
 	applyStringEnv("KEJILION_PANEL_PUBLIC_URL", &config.PublicURL)
-	applyStringEnv("KEJILION_PANEL_WINDOWS_NODE_PUBLISHER", &config.WindowsNodePublisher)
-	applyStringEnv("KEJILION_PANEL_WINDOWS_NODE_PROFILE_OID", &config.WindowsNodeProfileOID)
 	applyStringEnv("KEJILION_PANEL_PASSKEY_ORIGIN", &config.PasskeyOrigin)
 	applyStringEnv("KEJILION_PANEL_COOKIE_NAME", &config.CookieName)
 	applyStringEnv("KEJILION_PANEL_SESSION_TTL", &config.SessionTTLText)

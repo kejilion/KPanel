@@ -24,7 +24,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-var stableTag = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
+var stableTag = regexp.MustCompile(`^v(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})$`)
 
 const maximumBinaryBytes = int64(64 << 20)
 
@@ -36,8 +36,6 @@ type UpdateTransaction struct {
 type Updater struct {
 	Directory string
 	Journal   string
-	Policy    TrustPolicy
-	Verify    func(string, TrustPolicy) error
 	Stop      func() error
 	Start     func() error
 	Healthy   func(context.Context) error
@@ -45,7 +43,7 @@ type Updater struct {
 }
 
 func NewUpdater(health func(context.Context) error) *Updater {
-	return &Updater{Directory: InstallDir(), Journal: filepath.Join(DataDir(), "update-transaction.json"), Verify: VerifySignature, Stop: StopServices, Start: StartServices, Healthy: health}
+	return &Updater{Directory: InstallDir(), Journal: filepath.Join(DataDir(), "update-transaction.json"), Stop: StopServices, Start: StartServices, Healthy: health}
 }
 func (u *Updater) paths() (string, string, string) {
 	return filepath.Join(u.Directory, "kejilion-node.exe"), filepath.Join(u.Directory, "kejilion-node.exe.old"), filepath.Join(u.Directory, "staging", "kejilion-node.exe.next")
@@ -83,10 +81,12 @@ func (u *Updater) transaction(tx UpdateTransaction) error {
 	return u.store().WriteJournal(u.Journal, content)
 }
 func hashFile(path string) (string, error) {
-	file, err := os.Open(path)
+	// Open the object itself, rejecting reparse points before any digest read.
+	handle, err := openChecked(path, ProgramRead, false, windows.GENERIC_READ)
 	if err != nil {
 		return "", err
 	}
+	file := os.NewFile(uintptr(handle), path)
 	defer file.Close()
 	if err := ValidateFile(file, ProgramRead); err != nil {
 		return "", err
@@ -96,7 +96,7 @@ func hashFile(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if n > maximumBinaryBytes {
+	if n == 0 || n > maximumBinaryBytes {
 		return "", errors.New("binary exceeds update limit")
 	}
 	return hex.EncodeToString(digest.Sum(nil)), nil
@@ -150,9 +150,6 @@ func (u *Updater) Recover(ctx context.Context) error {
 	live, old, next := u.paths()
 	liveHash, _ := u.store().Hash(live)
 	if tx.Phase == "committed" && liveHash == tx.NextSHA256 {
-		if err := u.Verify(live, u.Policy); err != nil {
-			return err
-		}
 		if err := u.Start(); err != nil {
 			return err
 		}
@@ -169,14 +166,9 @@ func (u *Updater) Recover(ctx context.Context) error {
 		if err != nil || oldHash != tx.PreviousSHA256 {
 			return errors.New("verified rollback binary unavailable")
 		}
-		if err := u.Verify(old, u.Policy); err != nil {
-			return err
-		}
 		if err := u.store().Move(old, live); err != nil {
 			return err
 		}
-	} else if err := u.Verify(live, u.Policy); err != nil {
-		return err
 	}
 	if err := u.Start(); err != nil {
 		return err
@@ -201,14 +193,8 @@ func (u *Updater) Apply(ctx context.Context, expected string) error {
 	if nextHash != expected {
 		return errors.New("release checksum mismatch")
 	}
-	if err := u.Verify(next, u.Policy); err != nil {
-		return err
-	}
 	previous, err := u.store().Hash(live)
 	if err != nil {
-		return err
-	}
-	if err := u.Verify(live, u.Policy); err != nil {
 		return err
 	}
 	tx := UpdateTransaction{Phase: "prepared", PreviousSHA256: previous, NextSHA256: nextHash}

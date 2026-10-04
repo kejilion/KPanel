@@ -1,18 +1,16 @@
-# KPanel Windows node installer. Release automation must Authenticode-sign this
-# file; callers must verify its signature before executing it.
+# KPanel Windows node installer. Callers must verify this file against SHA256SUMS
+# from the same fixed official HTTPS release before executing it.
 [CmdletBinding()]
 param(
     [string]$Token = $env:KPANEL_NODE_TOKEN,
     [string]$Name = '',
     [string]$Capabilities = '',
     [switch]$EnableDesktop,
-    [Parameter(Mandatory = $true)][ValidatePattern('^v[0-9]+\.[0-9]+\.[0-9]+(?:-rc\.[0-9]+)?$')][string]$Version,
-    [Parameter(Mandatory = $true)][ValidateNotNullOrEmpty()][string]$Publisher,
-    [string]$ProfileOID = ''
+    [Parameter(Mandatory = $true)][ValidatePattern('^v(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})(-rc\.[1-9][0-9]{0,5})?$')][string]$Version
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
-if ($ExecutionContext.SessionState.LanguageMode -ne 'FullLanguage') { throw 'Constrained PowerShell is unsupported; use a signed offline package approved by your WDAC/AppLocker policy.' }
+if ($ExecutionContext.SessionState.LanguageMode -ne 'FullLanguage') { throw 'Constrained PowerShell is unsupported; use an offline package approved by your WDAC/AppLocker policy.' }
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $principal = [Security.Principal.WindowsPrincipal]::new($identity)
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Run PowerShell as Administrator.' }
@@ -20,18 +18,20 @@ if (-not [Environment]::Is64BitProcess) { throw 'Use 64-bit PowerShell to instal
 if ([Environment]::OSVersion.Version.Major -lt 10 -or -not [Environment]::Is64BitOperatingSystem) { throw 'Windows 10 / Server 2016 or later, 64-bit, is required.' }
 if ($Token -notmatch '^kp[lb]1\.[A-Za-z0-9_-]+$' -or $Token.Length -gt 2048) { throw 'A valid enrollment token is required.' }
 if ($Name.Length -gt 80 -or $Name -match '[\x00-\x1f\x7f]') { throw 'The node name is invalid.' }
-if ($Publisher.Length -gt 1024 -or $Publisher -match '[\r\n\x00]') { throw 'The trusted publisher configuration is invalid.' }
 if ($EnableDesktop) {
     Write-Host 'Administrator desktop selected: supported non-domain Windows will enable RDP/NLA and create a managed local administrator. UAC remains enabled. Existing firewall rules may also allow other authorized accounts to connect over the network. Closing the managed desktop logs it off; save your work first.'
 }
 
-function Assert-Signature([string]$Path) {
-    $signature = Get-AuthenticodeSignature -LiteralPath $Path
-    if ($signature.Status -ne 'Valid' -or $null -eq $signature.SignerCertificate -or $signature.SignerCertificate.Subject -cne $Publisher) { throw "Authenticode trust or publisher mismatch: $Path" }
-    if ($ProfileOID) {
-        $eku = @($signature.SignerCertificate.Extensions | Where-Object { $_.Oid.Value -eq '2.5.29.37' } | ForEach-Object { $_.EnhancedKeyUsages } | ForEach-Object { $_.Value })
-        if ($eku -cnotcontains $ProfileOID) { throw 'The Artifact Signing certificate profile does not match.' }
-    }
+function Assert-ReleaseChecksum([string]$Manifest, [string]$Asset, [string]$Path, [long]$Limit) {
+    $manifestItem = Get-Item -LiteralPath $Manifest -Force
+    if ($manifestItem.PSIsContainer -or ($manifestItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $manifestItem.Length -le 0 -or $manifestItem.Length -gt 65536) { throw 'Invalid release checksum manifest.' }
+    $item = Get-Item -LiteralPath $Path -Force
+    if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $item.Length -le 0 -or $item.Length -gt $Limit) { throw 'Invalid release asset file.' }
+    $lines = @([IO.File]::ReadAllLines($Manifest) | Where-Object { $_ -match ('^[a-f0-9]{64}\s+\*?' + [regex]::Escape($Asset) + '$') })
+    if ($lines.Count -ne 1) { throw 'Release checksum missing or ambiguous.' }
+    $expected = ($lines[0] -split '\s+')[0]
+    if ((Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expected) { throw 'Release checksum mismatch.' }
+    return $expected
 }
 function Assert-Directory([string]$Path, [bool]$Ancestor) {
     $item = Get-Item -LiteralPath $Path -Force
@@ -100,7 +100,6 @@ function Get-ReleaseFile([string]$Url, [string]$Destination, [long]$Limit) {
     throw 'Too many release redirects.'
 }
 
-Assert-Signature $PSCommandPath
 $installRoot = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'KejilionNode'
 $dataRoot = Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'KejilionNode'
 New-ProtectedDirectory $installRoot $true
@@ -120,16 +119,13 @@ try {
     $manifest = Join-Path $staging 'SHA256SUMS'
     $download = Join-Path $staging $asset
     Get-ReleaseFile ($base + 'SHA256SUMS') $manifest 65536
+    Assert-Directory ([IO.Path]::GetDirectoryName($PSCommandPath)) $false
+    $null = Assert-ReleaseChecksum $manifest 'install-windows.ps1' $PSCommandPath 1048576
     Get-ReleaseFile ($base + $asset) $download 67108864
-    $checksumLines = @([IO.File]::ReadAllLines($manifest) | Where-Object { $_ -match ('^[a-f0-9]{64}\s+\*?' + [regex]::Escape($asset) + '$') })
-    if ($checksumLines.Count -ne 1) { throw 'Windows artifact has a missing or ambiguous release checksum.' }
-    $expected = ($checksumLines[0] -split '\s+')[0]
-    if ((Get-FileHash -LiteralPath $download -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expected) { throw 'Windows artifact checksum mismatch.' }
-    Assert-Signature $download
+    $expected = Assert-ReleaseChecksum $manifest $asset $download 67108864
     foreach ($destination in @($binary,$bootstrap)) {
         if (Test-Path -LiteralPath $destination) {
-            Assert-Signature $destination
-            if ((Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expected) { throw 'A different signed node version remains from an earlier installation; uninstall it before continuing.' }
+            $null = Assert-ReleaseChecksum $manifest $asset $destination 67108864
         } else {
             [IO.File]::Copy($download,$destination,$false)
         }
@@ -138,7 +134,7 @@ try {
     $fileSecurity.SetSecurityDescriptorSddlForm('O:BAG:BAD:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;FRFX;;;BU)')
     Set-Acl -LiteralPath $binary -AclObject $fileSecurity
     Set-Acl -LiteralPath $bootstrap -AclObject $fileSecurity
-    $request = @{token=$Token;name=$Name;capabilities=$Capabilities;enableDesktop=[bool]$EnableDesktop;trust=@{publisher=$Publisher;profileOID=$ProfileOID}} | ConvertTo-Json -Compress
+    $request = @{token=$Token;name=$Name;capabilities=$Capabilities;enableDesktop=[bool]$EnableDesktop;sha256=$expected} | ConvertTo-Json -Compress
     $startInfo = [Diagnostics.ProcessStartInfo]::new($binary,'install --stdin')
     $startInfo.UseShellExecute = $false
     $startInfo.CreateNoWindow = $true

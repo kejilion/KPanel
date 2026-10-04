@@ -2,41 +2,49 @@ package cluster
 
 import (
 	"errors"
+	"os/exec"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 )
 
 func TestWindowsEnrollmentCommandPinsAndVerifiesBeforeExecution(t *testing.T) {
-	s := &Service{panelVersion: "1.24.0-rc.10", windowsNodePublisher: "CN=KPanel Test, O=Publisher", windowsNodeProfileOID: "1.3.6.1.4.1.311.97.1.1"}
+	s := &Service{panelVersion: "1.25.0-rc.3"}
 	command, err := s.lightEnrollmentCommand("windows", "kpl1.test", "one'; $(Write-Error 'bad')")
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	for _, expected := range []string{
-		powershellSingleQuote("https://github.com/kejilion/KPanel/releases/download/v1.24.0-rc.10/install-windows.ps1"), "Get-AuthenticodeSignature -LiteralPath $script",
-		"$signature.Status -ne 'Valid'", "-cne " + powershellSingleQuote(s.windowsNodePublisher), "-notin $oids",
-		"-Version " + powershellSingleQuote("v1.24.0-rc.10"), "-Name " + powershellSingleQuote("one'; $(Write-Error 'bad')"), "GetFolderPath('ProgramFiles')",
+		powershellSingleQuote("https://github.com/kejilion/KPanel/releases/download/v1.25.0-rc.3/install-windows.ps1"),
+		powershellSingleQuote("https://github.com/kejilion/KPanel/releases/download/v1.25.0-rc.3/SHA256SUMS"),
+		"Assert-BootstrapDirectory $parent.FullName $true", "Assert-BootstrapDirectory $stage $false",
+		"O:BAG:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)", "$lines.Count -ne 1", "Get-FileHash -LiteralPath $script", "65536", "1048576",
+		"-Version " + powershellSingleQuote("v1.25.0-rc.3"), "-Name " + powershellSingleQuote("one'; $(Write-Error 'bad')"), "GetFolderPath('ProgramFiles')",
 	} {
 		if !strings.Contains(command, expected) {
 			t.Errorf("missing %q", expected)
 		}
 	}
-	if strings.ContainsAny(command, "\r\n") || strings.Contains(command, "Invoke-Expression") || strings.Index(command, "Get-AuthenticodeSignature") > strings.Index(command, "& $script") {
+	if strings.ContainsAny(command, "\r\n") || strings.Contains(command, "Invoke-Expression") || strings.Contains(command, "Authenticode") || strings.Contains(command, "-Publisher") || strings.Contains(command, "ExecutionPolicy") || strings.Index(command, "Get-FileHash") > strings.Index(command, "& $script") {
 		t.Fatal("bootstrap must be one line and verify before execution")
 	}
-	s.windowsNodePublisher = ""
-	if _, err := s.lightEnrollmentCommand("windows", "", ""); !errors.Is(err, ErrWindowsInstallerUnavailable) {
-		t.Fatal(err)
+	for _, invalid := range []string{"dev", "01.2.3", "1.2.3-rc.0", "1.2.3-dev", "1000000.2.3", "1.2.3;whoami"} {
+		s.panelVersion = invalid
+		if _, err := s.lightEnrollmentCommand("windows", "", ""); !errors.Is(err, ErrWindowsInstallerUnavailable) {
+			t.Fatalf("invalid %q: %v", invalid, err)
+		}
 	}
 	if _, err := s.lightEnrollmentCommand("macos", "", ""); !errors.Is(err, ErrProtocolMismatch) {
 		t.Fatal(err)
 	}
 }
 
-func TestWindowsEnrollmentCannotConsumePolicyBeforeSigningConfiguration(t *testing.T) {
+func TestWindowsEnrollmentCannotConsumePolicyBeforeReleaseVersionAvailable(t *testing.T) {
 	now := time.Now().UTC()
 	s := newLightServiceForTest(t, &serviceTestClock{now: now})
+	s.panelVersion = "dev"
 	if _, err := s.CreateLightEnrollmentForPlatform(s.publicURL, "", "windows"); !errors.Is(err, ErrWindowsInstallerUnavailable) {
 		t.Fatal(err)
 	}
@@ -46,7 +54,7 @@ func TestWindowsEnrollmentCannotConsumePolicyBeforeSigningConfiguration(t *testi
 	if got := s.LightBatchEnrollments(); got.Total != 0 {
 		t.Fatal("failed generation left active policy")
 	}
-	s.windowsNodePublisher = "CN=Test"
+	s.panelVersion = "1.25.0-rc.3"
 	enrollment, err := s.CreateLightBatchEnrollment(CreateLightBatchEnrollmentInput{Platform: "windows"})
 	if err != nil || enrollment.Platform != "windows" || !strings.Contains(enrollment.Command, "-Token ") {
 		t.Fatalf("%#v, %v", enrollment, err)
@@ -55,7 +63,7 @@ func TestWindowsEnrollmentCannotConsumePolicyBeforeSigningConfiguration(t *testi
 
 func TestWindowsDesktopEnrollmentRequiresExplicitOptIn(t *testing.T) {
 	s := newLightServiceForTest(t, &serviceTestClock{now: time.Now().UTC()})
-	s.windowsNodePublisher = "CN=Test"
+	s.panelVersion = "1.25.0-rc.3"
 	defaultCommand, err := s.lightEnrollmentCommand("windows", "kpl1.test", "")
 	if err != nil || strings.Contains(defaultCommand, "-EnableDesktop") {
 		t.Fatal("default enabled desktop", err)
@@ -70,5 +78,22 @@ func TestWindowsDesktopEnrollmentRequiresExplicitOptIn(t *testing.T) {
 	}
 	if _, err := s.lightEnrollmentCommandWithDesktop("linux", "", "", true); !errors.Is(err, ErrProtocolMismatch) {
 		t.Fatal("Linux accepted desktop", err)
+	}
+}
+
+func TestWindowsBootstrapPowerShellSyntax(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("PowerShell parser is exercised on native Windows CI")
+	}
+	command, err := (&Service{panelVersion: "1.25.0-rc.3"}).lightEnrollmentCommand("windows", "kpl1.dummy", "dummy name")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Parse only: never execute an installer or mutate host services.
+	parser := "$tokens=$null;$errors=$null;$null=[Management.Automation.Language.Parser]::ParseInput([Console]::In.ReadToEnd(),[ref]$tokens,[ref]$errors);if($errors.Count){$errors|%{[Console]::Error.WriteLine($_.Message)};exit 1}"
+	cmd := exec.Command("pwsh", "-NoProfile", "-NonInteractive", "-Command", parser)
+	cmd.Stdin = strings.NewReader(command)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("bootstrap syntax: %v\n%s", err, output)
 	}
 }

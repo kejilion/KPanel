@@ -1087,7 +1087,7 @@ func (s *Server) writeClusterError(w http.ResponseWriter, r *http.Request, err e
 	case errors.Is(err, cluster.ErrLightBatchInvalid):
 		status, code, title = http.StatusUnprocessableEntity, "cluster_light_batch_invalid", "Light node batch enrollment settings are invalid"
 	case errors.Is(err, cluster.ErrWindowsInstallerUnavailable):
-		status, code, title = http.StatusServiceUnavailable, "cluster_windows_installer_unavailable", "Windows node signing identity is not configured"
+		status, code, title = http.StatusServiceUnavailable, "cluster_windows_installer_unavailable", "Windows node release version is not available"
 	case errors.Is(err, cluster.ErrPrivateOrigin):
 		status, code, title = http.StatusUnprocessableEntity, "cluster_origin_blocked", "Cluster origin is blocked"
 	case errors.Is(err, cluster.ErrPairingCode):

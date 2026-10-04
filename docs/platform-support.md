@@ -22,9 +22,9 @@ Rocky 等系统分别制作 Panel 镜像。
 
 ## Windows 轻量节点候选
 
-Windows 仅适配 `kejilion-node`，不提供 Windows Panel/Agent 或 Linux 网站/Docker/系统管理能力。完整候选含原生遥测、健康与服务探测、签名安装/更新/回滚/卸载、ConPTY PowerShell/批量执行、多固定卷文件与图库、历史采样、远程登录事件和可选 RDP。支持目标、实际能力与尚未验收的首批矩阵以 [Windows 轻量节点设计](windows-light-node-design.md) 第 3、21、23 节为准。
+Windows 仅适配 `kejilion-node`，不提供 Windows Panel/Agent 或 Linux 网站/Docker/系统管理能力。完整候选含原生遥测、健康与服务探测、校验和安装/更新/回滚/卸载、ConPTY PowerShell/批量执行、多固定卷文件与图库、历史采样、远程登录事件和可选 RDP。支持目标、实际能力与尚未验收的首批矩阵以 [Windows 轻量节点设计](windows-light-node-design.md) 第 3、21、23 节为准。
 
-当前为“已形成本地实现候选，待签名和原生实机准入”，不能将单元测试或交叉构建等同于真实安装/更新/RDP 登录通过。Server 2016 没有 ConPTY，不声明终端；Windows 家庭版没有 RDP 被控端。Windows 负载均值和 Docker 指标显示不可用，文件不提供 POSIX chmod/属主操作。
+RC3 以未签名预览附件供主动选择测试；原生实机验收由用户后续承担（owner-deferred/尚未验证），不能将单元测试或交叉构建等同于真实安装/更新/RDP 登录通过。Server 2016 没有 ConPTY，不声明终端；Windows 家庭版没有 RDP 被控端。Windows 负载均值和 Docker 指标显示不可用，文件不提供 POSIX chmod/属主操作。
 
 ## 功能差异
 

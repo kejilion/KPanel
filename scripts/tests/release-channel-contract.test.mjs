@@ -51,13 +51,15 @@ test('release notes reject unsupported prerelease names', () => {
   assert.match(invalid.stderr, /X\.Y\.Z or X\.Y\.Z-rc\.N/);
 });
 
-test('only releases with verified Windows assets advertise the signed installer', () => {
+test('only releases with verified Windows assets advertise the unsigned installer and integrity boundary', () => {
   assert.doesNotMatch(render('1.2.3').notes, /install-windows\.ps1/);
   for (const version of ['1.2.3', '1.3.0-rc.2']) {
     const result = render(version, true);
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.notes, /install-windows\.ps1/);
-    assert.match(result.notes, /SHA-256 与 Authenticode/);
+    assert.match(result.notes, /未签名/);
+    assert.match(result.notes, /SHA256SUMS/);
+    assert.match(result.notes, /不提供证书发布者身份保证/);
   }
 });
 
@@ -75,11 +77,12 @@ test('release workflow publishes isolated stable and preview channels', () => {
   assert.doesNotMatch(workflow, /gh api --method DELETE/);
 });
 
-test('release requires successful Windows signing and checksum merge before public writes', () => {
+test('release requires successful Windows build and checksum merge before public writes', () => {
   const workflow = readFileSync(join(repoRoot, '.github', 'workflows', 'release.yml'), 'utf8').replaceAll('\r\n', '\n');
   const windows = workflow.match(/^  windows-node:\n([\s\S]+?)^  release:/m)?.[1];
   assert.ok(windows, 'mandatory Windows job is present');
-  assert.doesNotMatch(windows, /^    if:/m, 'Windows signing cannot be disabled by an optional flag');
+  assert.doesNotMatch(windows, /^    if:/m, 'Windows assets cannot be disabled by an optional flag');
+  assert.doesNotMatch(windows, /artifact-signing|windows-node-signing|KPANEL_AZURE|KPANEL_SIGNING|Authenticode/);
   const release = workflow.slice(workflow.indexOf('  release:\n'));
   assert.match(release, /^    needs: windows-node$/m);
   const guard = release.match(/^    if: \$\{\{ (.+) \}\}$/m)?.[1];
@@ -93,7 +96,7 @@ test('release requires successful Windows signing and checksum merge before publ
   }
   let previous = -1;
   for (const marker of ['-Mode Check', 'name: Build Windows node and installer',
-    'name: Sign Windows node and installer', '-Mode Verify', 'name: Transfer verified Windows release assets']) {
+    '-Mode Verify', 'name: Transfer verified Windows release assets']) {
     const position = windows.indexOf(marker);
     assert.ok(position > previous, `${marker} must follow verified prerequisites`);
     previous = position;

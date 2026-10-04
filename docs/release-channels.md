@@ -83,45 +83,32 @@ Latest/prerelease 状态、版本镜像和通道标签 digest、候选分支处�
 可执行发布步骤以 `.codex-workflows/release-kpanel.workflow.yaml` 为准，验收结构以
 `docs/release-acceptance-template.md` 为准。
 
-### 5.1 Windows 轻量节点签名产物
+### 5.1 Windows 轻量节点产物
 
-纳入 Windows 完整功能后的每次 Release 必须执行 Windows 配置检查、构建、签名和验证，不再通过
-可选仓库开关跳过。只有 Windows 任务成功，后续发布任务才可运行；配置缺失、签名失败、取消或跳过
-均不得公开缺少三项已签名 Windows 附件的版本、镜像或通道。实际签名配置以该任务的检查和签名结果
-确认；构建成功不等于具备公开安装或真实 Windows 服务生命周期的验收证据。
+Windows 附件为未签名产物，不依赖 Azure、Authenticode 或发布者/profile 配置。固定官方 GitHub HTTPS
+来源与 SHA-256 用于完整性检查，不提供独立的证书发布者身份保证；同源清单不能防御官方发布源一并被攻破。
+安装不修改 ExecutionPolicy，也不关闭 Defender、SmartScreen、WDAC/AppLocker 或其他系统保护。
 
-签名任务运行在独立 `windows-2025` Runner 和 `windows-node-signing` Environment，只有读取仓库的
-权限，不持有 Release 写权限。管理员应为该 Environment 配置发布 Tag 限制和人工保护，并按
-[Azure 官方签名集成](https://learn.microsoft.com/en-us/azure/artifact-signing/how-to-signing-integrations)
-预先完成身份验证、Public Trust 证书配置及最小范围 Certificate Profile Signer 授权。
+每次 Release 必须在 windows-2025 Runner 执行版本检查、双架构构建和最终字节验证。只有 Windows
+任务成功，后续公开发布才可运行；失败、取消或跳过不能公开缺少 Windows 附件的版本、镜像或通道。
+Runner 只有仓库读取权限，不持有 Release 写权限；没有额外签名服务 Environment 或秘密配置。
 
-| 配置位置 | 名称 | 含义 |
-| --- | --- | --- |
-| Environment variables | `KPANEL_WINDOWS_NODE_PUBLISHER` | 证书完整 Subject，区分大小写，与中心端信任配置一致 |
-| Environment variable | `KPANEL_WINDOWS_NODE_PROFILE_OID` | 可选的稳定 profile EKU OID；使用 Artifact Signing 时建议固定 |
-| Environment variables | `KPANEL_SIGNING_ENDPOINT`、`KPANEL_SIGNING_ACCOUNT`、`KPANEL_SIGNING_PROFILE` | 区域 HTTPS endpoint、账号、证书 profile 名称 |
-| Environment secrets | `KPANEL_AZURE_TENANT_ID`、`KPANEL_AZURE_CLIENT_ID`、`KPANEL_AZURE_CLIENT_SECRET` | 仅用于配置检查和签名步骤的应用身份；不得写入源码、产物或日志 |
+固定附件为 `kejilion-node-windows-amd64.exe`、`kejilion-node-windows-arm64.exe`、`install-windows.ps1`。
+源码安装器 `deploy/windows/install.ps1` 构建时先确定 UTF-8 BOM/CRLF 字节；三个常规文件通过限额与
+清单检查后才生成 `SHA256SUMS.windows`，Linux 任务复核同一次 workflow 的文件清单与摘要并合并到
+公开 `SHA256SUMS`。任何校验失败都会在公开写入前停止。
 
-Panel 端需配置 `KEJILION_PANEL_WINDOWS_NODE_PUBLISHER` 为同一实际签名 Subject，可选配置
-`KEJILION_PANEL_WINDOWS_NODE_PROFILE_OID` 为同一 profile OID。发布者为空时安装入口 fail-closed；
-功能源码纳入发行不代表已经默认配置信任身份或完成真实安装、RDP 验收。
+Panel 命令先验证 ProgramFiles 祖先权限，在创建时封闭临时目录的 ACL，再从固定版本下载清单
+（64 KiB 上限）及脚本（1 MiB 上限），校验唯一 SHA-256 条目后才执行。安装器再次核对自身与 EXE
+摘要（EXE 64 MiB 上限），bootstrap 在服务写入前核对 stdin 中的 EXE digest。旧 `trust.json`
+是此前签名策略状态，新版本不再读取它；遗留文件不会限制正常安装/更新，也不会授予额外信任。
 
-工作流固定使用官方 `azure/artifact-signing-action` `v2.0.0` 提交
-`c7ab2a863ab5f9a846ddb8265964877ef296ee82`。该上游版本固定 ArtifactSigning 模块 `0.1.8`、
-Windows SDK BuildTools `10.0.26100.4188`、ArtifactSigning.Client `1.0.128`，内部还声明 SignCLI
-`0.9.1-beta.26227.3`；本项目只签 EXE/PowerShell，不增加 MSIX 路径。升级时需同时核对这些传递依赖。
-签名依赖缓存关闭，Azure CLI 及其他替代身份路径关闭；私钥保留在 Azure 服务端。
-Actions 的完整 SHA/版本由现有 `dependency-policy.json` 的 `github-actions` 分组自动枚举，不另建清单。
+下载仅允许官方 GitHub HTTPS 与资产 hosts，受限跳转；目录 owner/ACL、reparse 防护、版本/协议核对、
+原子替换和失败回滚继续生效。无人值守更新仍只解析一次稳定 Release 并固定其 tag，不将 preview
+通道作为自动更新源。RC 仅供主动选择的测试，stable/latest 和生产部署保持既有隔离规则。
 
-固定发布附件为 `kejilion-node-windows-amd64.exe`、`kejilion-node-windows-arm64.exe`、
-`install-windows.ps1`。源码安装器是 `deploy/windows/install.ps1`：构建时先确定最终 UTF-8 BOM/CRLF
-字节，再统一 Authenticode SHA-256 签名并附 RFC3161 时间戳。验证器要求 Windows 信任链有效、
-发布者完全匹配、代码签名 EKU 和已配置的 profile OID 一致；不固定短期叶证书指纹，允许同身份轮换。
-所有文件通过后才生成 `SHA256SUMS.windows`，Linux 任务只下载同一次 workflow 的签名产物，复核文件
-清单和摘要，然后合并到公共 `SHA256SUMS`；签名后不得再次改编码或修改 EXE。
-
-本地可运行 `scripts/tests/windows-node-release.test.ps1`、
-`node --test scripts/tests/merge-windows-release.test.mjs`；前者真实拒绝未签脚本，并用模拟 OS 验签结果
-覆盖身份/轮换/时间戳/篡改边界，后者覆盖跨 Runner 文件完整性。CI 另执行 Windows 原生测试和双架构
-构建，不上传未签产物。正式发布仍须验证真实 Azure 签名、下载后验签与 SHA-256、amd64/arm64 实机安装、
-升级和中断恢复，不能以模拟测试或交叉编译替代。RC 附件只供主动选择的隔离验收，无人值守节点仍跟随稳定版。
+本地回归运行 `scripts/tests/windows-node-release.test.ps1`、
+`scripts/tests/windows-installer-integrity.test.ps1`、
+`node --test scripts/tests/merge-windows-release.test.mjs scripts/tests/release-channel-contract.test.mjs`。
+CI 包含 Windows 原生单元测试/vet 与 amd64/arm64 构建；这些证据不能代替真实服务生命周期、RDP 或
+系统保护兼容性验收。本轮预览的原生矩阵由用户后续承担，记录 owner-deferred，尚未验证。

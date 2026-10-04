@@ -16,27 +16,16 @@ jobs:
   windows-node:
     runs-on: windows-2025
     timeout-minutes: 20
-    environment: windows-node-signing
     permissions:
       contents: read
-    env:
-      KPANEL_WINDOWS_NODE_PUBLISHER: ${{ vars.KPANEL_WINDOWS_NODE_PUBLISHER }}
-      KPANEL_WINDOWS_NODE_PROFILE_OID: ${{ vars.KPANEL_WINDOWS_NODE_PROFILE_OID }}
-      KPANEL_SIGNING_ENDPOINT: ${{ vars.KPANEL_SIGNING_ENDPOINT }}
-      KPANEL_SIGNING_ACCOUNT: ${{ vars.KPANEL_SIGNING_ACCOUNT }}
-      KPANEL_SIGNING_PROFILE: ${{ vars.KPANEL_SIGNING_PROFILE }}
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Validate Windows signing configuration
+      - name: Validate Windows release version
         shell: pwsh
-        env:
-          KPANEL_AZURE_TENANT_ID: ${{ secrets.KPANEL_AZURE_TENANT_ID }}
-          KPANEL_AZURE_CLIENT_ID: ${{ secrets.KPANEL_AZURE_CLIENT_ID }}
-          KPANEL_AZURE_CLIENT_SECRET: ${{ secrets.KPANEL_AZURE_CLIENT_SECRET }}
         run: ./scripts/windows-node-release.ps1 -Mode Check
 
       - name: Set up Go
@@ -48,43 +37,25 @@ jobs:
       - name: Build Windows node and installer
         shell: pwsh
         run: |
-          $output = Join-Path $env:RUNNER_TEMP 'windows-node-signed'
+          $output = Join-Path $env:RUNNER_TEMP 'windows-node-release'
           New-Item -ItemType Directory -Path $output | Out-Null
           ./scripts/windows-node-release.ps1 -Mode Build -OutputDirectory $output
 
-      - name: Sign Windows node and installer
-        uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
-        with:
-          azure-tenant-id: ${{ secrets.KPANEL_AZURE_TENANT_ID }}
-          azure-client-id: ${{ secrets.KPANEL_AZURE_CLIENT_ID }}
-          azure-client-secret: ${{ secrets.KPANEL_AZURE_CLIENT_SECRET }}
-          endpoint: ${{ vars.KPANEL_SIGNING_ENDPOINT }}
-          signing-account-name: ${{ vars.KPANEL_SIGNING_ACCOUNT }}
-          certificate-profile-name: ${{ vars.KPANEL_SIGNING_PROFILE }}
-          files-folder: ${{ runner.temp }}/windows-node-signed
-          files-folder-filter: exe,ps1
-          files-folder-recurse: false
-          file-digest: SHA256
-          timestamp-rfc3161: https://timestamp.acs.microsoft.com
-          timestamp-digest: SHA256
-          exclude-azure-cli-credential: true
-          cache-dependencies: false
-
-      - name: Verify signed Windows assets and generate checksums
+      - name: Verify Windows assets and generate checksums
         shell: pwsh
-        run: ./scripts/windows-node-release.ps1 -Mode Verify -OutputDirectory (Join-Path $env:RUNNER_TEMP 'windows-node-signed')
+        run: ./scripts/windows-node-release.ps1 -Mode Verify -OutputDirectory (Join-Path $env:RUNNER_TEMP 'windows-node-release')
 
       - name: Transfer verified Windows release assets
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: windows-node-signed
-          path: ${{ runner.temp }}/windows-node-signed/*
+          name: windows-node-release
+          path: ${{ runner.temp }}/windows-node-release/*
           if-no-files-found: error
           retention-days: 7
 
   release:
     needs: windows-node
-    # Every release includes signed Windows assets; missing configuration fails closed.
+    # Every release includes all three checksum-verified Windows assets.
     # No failed, cancelled, or skipped Windows lane may publish a partial release.
     if: ${{ !cancelled() && needs.windows-node.result == 'success' }}
     runs-on: ubuntu-latest
@@ -263,8 +234,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh run download "$GITHUB_RUN_ID" --name windows-node-signed --dir "$RUNNER_TEMP/windows-node-signed"
-          node scripts/merge-windows-release.mjs "$RUNNER_TEMP/windows-node-signed" release
+          gh run download "$GITHUB_RUN_ID" --name windows-node-release --dir "$RUNNER_TEMP/windows-node-release"
+          node scripts/merge-windows-release.mjs "$RUNNER_TEMP/windows-node-release" release
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1

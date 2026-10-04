@@ -173,9 +173,7 @@ func NewServer(config Config, authService *auth.Service, storage *store.Store, a
 		return nil, fmt.Errorf("configure passkeys: %w", err)
 	}
 	clusterService, err := cluster.NewService(cluster.ServiceConfig{
-		WindowsNodePublisher:  config.WindowsNodePublisher,
-		WindowsNodeProfileOID: config.WindowsNodeProfileOID,
-		DataDir:               config.DataDir, PanelVersion: version.Version,
+		DataDir: config.DataDir, PanelVersion: version.Version,
 		PublicURL:    config.PublicURL,
 		PrivateCIDRs: config.ClusterPrivateCIDRs,
 		Telemetry:    clusterTelemetrySource{agent: agent},

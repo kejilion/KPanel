@@ -17,6 +17,7 @@ type memoryUpdateStore struct {
 	journal  []byte
 	failMove int
 	moves    int
+	failHash string
 }
 
 func (s *memoryUpdateStore) ReadJournal(string) ([]byte, error) {
@@ -30,6 +31,9 @@ func (s *memoryUpdateStore) WriteJournal(_ string, data []byte) error {
 	return nil
 }
 func (s *memoryUpdateStore) Hash(path string) (string, error) {
+	if path == s.failHash {
+		return "", errors.New("untrusted file ACL")
+	}
 	v, ok := s.files[path]
 	if !ok {
 		return "", os.ErrNotExist
@@ -59,7 +63,7 @@ func (s *memoryUpdateStore) Remove(path string) error {
 }
 func testUpdater() (u *Updater, s *memoryUpdateStore) {
 	s = &memoryUpdateStore{files: map[string]string{}}
-	u = &Updater{Directory: `C:\protected`, Journal: "journal", Store: s, Verify: func(string, TrustPolicy) error { return nil }, Stop: func() error { return nil }, Start: func() error { return nil }, Healthy: func(context.Context) error { return nil }}
+	u = &Updater{Directory: `C:\protected`, Journal: "journal", Store: s, Stop: func() error { return nil }, Start: func() error { return nil }, Healthy: func(context.Context) error { return nil }}
 	return
 }
 func TestRecoveryEveryInterruptedUpdatePhase(t *testing.T) {
@@ -106,8 +110,8 @@ func TestApplyRollsBackOnSecondRenameFailure(t *testing.T) {
 		t.Fatalf("failed restore: %v, %+v", err, s)
 	}
 }
-func TestUpdateNeverStopsBeforeSignatureAndHashValidation(t *testing.T) {
-	for _, mismatch := range []string{"hash", "signature"} {
+func TestUpdateNeverStopsBeforeProtectedFileAndHashValidation(t *testing.T) {
+	for _, mismatch := range []string{"hash", "staged-access", "live-access"} {
 		t.Run(mismatch, func(t *testing.T) {
 			u, s := testUpdater()
 			live, _, staged := u.paths()
@@ -119,7 +123,10 @@ func TestUpdateNeverStopsBeforeSignatureAndHashValidation(t *testing.T) {
 			if mismatch == "hash" {
 				expected = strings.Repeat("c", 64)
 			} else {
-				u.Verify = func(string, TrustPolicy) error { return errors.New("untrusted publisher") }
+				s.failHash = staged
+				if mismatch == "live-access" {
+					s.failHash = live
+				}
 			}
 			if u.Apply(context.Background(), expected) == nil || stopped || s.journal != nil {
 				t.Fatal("unverified release reached service stop")
@@ -138,6 +145,11 @@ func TestRecoveryRejectsMissingOrChangedRollback(t *testing.T) {
 	}
 }
 func TestReleaseURLAndVersionBoundaries(t *testing.T) {
+	for _, tag := range []string{"v01.2.3", "v1.2.3-rc.3", "v1.2.3-dev", "v1000000.2.3"} {
+		if stableTag.MatchString(tag) {
+			t.Fatalf("noncanonical stable tag accepted: %s", tag)
+		}
+	}
 	for _, endpoint := range []string{"http://github.com/x", "https://github.com.evil.test/x", "https://user:pw@github.com/x", "https://github.com:8443/x", "https://localhost/x"} {
 		u, _ := url.Parse(endpoint)
 		if releaseURL(u) {

@@ -1,8 +1,49 @@
 package panel
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 )
+
+func TestLoadConfigRetiredWindowsTrustKeys(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("Panel configuration targets Linux; covered by Linux source checks")
+	}
+	config := validTestConfig()
+	content, err := json.Marshal(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(content, &fields); err != nil {
+		t.Fatal(err)
+	}
+	fields["windowsNodePublisher"] = json.RawMessage(`"retired test publisher"`)
+	fields["windowsNodeProfileOid"] = json.RawMessage(`"1.2.3.4"`)
+	path := filepath.Join(t.TempDir(), "config.json")
+	write := func() {
+		t.Helper()
+		data, err := json.Marshal(fields)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, data, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write()
+	if loaded, err := LoadConfig(path); err != nil || loaded.Listen != config.Listen {
+		t.Fatalf("migration: %v", err)
+	}
+	fields["unrelatedUnknown"] = json.RawMessage(`true`)
+	write()
+	if _, err := LoadConfig(path); err == nil {
+		t.Fatal("migration weakened strict decoding of unrelated fields")
+	}
+}
 
 func TestLoadConfigAllowIPHostsEnvironment(t *testing.T) {
 	t.Setenv("KEJILION_PANEL_CONFIG", "")
