@@ -231,6 +231,13 @@ bash <(curl -fsSL https://kejilion.sh) kpanel node join '<kpl1-token>'
   完整成功事件，多因素尚未全部通过的日志不计成功。平台适配不能替代具体固件、架构与设备的实机验收；
 - `kejilion.sh` 只负责固定安装协议，下载 Release 中对应架构的静态 `kejilion-node` 和
   `SHA256SUMS`，校验摘要及二进制 `version` 后再原子安装；
+- 下载来源（安装与自动更新相同，更新器运行时代数 6 起）：先以短预算（两次、约一分钟）访问 github.com
+  的 `latest/download/SHA256SUMS`，并以首个重定向把清单绑定到具体版本。github.com 不可达时改经作者自有镜像
+  `gh.kejilion.pro` 获取；该镜像自行跟随重定向，看不到版本号，因此清单与二进制都取 `latest`，两次下载之间若
+  发布新版，摘要校验失败并在下一轮重试。github.com 可达但其 Release CDN 不可达时，二进制经镜像访问同一版本化
+  地址，仍与清单同属一个版本。github.com 可达却隐藏重定向时照旧失败，不改走镜像。摘要、`light-v1` 协议与回滚
+  校验不变；信任范围与 `kejilion.sh` 本身一致，没有新的第三方。暂不可达 GitHub 的旧节点运行一次
+  `k kpanel node update` 即可换上新更新器（`kejilion.sh` 由自有域名提供）；
 - 服务使用无登录、无 home 的 `kejilion-node` 系统用户运行，配置目录 `0750`，遥测凭据文件
   `0640 root:kejilion-node`；终端 Noise 私钥另存为 `0600 root:root`，低权限遥测进程不可读取；
   遥测 systemd unit 继续启用 `NoNewPrivileges`、只读系统、隐藏 home、空 capability 及地址族限制；
@@ -270,8 +277,8 @@ bash <(curl -fsSL https://kejilion.sh) kpanel node join '<kpl1-token>'
   遥测配置恢复 `root:kejilion-node 0640`，不扩读终端私钥或自定义路径；
 - 旧安装通过已校验临时 Release 二进制的 `version` 兼容桥安装同源更新器与 timer，无需重新配对。
   当前旧更新脚本仍会执行完原逻辑，下一轮才使用新流程；PID 与启动时间保护这段交接并发。
-  迁移只适用于旧更新器仍能完成下载/校验且存在 `flock` 的机器。旧目录锁已卡死、timer 被禁用或
-  GitHub 长期不可达时，发布中心端不能远程恢复，须读取该节点服务/更新日志定位并恢复更新入口；
+  迁移只适用于旧更新器仍能完成下载/校验且存在 `flock` 的机器。旧目录锁已卡死、timer 被禁用，或
+  GitHub 与镜像都长期不可达时，发布中心端不能远程恢复，须读取该节点服务/更新日志定位并恢复更新入口；
 - `k kpanel node status|update|uninstall` 分别用于状态、手动更新和本机卸载；`status` 同时显示
   遥测服务和 SSH 登录采集服务。中心删除记录不远程执行卸载；节点被移除后上报凭据立即失效，
   目标机由用户自行卸载或重新接入。
