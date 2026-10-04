@@ -280,6 +280,26 @@ func TestOfficeSharedStringExpansionAndSaveBudget(t *testing.T) {
 	if err != nil || !bytes.Equal(after, original) {
 		t.Fatal("rejected save changed original", err)
 	}
+	for _, growFirst := range []bool{true, false} {
+		if err := os.WriteFile(file, original, 0600); err != nil {
+			t.Fatal(err)
+		}
+		doc, err := m.ReadOffice(context.Background(), "/budget.docx")
+		if err != nil {
+			t.Fatal(err)
+		}
+		edits := []contract.OfficeEdit{{ID: doc.Sections[0].Items[0].ID, Text: strings.Repeat("y", 64000)}, {ID: doc.Sections[0].Items[1].ID, Text: ""}}
+		if !growFirst {
+			edits[0], edits[1] = edits[1], edits[0]
+		}
+		if _, err = m.WriteOffice(context.Background(), doc.Entry.Path, contract.FileWriteRequest{ExpectedResourceVersion: doc.Entry.ResourceVersion, ExpectedContentVersion: doc.ContentVersion, OfficeEdits: edits}); err != nil {
+			t.Fatal("final budget depends on edit order", growFirst, err)
+		}
+		reopened, err := m.ReadOffice(context.Background(), doc.Entry.Path)
+		if err != nil || reopened.Sections[0].Items[0].Text != strings.Repeat("y", 64000) || reopened.Sections[0].Items[1].Text != "" {
+			t.Fatal("valid final content was not saved", growFirst, err)
+		}
+	}
 }
 
 func TestOfficeFormulaRangesRemainReadOnly(t *testing.T) {

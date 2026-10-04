@@ -316,14 +316,14 @@ func (m *Manager) WriteOffice(ctx context.Context, virtual string, input contrac
 		before, _ := json.Marshal(target.text)
 		after, _ := json.Marshal(edit.Text)
 		viewBytes += len(after) - len(before)
-		if displayBytes > maxOfficeDisplayBytes || viewBytes > maxOfficeViewBytes-(64<<10) {
-			return contract.FileEntry{}, ErrTooLarge
-		}
 		changes, err := p.edit(target, edit.Text)
 		if err != nil {
 			return contract.FileEntry{}, err
 		}
 		patches[target.part] = append(patches[target.part], changes...)
+	}
+	if displayBytes > maxOfficeDisplayBytes || viewBytes > maxOfficeViewBytes-(64<<10) {
+		return contract.FileEntry{}, ErrTooLarge
 	}
 	if officeKind(current.Name) == "xlsx" {
 		patches["xl/workbook.xml"] = append(patches["xl/workbook.xml"], p.recalculatePatch())
