@@ -377,6 +377,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.requireMethod(w, r, requestID, http.MethodGet, s.systemCron)
 	case r.URL.Path == "/v1/system/network-interfaces":
 		s.requireMethod(w, r, requestID, http.MethodGet, s.systemNetworkInterfaces)
+	case r.URL.Path == "/v1/system/traffic-interfaces":
+		s.trafficInterfaces(w, r, requestID)
 	case r.URL.Path == "/v1/system/firewall":
 		s.requireMethod(w, r, requestID, http.MethodGet, s.systemFirewall)
 	case r.URL.Path == "/v1/system/port-usage":

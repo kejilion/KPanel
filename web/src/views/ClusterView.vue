@@ -44,6 +44,7 @@ import ClusterNotificationsDialog from '@/components/cluster/ClusterNotification
 import ClusterTemporarySortMenu from '@/components/cluster/ClusterTemporarySortMenu.vue'
 import ClusterHostContextMenu, { type ClusterHostMenuAction } from '@/components/cluster/ClusterHostContextMenu.vue'
 import LightNodeHealth from '@/components/cluster/LightNodeHealth.vue'
+import ClusterTrafficInterfaces from '@/components/cluster/ClusterTrafficInterfaces.vue'
 import ClusterHostDetails from '@/components/cluster/ClusterHostDetails.vue'
 import ClusterRemainingValue from '@/components/cluster/ClusterRemainingValue.vue'
 import EmptyState from '@/components/feedback/EmptyState.vue'
@@ -122,6 +123,7 @@ const manageError = ref('')
 const savedDetails = ref<ClusterHostDetailsValue>({})
 const savedName = ref('')
 const manageFormID = `cluster-manage-${useId()}`
+const trafficInterfaces = ref<InstanceType<typeof ClusterTrafficInterfaces>>()
 const deleting = ref(false)
 const enablingMutualFiles = ref(false)
 const generatingCode = ref(false)
@@ -1199,8 +1201,13 @@ async function saveHost(): Promise<void> {
     manageError.value = t('cluster.details.unavailable')
     return
   }
+  const interfacesInvalid = trafficInterfaces.value?.validate()
+  if (interfacesInvalid) {
+    manageError.value = interfacesInvalid
+    return
+  }
   saving.value = true
-  let phase: 'details' | 'name' = 'details'
+  let phase: 'details' | 'interfaces' | 'name' = 'details'
   let detailsWritten = false
   try {
     if (detailsChanged) {
@@ -1220,6 +1227,8 @@ async function saveHost(): Promise<void> {
           : undefined
       }
     }
+    phase = 'interfaces'
+    if (trafficInterfaces.value?.dirty) await trafficInterfaces.value.save()
     phase = 'name'
     if (name !== savedName.value) {
       const updated = await api.cluster.rename(host.id, { name, expectedResourceVersion: editResourceVersion.value })
@@ -1237,6 +1246,12 @@ async function saveHost(): Promise<void> {
         : reason instanceof ApiError && reason.code === 'cluster_host_details_invalid'
           ? t('cluster.details.invalid')
           : t('cluster.details.failed')
+    } else if (phase === 'interfaces') {
+      manageError.value = reason instanceof ApiError && reason.code === 'traffic_interfaces_changed'
+        ? t('cluster.trafficInterfaces.conflict')
+        : reason instanceof ApiError && reason.code === 'validation_failed'
+          ? t('cluster.trafficInterfaces.invalid')
+          : t(detailsWritten ? 'cluster.trafficInterfaces.failedAfterDetails' : 'cluster.trafficInterfaces.failed')
     } else {
       manageError.value = (detailsWritten ? `${t('cluster.details.nameFailedAfterDetails')} ` : '')
         + friendlyError(reason, t('cluster.details.failed'))
@@ -2366,6 +2381,7 @@ onBeforeUnmount(() => {
           </label>
           <small>{{ t('cluster.details.trafficLimitsHint') }}</small>
         </div>
+        <ClusterTrafficInterfaces ref="trafficInterfaces" :host="selected" :disabled="saving || deleting || enablingMutualFiles" />
         <p v-if="manageError" class="cluster-manage__details-error" role="alert">{{ manageError }}</p>
         <div class="cluster-manage__identity">
           <template v-if="selected.kind !== 'light_node'">

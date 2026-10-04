@@ -22,9 +22,15 @@ func startNodeMonitoring(parent context.Context, stateDir string) (http.Handler,
 	if runtime.GOOS != "windows" {
 		docker = dockerx.New("/var/run/docker.sock", "/home/web", stateDir)
 	}
+	// Rates follow the same interfaces the telemetry reports. The continuity
+	// offset stays in memory: OpenWrt keeps this state directory on flash.
+	collector := systeminfo.NewCollector()
+	if runtime.GOOS == "linux" {
+		collector.TrafficSelectionPath = defaultTrafficSelectionPath
+	}
 	history, err := monitoring.New(monitoring.Config{
 		StateDir:        filepath.Join(stateDir, "monitoring"),
-		System:          systeminfo.NewCollector(),
+		System:          collector,
 		Docker:          docker,
 		OperatorLatency: monitoring.NewOperatorLatencyProber(),
 		OnCheckStatus: func(summary contract.ServiceCheckSummary) {

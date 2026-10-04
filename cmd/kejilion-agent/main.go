@@ -142,6 +142,10 @@ func run(arguments []string) error {
 	dockerClient.ConfigureDaemonAccess(*dockerPIDFile, *allowDockerSocketActivation)
 	systemCollector := systeminfo.NewCollector()
 	systemCollector.PublicNetworkLookupEnabled = *enablePublicNetworkLookup
+	// Host-specific: host backups exclude the Agent state directory, so a
+	// restore on another machine never brings this host's interface names.
+	systemCollector.TrafficSelectionPath = filepath.Join(*stateDir, "traffic-interfaces.json")
+	systemCollector.TrafficStatePath = filepath.Join(*stateDir, "traffic-continuity.json")
 	dockerClient.ConfigureImageUpdateFallback(func(context.Context) (string, error) {
 		if !*enablePublicNetworkLookup {
 			return "ZZ", nil

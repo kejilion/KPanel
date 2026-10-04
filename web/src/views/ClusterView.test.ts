@@ -159,6 +159,7 @@ interface ClusterBindings {
   controllers: Ref<ClusterController[]>
   controllerFileRelayEnabled: (controller: ClusterController) => boolean
   toggleControllerFileRelay: (controller: ClusterController) => Promise<void>
+  trafficInterfaces: Ref<{ dirty: boolean; validate: () => string; save: () => Promise<void> } | undefined>
 }
 
 function setupView(router?: { push: (to: unknown) => unknown }): ClusterBindings {
@@ -1437,6 +1438,44 @@ describe('ClusterView optional server details', () => {
     expect(mocks.saveHostDetails).toHaveBeenLastCalledWith(target.id, expect.objectContaining({ ...original, trafficMonthlyQuotaGiB: 0, trafficCalculation: '' }))
     expect(view.inventory.value?.items[0]?.trafficPeriod?.receivedBytes).toBe(123)
     expect(mocks.hosts).not.toHaveBeenCalled()
+  })
+
+  it('saves counted interfaces between details and name, stopping on an invalid choice first', async () => {
+    const view = setupView()
+    const items = inventory()
+    const target = items.items[0]!
+    items.hostDetails = { [target.id]: { resourceVersion: 'v1' } }
+    view.inventory.value = items
+    view.openManage(target)
+    const steps: string[] = []
+    const interfaces = { dirty: true, validate: vi.fn(() => ''), save: vi.fn(async () => { steps.push('interfaces') }) }
+    view.trafficInterfaces.value = interfaces
+    mocks.saveHostDetails.mockImplementation(async () => { steps.push('details'); return { price: '$5/month', resourceVersion: 'v2' } })
+    mocks.rename.mockImplementation(async () => { steps.push('name'); return { ...target, name: '主控', resourceVersion: 'r2' } })
+    view.editDetails.price = '$5/month'
+    view.editName.value = '主控'
+    await view.saveHost()
+    expect(steps).toEqual(['details', 'interfaces', 'name'])
+    expect(view.manageError.value).toBe('')
+
+    view.editDetails.price = '$6/month'
+    mocks.saveHostDetails.mockImplementationOnce(async () => ({ price: '$6/month', resourceVersion: 'v3' }))
+    interfaces.save.mockRejectedValueOnce(new ApiError('failed', 500, 'traffic_interfaces_update_failed'))
+    await view.saveHost()
+    expect(view.manageError.value).toContain('服务器信息已保存')
+
+    interfaces.save.mockRejectedValueOnce(new ApiError('Changed', 409, 'traffic_interfaces_changed'))
+    await view.saveHost()
+    expect(view.manageError.value).toContain('已在别处修改')
+
+    mocks.saveHostDetails.mockClear()
+    interfaces.save.mockClear()
+    interfaces.validate.mockReturnValue('请至少勾选一块网卡，或改用自动。')
+    view.editDetails.price = '$7/month'
+    await view.saveHost()
+    expect(view.manageError.value).toBe('请至少勾选一块网卡，或改用自动。')
+    expect(mocks.saveHostDetails).not.toHaveBeenCalled()
+    expect(interfaces.save).not.toHaveBeenCalled()
   })
 
   it('rejects invalid monthly quotas and retains quota input when saving fails', async () => {

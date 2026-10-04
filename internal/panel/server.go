@@ -455,6 +455,8 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		s.handleClusterHistory(w, r)
 	case r.URL.Path == "/api/v1/monitoring/checks":
 		s.handleMonitoringChecks(w, r)
+	case r.URL.Path == trafficInterfacesPath:
+		s.handleTrafficInterfaces(w, r)
 	case r.URL.Path == "/api/v1/terminal-sessions" ||
 		strings.HasPrefix(r.URL.Path, "/api/v1/terminal-sessions/"):
 		s.handleTerminalSession(w, r)

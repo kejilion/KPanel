@@ -1546,6 +1546,38 @@ function mockMonitoringCheckSnapshot() {
   }
 }
 
+// Mirrors the Agent's classification closely enough to review the dialog.
+let mockTrafficRevision = 1
+let mockTrafficSelection = { include: [], exclude: [] }
+const mockTrafficCounters = [
+  { name: 'docker0', receivedBytes: 7_340_032, sentBytes: 52_428_800, defaultRoute: false },
+  { name: 'eth0', receivedBytes: 1_288_490_188_800, sentBytes: 322_122_547_200, defaultRoute: true },
+  { name: 'lo', receivedBytes: 1_048_576, sentBytes: 1_048_576, defaultRoute: false },
+  { name: 'warp', receivedBytes: 85_899_345_920, sentBytes: 12_884_901_888, defaultRoute: false },
+]
+
+function mockTrafficInterfacesSnapshot() {
+  const { include, exclude } = mockTrafficSelection
+  const present = new Set(mockTrafficCounters.map((entry) => entry.name))
+  const chosen = include.filter((name) => present.has(name))
+  const interfaces = mockTrafficCounters.map(({ defaultRoute, ...entry }) => {
+    let reason = defaultRoute ? 'default-route' : 'not-default-route'
+    if (entry.name === 'lo') reason = 'loopback'
+    else if (exclude.includes(entry.name)) reason = 'excluded'
+    else if (chosen.length) reason = chosen.includes(entry.name) ? 'selected' : 'not-selected'
+    return { ...entry, counted: ['default-route', 'selected'].includes(reason), reason }
+  })
+  for (const name of include) {
+    if (!present.has(name)) interfaces.push({ name, receivedBytes: 0, sentBytes: 0, counted: false, reason: 'missing' })
+  }
+  interfaces.sort((left, right) => left.name.localeCompare(right.name))
+  return {
+    selection: { include: [...include], exclude: [...exclude] },
+    interfaces,
+    resourceVersion: `sha256:${String(mockTrafficRevision).padStart(64, '0')}`,
+  }
+}
+
 createServer(async (request, response) => {
   const url = new URL(request.url, 'http://127.0.0.1:8080')
   if (await mockBackups(request, response, url, send, readJSON)) return
@@ -1565,6 +1597,24 @@ createServer(async (request, response) => {
     mockAppearanceRevision += 1
     mockAppearance = { ...mockAppearance, ...changes, configured: true, resourceVersion: mockRevision(mockAppearanceRevision) }
     send(response, 200, mockAppearance)
+    return
+  }
+  if (url.pathname === '/api/v1/system/traffic-interfaces' && request.method === 'GET') {
+    send(response, 200, mockTrafficInterfacesSnapshot())
+    return
+  }
+  if (url.pathname === '/api/v1/system/traffic-interfaces' && request.method === 'PUT') {
+    const input = await readJSON(request)
+    if (input.expectedResourceVersion !== mockTrafficInterfacesSnapshot().resourceVersion) {
+      send(response, 409, { title: '流量统计网卡已被修改', code: 'traffic_interfaces_changed' })
+      return
+    }
+    mockTrafficSelection = {
+      include: Array.isArray(input.include) ? input.include : [],
+      exclude: Array.isArray(input.exclude) ? input.exclude : [],
+    }
+    mockTrafficRevision += 1
+    send(response, 200, mockTrafficInterfacesSnapshot())
     return
   }
   if (url.pathname === '/api/v1/monitoring/checks' && request.method === 'GET') {
