@@ -100,18 +100,23 @@ const bounds = computed(() => {
   let minimumValue = props.zeroBased ? 0 : Number.POSITIVE_INFINITY
   let maximumValue = Number.NEGATIVE_INFINITY
   const highs: number[] = []
+  const lows: number[] = []
   for (const series of normalizedSeries.value) {
     for (const point of series.points) {
       minimumTime = Math.min(minimumTime, point.time)
       maximumTime = Math.max(maximumTime, point.time)
-      minimumValue = Math.min(minimumValue, point.low ?? point.value)
+      minimumValue = Math.min(minimumValue, point.value)
+      if (point.low !== undefined) lows.push(point.low)
       maximumValue = Math.max(maximumValue, point.value)
       if (point.high !== undefined) highs.push(point.high)
     }
   }
   // Lines always fit. Rare band peaks above the ceiling are clipped at the
   // top instead of squeezing every line toward the axis.
-  if (bandsVisible.value && highs.length) maximumValue = Math.max(maximumValue, bandCeiling(highs))
+  if (bandsVisible.value && highs.length) {
+    maximumValue = Math.max(maximumValue, bandCeiling(highs))
+    minimumValue = Math.min(minimumValue, ...lows)
+  }
   if (Number.isFinite(props.maxValue)) maximumValue = Math.max(maximumValue, props.maxValue as number)
   const hasData = Number.isFinite(minimumTime) && Number.isFinite(maximumTime) && Number.isFinite(maximumValue)
   if (!hasData) {
