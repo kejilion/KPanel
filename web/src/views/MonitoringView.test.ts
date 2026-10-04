@@ -95,6 +95,27 @@ describe('monitoring host selection', () => {
     expect(wrapper.findAll('.service-status-row')).toHaveLength(1)
   })
 
+  it('plots the median of each interval with the lowest-to-highest band', async () => {
+    const value = history()
+    value.operatorLatency = [
+      { id: 'ping-one', kind: 'ping', name: 'Ping 节点', address: '1.1.1.1', target: '1.1.1.1', points: [
+        { collectedAt: '2026-09-11T00:30:00Z', latencyMilliseconds: 480, medianMilliseconds: 21, minimumMilliseconds: 18, successCount: 6, failureCount: 0 },
+        { collectedAt: '2026-09-11T01:00:00Z', latencyMilliseconds: 95, successCount: 12, failureCount: 0 },
+        { collectedAt: '2026-09-11T01:30:00Z', latencyMilliseconds: null, successCount: 0, failureCount: 6 },
+      ] },
+    ]
+    mocks.history.mockResolvedValue(value)
+    const { wrapper } = await mountAt()
+    const chart = wrapper.findAllComponents(TrendChart).find((item) => item.props('formatter') !== undefined &&
+      item.props('series').some((series: { label: string }) => series.label.includes('Ping 节点')))
+    expect(chart?.props('series')[0]?.points).toEqual([
+      { at: '2026-09-11T00:30:00Z', value: 21, low: 18, high: 480 },
+      // An interval covered only by an older hourly rollup keeps its one value.
+      { at: '2026-09-11T01:00:00Z', value: 95 },
+    ])
+    expect(wrapper.text()).toContain('超时')
+  })
+
   it('switches between all, host, container and service check categories and remembers the choice', async () => {
     const { wrapper } = await mountAt()
     const sections = () => ({

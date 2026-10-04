@@ -157,7 +157,7 @@ export default [
   ["检测项显示选择", "Check visibility"],
   ["等待首次检测采样", "Waiting for the first check sample"],
   ["等待首次检测采样。", "Waiting for the first check sample."],
-  ["每 5 分钟统一采样；超时记为缺测，不记作 0 ms。曲线支持拖拽框选并沿用上方时间范围。", "Checks run every 5 minutes; timeouts are missing data, not 0 ms. Drag to zoom using the shared time range."],
+  ["每 5 分钟统一采样；超时记为缺测，不记作 0 ms。曲线是区间内的中位延迟，显示 3 条以内时色带标出最低到最高；曲线支持拖拽框选并沿用上方时间范围。", "Checks run every 5 minutes; timeouts are missing data, not 0 ms. Lines show the median latency of each interval; with up to 3 checks shown, a band marks the lowest to highest. Drag to zoom using the shared time range."],
   ["已隐藏全部检测项，选择上方项目即可显示。", "All checks are hidden. Select a check above to show it."],
   ["当前协议暂无检测项", "No checks for this protocol"],
   ["请在该节点所属面板添加检测项。", "Add checks from the panel that owns this node."],

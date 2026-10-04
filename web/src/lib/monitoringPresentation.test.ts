@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { MonitoringContainerSeries } from '@/types/api'
 import {
+  bandCeiling,
   isHistoricalContainer,
   monitoringRangeFromQuery,
   monitoringWindowFromQuery,
@@ -174,5 +175,16 @@ describe('monitoring presentation', () => {
     const preview = sliceMonitoringHistory(source, '2026-08-05T00:30:00Z', '2026-08-05T01:30:00Z')
     expect(preview.host.map((point) => point.collectedAt)).toEqual(['2026-08-05T01:00:00Z'])
     expect(source.host).toHaveLength(3)
+  })
+})
+
+describe('band ceiling', () => {
+  it('keeps room for usual peaks but not for a rare spike', () => {
+    const highs = Array.from({ length: 19 }, (_, index) => 20 + index)
+    expect(bandCeiling([...highs, 2000])).toBe(37)
+    expect(bandCeiling([5, 900])).toBe(900)
+    expect(bandCeiling([42])).toBe(42)
+    expect(bandCeiling([Number.NaN, 12, Number.POSITIVE_INFINITY])).toBe(12)
+    expect(bandCeiling([])).toBe(Number.NEGATIVE_INFINITY)
   })
 })

@@ -57,9 +57,15 @@ type MonitoringContainerSeries struct {
 	Points      []MonitoringContainerPoint `json:"points"`
 }
 
+// MonitoringOperatorLatencyPoint is one chart point. LatencyMilliseconds is the
+// highest successful latency in the point's interval, as before. Median and
+// minimum describe the same interval when the source recorded them; they are
+// absent for intervals covered only by rollups that predate them.
 type MonitoringOperatorLatencyPoint struct {
 	CollectedAt         time.Time `json:"collectedAt"`
 	LatencyMilliseconds *float64  `json:"latencyMilliseconds"`
+	MedianMilliseconds  *float64  `json:"medianMilliseconds,omitempty"`
+	MinimumMilliseconds *float64  `json:"minimumMilliseconds,omitempty"`
 	SuccessCount        int       `json:"successCount,omitempty"`
 	FailureCount        int       `json:"failureCount,omitempty"`
 }

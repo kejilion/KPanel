@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
+  bandCeiling,
   nearestTimestamp,
   normalizeTrendChartWidth,
   parseMonitoringTimestamp,
@@ -20,14 +21,20 @@ export interface TrendSeries {
   maxGapMilliseconds?: number
   maxPointDistanceMilliseconds?: number
   latestLabel?: string
-  points: Array<{ at: string; value: number }>
+  // low/high, when both are present, draw a band around the line: for
+  // latency the line is the median and the band the lowest to highest.
+  points: Array<{ at: string; value: number; low?: number; high?: number }>
 }
 
 interface NormalizedPoint {
   at: string
   time: number
   value: number
+  low?: number
+  high?: number
 }
+
+let chartSequence = 0
 
 const props = withDefaults(defineProps<{
   series: TrendSeries[]
@@ -37,6 +44,9 @@ const props = withDefaults(defineProps<{
   selectable?: boolean
   showLegend?: boolean
   highlightGroup?: string
+  // Bands are drawn only while at most this many series carry one; more
+  // overlapping bands hide the lines. The tooltip still shows the range.
+  bandLimit?: number
 }>(), {
   formatter: (value: number) => value.toFixed(1),
   zeroBased: true,
@@ -44,6 +54,7 @@ const props = withDefaults(defineProps<{
   selectable: true,
   showLegend: true,
   highlightGroup: undefined,
+  bandLimit: 3,
 })
 
 const emit = defineEmits<{
@@ -53,6 +64,7 @@ const emit = defineEmits<{
 const defaultWidth = 720
 const height = 210
 const padding = { top: 16, right: 12, bottom: 28, left: 64 }
+const clipId = `trend-chart-plot-${++chartSequence}`
 const canvas = ref<HTMLDivElement>()
 const width = ref(defaultWidth)
 const hoveredTime = ref<number>()
@@ -71,7 +83,12 @@ const normalizedSeries = computed(() => props.series.map((series) => ({
   points: series.points.reduce<NormalizedPoint[]>((result, point) => {
     const time = parseMonitoringTimestamp(point.at)
     if (Number.isFinite(time) && Number.isFinite(point.value)) {
-      result.push({ at: point.at, time, value: point.value })
+      const normalized: NormalizedPoint = { at: point.at, time, value: point.value }
+      if (Number.isFinite(point.low) && Number.isFinite(point.high)) {
+        normalized.low = Math.min(point.low as number, point.value)
+        normalized.high = Math.max(point.high as number, point.value)
+      }
+      result.push(normalized)
     }
     return result
   }, []),
@@ -82,14 +99,19 @@ const bounds = computed(() => {
   let maximumTime = Number.NEGATIVE_INFINITY
   let minimumValue = props.zeroBased ? 0 : Number.POSITIVE_INFINITY
   let maximumValue = Number.NEGATIVE_INFINITY
+  const highs: number[] = []
   for (const series of normalizedSeries.value) {
     for (const point of series.points) {
       minimumTime = Math.min(minimumTime, point.time)
       maximumTime = Math.max(maximumTime, point.time)
-      minimumValue = Math.min(minimumValue, point.value)
+      minimumValue = Math.min(minimumValue, point.low ?? point.value)
       maximumValue = Math.max(maximumValue, point.value)
+      if (point.high !== undefined) highs.push(point.high)
     }
   }
+  // Lines always fit. Rare band peaks above the ceiling are clipped at the
+  // top instead of squeezing every line toward the axis.
+  if (bandsVisible.value && highs.length) maximumValue = Math.max(maximumValue, bandCeiling(highs))
   if (Number.isFinite(props.maxValue)) maximumValue = Math.max(maximumValue, props.maxValue as number)
   const hasData = Number.isFinite(minimumTime) && Number.isFinite(maximumTime) && Number.isFinite(maximumValue)
   if (!hasData) {
@@ -99,6 +121,9 @@ const bounds = computed(() => {
   if (maximumValue <= minimumValue) maximumValue = minimumValue + 1
   return { hasData, minimumTime, maximumTime, minimumValue, maximumValue }
 })
+
+const bandSeries = computed(() => normalizedSeries.value.filter((series) => series.points.some((point) => point.high !== undefined)))
+const bandsVisible = computed(() => bandSeries.value.length > 0 && bandSeries.value.length <= props.bandLimit)
 
 const yTicks = computed(() => Array.from({ length: 4 }, (_, index) => {
   const ratio = index / 3
@@ -183,6 +208,28 @@ function linePath(points: NormalizedPoint[], maxGapMilliseconds?: number): strin
       gap > (maxGapMilliseconds as number))
     previousTime = point.time
     return `${startsSegment ? 'M' : 'L'}${xFor(point.time).toFixed(2)},${yFor(point.value).toFixed(2)}`
+  }).join(' ')
+}
+
+function bandPath(points: NormalizedPoint[], maxGapMilliseconds?: number): string {
+  if (!bounds.value.hasData) return ''
+  const segments: NormalizedPoint[][] = []
+  let current: NormalizedPoint[] = []
+  for (const point of points) {
+    const previous = current.at(-1)
+    const broken = point.high === undefined || (previous !== undefined && Number.isFinite(maxGapMilliseconds) &&
+      point.time - previous.time > (maxGapMilliseconds as number))
+    if (broken) {
+      if (current.length > 1) segments.push(current)
+      current = []
+    }
+    if (point.high !== undefined) current.push(point)
+  }
+  if (current.length > 1) segments.push(current)
+  return segments.map((segment) => {
+    const upper = segment.map((point) => `${xFor(point.time).toFixed(2)},${yFor(point.high as number).toFixed(2)}`)
+    const lower = segment.slice().reverse().map((point) => `${xFor(point.time).toFixed(2)},${yFor(point.low as number).toFixed(2)}`)
+    return `M${upper.join(' L')} L${lower.join(' L')} Z`
   }).join(' ')
 }
 
@@ -366,6 +413,22 @@ onBeforeUnmount(() => {
             {{ formatter(tick.value) }}
           </text>
         </g>
+        <template v-if="bandsVisible">
+          <defs>
+            <clipPath :id="clipId">
+              <rect :x="padding.left" :y="padding.top" :width="plotWidth()" :height="plotHeight()" />
+            </clipPath>
+          </defs>
+          <path
+            v-for="item in bandSeries"
+            :key="`band-${item.id || item.label}`"
+            :d="bandPath(item.points, item.maxGapMilliseconds)"
+            :fill="item.color"
+            :clip-path="`url(#${clipId})`"
+            class="trend-chart__band"
+            :class="{ 'is-muted': highlightGroup && item.group !== highlightGroup }"
+          />
+        </template>
         <path
           v-for="item in normalizedSeries"
           :key="item.id || item.label"
@@ -415,7 +478,7 @@ onBeforeUnmount(() => {
         <span v-for="point in hoveredPoints" :key="point.id">
           <i :style="{ backgroundColor: point.color }" />
           {{ point.label }}
-          <strong>{{ formatter(point.value) }}</strong>
+          <strong>{{ formatter(point.value) }}<small v-if="point.high !== undefined && hoveredPoints.length <= 6" class="trend-chart__range">{{ formatter(point.low as number) }}–{{ formatter(point.high) }}</small></strong>
         </span>
       </div>
       <div class="trend-chart__axis">
@@ -446,6 +509,9 @@ onBeforeUnmount(() => {
   vector-effect: non-scaling-stroke; transition: opacity .14s ease;
 }
 .trend-chart__line.is-muted { opacity: .14; }
+.trend-chart__band { fill-opacity: .12; stroke: none; pointer-events: none; transition: opacity .14s ease; }
+.trend-chart__band.is-muted { opacity: .25; }
+.trend-chart__range { margin-left: 6px; color: var(--muted); font-weight: 400; }
 .trend-chart__selection {
   fill: color-mix(in srgb, var(--brand) 18%, transparent); stroke: var(--brand);
   stroke-width: 1; vector-effect: non-scaling-stroke; pointer-events: none;

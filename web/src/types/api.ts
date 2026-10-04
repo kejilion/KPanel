@@ -1802,7 +1802,12 @@ export interface MonitoringContainerSeries {
 
 export interface MonitoringOperatorLatencyPoint {
   collectedAt: string
+  // Highest successful latency of the interval; null when every probe failed.
   latencyMilliseconds: number | null
+  // Median and lowest of the same interval. Absent for intervals covered only
+  // by hourly rollups written before these fields existed.
+  medianMilliseconds?: number | null
+  minimumMilliseconds?: number | null
   successCount?: number
   failureCount?: number
 }
