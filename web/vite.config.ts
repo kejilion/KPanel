@@ -39,5 +39,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     css: true,
+    // Keep jsdom resource use bounded while release checks also run Go.
+    maxWorkers: 2,
   },
 })

@@ -1510,7 +1510,7 @@ onBeforeUnmount(() => {
             ><component :is="option.icon" :size="16" /></button>
           </div>
           <button
-            class="button button--small"
+            class="button"
             :class="selecting ? 'button--primary' : 'button--secondary'"
             type="button"
             :aria-pressed="selecting"
@@ -1525,14 +1525,14 @@ onBeforeUnmount(() => {
           <button type="button" class="gallery-link" @click="selectAllVisible">全选当前 {{ visibleItems.length }} 项</button>
           <button v-if="selected.size" type="button" class="gallery-link" @click="clearSelection">清除</button>
           <span class="gallery-toolbar__spacer" />
-          <button class="button button--secondary button--small" type="button" :disabled="!selected.size" @click="downloadEntries(selectedEntries)">
+          <button class="button button--secondary" type="button" :disabled="!selected.size" @click="downloadEntries(selectedEntries)">
             <Download :size="16" /> 下载
           </button>
-          <button class="button button--secondary button--small" type="button" :disabled="!selected.size" @click="requestMove(selectedEntries)">
+          <button class="button button--secondary" type="button" :disabled="!selected.size" @click="requestMove(selectedEntries)">
             <FolderInput :size="16" /> {{ phrase('移动到…') }}
           </button>
           <button
-            class="button button--danger button--small"
+            class="button button--danger"
             type="button"
             :disabled="!selected.size"
             @click="requestDelete({ kind: 'media', entries: selectedEntries })"
@@ -1545,7 +1545,7 @@ onBeforeUnmount(() => {
           <ImagePlus :size="17" aria-hidden="true" />
           <strong>点选一张照片作为「{{ title }}」的封面</strong>
           <span class="gallery-toolbar__spacer" />
-          <button class="button button--secondary button--small" type="button" @click="coverPicking = false">取消</button>
+          <button class="button button--secondary" type="button" @click="coverPicking = false">取消</button>
         </div>
 
         <section v-if="emptyLibrary" class="gallery-empty gallery-empty--drop">
