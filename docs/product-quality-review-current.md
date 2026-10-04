@@ -1,8 +1,9 @@
 # KPanel 当前业务事实与规范适配基线
 
 - 复核日期：`2026-10-04`
-- 基线提交：`ce27dc5171a97ed6e3d9475cddfdfac89762aad3`
+- 基线提交：`4f4996da03523a7d0dd788a28e0b57e9decaf045`
 - 基线版本：`v1.24.0`
+- 当前预览：`v1.25.0-rc.1`；默认稳定版仍 `v1.24.0`
 - 上一份完整复核：[`product-quality-review-2026-08-13.md`](product-quality-review-2026-08-13.md)
 - 自动刷新门槛：基线后达到 50 个提交，或同时达到 20 个提交和 8 个正式版本；产品性质、业务真源、权限边界或核心旅程发生实质变化时立即复核
 
@@ -10,6 +11,8 @@
 只记录会影响任务分级、设计判断和验收范围的当前业务事实。
 
 稳定版 `v1.24.0` 已于 `2026-10-03T22:39:47Z` 公开，汇总RC1–RC11累计已验收产品，包含图库菜单/封面/移动/筛选与WebSSH确认输入、多会话、光标、空闲保活和刷新回收。新稳定提交全L3、16 Mock/4桌面/6原生/2字号组、6主机采样/6PTY故障、RC11和v1.23各双方向12兼容场景及公开amd64镜像E2E通过；CF scoped run16已完成并按固定验证器/独立复核记录，结论与未知部署事实见验收。GitHub Latest/Docker latest为1.24.0，preview保留RC11；coupled脚本c981已先公开，apps契约同SHA无需提交。生产未部署，Windows签名/原生安装/更新/RDP不在范围。图库12px小按钮的14px规范差距与WAN/长时/arm64/router等未验证边界保留。详见 [release-v1.24.0-acceptance.md](release-v1.24.0-acceptance.md)。
+
+预览版 `v1.25.0-rc.1` 已于 `2026-10-04T03:25:39Z` 公开，产品行为沿用 v1.24.0；新增有界并行源码检查/任务预检/SLA 和独立重基业务基座验收映射，不宣称新功能或运行时性能收益。精确候选全L3、251文件/2256前端tests、Go/race/vet、候选/main CI、安全扫描、公开amd64镜像E2E与双架构产物摘要核对通过；两次L3失败原件保留。preview=`sha256:e3d0b3543f014e84abed356ac590fb36c161d9dad6524eb4d96f7d6b3585f316`，Latest/latest仍1.24.0；脚本/apps契约未变，无生产部署。Node26/TS7/Windows与未公开脚本候选继续暂缓；八个旧已交付active refs及TS7实验精确归档，作者树保留。单次Release源码步骤417.0s vs上版449s，仅同平台观测，不保证总体提速。详见 [release-v1.25.0-rc.1-acceptance.md](release-v1.25.0-rc.1-acceptance.md)。
 
 预览版 `v1.24.0-rc.11` 已于 `2026-10-03T09:37:43Z` 公开，纳入 WebSSH 空闲保活、刷新释放已挂载会话、同主机多终端/序号复用/上限反馈、稳定块状光标，以及图库筛选随内容滚动和选择操作条保留。精确候选全 L3、251 文件/2256 前端测试、16 Mock + 4 桌面 + 6 原生 Chrome/Edge 场景、6 主机输入、6 PTY 故障、RC10/RC11 双方向 12 兼容场景和公开 amd64 镜像 E2E 通过。真实浏览器每端6次刷新旧会话404、65秒空闲后输出正常；崩溃/断网/组件挂载前刷新仍按旧超时回收，bfcache 保留会话。`preview` 为 `sha256:a1f2cabf9164001e37b6cd8d05dd7a3a2dc80ed07c0eee082cda304a7306e060`；稳定默认仍 `v1.23.0`，脚本 pin 未变，生产未部署。CF 覆盖待补审；Windows 轻量节点仍缺签名产物和原生安装/更新/RDP 准入，本版未纳入。五个源 tip 已精确归档，活跃作者工作树保留；Mock/CSS zoom 与隔离 Linux Runner 不代表 WAN/原生 browser zoom/Windows 实机。详见 [release-v1.24.0-rc.11-acceptance.md](release-v1.24.0-rc.11-acceptance.md)。
 
