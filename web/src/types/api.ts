@@ -853,6 +853,42 @@ export interface NetworkInterfaceEntry {
 
 export type NetworkInterfacesSnapshot = SystemResourceSnapshot<NetworkInterfaceEntry>
 
+export type TrafficInterfaceReason =
+  | 'default-route'
+  | 'not-default-route'
+  | 'automatic'
+  | 'virtual'
+  | 'loopback'
+  | 'selected'
+  | 'not-selected'
+  | 'excluded'
+  | 'missing'
+
+export interface TrafficInterfaceSelection {
+  include: string[]
+  exclude: string[]
+}
+
+export interface TrafficInterfaceStatus {
+  name: string
+  receivedBytes: number
+  sentBytes: number
+  counted: boolean
+  reason: TrafficInterfaceReason
+}
+
+/** Interfaces counted toward this host's traffic; see docs/cluster-monitoring.md. */
+export interface TrafficInterfacesSnapshot {
+  selection: TrafficInterfaceSelection
+  interfaces: TrafficInterfaceStatus[]
+  selectionError?: string
+  resourceVersion: string
+}
+
+export interface TrafficInterfacesUpdate extends TrafficInterfaceSelection {
+  expectedResourceVersion: string
+}
+
 export interface FirewallRule {
   line: number
   chain: string

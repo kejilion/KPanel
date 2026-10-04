@@ -388,6 +388,30 @@ describe('API client', () => {
     )
   })
 
+  it('reads and replaces the local counted interfaces with the observed version', async () => {
+    const current = {
+      selection: { include: [], exclude: [] },
+      interfaces: [{ name: 'eth0', receivedBytes: 1, sentBytes: 2, counted: true, reason: 'default-route' }],
+      resourceVersion: `sha256:${'1'.repeat(64)}`,
+    }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(current))
+      .mockResolvedValueOnce(jsonResponse({ ...current, selection: { include: ['eth0'], exclude: [] } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(api.system.trafficInterfaces()).resolves.toEqual(current)
+    await api.system.updateTrafficInterfaces({ include: ['eth0'], exclude: [], expectedResourceVersion: current.resourceVersion })
+
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      '/api/v1/system/traffic-interfaces',
+      '/api/v1/system/traffic-interfaces',
+    ])
+    expect(fetchMock.mock.calls[1]?.[1]).toEqual(expect.objectContaining({
+      method: 'PUT',
+      body: JSON.stringify({ include: ['eth0'], exclude: [], expectedResourceVersion: current.resourceVersion }),
+    }))
+  })
+
   it('loads a site appearance only through the authenticated same-origin API', async () => {
     const id = 'a'.repeat(32)
     const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({ name: '科技狮网站' }))

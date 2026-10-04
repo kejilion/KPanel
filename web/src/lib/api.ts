@@ -89,6 +89,8 @@ import type {
   MonitoringCheckSnapshot,
   MonitoringCheckUpdate,
   NetworkInterfacesSnapshot,
+  TrafficInterfacesSnapshot,
+  TrafficInterfacesUpdate,
 	PortUsageSnapshot,
   PanelSettings,
   ProcessQuery,
@@ -1901,6 +1903,10 @@ export const api = {
       request<CronSnapshot>('/system/cron', { signal }),
     networkInterfaces: (signal?: AbortSignal): Promise<NetworkInterfacesSnapshot> =>
       request<NetworkInterfacesSnapshot>('/system/network-interfaces', { signal }),
+    trafficInterfaces: (signal?: AbortSignal): Promise<TrafficInterfacesSnapshot> =>
+      request<TrafficInterfacesSnapshot>('/system/traffic-interfaces', { signal }),
+    updateTrafficInterfaces: (body: TrafficInterfacesUpdate): Promise<TrafficInterfacesSnapshot> =>
+      request<TrafficInterfacesSnapshot>('/system/traffic-interfaces', { method: 'PUT', body }),
     firewall: (signal?: AbortSignal): Promise<FirewallSnapshot> =>
       request<FirewallSnapshot>('/system/firewall', { signal }),
 	portUsage: (signal?: AbortSignal): Promise<PortUsageSnapshot> =>

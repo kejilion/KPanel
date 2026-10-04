@@ -31,6 +31,12 @@ type Collector struct {
 	PublicNetworkLookupEnabled bool
 	PublicNetworkLookup        func(context.Context) (contract.PublicNetworkSummary, error)
 	PublicNetworkCacheTTL      time.Duration
+	// TrafficSelectionPath holds this host's traffic interface selection.
+	// Empty disables the selection API; traffic uses the automatic choice.
+	TrafficSelectionPath string
+	// TrafficStatePath persists the traffic continuity offset across restarts.
+	// Empty keeps it in memory only.
+	TrafficStatePath string
 
 	defaultsOnce         sync.Once
 	publicNetworkMu      sync.Mutex
@@ -38,6 +44,16 @@ type Collector struct {
 	publicNetworkExpires time.Time
 	publicNetworkLoading bool
 	publicNetworkDone    chan struct{}
+
+	networkMu           sync.Mutex
+	selection           contract.TrafficInterfaceSelection
+	selectionContent    []byte
+	selectionErr        error
+	selectionStamp      networkSelectionStamp
+	selectionLoaded     bool
+	continuity          networkContinuity
+	continuityLoaded    bool
+	continuityPersisted time.Time
 }
 
 func NewCollector() *Collector {
@@ -346,28 +362,12 @@ func (c *Collector) readNetwork(out *contract.NetworkSummary) error {
 	if data == "" {
 		return errors.New("read network: unavailable /proc/net/dev")
 	}
-	// Prefer routed interfaces so loopback and container/VPN layers do not
-	// count the same traffic more than once.
 	defaultRoutes := c.defaultRouteInterfaces()
-	for _, line := range strings.Split(data, "\n") {
-		name, values, ok := strings.Cut(line, ":")
-		if !ok {
-			continue
-		}
-		name = strings.TrimSpace(name)
-		if name == "lo" || (len(defaultRoutes) > 0 && !defaultRoutes[name]) ||
-			(len(defaultRoutes) == 0 && virtualNetworkInterface(name)) {
-			continue
-		}
-		fields := strings.Fields(values)
-		if len(fields) < 16 {
-			continue
-		}
-		rx, _ := strconv.ParseUint(fields[0], 10, 64)
-		tx, _ := strconv.ParseUint(fields[8], 10, 64)
-		out.ReceivedBytes += rx
-		out.SentBytes += tx
-	}
+	c.networkMu.Lock()
+	selection, _, _ := c.networkSelectionLocked()
+	_, received, sent, scope := classifyNetworkInterfaces(parseNetworkCounters(data), defaultRoutes, selection)
+	out.ReceivedBytes, out.SentBytes = c.continueCountersLocked(received, sent, scope)
+	c.networkMu.Unlock()
 	out.TCPConnections = c.connectionCount("net/tcp") + c.connectionCount("net/tcp6")
 	out.UDPConnections = c.connectionCount("net/udp") + c.connectionCount("net/udp6")
 	return nil

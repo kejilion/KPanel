@@ -116,7 +116,7 @@ func run(arguments []string) error {
 		return nil
 	}
 	if len(arguments) == 0 {
-		return errors.New("expected enroll, run, terminal-broker, ssh-login-broker, file-broker, or version")
+		return errors.New("expected enroll, run, terminal-broker, ssh-login-broker, file-broker, interfaces, or version")
 	}
 	switch arguments[0] {
 	case "enroll":
@@ -129,6 +129,8 @@ func run(arguments []string) error {
 		return runSSHLoginBroker(arguments[1:])
 	case "file-broker":
 		return runFileBroker(arguments[1:])
+	case "interfaces":
+		return runTrafficInterfaces(arguments[1:])
 	default:
 		return errors.New("unsupported kejilion-node command")
 	}
@@ -271,6 +273,9 @@ func runNode(arguments []string) error {
 	defer stop()
 	collector := systeminfo.NewCollector()
 	collector.PublicNetworkCacheTTL = 30 * time.Minute
+	// The telemetry service has no writable state, so the continuity offset
+	// lives in memory only.
+	collector.TrafficSelectionPath = defaultTrafficSelectionPath
 	sshReader := sshlogin.NewReader(sshlogin.Config{EventPath: sshlogin.EventPath})
 	interval := time.Duration(config.ReportInterval) * time.Second
 	backoff := time.Second

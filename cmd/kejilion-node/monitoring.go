@@ -17,9 +17,13 @@ import (
 // Collection has a separate collector and lifetime from network relay retries.
 func startNodeMonitoring(parent context.Context, stateDir string) (http.Handler, func()) {
 	ctx, cancel := context.WithCancel(parent)
+	// Rates follow the same interfaces the telemetry reports. The continuity
+	// offset stays in memory: OpenWrt keeps this state directory on flash.
+	collector := systeminfo.NewCollector()
+	collector.TrafficSelectionPath = defaultTrafficSelectionPath
 	history, err := monitoring.New(monitoring.Config{
 		StateDir:        filepath.Join(stateDir, "monitoring"),
-		System:          systeminfo.NewCollector(),
+		System:          collector,
 		Docker:          dockerx.New("/var/run/docker.sock", "/home/web", stateDir),
 		OperatorLatency: monitoring.NewOperatorLatencyProber(),
 		OnCheckStatus: func(summary contract.ServiceCheckSummary) {
