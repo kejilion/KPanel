@@ -120,6 +120,7 @@ interface AppsBindings {
   applicationJobs: Ref<AppInstallJob[]>
   runningJobs: ComputedRef<AppInstallJob[]>
   applicationTaskActive: ComputedRef<boolean>
+  resumableTerminalJob: ComputedRef<AppInstallJob | undefined>
   selectApplicationJob: (job: AppInstallJob) => void
   restoreBackgroundJob: () => Promise<void>
   activeJob: Ref<AppInstallJob | undefined>
@@ -1106,6 +1107,114 @@ describe('AppsView script management', () => {
     expect(view.cancelJobPending.value).toBe(false)
     expect(view.activeJob.value?.stage).toBe('cancelling')
     expect(window.localStorage.getItem('kpanel:active-app-job')).toBe(job.id)
+  })
+
+  const runningTerminalJob: AppInstallJob = {
+    id: '0123456789abcdef0123456789abcdef',
+    appId: 'builtin-114',
+    appName: 'OpenClaw',
+    action: 'manage',
+    interactive: true,
+    inputOpen: true,
+    status: 'running',
+    stage: 'interactive',
+    progress: 5,
+    logs: [],
+    createdAt: '2026-07-28T00:00:00Z',
+  }
+
+  it('closes the window and drops the record once an ended task is released', async () => {
+    const cancelled: AppInstallJob = { ...runningTerminalJob, status: 'cancelled', stage: 'cancelled', progress: 100 }
+    mocks.cancelJob.mockResolvedValueOnce(cancelled)
+    const view = setupView()
+    view.activeJob.value = runningTerminalJob
+    view.applicationJobs.value = [runningTerminalJob]
+    view.jobDetailsOpen.value = true
+    window.localStorage.setItem('kpanel:active-app-job', runningTerminalJob.id)
+
+    await view.confirmCancelJob()
+
+    expect(view.activeJob.value).toBeUndefined()
+    expect(view.jobDetailsOpen.value).toBe(false)
+    expect(view.applicationJobs.value).toEqual([])
+    expect(window.localStorage.getItem('kpanel:active-app-job')).toBeNull()
+  })
+
+  it('keeps the window open when the released task ended in failure', async () => {
+    const failed: AppInstallJob = { ...runningTerminalJob, status: 'failed', stage: 'failed', progress: 100 }
+    mocks.cancelJob.mockResolvedValueOnce(failed)
+    const view = setupView()
+    view.activeJob.value = runningTerminalJob
+    view.jobDetailsOpen.value = true
+
+    await view.confirmCancelJob()
+
+    expect(view.activeJob.value?.status).toBe('failed')
+    expect(view.jobDetailsOpen.value).toBe(true)
+  })
+
+  it('closes the window when a slower cancellation finishes while polling', async () => {
+    const cancelling: AppInstallJob = { ...runningTerminalJob, inputOpen: false, stage: 'cancelling' }
+    const cancelled: AppInstallJob = { ...runningTerminalJob, status: 'cancelled', stage: 'cancelled', progress: 100 }
+    mocks.cancelJob.mockResolvedValueOnce(cancelling)
+    mocks.job.mockResolvedValue(cancelled)
+    const view = setupView()
+    view.activeJob.value = runningTerminalJob
+    view.applicationJobs.value = [runningTerminalJob]
+    view.jobDetailsOpen.value = true
+
+    await view.confirmCancelJob()
+    await vi.waitFor(() => expect(view.activeJob.value).toBeUndefined())
+
+    expect(view.jobDetailsOpen.value).toBe(false)
+    expect(view.applicationJobs.value).toEqual([])
+  })
+
+  it('keeps a task that finished on its own open so its result can be read', async () => {
+    const failed: AppInstallJob = { ...runningTerminalJob, status: 'failed', stage: 'failed', progress: 100 }
+    mocks.job.mockResolvedValue(failed)
+    const view = setupView()
+    view.activeJob.value = runningTerminalJob
+    view.jobDetailsOpen.value = true
+
+    await view.refreshJob(runningTerminalJob.id)
+
+    expect(view.activeJob.value?.status).toBe('failed')
+    expect(view.jobDetailsOpen.value).toBe(true)
+  })
+
+  it('reopens the terminal still running in the background instead of locking script management', async () => {
+    const other: AppInstallJob = { ...runningTerminalJob, id: 'fedcba9876543210fedcba9876543210', appId: 'builtin-55', appName: 'FRP' }
+    mocks.job.mockResolvedValue(runningTerminalJob)
+    const view = setupView()
+    view.inventory.value = markerOnlyInventory('marker:sha256:fresh-version')
+    view.selectedID.value = 'builtin-114'
+    view.applicationJobs.value = [other, runningTerminalJob]
+    view.activeJob.value = other
+    view.jobDetailsOpen.value = false
+
+    expect(view.applicationTaskActive.value).toBe(true)
+    expect(view.resumableTerminalJob.value?.id).toBe(runningTerminalJob.id)
+    await view.openScriptManage()
+
+    expect(mocks.action).not.toHaveBeenCalled()
+    expect(view.activeJob.value?.id).toBe(runningTerminalJob.id)
+    expect(view.jobDetailsOpen.value).toBe(true)
+  })
+
+  it('only enables the script button for another running task when it is this app\'s terminal', () => {
+    const install: AppInstallJob = { ...runningTerminalJob, action: 'install', interactive: false, stage: 'executing' }
+    const view = setupView()
+    view.selectedID.value = 'builtin-114'
+    view.applicationJobs.value = [install]
+    view.activeJob.value = install
+
+    expect(view.applicationTaskActive.value).toBe(true)
+    expect(view.resumableTerminalJob.value).toBeUndefined()
+
+    const source = readFileSync(new URL('./AppsView.vue', import.meta.url), 'utf8')
+    expect(source).toContain(':disabled="Boolean(operation) || (applicationTaskActive && !resumableTerminalJob)"')
+    expect(source).toContain("phrase(resumableTerminalJob ? '继续脚本管理' : '脚本管理')")
   })
 
   it('routes the job dialog close action through the interactive task cancellation flow', () => {

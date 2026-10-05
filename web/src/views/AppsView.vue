@@ -177,6 +177,15 @@ const applicationTaskActive = computed(
   () => runningJobs.value.some((job) => job.appId === selectedID.value)
     || (activeJob.value?.appId === selectedID.value && isActiveJob(activeJob.value)),
 )
+// A script-management terminal left running in the background stays reachable
+// from the app's own button instead of locking the app until it is ended.
+const resumableTerminalJob = computed(() => {
+  const appId = selectedID.value
+  if (!appId) return undefined
+  const current = activeJob.value
+  if (current?.appId === appId && current.interactive && isActiveJob(current)) return current
+  return runningJobs.value.find((job) => job.appId === appId && job.interactive)
+})
 const activeJobCancellable = computed(
   () =>
     Boolean(activeJob.value?.interactive) &&
@@ -709,6 +718,10 @@ async function refreshJob(id: string, generation = jobPollGeneration): Promise<v
         toast.danger(`后台${jobActionLabel(job.action)}失败`, job.message || '请查看任务日志后重试。')
       }
     }
+    if (job.status === 'cancelled' && closeAfterCancelID === job.id) {
+      closeAfterCancelID = ''
+      dismissJob()
+    }
   } catch (reason) {
     if (reason instanceof DOMException && reason.name === 'AbortError') return
     if (generation !== jobPollGeneration || jobController !== requestController) return
@@ -789,6 +802,9 @@ async function restoreBackgroundJob(): Promise<void> {
   }
 }
 
+// Ending a task leaves nothing to look at, so its window and record go with it.
+let closeAfterCancelID = ''
+
 function requestCancelJob(): void {
   if (!activeJobCancellable.value || cancellingJob.value) return
   cancelJobPending.value = true
@@ -812,11 +828,13 @@ async function confirmCancelJob(): Promise<void> {
     activeJob.value = next
     cancelJobPending.value = false
     if (isActiveJob(next)) {
+      closeAfterCancelID = next.id
       beginJobPolling(next.id)
     } else {
       if (!runningJobs.value.length) stopJobPolling()
       window.localStorage.removeItem(activeJobStorageKey)
       await load(true)
+      if (next.status === 'cancelled') dismissJob()
     }
     toast.success('正在结束交互任务', `${job.appName} 的后台终端正在终止，中途终止可能留下未完成的变更。`)
   } catch (reason) {
@@ -981,6 +999,12 @@ async function confirmMutation(): Promise<void> {
 
 async function openScriptManage(): Promise<void> {
   const item = selected.value
+  const running = resumableTerminalJob.value
+  if (running) {
+    if (activeJob.value?.id !== running.id) startJobPolling(running)
+    jobDetailsOpen.value = true
+    return
+  }
   if (!item?.runtime.resourceVersion || !capability(item, 'manage')) return
   operation.value = 'manage'
   try {
@@ -1561,12 +1585,12 @@ watch(windowActive, syncJobPollingForWindow)
               v-if="capability(selected, 'manage')"
               class="button button--secondary"
               type="button"
-              :disabled="Boolean(operation) || applicationTaskActive"
-              :title="phrase('打开该应用对应的 kejilion.sh 原生交互菜单')"
+              :disabled="Boolean(operation) || (applicationTaskActive && !resumableTerminalJob)"
+              :title="phrase(resumableTerminalJob ? '回到仍在后台运行的脚本管理终端' : '打开该应用对应的 kejilion.sh 原生交互菜单')"
               @click="openScriptManage"
             >
               <LoaderCircle v-if="operation === 'manage'" class="spin" :size="15" />
-              <Wrench v-else :size="15" /> {{ phrase('脚本管理') }}
+              <Wrench v-else :size="15" /> {{ phrase(resumableTerminalJob ? '继续脚本管理' : '脚本管理') }}
             </button>
           </div>
         </section>

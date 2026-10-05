@@ -60,6 +60,8 @@ export default [
   ["继续运行", "Continue running"],
   ["检查更新失败", "Check update failed"],
   ["交互任务已结束", "Interactive task ended"],
+  ["继续脚本管理", "Continue script management"],
+  ["回到仍在后台运行的脚本管理终端", "Return to the script-management terminal still running in the background"],
   ["脚本管理", "Script Management"],
   ["脚本管理启动失败", "Script management startup failed"],
   ["脚本管理终端已打开", "Script management terminal opened"],
