@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.25.0-rc.6] - 2026-10-05
+
+整合 RC5 后的应用终端、Windows 安装和主机备份候选。
+
+### 新增与改进
+
+- 关闭运行中的应用脚本终端时，可选择“后台运行”以保留任务；确认终止仍会结束交互任务。
+- Windows 轻量节点接入命令缩短为受保护的 bootstrap 流程：面板内置摘要先校验 bootstrap，bootstrap 再校验 Release 安装器和节点 EXE。安装器兼容 ProgramData 的标准 Users 元数据权限，同时继续拒绝不受信任写入和重解析点。
+- 主机备份支持归档根内部可解析的符号链接，恢复为相对链接；越界、不可解析链接和特殊文件仍被拒绝。
+
+### 升级注意事项
+
+- Windows 节点附件仍未签名。官方 HTTPS 与 SHA-256 提供完整性检查，不提供证书发布者身份保证；安装过程遵循当前 PowerShell ExecutionPolicy，不关闭系统保护。
+- Windows 真机安装、更新、回滚、重启及 RDP 由用户后续测试；本次只发布预览版，不部署生产。
+- GitHub Latest、Docker `latest` 和稳定更新通道继续使用 1.24.0；`kejilion.sh` / 应用市场契约没有变化，`scriptLinkageState=not-required`。
+
 ## [1.25.0-rc.5] - 2026-10-05
 
 整合 RC4 后新增的应用任务窗口修复和预览体验校正。
