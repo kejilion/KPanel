@@ -102,7 +102,7 @@ test('release requires successful Windows build and checksum merge before public
     previous = position;
   }
   const merge = release.indexOf('node scripts/merge-windows-release.mjs');
-  assert.ok(merge >= 0, 'three verified assets are merged into release checksums');
+  assert.ok(merge >= 0, 'four verified assets are merged into release checksums');
   for (const marker of ['name: Prepare draft GitHub release', 'name: Build and push multi-architecture image',
     'name: Promote image to its release channel', 'name: Publish GitHub release']) {
     assert.ok(release.indexOf(marker) > merge, `${marker} must follow Windows checksum merge`);

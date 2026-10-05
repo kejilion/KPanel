@@ -93,14 +93,16 @@ Windows 附件为未签名产物，不依赖 Azure、Authenticode 或发布者/p
 任务成功，后续公开发布才可运行；失败、取消或跳过不能公开缺少 Windows 附件的版本、镜像或通道。
 Runner 只有仓库读取权限，不持有 Release 写权限；没有额外签名服务 Environment 或秘密配置。
 
-固定附件为 `kejilion-node-windows-amd64.exe`、`kejilion-node-windows-arm64.exe`、`install-windows.ps1`。
-源码安装器 `deploy/windows/install.ps1` 构建时先确定 UTF-8 BOM/CRLF 字节；三个常规文件通过限额与
+固定附件为 `kejilion-node-windows-amd64.exe`、`kejilion-node-windows-arm64.exe`、`bootstrap-windows.ps1`、
+`install-windows.ps1`。源码安装器 `deploy/windows/install.ps1` 构建时先确定 UTF-8 BOM/CRLF 字节；
+bootstrap 从 Go 源码逐字节复制，确保与面板二进制内置的 SHA-256 一致。四个常规文件通过限额与
 清单检查后才生成 `SHA256SUMS.windows`，Linux 任务复核同一次 workflow 的文件清单与摘要并合并到
 公开 `SHA256SUMS`。任何校验失败都会在公开写入前停止。
 
-Panel 命令先验证 ProgramFiles 祖先权限，在创建时封闭临时目录的 ACL，再从固定版本下载清单
-（64 KiB 上限）及脚本（1 MiB 上限），校验唯一 SHA-256 条目后才执行。安装器再次核对自身与 EXE
-摘要（EXE 64 MiB 上限），bootstrap 在服务写入前核对 stdin 中的 EXE digest。旧 `trust.json`
+Panel 命令先验证 ProgramFiles 祖先权限，在创建时封闭临时目录的 ACL，再从固定版本下载 bootstrap
+（256 KiB 上限），与面板二进制内置的 SHA-256 比对后才启动。bootstrap 再下载清单（64 KiB 上限）
+及源码安装器（1 MiB 上限），校验唯一 SHA-256 条目后才执行。安装器再次核对自身与 EXE
+摘要（EXE 64 MiB 上限），并在服务写入前核对 stdin 中的 EXE digest。旧 `trust.json`
 是此前签名策略状态，新版本不再读取它；遗留文件不会限制正常安装/更新，也不会授予额外信任。
 
 下载仅允许官方 GitHub HTTPS 与资产 hosts，受限跳转；目录 owner/ACL、reparse 防护、版本/协议核对、

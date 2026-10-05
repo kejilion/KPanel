@@ -7,7 +7,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
-$script:WindowsNodeAssets = @('kejilion-node-windows-amd64.exe', 'kejilion-node-windows-arm64.exe', 'install-windows.ps1')
+$script:WindowsNodeAssets = @('kejilion-node-windows-amd64.exe', 'kejilion-node-windows-arm64.exe', 'bootstrap-windows.ps1', 'install-windows.ps1')
 
 function Assert-NodeReleaseVersion([string]$Value) {
     if ($Value -cnotmatch '^v(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})(-rc\.[1-9][0-9]{0,5})?$') { throw 'Expected a canonical vX.Y.Z or vX.Y.Z-rc.N release tag.' }
@@ -38,6 +38,7 @@ function Build-NodeRelease([string]$Directory, [string]$Tag) {
         $installer = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '../deploy/windows/install.ps1')) -replace '\r?\n', "`r`n"
         # Establish final PowerShell encoding before computing the final release checksum.
         [IO.File]::WriteAllText((Join-Path $Directory 'install-windows.ps1'), $installer, [Text.UTF8Encoding]::new($true))
+        [IO.File]::Copy((Join-Path $PSScriptRoot '../internal/cluster/bootstrap-windows.ps1'), (Join-Path $Directory 'bootstrap-windows.ps1'), $false)
     } finally {
         Pop-Location
         foreach ($name in $previous.Keys) { [Environment]::SetEnvironmentVariable($name, $previous[$name]) }
@@ -49,11 +50,11 @@ function Verify-NodeRelease([string]$Directory) {
     $manifest = Join-Path $Directory 'SHA256SUMS.windows'
     if (Test-Path -LiteralPath $manifest) { Remove-Item -LiteralPath $manifest -Force }
     $items = @(Get-ChildItem -LiteralPath $Directory -Force)
-    if ($items.Count -ne $script:WindowsNodeAssets.Count) { throw 'Expected exactly the two node executables and installer.' }
+    if ($items.Count -ne $script:WindowsNodeAssets.Count) { throw 'Expected exactly the two node executables and two PowerShell scripts.' }
     $lines = foreach ($name in $script:WindowsNodeAssets) {
         $path = Join-Path $Directory $name
         $item = Get-Item -LiteralPath $path -Force
-        $limit = if ($name -eq 'install-windows.ps1') { 1MB } else { 64MB }
+        $limit = if ($name -like '*.ps1') { 1MB } else { 64MB }
         if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $item.Length -le 0 -or $item.Length -gt $limit) { throw "Invalid release asset: $name" }
         "$( (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() )  $name"
     }

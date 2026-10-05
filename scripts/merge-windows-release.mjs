@@ -3,7 +3,7 @@ import { copyFileSync, lstatSync, readFileSync, readdirSync, writeFileSync } fro
 import { basename, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const windowsNodeAssets = ['kejilion-node-windows-amd64.exe', 'kejilion-node-windows-arm64.exe', 'install-windows.ps1'];
+export const windowsNodeAssets = ['kejilion-node-windows-amd64.exe', 'kejilion-node-windows-arm64.exe', 'bootstrap-windows.ps1', 'install-windows.ps1'];
 
 export function mergeWindowsRelease(source, destination) {
   const manifestName = 'SHA256SUMS.windows';

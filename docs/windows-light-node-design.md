@@ -189,10 +189,11 @@ Windows 主机 ─────────────────────�
 令牌格式、有效期、单次/批量语义、100 台上限与 Linux 相同；生成 API 新增可选 `platform`，缺省仍为 Linux。
 界面在原 Linux 接入卡下显示 Windows 卡，批量接入可选目标系统。
 
-一行命令先下载固定 KPanel Release 版本的 `install-windows.ps1` 到受保护的 Program Files 临时目录，
-创建暂存目录前验证祖先 owner/ACL，并在创建时封闭 SYSTEM/Administrators ACL；从同一固定 tag 下载唯一 SHA256SUMS 条目，脚本摘要匹配后才调用。不得直接执行下载文本。
+一行命令先验证 Program Files 祖先 owner/ACL，再于封闭的 SYSTEM/Administrators 暂存目录下载固定 KPanel Release 的
+`bootstrap-windows.ps1`。KPanel 中心二进制内置该脚本的 SHA-256，命令校验固定版本来源、文件大小和摘要后才以子 PowerShell 执行。
+bootstrap 再从同一固定 tag 下载 `install-windows.ps1` 和唯一 `SHA256SUMS` 条目，校验摘要后才调用安装器；不直接执行下载文本。
 令牌和名称以 UTF-8 Base64 表达式编码，避免 PowerShell Unicode 引号被解释为语法。
-无需发布者/profile 配置。未签名产物依赖官方 HTTPS 与同源清单，仅提供完整性保证。
+无需发布者/profile 配置。未签名产物依赖官方 HTTPS、中心内置 bootstrap 摘要与同源安装器清单，仅提供完整性保证。
 
 ### 5.2 安装器步骤
 
@@ -549,7 +550,7 @@ spike 结论不达标就终止 P4，P1–P3 不受影响。
 | `internal/cluster/types.go` | Host DTO 增加 `platform`、`terminalShell`、`pathStyle`；P4 增加 `desktopAvailable` |
 | `internal/cluster/file_stream_transport.go`、`desktop_stream.go` | 增加独立 `light-desktop-control` / `light-desktop-data` 角色 |
 | `internal/panel` | P4 增加桌面会话 API 与 WebSocket 端点 |
-| `.github/workflows/release.yml` | 构建并校验 `kejilion-node-windows-{amd64,arm64}.exe`，写入 `SHA256SUMS` |
+| `.github/workflows/release.yml` | 构建并校验 `kejilion-node-windows-{amd64,arm64}.exe`、`bootstrap-windows.ps1` 和 `install-windows.ps1`，写入 `SHA256SUMS` |
 | CI | 增加 Windows 构建，以及 `cmd/kejilion-node`、`internal/systeminfo`、`internal/hostpty`、`internal/filemanager` 的 Windows 单元测试 |
 | `web/src/lib/operatingSystem.ts` | 增加 Windows 识别 |
 | `web/src/lib/batchCompletion.ts` | PowerShell 包装与 int32 退出码 |

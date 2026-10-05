@@ -115,7 +115,7 @@ mkdir -p "$(dirname "$output")"
   echo "- \`kejilion-panel-meta-$version.tar.gz\` 仅含部署脚本、文档和许可等元数据，不是可构建源码包。"
   echo "- Agent、轻量节点和元数据归档须使用附件 \`SHA256SUMS\` 校验后再使用。"
   if [ "${KPANEL_WINDOWS_NODE_RELEASE:-false}" = true ]; then
-    echo "- Windows 轻量节点提供 amd64/arm64 EXE 和 \`install-windows.ps1\`；未签名，使用前必须通过固定官方 HTTPS 版本来源及附件 SHA256SUMS 校验脚本和 EXE；此校验不提供证书发布者身份保证。"
+    echo "- Windows 轻量节点提供 amd64/arm64 EXE、\`bootstrap-windows.ps1\` 和 \`install-windows.ps1\`；未签名，使用前必须通过固定官方 HTTPS 版本来源及附件 SHA256SUMS 校验脚本和 EXE；此校验不提供证书发布者身份保证。"
   fi
   echo "- Release 流水线已经执行测试、漏洞扫描、双架构构建、镜像运行契约及摘要一致性检查。"
   echo

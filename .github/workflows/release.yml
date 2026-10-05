@@ -55,7 +55,7 @@ jobs:
 
   release:
     needs: windows-node
-    # Every release includes all three checksum-verified Windows assets.
+    # Every release includes all four checksum-verified Windows assets.
     # No failed, cancelled, or skipped Windows lane may publish a partial release.
     if: ${{ !cancelled() && needs.windows-node.result == 'success' }}
     runs-on: ubuntu-latest
@@ -332,7 +332,7 @@ jobs:
           set -euo pipefail
           windows_assets=()
           if [ "$WINDOWS_NODE_RELEASE" = success ]; then
-            windows_assets=(release/kejilion-node-windows-amd64.exe release/kejilion-node-windows-arm64.exe release/install-windows.ps1)
+            windows_assets=(release/kejilion-node-windows-amd64.exe release/kejilion-node-windows-arm64.exe release/bootstrap-windows.ps1 release/install-windows.ps1)
           fi
           create_flags=(--latest=false)
           prerelease_value=false

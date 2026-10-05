@@ -17,17 +17,16 @@ func TestWindowsEnrollmentCommandPinsAndVerifiesBeforeExecution(t *testing.T) {
 	}
 
 	for _, expected := range []string{
-		powershellSingleQuote("https://github.com/kejilion/KPanel/releases/download/v1.25.0-rc.3/install-windows.ps1"),
-		powershellSingleQuote("https://github.com/kejilion/KPanel/releases/download/v1.25.0-rc.3/SHA256SUMS"),
+		powershellSingleQuote("https://github.com/kejilion/KPanel/releases/download/v1.25.0-rc.3/bootstrap-windows.ps1"),
 		"Assert-BootstrapDirectory $parent.FullName $true", "Assert-BootstrapDirectory $stage $false",
-		"O:BAG:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)", "$lines.Count -ne 1", "Get-FileHash -LiteralPath $script", "65536", "1048576",
+		"O:BAG:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)", "262144", "Get-FileHash -LiteralPath $bootstrap", windowsBootstrapScriptSHA256(),
 		"-Version " + powershellSingleQuote("v1.25.0-rc.3"), "-Name " + powershellSingleQuote("one'; $(Write-Error 'bad')"), "GetFolderPath('ProgramFiles')",
 	} {
 		if !strings.Contains(command, expected) {
 			t.Errorf("missing %q", expected)
 		}
 	}
-	if strings.ContainsAny(command, "\r\n") || strings.Contains(command, "Invoke-Expression") || strings.Contains(command, "Authenticode") || strings.Contains(command, "-Publisher") || !strings.Contains(command, "-NoProfile -ExecutionPolicy Bypass -File $script") || strings.Contains(command, " -Token ") || strings.Index(command, "Get-FileHash") > strings.Index(command, "-File $script") {
+	if strings.ContainsAny(command, "\r\n") || strings.Contains(command, "Invoke-Expression") || strings.Contains(command, "Authenticode") || strings.Contains(command, "-Publisher") || strings.Contains(command, "install-windows.ps1") || strings.Contains(command, "SHA256SUMS") || !strings.Contains(command, "-NoProfile -ExecutionPolicy Bypass -File $bootstrap") || strings.Contains(command, " -Token ") || strings.Index(command, "Get-FileHash") > strings.Index(command, "-File $bootstrap") {
 		t.Fatal("bootstrap must be one line and verify before execution")
 	}
 	for _, invalid := range []string{"dev", "01.2.3", "1.2.3-rc.0", "1.2.3-dev", "1000000.2.3", "1.2.3;whoami"} {
@@ -91,9 +90,11 @@ func TestWindowsBootstrapPowerShellSyntax(t *testing.T) {
 	}
 	// Parse only: never execute an installer or mutate host services.
 	parser := "$tokens=$null;$errors=$null;$null=[Management.Automation.Language.Parser]::ParseInput([Console]::In.ReadToEnd(),[ref]$tokens,[ref]$errors);if($errors.Count){$errors|%{[Console]::Error.WriteLine($_.Message)};exit 1}"
-	cmd := exec.Command("pwsh", "-NoProfile", "-NonInteractive", "-Command", parser)
-	cmd.Stdin = strings.NewReader(command)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("bootstrap syntax: %v\n%s", err, output)
+	for label, source := range map[string]string{"launcher": command, "bootstrap asset": string(windowsBootstrapScript)} {
+		cmd := exec.Command("pwsh", "-NoProfile", "-NonInteractive", "-Command", parser)
+		cmd.Stdin = strings.NewReader(source)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%s PowerShell syntax: %v\n%s", label, err, output)
+		}
 	}
 }

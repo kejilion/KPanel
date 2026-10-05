@@ -17,7 +17,7 @@ try{
  Verify-NodeRelease $root
  $manifest=Join-Path $root 'SHA256SUMS.windows'
  $lines=@(Get-Content -LiteralPath $manifest)
- if($lines.Count -ne 3){throw 'Expected all three assets'}
+ if($lines.Count -ne 4){throw 'Expected all four assets'}
  foreach($name in $script:WindowsNodeAssets){
   $hash=(Get-FileHash -LiteralPath (Join-Path $root $name) -Algorithm SHA256).Hash.ToLowerInvariant()
   if($lines -cnotcontains "$hash  $name"){throw 'Manifest must hash final bytes'}
@@ -32,7 +32,7 @@ try{
  Assert-Failure {Verify-NodeRelease $root} 'exactly'
  Assert-Failure {Build-NodeRelease $root $version} 'must be empty'
  Assert-Failure {Get-NodeReleaseDirectory 'relative-path'} 'absolute'
- Write-Output 'Windows release boundary tests passed: three unsigned assets and final-byte checksums.'
+ Write-Output 'Windows release boundary tests passed: four unsigned assets and final-byte checksums.'
 }finally{
  $resolved=[IO.Path]::GetFullPath($root)
  $parent=[IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\')
