@@ -96,6 +96,7 @@ releaseTrain：1.25.0
 - 后台作业 ID、终态、退出码、超时、证据目录、命令规格路径及 SHA-256：L3 ID v1.25.0-rc.5-55cc6f0a-l3-r2，pass/exit 0，825.6 秒；公开镜像 E2E pass/exit 0，2026-10-05 11:01:16Z 至 11:01:36Z，命令 sh packaging/tests/image-e2e.sh docker.io/kjlion/kejilion-panel@sha256:a861d37bd78e664dcb2a7c89c3346750df68286946cc27497b5ba690b473278f 18091。原始证据位于 C:/GitHub/_release-evidence/v1.25.0-rc.5/public-e2e-r1/image-e2e.json；image-e2e 脚本 SHA256 1378218f9d4ac0fdd82d66ac502c5f7e0d82a13fca8d60429079936ed527edf4，日志 SHA256 d6918030f72af42d7c376ceb7a1f902705a8473b11ff4ccacb39706e81322eb9。
 - 测试窗口/循环数及风险依据：公开镜像单次完整 smoke；未做 soak，因为本版为预览且无长时运行需求证据。
 - 受影响用户旅程、视口、缩放、最小计算字号、主题、键盘/焦点、语言和失败态：本地 mock 预览只打开历史监控并切换 12 个月；验证页面说明为区间中位延迟，最多 3 条显示最低到最高色带，浏览器 console error 0。未声称完整浏览器验收。
+- acceptance mock preview 保留给用户验收并绑定源码 55cc6f0acd172bb8892df34014f9c3e140f0e521：http://127.0.0.1:4184；manifest C:/GitHub/_release-evidence/v1.25.0-rc.5/browser-preview-r1/manifest.json；停止入口 node scripts/local-feature-preview.mjs stop --evidence-dir "C:\GitHub\_release-evidence\v1.25.0-rc.5\browser-preview-r1"。当前 Codex IAB 页保持在 12 个月监控视图。
 - 宿主机写入、失败注入、重启恢复和回滚结果：公开 E2E 仅在本地容器测试；bootstrap 返回 201 且设置 Secure cookie，版本/API、路由、公共静态文件比较和容器健康均通过。测试容器、网络和临时数据已删除；没有生产或宿主机写入。
 - 未执行场景及原因：真实 Windows 节点安装、更新、回滚、重启和 RDP 由用户后续真机测试；100%/125%/200% 原生缩放、多个主题/语言、键盘/焦点全旅程及 soak 未执行。
 
