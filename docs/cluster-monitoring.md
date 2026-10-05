@@ -257,12 +257,17 @@ bash <(curl -fsSL https://kejilion.sh) kpanel node join '<kpl1-token>'
   `mktemp`、`flock`、`stat`、`readlink`、`awk`、`grep`、`sed`、`cmp`、`od`、`tr` 和系统账户创建工具；
   Alpine 可使用 BusyBox `adduser`，不要求 Docker、Go、
   Node.js 或编译环境，支持 `amd64`、`arm64`；
+- 手动执行 `node join` 时，先校验参数、root、平台与服务管理环境，再汇总缺失命令，通过本机原生
+  包管理器批量补齐并复检。支持 OpenWrt 家族的 `opkg` 或 `apk`、Alpine 的 `apk`、Debian 家族的
+  `apt-get` 和 RPM 家族的 `dnf`/`yum`；OpenWrt 与 Alpine 即使同用 `apk`，仍分别使用各自的包名。
+  工具齐全时不调用包管理器；无法识别的软件源家族或安装失败时明确报告缺项，保留手动补齐路径。
+  不替换软件源、不升级整个系统、不安装或更换服务管理器；`node update`、无人值守更新、状态查询和
+  卸载不触发这项自动补包。在线接入命令启动前仍需准备 `bash`、`curl` 和可用的 HTTPS CA 证书；
 - procd 按 PID 1、可信 `/etc/rc.common`、`/lib/functions/procd.sh`、`ubus`、`jsonfilter` 与原生
   `/etc/init.d/cron` 能力识别，适用于满足这些条件的 OpenWrt 及其衍生系统，不依赖 iStoreOS 等品牌名称。
-  缺少工具时明确报告，不替换系统服务管理器；32 位 ARM/MIPS 没有本项目发布产物。
-  精简 OpenWrt 固件可能需要从同版本、同架构软件源补齐 `bash`、`curl`、HTTPS CA 证书、
-  `coreutils-install`、`coreutils-stat`、`coreutils-od`、`flock` 和 `shadow-useradd`；实际缺项以预检及 HTTPS 下载错误为准。
-  安装器检查依赖，不自动安装这些系统包；仅有 BusyBox `ash` 或 `/etc/init.d` 目录不足以满足安装条件。
+  32 位 ARM/MIPS 没有本项目发布产物。精简 OpenWrt 固件常见缺项包括 `coreutils-install`、
+  `coreutils-stat`、`coreutils-od`、`flock` 和账户创建工具 `shadow-useradd`；只补实际缺少的能力。
+  仅有 BusyBox `ash` 或 `/etc/init.d` 目录不足以满足安装条件，补包成功后仍须通过完整的运行环境检查。
   四个 `/etc/init.d/kejilion-node*` 服务由 procd 监督并自动重启，保持遥测低权限和 broker 权限分离，
   stdout/stderr 交给系统日志；支持时启用 `no_new_privs`，不宣称与 systemd 沙箱等价。
   procd 节点将有界监控历史和文件管理状态保存到 `0700 root:root /etc/kejilion-node/state`，
@@ -271,6 +276,13 @@ bash <(curl -fsSL https://kejilion.sh) kpanel node join '<kpl1-token>'
   完整成功事件，多因素尚未全部通过的日志不计成功。平台适配不能替代具体固件、架构与设备的实机验收；
 - `kejilion.sh` 只负责固定安装协议，下载 Release 中对应架构的静态 `kejilion-node` 和
   `SHA256SUMS`，校验摘要及二进制 `version` 后再原子安装；
+- 下载来源（安装与自动更新相同，更新器运行时代数 6 起）：先以短预算（两次、约一分钟）访问 github.com
+  的 `latest/download/SHA256SUMS`，并以首个重定向把清单绑定到具体版本。github.com 不可达时改经作者自有镜像
+  `gh.kejilion.pro` 获取；该镜像自行跟随重定向，看不到版本号，因此清单与二进制都取 `latest`，两次下载之间若
+  发布新版，摘要校验失败并在下一轮重试。github.com 可达但其 Release CDN 不可达时，二进制经镜像访问同一版本化
+  地址，仍与清单同属一个版本。github.com 可达却隐藏重定向时照旧失败，不改走镜像。摘要、`light-v1` 协议与回滚
+  校验不变；信任范围与 `kejilion.sh` 本身一致，没有新的第三方。暂不可达 GitHub 的旧节点运行一次
+  `k kpanel node update` 即可换上新更新器（`kejilion.sh` 由自有域名提供）；
 - 服务使用无登录、无 home 的 `kejilion-node` 系统用户运行，配置目录 `0750`，遥测凭据文件
   `0640 root:kejilion-node`；终端 Noise 私钥另存为 `0600 root:root`，低权限遥测进程不可读取；
   遥测 systemd unit 继续启用 `NoNewPrivileges`、只读系统、隐藏 home、空 capability 及地址族限制；
@@ -310,8 +322,8 @@ bash <(curl -fsSL https://kejilion.sh) kpanel node join '<kpl1-token>'
   遥测配置恢复 `root:kejilion-node 0640`，不扩读终端私钥或自定义路径；
 - 旧安装通过已校验临时 Release 二进制的 `version` 兼容桥安装同源更新器与 timer，无需重新配对。
   当前旧更新脚本仍会执行完原逻辑，下一轮才使用新流程；PID 与启动时间保护这段交接并发。
-  迁移只适用于旧更新器仍能完成下载/校验且存在 `flock` 的机器。旧目录锁已卡死、timer 被禁用或
-  GitHub 长期不可达时，发布中心端不能远程恢复，须读取该节点服务/更新日志定位并恢复更新入口；
+  迁移只适用于旧更新器仍能完成下载/校验且存在 `flock` 的机器。旧目录锁已卡死、timer 被禁用，或
+  GitHub 与镜像都长期不可达时，发布中心端不能远程恢复，须读取该节点服务/更新日志定位并恢复更新入口；
 - `k kpanel node status|update|uninstall` 分别用于状态、手动更新和本机卸载；`status` 同时显示
   遥测服务和 SSH 登录采集服务。中心删除记录不远程执行卸载；节点被移除后上报凭据立即失效，
   目标机由用户自行卸载或重新接入。
