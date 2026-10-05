@@ -156,13 +156,13 @@ releaseTrain：1.25.0
 预览节奏补充：首个纳入提交到 GitHub Release 公开约 2 小时 52 分；GitHub Release 页面发布时间只精确到分钟。冻结到公开发布约 49 分钟。Release workflow 自身约 14 分 39 秒。以上为 RC 公开节奏，不计作提交到生产时间。冻结前修正的 Windows 测试断言由候选 CI 发现，未进入公开产物；没有公开版本失败、生产退化、回滚、紧急热修复或重复发布。
 
 <!-- kpanel-release-process-metrics:start -->
-- 已记录发布流程异常或无效证据拦截次数：3
+- 已记录发布流程异常或无效证据拦截次数：4
 - 其中生产写操作开始后异常次数：0
 <!-- kpanel-release-process-metrics:end -->
 
 ### 流程异常明细
 
-本轮三个流程异常均发生在生产写操作前，没有生产写入、产品回滚或用户数据影响。两次只读发布核验命令修正后获得有效证据；一次交接预检拒绝无效时间精度，规范化后通过。流程异常不等同产品失败。
+本轮四个流程异常均发生在生产写操作前，没有生产写入、产品回滚或用户数据影响。两次只读发布核验命令修正后获得有效证据；一次交接预检拒绝无效时间精度，规范化后通过；一次文档推送后回读校验误用手填 SHA，推送本身成功，改为比较本地 HEAD 与远端 main 后复核通过。流程异常不等同产品失败。
 
 <!-- kpanel-release-process-incidents:start -->
 [
@@ -192,6 +192,15 @@ releaseTrain：1.25.0
     "recoveryEvidence": "首次拒绝结构化记录为 C:/GitHub/_release-evidence/v1.25.0-rc.5/handoff-preflight-r1-first-failure.json，SHA256 fb94ee6ddc0d56cf9e2cb5850f6312b9c30fa216c786b564801b19b55b91d0f6。只将 contract receipt 时间精度规范化到毫秒，不改原始日志；同一 handoff 预检随后 passed。",
     "permanentAction": "负责人：release workflow owner；复核日期：2026-10-10；在 receipt 生成入口统一到 task-preflight 接受的 ISO 毫秒格式，并用实际 L3/E2E 原始时间回归。退出条件：无手工二次改写时新 receipt 的 handoff 首轮通过；关闭前不开始下一次 L3 生产写。",
     "historicalReleases": []
+  },
+  {
+    "fingerprint": "release-doc-push/remote-readback/hardcoded-sha-mismatch",
+    "position": "before-production-write",
+    "count": 1,
+    "impact": "文档 main 快进推送返回成功；额外回读包装器手写了错误的完整预期 SHA，误报回读不一致并以 exit 1 返回。远端提交没有回滚或覆盖，生产未写入。",
+    "recoveryEvidence": "C:/GitHub/_release-evidence/v1.25.0-rc.5/docs-push-r2-readback-first-failure.json，SHA256 b6ded68e7806f6d4821b8fa5438727eefef774d0e0eda23b7b9692d7ffea1cc7。原 push 输出显示 12aefd2a..4ecda7d3；随后动态读取的本地 HEAD 和 origin/main 完整 SHA 均为 4ecda7d3340049bf576e980c1b1a666aa0d137ff。",
+    "permanentAction": "负责人：release owner；复核日期：2026-10-10；推送复核始终从 git rev-parse HEAD 动态派生预期值，不手抄完整 SHA，并保留远端 main readback。退出条件：固定入口在正确与错误 SHA 夹具上能区分推送成功和校验失败；关闭前不开始下一次 L3 生产写。",
+    "historicalReleases": []
   }
 ]
 <!-- kpanel-release-process-incidents:end -->
@@ -202,4 +211,4 @@ releaseTrain：1.25.0
 - 未验证风险：CF scoped audit、Windows 真机安装/更新/回滚/重启/RDP、arm64 实际容器运行、原生浏览器缩放矩阵、长时间监控负载。
 - 已实现待实机准入：Windows 节点构建产物和安装脚本已发布但未签名；公开页面提供固定官方来源与 SHA256SUMS 校验说明。签名不提供发布者身份时不补写“可信签名”结论。
 - 不阻断本版的理由：用户明确表示 Windows 真机后续测试；预览流程未改 GitHub Latest、Docker latest、stable 更新入口或生产系统。CF 覆盖项作为 RC 风险记录，稳定准入前必须完成。
-- 后续应进入的自动门禁或专项工作流：完成 CF scoped audit 与独立验证；为 Windows 首次安装/更新/回滚/RDP 建立真实机验收；统一 SSH argv、Docker tag 映射和 release timestamp receipt helper，关闭本次 3 个流程异常的行动项。
+- 后续应进入的自动门禁或专项工作流：完成 CF scoped audit 与独立验证；为 Windows 首次安装/更新/回滚/RDP 建立真实机验收；统一 SSH argv、Docker tag 映射、release timestamp receipt helper 和 push readback 动态 SHA 检查，关闭本次 4 个流程异常的行动项。
