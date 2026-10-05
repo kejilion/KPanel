@@ -32,7 +32,7 @@ func runTrafficInterfaces(arguments []string) error {
 	}
 	gid := -1
 	if len(arguments) > 0 && arguments[0] != "show" {
-		if runtime.GOOS == "linux" && os.Geteuid() != 0 {
+		if os.Geteuid() != 0 {
 			return errors.New("changing traffic interfaces requires root")
 		}
 		if !secureMigrationDirectory(filepath.Dir(defaultTrafficSelectionPath)) {
@@ -91,9 +91,6 @@ func applyTrafficInterfaces(arguments []string, procRoot, path string, gid int, 
 }
 
 func telemetryGroupID() (int, error) {
-	if runtime.GOOS != "linux" {
-		return -1, nil
-	}
 	group, err := user.LookupGroup("kejilion-node")
 	if err != nil {
 		return -1, errors.New("telemetry service group is unavailable")

@@ -121,7 +121,7 @@ export const enUSMessages = {
   'cluster.trafficInterfaces.countInterface': "Count {name} toward traffic",
   'cluster.trafficInterfaces.excluded': "Excluded from the automatic choice: {names}",
   'cluster.trafficInterfaces.empty': "No countable interface was found.",
-  'cluster.trafficInterfaces.others': "{count} more virtual interfaces (not counted)",
+  'cluster.trafficInterfaces.others': "Other virtual interfaces, not counted ({count})",
   'cluster.trafficInterfaces.fallback': "None of the chosen interfaces exists right now; the automatic choice is counted meanwhile.",
   'cluster.trafficInterfaces.selectionError': "The saved interface choice cannot be read; the automatic choice is counted. Saving again replaces it.",
   'cluster.trafficInterfaces.chooseOne': "Choose at least one interface, or switch to automatic.",
