@@ -52,7 +52,7 @@ const name = (id: BackupModule) => phrase(choices.find(c => c.id === id)?.name |
 function unavailable(id: BackupModule) { return dialog.value === 'export' && id !== 'panel' && (!inventory.value?.hostAvailable || !!inventory.value.host?.modules.find(m => m.id === id)?.issue) }
 function unavailableReason(id: BackupModule) {
   const issue = inventory.value?.host?.modules.find(m => m.id === id)?.issue
-  return ({ protected_panel_data: '所选目录与面板自身数据重叠，请将业务数据与面板目录分开。', user_namespace_requires_adapter: '用户命名空间运行模式暂不支持此类备份。', auto_remove_requires_stop: '容器启用了停止后自动删除，请先调整容器配置。', container_not_stable: '有容器正在暂停或重启，请等待其恢复稳定。', volume_driver_requires_external_backup: '数据卷需要存储驱动提供的专用备份工具。', data_path_cannot_be_archived: '数据目录包含不可归档内容（如链接或独立挂载点），请先处理。' } as Record<string, string>)[issue || ''] || 'Agent 暂不可用，请检查连接。'
+  return ({ protected_panel_data: '所选目录与面板自身数据重叠，请将业务数据与面板目录分开。', user_namespace_requires_adapter: '用户命名空间运行模式暂不支持此类备份。', auto_remove_requires_stop: '容器启用了停止后自动删除，请先调整容器配置。', container_not_stable: '有容器正在暂停或重启，请等待其恢复稳定。', volume_driver_requires_external_backup: '数据卷需要存储驱动提供的专用备份工具。', data_path_cannot_be_archived: '数据目录包含无法安全归档的内容（如目标在目录外或无法解析的链接、特殊文件或独立挂载点），请先处理。' } as Record<string, string>)[issue || ''] || 'Agent 暂不可用，请检查连接。'
 }
 function status(record: BackupRecord) {
   if (record.status === 'expired') return '备份文件已过期，请重新导出或上传'

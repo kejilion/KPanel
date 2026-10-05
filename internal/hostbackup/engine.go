@@ -522,10 +522,18 @@ func (e *Engine) Inventory(ctx context.Context) (Inventory, error) {
 }
 
 func (e *Engine) measure(ctx context.Context, root *Root) error {
-	if err := noNestedMounts(e.host(root.Path)); err != nil {
+	sourceRoot := e.host(root.Path)
+	if err := noNestedMounts(sourceRoot); err != nil {
 		return err
 	}
-	return filepath.WalkDir(e.host(root.Path), func(path string, entry os.DirEntry, err error) error {
+	rootInfo, err := os.Lstat(sourceRoot)
+	if err != nil {
+		return err
+	}
+	if rootInfo.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("backup root cannot be a symbolic link: %s", root.Path)
+	}
+	return filepath.WalkDir(sourceRoot, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -536,8 +544,12 @@ func (e *Engine) measure(ctx context.Context, root *Root) error {
 		if err != nil {
 			return err
 		}
-		if !info.IsDir() && !info.Mode().IsRegular() {
-			return fmt.Errorf("backup contains a link or special file: %s", root.Path)
+		if info.Mode()&os.ModeSymlink != 0 {
+			if _, err := archiveSourceSymlinkTarget(root, sourceRoot, path); err != nil {
+				return fmt.Errorf("backup contains an unsafe symbolic link: %s", path)
+			}
+		} else if !info.IsDir() && !info.Mode().IsRegular() {
+			return fmt.Errorf("backup contains an unsupported special file: %s (%s)", path, info.Mode().Type())
 		}
 		root.Entries++
 		if info.Mode().IsRegular() {

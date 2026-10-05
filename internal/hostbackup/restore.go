@@ -654,6 +654,26 @@ func copyTree(ctx context.Context, source, target string) error {
 			directories[destination] = info
 			return os.MkdirAll(destination, 0700)
 		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			linkTarget, err := os.Readlink(path)
+			if err != nil || filepath.IsAbs(linkTarget) || strings.Contains(linkTarget, "\\") {
+				return backup.ErrInvalid
+			}
+			relative, err := filepath.Rel(source, path)
+			if err != nil || validateArchiveSymlinkTarget("/backup-root", filepath.ToSlash(relative), filepath.ToSlash(linkTarget)) != nil || validateStagedSymlink(source, path) != nil {
+				return backup.ErrInvalid
+			}
+			if err := ensureArchiveParents(target, destination); err != nil {
+				return err
+			}
+			if err := os.MkdirAll(filepath.Dir(destination), 0700); err != nil {
+				return err
+			}
+			if err := os.Symlink(filepath.FromSlash(linkTarget), destination); err != nil {
+				return err
+			}
+			return copySymlinkOwnership(destination, info)
+		}
 		if !info.Mode().IsRegular() {
 			return backup.ErrInvalid
 		}

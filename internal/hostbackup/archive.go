@@ -10,8 +10,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 
 	"github.com/kejilion/kejilion-panel/internal/backup"
@@ -164,7 +166,13 @@ func (e *Engine) writePayload(ctx context.Context, path string, p Payload) (err 
 			if err != nil {
 				return err
 			}
-			if !info.IsDir() && !info.Mode().IsRegular() {
+			var linkTarget string
+			if info.Mode()&os.ModeSymlink != 0 {
+				linkTarget, err = archiveSourceSymlinkTarget(&root, source, path)
+				if err != nil {
+					return err
+				}
+			} else if !info.IsDir() && !info.Mode().IsRegular() {
 				return backup.ErrInvalid
 			}
 			rel, err := filepath.Rel(source, path)
@@ -175,7 +183,7 @@ func (e *Engine) writePayload(ctx context.Context, path string, p Payload) (err 
 			if rel != "." {
 				name += "/" + filepath.ToSlash(rel)
 			}
-			header, err := tar.FileInfoHeader(info, "")
+			header, err := tar.FileInfoHeader(info, linkTarget)
 			if err != nil {
 				return err
 			}
@@ -194,6 +202,9 @@ func (e *Engine) writePayload(ctx context.Context, path string, p Payload) (err 
 				return err
 			}
 			if info.IsDir() {
+				return nil
+			}
+			if info.Mode()&os.ModeSymlink != 0 {
 				return nil
 			}
 			input, err := backup.OpenRegular(path, 10<<30)
@@ -274,6 +285,7 @@ func (e *Engine) ReadPayload(ctx context.Context, path, directory string) (Paylo
 	seen := map[string]bool{}
 	var total int64
 	directories := map[string]*tar.Header{}
+	symlinks := map[string]*tar.Header{}
 	for {
 		if ctx.Err() != nil {
 			return p, ctx.Err()
@@ -294,13 +306,28 @@ func (e *Engine) ReadPayload(ctx context.Context, path, directory string) (Paylo
 				return p, backup.ErrInvalid
 			}
 		}
-		if h.Typeflag != tar.TypeReg && h.Typeflag != tar.TypeDir || h.Size < 0 || h.Size > 10<<30 || h.Mode < 0 || h.Mode > 07777 || h.Uid < 0 || h.Gid < 0 || h.Uid > 1<<31-1 || h.Gid > 1<<31-1 {
+		if h.Typeflag != tar.TypeReg && h.Typeflag != tar.TypeDir && h.Typeflag != tar.TypeSymlink || h.Size < 0 || h.Size > 10<<30 || h.Mode < 0 || h.Mode > 07777 || h.Uid < 0 || h.Gid < 0 || h.Uid > 1<<31-1 || h.Gid > 1<<31-1 {
 			return p, backup.ErrInvalid
+		}
+		if h.Typeflag == tar.TypeSymlink {
+			if h.Size != 0 || len(parts) < 3 || len(h.Linkname) == 0 || len(h.Linkname) > 4096 || strings.ContainsRune(h.Linkname, '\x00') || strings.Contains(h.Linkname, "\\") {
+				return p, backup.ErrInvalid
+			}
+			root := roots[parts[1]]
+			relative := strings.Join(parts[2:], "/")
+			if err := validateArchiveSymlinkTarget(root.Path, relative, h.Linkname); err != nil {
+				return p, backup.ErrInvalid
+			}
+			copy := *h
+			symlinks[h.Name] = &copy
 		}
 		seen[h.Name] = true
 		total += h.Size
 		if len(seen) > 100000 || total > backup.MaxBytes {
 			return p, backup.ErrInvalid
+		}
+		if h.Typeflag == tar.TypeSymlink {
+			continue
 		}
 		target := filepath.Join(directory, filepath.FromSlash(h.Name))
 		if h.Typeflag == tar.TypeDir {
@@ -366,6 +393,38 @@ func (e *Engine) ReadPayload(ctx context.Context, path, directory string) (Paylo
 	if _, err := compressed.Peek(1); err != io.EOF {
 		return p, backup.ErrInvalid
 	}
+	symlinkNames := make([]string, 0, len(symlinks))
+	for name := range symlinks {
+		symlinkNames = append(symlinkNames, name)
+	}
+	sort.Strings(symlinkNames)
+	for _, name := range symlinkNames {
+		h := symlinks[name]
+		parts := strings.Split(name, "/")
+		rootDir := filepath.Join(directory, "data", parts[1])
+		target := filepath.Join(directory, filepath.FromSlash(name))
+		if err := ensureArchiveParents(rootDir, target); err != nil {
+			return p, backup.ErrInvalid
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+			return p, err
+		}
+		if err := os.Symlink(filepath.FromSlash(h.Linkname), target); err != nil {
+			return p, err
+		}
+	}
+	for _, name := range symlinkNames {
+		h := symlinks[name]
+		parts := strings.Split(name, "/")
+		rootDir := filepath.Join(directory, "data", parts[1])
+		target := filepath.Join(directory, filepath.FromSlash(name))
+		if err := validateStagedSymlink(rootDir, target); err != nil {
+			return p, backup.ErrInvalid
+		}
+		if err := restoreSymlinkOwnership(target, h.Uid, h.Gid); err != nil {
+			return p, err
+		}
+	}
 	for path, h := range directories {
 		if err := restoreOwnership(path, h.Uid, h.Gid); err != nil {
 			return p, err
@@ -381,6 +440,95 @@ func (e *Engine) ReadPayload(ctx context.Context, path, directory string) (Paylo
 		}
 	}
 	return p, nil
+}
+
+func archiveSourceSymlinkTarget(root *Root, sourceRoot, linkPath string) (string, error) {
+	info, err := os.Lstat(sourceRoot)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return "", backup.ErrInvalid
+	}
+	relative, err := filepath.Rel(sourceRoot, linkPath)
+	if err != nil || relative == "." {
+		return "", backup.ErrInvalid
+	}
+	linkTarget, err := os.Readlink(linkPath)
+	if err != nil {
+		return "", err
+	}
+	resolvedRoot, err := filepath.EvalSymlinks(sourceRoot)
+	if err != nil {
+		return "", err
+	}
+	resolvedTarget, err := filepath.EvalSymlinks(linkPath)
+	if err != nil || !within(filepath.ToSlash(resolvedRoot), filepath.ToSlash(resolvedTarget)) {
+		return "", backup.ErrInvalid
+	}
+	if filepath.IsAbs(linkTarget) {
+		targetRelative, err := filepath.Rel(resolvedRoot, resolvedTarget)
+		if err != nil || filepath.IsAbs(targetRelative) || targetRelative == ".." || strings.HasPrefix(targetRelative, ".."+string(filepath.Separator)) {
+			return "", backup.ErrInvalid
+		}
+		linkTarget, err = filepath.Rel(filepath.Dir(relative), targetRelative)
+		if err != nil {
+			return "", backup.ErrInvalid
+		}
+		linkTarget = filepath.ToSlash(linkTarget)
+	}
+	relative = filepath.ToSlash(relative)
+	if err := validateArchiveSymlinkTarget(root.Path, relative, linkTarget); err != nil {
+		return "", err
+	}
+	return linkTarget, nil
+}
+
+func validateArchiveSymlinkTarget(rootPath, relativePath, target string) error {
+	rootPath = path.Clean(rootPath)
+	relativePath = path.Clean(filepath.ToSlash(relativePath))
+	if !path.IsAbs(rootPath) || rootPath == "/" || relativePath == "." || relativePath == ".." || strings.HasPrefix(relativePath, "../") || target == "" || strings.ContainsRune(target, '\x00') || strings.Contains(target, "\\") || path.IsAbs(target) {
+		return backup.ErrInvalid
+	}
+	linkPath := path.Join(rootPath, relativePath)
+	targetPath := path.Clean(path.Join(path.Dir(linkPath), target))
+	if !within(rootPath, targetPath) {
+		return backup.ErrInvalid
+	}
+	return nil
+}
+
+func validateStagedSymlink(root, linkPath string) error {
+	resolvedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return err
+	}
+	resolvedTarget, err := filepath.EvalSymlinks(linkPath)
+	if err != nil || !within(filepath.ToSlash(resolvedRoot), filepath.ToSlash(resolvedTarget)) {
+		return backup.ErrInvalid
+	}
+	return nil
+}
+
+func ensureArchiveParents(root, target string) error {
+	root = filepath.Clean(root)
+	parent := filepath.Dir(target)
+	relative, err := filepath.Rel(root, parent)
+	if err != nil || filepath.IsAbs(relative) || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return backup.ErrInvalid
+	}
+	current := root
+	if relative == "." {
+		return nil
+	}
+	for _, part := range strings.Split(relative, string(filepath.Separator)) {
+		current = filepath.Join(current, part)
+		info, err := os.Lstat(current)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			return backup.ErrInvalid
+		}
+	}
+	return nil
 }
 
 func (e *Engine) validatePayload(p Payload) error {

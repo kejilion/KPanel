@@ -190,6 +190,126 @@ func TestBackupHostNativeMountBindingAndRevision(t *testing.T) {
 	}
 }
 
+func TestBackupHostInternalSymlinkRoundTrip(t *testing.T) {
+	e, _, _ := hostFixture(t)
+	link := e.host("/home/app/latest")
+	if err := os.Symlink("data", link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	absoluteLink := e.host("/home/app/absolute-latest")
+	if err := os.Symlink(e.host("/home/app/data"), absoluteLink); err != nil {
+		t.Skipf("absolute symlinks unavailable: %v", err)
+	}
+	inventory, err := e.Inventory(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	appsFound := false
+	for _, module := range inventory.Modules {
+		if module.ID == "apps" {
+			appsFound = true
+			if module.Issue != "" {
+				t.Fatalf("safe in-root symlink blocked inventory: %s", module.Issue)
+			}
+		}
+	}
+	if !appsFound {
+		t.Fatal("apps module missing from inventory")
+	}
+	directory := t.TempDir()
+	if err := e.Create(context.Background(), directory, []string{"apps"}, inventory.Revision); err != nil {
+		t.Fatal("export with an in-root symlink failed:", err)
+	}
+	if err := os.Remove(link); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(absoluteLink); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(e.host("/home/app/data"), []byte("new!"), 0640); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.Restore(context.Background(), backup.NewID(), directory, []string{"apps"}); err != nil {
+		t.Fatal("restore with an in-root symlink failed:", err)
+	}
+	if target, err := os.Readlink(link); err != nil || target != "data" {
+		t.Fatalf("restored symlink target = %q, err = %v", target, err)
+	}
+	if target, err := os.Readlink(absoluteLink); err != nil || target != "data" {
+		t.Fatalf("restored absolute symlink target = %q, err = %v", target, err)
+	}
+	if data, err := os.ReadFile(link); err != nil || string(data) != "old!" {
+		t.Fatalf("restored link target content = %q, err = %v", data, err)
+	}
+}
+
+func TestBackupHostRejectsSymlinkOutsideRoot(t *testing.T) {
+	e, _, _ := hostFixture(t)
+	outside := e.host("/home/outside/passwd")
+	if err := os.MkdirAll(filepath.Dir(outside), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(outside, []byte("outside"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../outside/passwd", e.host("/home/app/outside-link")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	inventory, err := e.Inventory(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	appsFound := false
+	for _, module := range inventory.Modules {
+		if module.ID == "apps" {
+			appsFound = true
+			if module.Issue != "data_path_cannot_be_archived" {
+				t.Fatalf("unsafe symlink issue = %q, want data_path_cannot_be_archived", module.Issue)
+			}
+		}
+	}
+	if !appsFound {
+		t.Fatal("apps module missing from inventory")
+	}
+}
+
+func TestReadPayloadRejectsSymlinkOutsideRoot(t *testing.T) {
+	e, _, payload := hostFixture(t)
+	root := payload.Roots[0]
+	var archive bytes.Buffer
+	gz := gzip.NewWriter(&archive)
+	tw := tar.NewWriter(gz)
+	manifest, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.WriteHeader(&tar.Header{Name: "manifest.json", Typeflag: tar.TypeReg, Mode: 0600, Size: int64(len(manifest))}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write(manifest); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.WriteHeader(&tar.Header{Name: "data/" + root.ID, Typeflag: tar.TypeDir, Mode: 0700}); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.WriteHeader(&tar.Header{Name: "data/" + root.ID + "/escape", Typeflag: tar.TypeSymlink, Linkname: "../../etc/passwd", Mode: 0777}); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+	archivePath := filepath.Join(t.TempDir(), "apps.payload")
+	if err := os.WriteFile(archivePath, archive.Bytes(), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.ReadPayload(context.Background(), archivePath, t.TempDir()); err == nil {
+		t.Fatal("payload with an escaping symlink was accepted")
+	}
+}
+
 // Imported payload roots may only restore data the exporter's data model
 // produces. System directories outside /home must never pass validation,
 // regardless of module labels or container declarations.

@@ -1308,7 +1308,7 @@ export default [
   ["容器启用了停止后自动删除，请先调整容器配置。", "The container is set to delete itself when stopped. Adjust its configuration first."],
   ["有容器正在暂停或重启，请等待其恢复稳定。", "A container is paused or restarting. Wait until it is stable."],
   ["数据卷需要存储驱动提供的专用备份工具。", "The volume requires a backup tool provided by its storage driver."],
-  ["数据目录包含不可归档内容（如链接或独立挂载点），请先处理。", "The data directory contains unsupported entries such as links or separate mount points. Resolve these first."],
+  ["数据目录包含无法安全归档的内容（如目标在目录外或无法解析的链接、特殊文件或独立挂载点），请先处理。", "The data directory contains entries that cannot be safely archived, such as links outside the root, unresolved links, special files, or separate mount points. Resolve these first."],
   ["Agent 暂不可用，请检查连接。", "Agent is unavailable. Check the connection."],
   ["正在备份服务数据", "Backing up service data"],
   ["正在加密备份文件", "Encrypting backup file"],
