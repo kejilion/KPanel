@@ -13,6 +13,7 @@ var windowsReleaseVersion = regexp.MustCompile(`^v?(0|[1-9][0-9]{0,5})\.(0|[1-9]
 
 // The release asset is pinned into the panel binary so the short launcher can
 // verify it before executing any downloaded PowerShell source.
+//
 //go:embed bootstrap-windows.ps1
 var windowsBootstrapScript []byte
 
