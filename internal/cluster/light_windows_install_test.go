@@ -26,7 +26,7 @@ func TestWindowsEnrollmentCommandPinsAndVerifiesBeforeExecution(t *testing.T) {
 			t.Errorf("missing %q", expected)
 		}
 	}
-	if strings.ContainsAny(command, "\r\n") || strings.Contains(command, "Invoke-Expression") || strings.Contains(command, "Authenticode") || strings.Contains(command, "-Publisher") || strings.Contains(command, "install-windows.ps1") || strings.Contains(command, "SHA256SUMS") || !strings.Contains(command, "-NoProfile -ExecutionPolicy Bypass -File $bootstrap") || strings.Contains(command, " -Token ") || strings.Index(command, "Get-FileHash") > strings.Index(command, "-File $bootstrap") {
+	if strings.ContainsAny(command, "\r\n") || strings.Contains(command, "Invoke-Expression") || strings.Contains(command, "Authenticode") || strings.Contains(command, "-Publisher") || strings.Contains(command, "install-windows.ps1") || strings.Contains(command, "SHA256SUMS") || strings.Contains(command, "-ExecutionPolicy") || !strings.Contains(command, "& $bootstrap -Version ") || strings.Contains(command, " -Token ") || strings.Index(command, "Get-FileHash") > strings.Index(command, "& $bootstrap") {
 		t.Fatal("bootstrap must be one line and verify before execution")
 	}
 	for _, invalid := range []string{"dev", "01.2.3", "1.2.3-rc.0", "1.2.3-dev", "1000000.2.3", "1.2.3;whoami"} {
