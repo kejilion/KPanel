@@ -71,13 +71,14 @@ func (s *Service) lightEnrollmentCommandWithDesktop(platform, token, name string
 		"$expected=($lines[0] -split '\\s+')[0]; if ((Get-FileHash -LiteralPath $script -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expected) { throw 'Installer checksum mismatch' }",
 		"Write-Warning 'Windows node is unsigned; official HTTPS and SHA-256 verify integrity, not a certificate publisher'",
 	}
-	command := "& $script -Token " + powershellSingleQuote(token) + " -Version " + powershellSingleQuote("v"+strings.TrimPrefix(s.panelVersion, "v"))
+	command := "$previousToken=$env:KPANEL_NODE_TOKEN; $engine=if ($PSVersionTable.PSEdition -eq 'Core') { Join-Path $PSHOME 'pwsh.exe' } else { Join-Path $PSHOME 'powershell.exe' }; $installExit=1; try { $env:KPANEL_NODE_TOKEN=" + powershellSingleQuote(token) + "; & $engine -NoProfile -ExecutionPolicy Bypass -File $script -Version " + powershellSingleQuote("v"+strings.TrimPrefix(s.panelVersion, "v"))
 	if name != "" {
 		command += " -Name " + powershellSingleQuote(name)
 	}
 	if desktop {
 		command += " -EnableDesktop"
 	}
+	command += "; $installExit=$LASTEXITCODE } finally { if ($null -eq $previousToken) { Remove-Item Env:KPANEL_NODE_TOKEN -ErrorAction SilentlyContinue } else { $env:KPANEL_NODE_TOKEN=$previousToken }; $previousToken=$null }; if ($installExit -ne 0) { throw 'Windows node installer failed.' }"
 	parts = append(parts, command, "} finally { foreach ($file in @($script,$manifest)) { if (Test-Path -LiteralPath $file) { Remove-Item -LiteralPath $file -Force } }; Remove-Item -LiteralPath $stage -Force }")
 	return strings.Join(parts, "; ") + " }", nil
 }

@@ -47,7 +47,13 @@ function Assert-Directory([string]$Path, [bool]$Ancestor) {
         if ($rule.PropagationFlags -band [Security.AccessControl.PropagationFlags]::InheritOnly) { continue }
         if ($rule.AccessControlType -ne [Security.AccessControl.AccessControlType]::Allow) { continue }
         if ($trusted -contains $rule.IdentityReference.Value) { continue }
-        if (([int]$rule.FileSystemRights -band $writeMask) -ne 0) { throw "Directory allows untrusted writes: $Path" }
+        $rights = [int]$rule.FileSystemRights
+        $commonDataRoot = [IO.Path]::GetFullPath([Environment]::GetFolderPath('CommonApplicationData')).TrimEnd('\')
+        $isStandardUsersMetadataAce = $Ancestor -and
+            [String]::Equals([IO.Path]::GetFullPath($Path).TrimEnd('\'),$commonDataRoot,[StringComparison]::OrdinalIgnoreCase) -and
+            $rule.IdentityReference.Value -eq 'S-1-5-32-545'
+        if ($isStandardUsersMetadataAce) { $rights = $rights -band (-bnot 0x110) } # ProgramData grants Users WRITE_EA/WRITE_ATTRIBUTES by default.
+        if (($rights -band $writeMask) -ne 0) { throw "Directory allows untrusted writes: $Path" }
     }
 }
 function New-ProtectedDirectory([string]$Path, [bool]$PublicRead) {

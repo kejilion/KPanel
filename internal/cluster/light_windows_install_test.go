@@ -27,7 +27,7 @@ func TestWindowsEnrollmentCommandPinsAndVerifiesBeforeExecution(t *testing.T) {
 			t.Errorf("missing %q", expected)
 		}
 	}
-	if strings.ContainsAny(command, "\r\n") || strings.Contains(command, "Invoke-Expression") || strings.Contains(command, "Authenticode") || strings.Contains(command, "-Publisher") || strings.Contains(command, "ExecutionPolicy") || strings.Index(command, "Get-FileHash") > strings.Index(command, "& $script") {
+	if strings.ContainsAny(command, "\r\n") || strings.Contains(command, "Invoke-Expression") || strings.Contains(command, "Authenticode") || strings.Contains(command, "-Publisher") || !strings.Contains(command, "-NoProfile -ExecutionPolicy Bypass -File $script") || strings.Contains(command, " -Token ") || strings.Index(command, "Get-FileHash") > strings.Index(command, "-File $script") {
 		t.Fatal("bootstrap must be one line and verify before execution")
 	}
 	for _, invalid := range []string{"dev", "01.2.3", "1.2.3-rc.0", "1.2.3-dev", "1000000.2.3", "1.2.3;whoami"} {
@@ -56,7 +56,7 @@ func TestWindowsEnrollmentCannotConsumePolicyBeforeReleaseVersionAvailable(t *te
 	}
 	s.panelVersion = "1.25.0-rc.3"
 	enrollment, err := s.CreateLightBatchEnrollment(CreateLightBatchEnrollmentInput{Platform: "windows"})
-	if err != nil || enrollment.Platform != "windows" || !strings.Contains(enrollment.Command, "-Token ") {
+	if err != nil || enrollment.Platform != "windows" || !strings.Contains(enrollment.Command, "$env:KPANEL_NODE_TOKEN=") {
 		t.Fatalf("%#v, %v", enrollment, err)
 	}
 }
