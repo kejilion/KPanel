@@ -26,7 +26,7 @@ const trafficInterfacesUsage = "usage: kejilion-node interfaces [show | auto | i
 // node's traffic. Changes apply at the next report without a restart.
 func runTrafficInterfaces(arguments []string) error {
 	if runtime.GOOS != "linux" {
-		return errors.New("traffic interface selection requires Linux /proc network counters")
+		return errors.New("traffic interface selection is available on Linux nodes only")
 	}
 	gid := -1
 	if len(arguments) > 0 && arguments[0] != "show" {

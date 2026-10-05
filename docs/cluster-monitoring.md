@@ -104,7 +104,8 @@ VPN 叠加层重复计数；没有默认路由时统计全部非虚拟网卡。W
 - 轻量节点：在节点上以 root 执行 `/usr/local/lib/kejilion-node/kejilion-node interfaces` 查看每块网卡的
   计数、是否计入及原因；`interfaces include eth0 …` 指定、`interfaces exclude NAME …` 在自动选择中排除、
   `interfaces auto` 恢复自动。选择写入 `/etc/kejilion-node/traffic-interfaces.json`（0640 root:kejilion-node），
-  遥测与文件服务按修改时间重读，下次上报生效，无需重启；卸载节点时随配置目录删除。
+  遥测与文件服务按修改时间重读，下次上报生效，无需重启；卸载节点时随配置目录删除。仅 Linux 节点支持：
+  计数来自 `/proc/net/dev`，其他平台的节点命令直接报错，遥测照常按各自系统接口统计。
 
 选择文件为 `{schemaVersion:1, include, exclude}`：严格解码、不超过 4 KiB、只接受普通文件；网卡名按 Linux
 规则校验并限于可打印 ASCII（≤15 字节，无 `/`、`:`、空白和控制字符，不能是 `lo`；其他名称仍可被自动规则统计），每个列表至多 16 个且不能交叉。
