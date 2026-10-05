@@ -56,6 +56,17 @@ export function mockMonitoringHistory(url, remote = false) {
       { id: 'http-api', kind: 'http', name: 'API 健康检查', address: 'https://api.example.test/health', target: 'https://api.example.test/health',
         points: sampled.map((point, index) => ({ collectedAt: point.collectedAt, latencyMilliseconds: 62 + 12 * Math.cos(index / 4), successCount: 1, failureCount: 0 })) },
     ])
+  // Buckets wider than the 5-minute probe interval carry the median line, the
+  // lowest value and the peak, with an occasional spike to show the band.
+  for (const series of operatorLatency) {
+    series.points = series.points.map((point, index) => {
+      const median = point.latencyMilliseconds
+      if (median === null) return point
+      if (bucket <= 300) return { ...point, medianMilliseconds: median, minimumMilliseconds: median }
+      const peak = median * (index % 17 === 5 ? 3.2 : 1.25)
+      return { ...point, latencyMilliseconds: peak, medianMilliseconds: median, minimumMilliseconds: median * 0.82 }
+    })
+  }
   return { range, startedAt: new Date(start).toISOString(), endedAt: new Date(end).toISOString(), bucketSeconds: bucket,
     host, containers, operatorLatency, scannedBytes: 140000, skippedLines: 0, truncatedSeries: 0,
     storage: { enabled: true, retentionDays: 30, hostIntervalSeconds: interval,
