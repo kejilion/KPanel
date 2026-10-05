@@ -147,6 +147,7 @@ interface AppsBindings {
   openScriptManage: () => Promise<void>
   requestCancelJob: () => void
   closeJobDetails: () => void
+  runJobInBackground: () => void
   confirmCancelJob: () => Promise<void>
   dismissJob: () => void
   consumeRouteIntent: () => Promise<void>
@@ -1241,6 +1242,22 @@ describe('AppsView script management', () => {
     expect(source).toContain('@close="closeJobDetails"')
     expect(view.cancelJobPending.value).toBe(true)
     expect(view.jobDetailsOpen.value).toBe(true)
+  })
+
+  it('lets the close prompt send a running terminal to the background instead of ending it', () => {
+    const view = setupView()
+    view.activeJob.value = runningTerminalJob
+    view.jobDetailsOpen.value = true
+
+    view.closeJobDetails()
+    expect(view.cancelJobPending.value).toBe(true)
+    view.runJobInBackground()
+
+    expect(view.cancelJobPending.value).toBe(false)
+    expect(view.jobDetailsOpen.value).toBe(false)
+    expect(view.activeJob.value?.id).toBe(runningTerminalJob.id)
+    expect(mocks.cancelJob).not.toHaveBeenCalled()
+    expect(view.resumableTerminalJob.value).toBeUndefined()
   })
 
   it('closes the job dialog normally when no interactive task can be cancelled', () => {

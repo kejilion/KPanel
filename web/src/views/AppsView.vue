@@ -810,6 +810,13 @@ function requestCancelJob(): void {
   cancelJobPending.value = true
 }
 
+// Closing the window of a running terminal asks what to do with the task;
+// this is the answer that keeps it running and just hides the window.
+function runJobInBackground(): void {
+  cancelJobPending.value = false
+  jobDetailsOpen.value = false
+}
+
 function closeJobDetails(): void {
   if (activeJobCancellable.value) {
     requestCancelJob()
@@ -1885,9 +1892,9 @@ watch(windowActive, syncJobPollingForWindow)
           class="button button--secondary"
           type="button"
           :disabled="cancellingJob"
-          @click="cancelJobPending = false"
+          @click="runJobInBackground"
         >
-          {{ phrase('继续运行') }}
+          {{ phrase('后台运行') }}
         </button>
         <button
           class="button button--danger"
