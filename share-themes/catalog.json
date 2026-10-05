@@ -35,8 +35,8 @@
       "files": [
         {
           "path": "index.html",
-          "size": 1267,
-          "sha256": "b8291cc5d184013d0366c5a8b560085bc215b739e9170898d064b442ec45c784"
+          "size": 1376,
+          "sha256": "32e987991c486dd7345e422cfdf0975947ad474f7847a7f6f95e8f718e96ec99"
         },
         {
           "path": "manifest.json",
@@ -45,16 +45,16 @@
         },
         {
           "path": "theme.css",
-          "size": 9676,
-          "sha256": "ea300abfc2a1c00dda9e3dc5d93396bf0bf677a6f358e3781072680d851125c3"
+          "size": 10203,
+          "sha256": "41b20e4af57d260111888a8080d3a2d49ab6f76a73d035a3d1e01ff8a408d787"
         },
         {
           "path": "theme.js",
-          "size": 11780,
-          "sha256": "9971f83ab3b57bebf59d0670423bdb98ac094b947f4cd8130b0980c14e46b729"
+          "size": 12910,
+          "sha256": "cc43266ec6ceb5901e580bb895637fb485c41090af954d6e320bdbd73e760279"
         }
       ],
-      "sizeBytes": 23400
+      "sizeBytes": 25166
     },
     {
       "schema": 1,
@@ -90,8 +90,8 @@
       "files": [
         {
           "path": "index.html",
-          "size": 1354,
-          "sha256": "675b5701e21b560458a6b1722d99a2a003549ba9c01457325e8c761c824f6ceb"
+          "size": 1402,
+          "sha256": "eba2246be3ecd50519fc8cf604308fc1f96e4d47fefbb57d7ecb13e980d83f94"
         },
         {
           "path": "manifest.json",
@@ -100,16 +100,16 @@
         },
         {
           "path": "theme.css",
-          "size": 11791,
-          "sha256": "6a3cb1a2f2c197e9152ab31895ddb10f2d136358342b3cb355ea0bc329ecf63a"
+          "size": 12297,
+          "sha256": "9a21b8ca7bfd2201985ef176e7211fd95959813c600557bd1feea57ba6c6cdfd"
         },
         {
           "path": "theme.js",
-          "size": 9718,
-          "sha256": "42e5c4d1a118e65a5de412298a9592a5877a38e841a05894a97fbc1ce46872db"
+          "size": 10734,
+          "sha256": "c4027425d1eb50372915342c1539044c3dc3a59507c4ecb46259f14198e2869d"
         }
       ],
-      "sizeBytes": 23555
+      "sizeBytes": 25125
     },
     {
       "schema": 1,
@@ -145,8 +145,8 @@
       "files": [
         {
           "path": "index.html",
-          "size": 1201,
-          "sha256": "214c052388963d33e50bdc46ca5a1697facc3954214b0c6f795a144562d71072"
+          "size": 1249,
+          "sha256": "895f014ddc516c8cc2f15916fc41223c87730670a1d2c14a05e3d06b86b1ab8f"
         },
         {
           "path": "land.js",
@@ -160,16 +160,16 @@
         },
         {
           "path": "theme.css",
-          "size": 13588,
-          "sha256": "4d539905b854e84f02f5091d091b75ada7a12924be294dbc9a54310d75a63a5f"
+          "size": 13965,
+          "sha256": "90ed567a8f0e78cd87256667aceb823c1921e151f7d8a7badb7c438f9b6e7453"
         },
         {
           "path": "theme.js",
-          "size": 12979,
-          "sha256": "513599534fc304afc08cbc85a95564d7194aeab93ce05294cfacee5c5d03b362"
+          "size": 13995,
+          "sha256": "e7f0d930fae97a2b1e54ef691fe12b08bb37004047d7876d88e4e6790c32afc2"
         }
       ],
-      "sizeBytes": 53405
+      "sizeBytes": 54846
     }
   ]
 }

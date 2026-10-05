@@ -8,8 +8,10 @@ import type { ShareThemeAssets } from '@/lib/shareThemeAssets'
 import type { PublicClusterShareSnapshot } from '@/types/api'
 
 const props = defineProps<{ snapshot?: PublicClusterShareSnapshot; errorMessage?: string }>()
+// `immersive`: the theme declared it owns the whole page, so the host hides its own header, frame and footer.
+const emit = defineEmits<{ immersive: [value: boolean]; refresh: [] }>()
 const { t, locale } = useI18n()
-const { resolved } = useTheme()
+const { resolved, setTheme } = useTheme()
 const frame = ref<HTMLIFrameElement>()
 const ready = ref(false)
 let protocol: 1 | 2 = 1
@@ -17,12 +19,13 @@ let assets: Partial<ShareThemeAssets> = {}
 let assetKey: string | null = null
 const fallback = ref(false)
 const failed = ref(false)
+const immersive = ref(false)
 const height = ref(720)
 const url = computed(() => shareThemeURL(props.snapshot?.theme))
 const name = computed(() => props.snapshot?.theme?.name[locale.value] || props.snapshot?.theme?.name['en-US'] || '')
 let timer: ReturnType<typeof setTimeout> | undefined
 function clearTimer() { if (timer) clearTimeout(timer); timer = undefined }
-function stop(error = false) { clearTimer(); fallback.value = true; ready.value = false; failed.value = error }
+function stop(error = false) { clearTimer(); fallback.value = true; ready.value = false; immersive.value = false; failed.value = error }
 function send() {
   if (!ready.value || !props.snapshot) return
   const now = new Date(), target = frame.value?.contentWindow
@@ -49,24 +52,34 @@ function message(event: MessageEvent) {
     if (Number.isInteger(event.data.height) && event.data.height >= 320 && event.data.height <= 32768) height.value = event.data.height
     return
   }
+  // Controls the host would otherwise draw (refresh, light/dark, back to default) arrive as explicit, whitelisted actions.
+  if (ready.value && immersive.value && event.data?.type === 'action') {
+    const { action, mode } = event.data
+    if (action === 'refresh') emit('refresh')
+    else if (action === 'set-mode' && (mode === 'light' || mode === 'dark')) setTheme(mode)
+    else if (action === 'use-default') stop()
+    return
+  }
   if (event.data?.type !== 'ready' || ready.value) return
   protocol = shareThemeProtocol(event.data.protocol)
+  immersive.value = protocol === 2 && event.data.chrome === 'self'
   clearTimer(); ready.value = true; send()
   loadAssets()
 }
 watch(url, () => {
-  clearTimer(); ready.value = false; protocol = 1; assetKey = null; fallback.value = false; failed.value = false; height.value = 720
+  clearTimer(); ready.value = false; immersive.value = false; protocol = 1; assetKey = null; fallback.value = false; failed.value = false; height.value = 720
   if (url.value) timer = setTimeout(() => stop(true), 12_000)
 }, { immediate: true })
+watch(immersive, value => emit('immersive', value))
 watch([() => props.snapshot, locale, resolved], () => { send(); loadAssets() })
 onMounted(() => window.addEventListener('message', message))
-onBeforeUnmount(() => { clearTimer(); window.removeEventListener('message', message) })
+onBeforeUnmount(() => { clearTimer(); emit('immersive', false); window.removeEventListener('message', message) })
 </script>
 
 <template>
-  <p v-if="ready && errorMessage" class="share-theme__notice" role="alert">{{ errorMessage }}</p>
-  <section v-if="url && !fallback" class="share-theme" :aria-label="name">
-    <div class="share-theme__bar">
+  <p v-if="ready && errorMessage && !immersive" class="share-theme__notice" role="alert">{{ errorMessage }}</p>
+  <section v-if="url && !fallback" class="share-theme" :class="{ 'is-immersive': immersive }" :aria-label="name">
+    <div v-if="!immersive" class="share-theme__bar">
       <span>{{ ready ? name : t('cluster.themes.loadingTheme') }}</span>
       <button class="button button--secondary" type="button" @click="stop()">{{ t('cluster.themes.useDefault') }}</button>
     </div>
@@ -81,5 +94,7 @@ onBeforeUnmount(() => { clearTimer(); window.removeEventListener('message', mess
 .share-theme__bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1rem; font-size: 0.875rem; color: var(--text-soft); }
 iframe { display: block; visibility: hidden; border: 0; width: 100%; height: 0; background: var(--bg); border-radius: var(--radius-lg); }
 iframe.is-ready { visibility: visible; height: var(--theme-height); }
+/* The theme paints the entire viewport and scrolls inside its own frame, so no host surface is visible around it. */
+.is-immersive iframe.is-ready { position: fixed; inset: 0; z-index: 10; width: 100vw; height: 100vh; height: 100dvh; border-radius: 0; }
 .share-theme__notice { font-size: 0.875rem; color: var(--text-soft); }
 </style>

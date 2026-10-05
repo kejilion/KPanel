@@ -4,7 +4,7 @@
 
 ## 设计原则
 
-一个主题就是一个完整的网页。KPanel 只负责三件事：把**公开、经过白名单过滤的数据**送进沙箱、保证隐私与安全边界、提供「刷新 / 浅深色 / 使用默认样式」这几个外框入口。除此之外——版式、配色、字体、图表、SVG/Canvas、动效、交互（排序、筛选、展开、键盘快捷键……）——全部由主题作者自由决定。
+一个主题就是一个完整的网页。KPanel 只负责两件事：把**公开、经过白名单过滤的数据**送进沙箱，并保证隐私与安全边界。主题在 `ready` 里声明 `chrome: 'self'` 后，KPanel 的页头、标志、主题名栏、圆角外框和页脚全部不再显示，主题独占整个视口；「刷新 / 浅深色 / 使用默认样式」由主题自己绘制并通过 `action` 消息请求。除此之外——版式、配色、字体、图表、SVG/Canvas、动效、交互（排序、筛选、展开、键盘快捷键……）——全部由主题作者自由决定。
 
 - **不依赖任何框架**：主题不继承 KPanel 的 CSS、组件或设计令牌，也没有共享渲染器。仓库里的官方主题各自独立实现（表格终端、杂志版式、状态墙），互不复用代码，正是为了证明这一点。
 - **数据是原料，不是成品**：每个指标同时给出原始数值和已格式化文本，主题可以画仪表、热力图、迷你趋势，也可以只写文字。
@@ -31,7 +31,14 @@
    ```
    不带 `protocol` 的 `ready` 视为旧协议 1（保持原有 schema 1 快照，已安装的旧主题不受影响）。
 2. 父页面发送 `{ source: 'kpanel-share', type: 'snapshot', schema: 2, locale, mode, labels, data }`。先校验 `event.source === parent` 与 source/type/schema。`mode` 为 `light` / `dark`，`locale` 为 `zh-CN` / `zh-TW` / `en-US`。数据更新、语言或浅深色变化时会再次发送，无需主题自行轮询。
-3. 可选发送 `{ source: 'kpanel-share-theme', type: 'resize', height }` 调整内容高度；只接受 320–32768 的整数像素，避免嵌套滚动条，超出范围保持原高度。
+3. **接管整页（推荐）**：`ready` 带上 `chrome: 'self'`（仅协议 2 有效）后，iframe 铺满视口（`position: fixed`，`100dvh`），在自身内部滚动，`resize` 被忽略。此时主题**必须**自己提供下面三个入口，否则访客无法刷新、切换深浅色或退回默认样式：
+   ```js
+   parent.postMessage({ source: 'kpanel-share-theme', type: 'action', action: 'refresh' }, '*')
+   parent.postMessage({ source: 'kpanel-share-theme', type: 'action', action: 'set-mode', mode: 'dark' }, '*') // 'light' | 'dark'
+   parent.postMessage({ source: 'kpanel-share-theme', type: 'action', action: 'use-default' }, '*')
+   ```
+   仅这三个动作被接受，其他一律忽略；未声明 `chrome: 'self'` 的主题发送 `action` 同样被忽略。`labels` 已提供 `refresh`、`lightMode`、`darkMode`、`useDefault` 的本地化文案。`set-mode` 只影响本次浏览器的显示偏好。接管整页后 KPanel 不再显示刷新失败的提示条，主题可以用 `generatedAt` 判断数据是否过期。
+4. 不接管整页（旧行为）：保留 KPanel 外框，可选发送 `{ source: 'kpanel-share-theme', type: 'resize', height }` 调整内容高度；只接受 320–32768 的整数像素，避免嵌套滚动条，超出范围保持原高度。
 
 ### `data` 字段
 
@@ -69,7 +76,7 @@
 
 ## 官方主题
 
-三套主题彼此不共享任何代码，分别代表三种不同的阅读方式。都支持浅/深色、搜索、状态筛选和两种视图（访客的视图选择只保存在本次浏览中）。
+三套主题彼此不共享任何代码，分别代表三种不同的阅读方式，都接管整页并自带刷新、浅深色和「使用默认样式」入口。都支持浅/深色、搜索、状态筛选和两种视图（访客的视图选择只保存在本次浏览中）。
 
 | ID | 名称 | 适合 | 视图 | 设计要点 |
 | --- | --- | --- | --- | --- |

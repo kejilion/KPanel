@@ -115,11 +115,22 @@ function keyButton(text, pressed, onClick, id) {
   return button
 }
 
+// The host only relays these three requests; everything about how they look and where they sit is this theme's.
+const ask = (action, extra) => parent.postMessage({ source: 'kpanel-share-theme', type: 'action', action, ...extra }, '*')
+function controls(labels, mode) {
+  const next = mode === 'light' ? 'dark' : 'light'
+  const make = (key, text, title, run) => { const button = h('button', null, h('b', null, key), ' ', text); button.type = 'button'; button.title = title; button.addEventListener('click', run); return button }
+  $('ctl').replaceChildren(make('r', labels.refresh, labels.refresh, () => ask('refresh')),
+    make(next === 'light' ? '☀' : '☾', next === 'light' ? labels.lightMode : labels.darkMode, next === 'light' ? labels.lightMode : labels.darkMode, () => ask('set-mode', { mode: next })),
+    make('✕', labels.useDefault, labels.useDefault, () => ask('use-default')))
+}
+
 function render() {
   const { data, labels, locale, mode } = snap
   const root = document.documentElement
   root.lang = locale; root.dataset.mode = mode === 'light' ? 'light' : 'dark'
   document.title = data.title
+  controls(labels, root.dataset.mode)
   $('title').textContent = data.title
   $('desc').textContent = data.description; $('desc').hidden = !data.description
   $('q').placeholder = labels.search; $('findLabel').textContent = labels.search
@@ -155,12 +166,14 @@ addEventListener('message', event => {
   snap = msg; render()
 })
 $('q').addEventListener('input', event => { query = event.target.value; if (snap) render() })
-// Keyboard: "/" focuses search, 1–4 switch the state filter (ignored while typing).
+// Keyboard: "/" focuses search, r refreshes, 1–4 switch the state filter (ignored while typing).
 addEventListener('keydown', event => {
   if (!snap || event.target instanceof HTMLInputElement || event.ctrlKey || event.metaKey || event.altKey) return
   if (event.key === '/') { event.preventDefault(); $('q').focus() }
+  if (event.key === 'r') ask('refresh')
   const key = ['all', 'online', 'degraded', 'offline'][Number(event.key) - 1]
   if (key) { filter = key; render() }
 })
-parent.postMessage({ source: 'kpanel-share-theme', type: 'ready', protocol: 2 }, '*')
+// chrome: 'self' — this theme draws the whole page, including refresh, light/dark and the way back to the default style.
+parent.postMessage({ source: 'kpanel-share-theme', type: 'ready', protocol: 2, chrome: 'self' }, '*')
 new ResizeObserver(() => parent.postMessage({ source: 'kpanel-share-theme', type: 'resize', height: Math.min(32768, Math.max(320, Math.ceil(document.documentElement.getBoundingClientRect().height))) }, '*')).observe(document.body)

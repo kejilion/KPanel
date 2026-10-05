@@ -10,6 +10,7 @@ const zhCN = {
   covered: '台已计入', excluded: '台资料不足', noValue: '资料不足，暂无法估算', search: '搜索名称、地区或系统',
   empty: '没有匹配的机器', updated: '数据生成于', all: '全部', server: '机器', location: '地区', system: '系统',
   card: '卡片', list: '列表', map: '地图', view: '视图', filter: '筛选', details: '详情', network: '网络', traffic: '流量', unknownPlace: '位置未知', health: '在线率', regions: '个地区', clear: '清除筛选',
+  refresh: '刷新', lightMode: '切换浅色', darkMode: '切换深色', useDefault: '使用默认样式',
 } as const
 const zhTW: Record<keyof typeof zhCN, string> = {
   ...zhCN, fleet: '公開集群', total: '全部機器', online: '在線', attention: '需關注', offline: '離線', pending: '等待資料',
@@ -18,6 +19,7 @@ const zhTW: Record<keyof typeof zhCN, string> = {
   valueHint: '按已公開價格及到期日估算，分幣種展示。', covered: '台已計入', excluded: '台資料不足', noValue: '資料不足，暫時無法估算',
   search: '搜尋名稱、地區或系統', empty: '沒有符合的機器', updated: '資料產生於', all: '全部', server: '機器', location: '地區', system: '系統',
   card: '卡片', list: '列表', map: '地圖', view: '檢視', filter: '篩選', details: '詳情', network: '網路', traffic: '流量', unknownPlace: '位置未知', health: '在線率', regions: '個地區', clear: '清除篩選',
+  refresh: '重新整理', lightMode: '切換淺色', darkMode: '切換深色', useDefault: '使用預設樣式',
 }
 const enUS: Record<keyof typeof zhCN, string> = {
   fleet: 'Public fleet', total: 'Servers', online: 'Online', attention: 'Attention', offline: 'Offline', pending: 'Awaiting data',
@@ -27,6 +29,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
   covered: 'included', excluded: 'incomplete', noValue: 'Not enough details to estimate', search: 'Search name, location or OS',
   empty: 'No matching servers', updated: 'Updated', all: 'All', server: 'Server', location: 'Location', system: 'System',
   card: 'Cards', list: 'List', map: 'Map', view: 'View', filter: 'Filter', details: 'Details', network: 'Network', traffic: 'Traffic', unknownPlace: 'Unknown location', health: 'Online rate', regions: 'regions', clear: 'Clear filter',
+  refresh: 'Refresh', lightMode: 'Switch to light', darkMode: 'Switch to dark', useDefault: 'Use default style',
 }
 const tables: Record<ShareThemeLocale, Record<string, string>> = { 'zh-CN': zhCN, 'zh-TW': zhTW, 'en-US': enUS }
 

@@ -55,6 +55,7 @@ const publicDetails = computed(() => Object.fromEntries((snapshot.value?.items |
 }])))
 const loading = ref(true)
 const refreshing = ref(false)
+const immersive = ref(false)
 const errorMessage = ref('')
 type ShareViewMode = 'list' | 'card' | 'globe'
 const viewMode = ref<ShareViewMode>('list')
@@ -192,12 +193,14 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <main class="share-page">
-    <div class="share-page__glow share-page__glow--one" />
-    <div class="share-page__glow share-page__glow--two" />
+  <main class="share-page" :class="{ 'share-page--immersive': immersive }">
+    <template v-if="!immersive">
+      <div class="share-page__glow share-page__glow--one" />
+      <div class="share-page__glow share-page__glow--two" />
+    </template>
 
     <div class="share-shell">
-      <header class="share-header">
+      <header v-if="!immersive" class="share-header">
         <a class="share-brand" href="https://github.com/kejilion/KPanel" target="_blank" rel="noopener noreferrer">
           <LogoMark compact class="share-brand__logo" />
           <strong>KPanel</strong>
@@ -227,7 +230,7 @@ onBeforeUnmount(() => {
         </div>
       </header>
 
-      <ClusterShareTheme :snapshot="snapshot" :error-message="errorMessage">
+      <ClusterShareTheme :snapshot="snapshot" :error-message="errorMessage" @immersive="immersive = $event" @refresh="load()">
       <section v-if="snapshot" class="share-hero">
         <div class="share-hero__copy">
           <span class="share-kicker"><Globe2 :size="14" /> PUBLIC FLEET</span>
@@ -408,7 +411,7 @@ onBeforeUnmount(() => {
 
       </ClusterShareTheme>
 
-      <footer class="share-footer">
+      <footer v-if="!immersive" class="share-footer">
         <span>Powered by <strong>KPanel</strong></span>
         <span>公开页不包含 IP、管理入口或访问凭据</span>
       </footer>
@@ -438,6 +441,9 @@ onBeforeUnmount(() => {
   opacity: 0.14;
   border-radius: 50%;
 }
+
+.share-page--immersive { min-height: 0; background: none; }
+.share-page--immersive .share-shell { width: 0; height: 0; padding: 0; }
 
 .share-page__glow--one { top: 10%; right: -180px; background: var(--brand); }
 .share-page__glow--two { bottom: -240px; left: -160px; background: var(--blue); }

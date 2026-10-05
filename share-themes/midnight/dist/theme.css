@@ -11,17 +11,24 @@
   color-scheme: light;
 }
 * { box-sizing: border-box; }
-html { background: var(--page); }
-body { margin: 0; padding: clamp(0px, 2.4vw, 32px); background: var(--page); color: var(--ink); font: 14px/1.6 var(--mono); }
+html { background: var(--bg); }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.6 var(--mono); }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 button { font: inherit; color: inherit; cursor: pointer; }
 button:focus-visible, .find:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
 
-.term { max-width: 1320px; margin: 0 auto; border: 1px solid var(--line); border-radius: 14px; background: var(--bg); box-shadow: 0 30px 80px -40px rgb(0 0 0 / 0.7); overflow: hidden; }
-.chrome { display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: var(--bar); border-bottom: 1px solid var(--line); color: var(--dim); font-size: 12px; }
-.chrome i { width: 12px; height: 12px; border-radius: 50%; background: #ff5f57; } .chrome i:nth-child(2) { background: #febc2e; } .chrome i:nth-child(3) { background: #28c840; }
-.chrome span { flex: 1; text-align: center; margin-right: 52px; }
-.screen { padding: clamp(14px, 3vw, 32px); }
+/* The terminal is the page: the title bar spans the viewport and the screen below it fills the rest. */
+.term { min-height: 100vh; background: var(--bg); }
+.chrome { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 12px; padding: 8px 14px; background: var(--bar); border-bottom: 1px solid var(--line); color: var(--dim); font-size: 13px; }
+.lights { display: flex; gap: 8px; }
+.lights i { width: 12px; height: 12px; border-radius: 50%; background: #ff5f57; } .lights i:nth-child(2) { background: #febc2e; } .lights i:nth-child(3) { background: #28c840; }
+.wintitle { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; }
+.ctl { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.ctl button { min-height: 30px; padding: 0 10px; border: 1px solid var(--line); border-radius: 6px; background: none; color: var(--dim); font-size: 13px; }
+.ctl button:hover { color: var(--ink); border-color: var(--dim); }
+.ctl b { color: var(--accent); font-weight: 700; }
+@media (max-width: 640px) { .wintitle { display: none; } .ctl { flex: 1; } }
+.screen { max-width: 1320px; margin: 0 auto; padding: clamp(14px, 3vw, 32px); }
 .prompt { margin: 0 0 14px; color: var(--dim); }
 .ps1 { color: var(--accent); font-weight: 700; } .path { color: var(--path); }
 .cursor { display: inline-block; width: 0.6em; height: 1.1em; margin-left: 4px; vertical-align: text-bottom; background: var(--accent); }

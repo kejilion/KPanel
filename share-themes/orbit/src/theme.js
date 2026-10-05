@@ -148,11 +148,20 @@ function button(text, pressed, onClick, extra) {
   return node
 }
 
+// The host only relays these three requests; how they look and where they sit is this theme's own business.
+const ask = (action, extra) => parent.postMessage({ source: 'kpanel-share-theme', type: 'action', action, ...extra }, '*')
+function controls(labels, mode) {
+  const next = mode === 'light' ? 'dark' : 'light', nextLabel = next === 'light' ? labels.lightMode : labels.darkMode
+  const make = (icon, text, run) => { const node = h('button', null, h('span', null, icon), text); node.type = 'button'; node.firstChild.setAttribute('aria-hidden', 'true'); node.addEventListener('click', run); return node }
+  $('ctl').replaceChildren(make('↻', labels.refresh, () => ask('refresh')), make(next === 'light' ? '☀' : '☾', nextLabel, () => ask('set-mode', { mode: next })), make('↩', labels.useDefault, () => ask('use-default')))
+}
+
 function render() {
   const { data, labels, locale, mode } = snap
   const root = document.documentElement
   root.lang = locale; root.dataset.mode = mode === 'light' ? 'light' : 'dark'
   document.title = data.title
+  controls(labels, root.dataset.mode)
   $('title').textContent = data.title
   $('desc').textContent = data.description; $('desc').hidden = !data.description
   const date = new Date(data.generatedAt), stamp = Number.isFinite(date.getTime()) ? date.toLocaleString(locale) : '—'
@@ -194,5 +203,6 @@ addEventListener('message', event => {
   snap = msg; render()
 })
 $('q').addEventListener('input', event => { query = event.target.value; if (snap) render() })
-parent.postMessage({ source: 'kpanel-share-theme', type: 'ready', protocol: 2 }, '*')
+// chrome: 'self' — this theme draws the whole page, including refresh, light/dark and the way back to the default style.
+parent.postMessage({ source: 'kpanel-share-theme', type: 'ready', protocol: 2, chrome: 'self' }, '*')
 new ResizeObserver(() => parent.postMessage({ source: 'kpanel-share-theme', type: 'resize', height: Math.min(32768, Math.max(320, Math.ceil(document.documentElement.getBoundingClientRect().height))) }, '*')).observe(document.body)

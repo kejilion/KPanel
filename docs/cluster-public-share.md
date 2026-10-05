@@ -90,4 +90,7 @@ KPanel 首版不把现有集群 API整体改成游客可读，也不默认公开
 `sandbox="allow-scripts"` 的不透明来源 iframe 中，只通过 postMessage 接收字段白名单后的快照；样式、
 版式与交互不依赖 KPanel 前端框架。协议 2 在保持隐私白名单不变的前提下额外提供原始数值（`ratio`、
 字节、速率，未知为 `null`）、本地化词表与状态名；未声明 `protocol: 2` 的旧主题继续收到 schema 1 快照。
+主题在 `ready` 中声明 `chrome: 'self'` 即可接管整页：公开页的 KPanel 页头、标志、外框与页脚全部隐藏，刷新、浅深色与
+「使用默认样式」由主题自己绘制，并通过白名单内的 `action` 消息（`refresh`、`set-mode`、`use-default`）请求宿主执行；
+未声明的主题保持原有外框。
 协议、字段与作者约束以 [`share-themes/README.md`](../share-themes/README.md) 为准。

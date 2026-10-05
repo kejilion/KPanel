@@ -23,6 +23,9 @@ body { margin: 0; min-height: 100vh; color: var(--ink); font: 14px/1.6 var(--san
 button { font: inherit; color: inherit; cursor: pointer; }
 button:focus-visible, .search:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
 
+.ctl { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin: 0 0 14px; }
+.ctl button { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 3px 14px; border: 1px solid var(--glass-edge); border-radius: 999px; background: var(--glass); color: var(--soft); backdrop-filter: blur(10px); }
+.ctl button:hover { color: var(--ink); }
 .head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 8px 24px; }
 h1 { margin: 0; font-size: clamp(26px, 4vw, 40px); line-height: 1.2; letter-spacing: -0.02em; overflow-wrap: anywhere;
   background: linear-gradient(90deg, var(--ink), color-mix(in srgb, var(--cpu) 70%, var(--ink))); -webkit-background-clip: text; background-clip: text; color: transparent; }

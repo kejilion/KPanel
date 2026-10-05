@@ -33,7 +33,14 @@
 //          }]
 //        } }
 //    Verify `event.source === parent` and source/type/schema before trusting a message.
-// 3. Optionally report your natural height (integer px, 320..32768) to avoid a nested scrollbar:
+// 3. Own the whole page (recommended): declare it in `ready` — { ..., protocol: 2, chrome: 'self' } — and the host hides its header,
+//    frame and footer and gives you the full viewport (you scroll inside it). You must then draw these three controls yourself;
+//    only these actions are accepted, everything else is ignored:
+//      parent.postMessage({ source: 'kpanel-share-theme', type: 'action', action: 'refresh' }, '*')
+//      parent.postMessage({ source: 'kpanel-share-theme', type: 'action', action: 'set-mode', mode: 'light' | 'dark' }, '*')
+//      parent.postMessage({ source: 'kpanel-share-theme', type: 'action', action: 'use-default' }, '*')
+//    Localized button text is in labels.refresh / lightMode / darkMode / useDefault.
+//    Without chrome: 'self' the host keeps its frame; then optionally report your natural height (integer px, 320..32768):
 //      parent.postMessage({ source: 'kpanel-share-theme', type: 'resize', height }, '*')
 //
 // Rules: insert user data with textContent / text nodes, never innerHTML; unknown numbers are "—" or null, never 0;
@@ -54,7 +61,12 @@ function render({ data, labels, locale, mode }) {
     item.textContent = `${host.name} — ${host.stateLabel} — CPU ${host.cpu.text}`
     list.append(item)
   }
-  app.replaceChildren(title, summary, list)
+  const ask = (action, extra) => parent.postMessage({ source: 'kpanel-share-theme', type: 'action', action, ...extra }, '*')
+  const button = (text, run) => { const node = document.createElement('button'); node.type = 'button'; node.textContent = text; node.addEventListener('click', run); return node }
+  const next = mode === 'light' ? 'dark' : 'light'
+  const bar = document.createElement('div')
+  bar.append(button(labels.refresh, () => ask('refresh')), button(next === 'light' ? labels.lightMode : labels.darkMode, () => ask('set-mode', { mode: next })), button(labels.useDefault, () => ask('use-default')))
+  app.replaceChildren(bar, title, summary, list)
 }
 
 addEventListener('message', event => {
@@ -62,5 +74,5 @@ addEventListener('message', event => {
   if (event.source !== parent || msg?.source !== 'kpanel-share' || msg.type !== 'snapshot' || msg.schema !== 2 || !Array.isArray(msg.data?.hosts)) return
   render(msg)
 })
-parent.postMessage({ source: 'kpanel-share-theme', type: 'ready', protocol: 2 }, '*')
+parent.postMessage({ source: 'kpanel-share-theme', type: 'ready', protocol: 2, chrome: 'self' }, '*')
 new ResizeObserver(() => parent.postMessage({ source: 'kpanel-share-theme', type: 'resize', height: Math.min(32768, Math.max(320, Math.ceil(document.documentElement.getBoundingClientRect().height))) }, '*')).observe(document.body)
