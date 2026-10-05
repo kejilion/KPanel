@@ -15,7 +15,7 @@
 
 ### 升级注意事项
 
-- `scriptLinkageState=coupled`：配套脚本候选为 `c3a8bd895f8878d9e4ced7592c91a20c974472a5`。必须先公开并核对根/CN 脚本字节，再冻结与发布 KPanel。
+- `scriptLinkageState=coupled`：配套脚本 `c3a8bd895f8878d9e4ced7592c91a20c974472a5` 已先发布到脚本主线，并核对根/CN 公开字节；内置脚本与节点更新器使用该固定来源。
 - 这是预览版。GitHub Latest、Docker `latest` 与稳定更新通道继续使用 1.24.0；节点无人值守更新继续跟随稳定版。
 - Windows 真机安装、更新、回滚、重启及 RDP 由用户后续验收，仍为 owner-deferred/尚未验证。新增 Office Windows 权限用例也不替代真实机器验收。
 - Node 26、TypeScript 7 属独立实验候选，本版沿用已采用的固定工具链；未经修复发布资格确认的审计攻击链细节保持本地。

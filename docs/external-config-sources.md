@@ -48,8 +48,12 @@
 RC4 组合候选变更集 `rc4-light-node-integration-20261005` 为 `scriptLinkageState=coupled`。
 配套脚本候选 `c3a8bd895f8878d9e4ced7592c91a20c974472a5` 在 `39a19cd7c1a2ef1193d07a1c40d7d897cc8f5547`
 基础上整合接入依赖补齐与下载镜像回退，内置更新器由该同源脚本生成，运行时代数为 6。
-当前为本地候选，脚本资格验证与公开发布仍待完成；未公开时禁止冻结、构建或发布 KPanel。
-正式发布任务须记录根/CN 同步、公开字节与摘要、Linux 脚本测试及 KPanel 契约的精确证据。
+配套脚本已在 2026-10-05 经明确授权先发布到脚本主线，根/CN 公开 Git 字节分别为
+`d76a3a267117674baf6911201723b2691f11d2964ecac08bfdf380c45485cdc0` 与
+`d92c6643df6acfe15e1f4556855f42eb2ada1e831ddd9f055e85a5619102cf4f`，独立实下载与本地精确 blob 一致。
+固定 Linux Runner 上 root/CN 分别完成 22 项依赖测试、35 项更新器测试与安装 smoke，零跳过；
+根/CN 归一化与 shell 语法通过。此前验证准备失败保留在仓库外原件，不追认为首轮通过。
+KPanel 同源生成器 `--check` 已通过；最终 KPanel L3、CI 与公开产物证据仍由本版发布验收记录分别登记。
 成对回滚：KPanel `v1.25.0-rc.3`，内置脚本 `c981fb6c8b481981ac7a006e102e111e435f6d30`；
 独立脚本 main 可回退本轮基线 `39a19cd7c1a2ef1193d07a1c40d7d897cc8f5547`（共享 main 使用 revert）。
 
