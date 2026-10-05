@@ -158,6 +158,7 @@ export const enUSMessages = {
   'cluster.trafficInterfaces.chooseOne': "Choose at least one interface, or switch to automatic.",
   'cluster.trafficInterfaces.hint': "After a change, traffic continues from the current reading; earlier counts of newly added interfaces are not added to this cycle. Affects only this host's traffic accounting and monitoring rates, not networking.",
   'cluster.trafficInterfaces.lightHint': "On a lightweight node, run these commands as root on the node to view or choose counted interfaces. Changes apply at the next report:",
+  'cluster.trafficInterfaces.windowsUnsupported': "Windows nodes currently choose counted interfaces automatically. Manual selection is not yet supported.",
   'cluster.trafficInterfaces.lightAuto': "Replace include eth0 with auto to restore the automatic choice.",
   'cluster.trafficInterfaces.remoteHint': "Each host sets its own counted interfaces: open Manage for the local host in that host's own KPanel.",
   'cluster.trafficInterfaces.conflict': "The interface choice was changed elsewhere and has been reloaded. Review it, then save again.",

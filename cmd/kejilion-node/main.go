@@ -303,7 +303,9 @@ func runNode(arguments []string) error {
 	collector.PublicNetworkCacheTTL = 30 * time.Minute
 	// The telemetry service has no writable state, so the continuity offset
 	// lives in memory only.
-	collector.TrafficSelectionPath = defaultTrafficSelectionPath
+	if runtime.GOOS == "linux" {
+		collector.TrafficSelectionPath = defaultTrafficSelectionPath
+	}
 	sshReader := sshlogin.NewReader(sshlogin.Config{EventPath: sshlogin.EventPath})
 	interval := time.Duration(config.ReportInterval) * time.Second
 	backoff := time.Second

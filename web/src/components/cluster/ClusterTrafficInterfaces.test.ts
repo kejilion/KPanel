@@ -150,4 +150,12 @@ describe('cluster counted interfaces', () => {
     expect(remote.text()).toContain(t('cluster.trafficInterfaces.remoteHint'))
     expect(mocks.read).not.toHaveBeenCalled()
   })
+
+  it('explains the Windows limitation without offering Linux commands', async () => {
+    const wrapper = await render({ id: 'windows', isLocal: false, kind: 'light_node', platform: 'windows' } as unknown as ClusterHost)
+    expect(wrapper.text()).toContain(t('cluster.trafficInterfaces.windowsUnsupported'))
+    expect(wrapper.findAll('code')).toHaveLength(0)
+    expect(mocks.read).not.toHaveBeenCalled()
+    expect(exposed(wrapper).dirty).toBe(false)
+  })
 })

@@ -157,6 +157,7 @@ export const zhCNMessages = {
   'cluster.trafficInterfaces.chooseOne': "请至少勾选一块网卡，或改用自动。",
   'cluster.trafficInterfaces.hint': "切换后流量从当前读数继续累计，新网卡此前的计数不会算入本周期。只影响本机的流量统计和监控速率，不改动网络。",
   'cluster.trafficInterfaces.lightHint': "轻量节点在节点上以 root 执行以下命令查看或指定统计网卡，下次上报即生效：",
+  'cluster.trafficInterfaces.windowsUnsupported': "Windows 节点当前自动选择统计网卡，暂不支持手动指定。",
   'cluster.trafficInterfaces.lightAuto': "把 include eth0 换成 auto 可恢复自动选择。",
   'cluster.trafficInterfaces.remoteHint': "统计网卡由各主机自行设置：在该主机自己的 KPanel 中打开“管理”本机即可调整。",
   'cluster.trafficInterfaces.conflict': "网卡选择已在别处修改，已重新读取，请确认后再保存。",

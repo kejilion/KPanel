@@ -179,6 +179,7 @@ defineExpose({ dirty, validate, save })
       </template>
       <small>{{ t('cluster.trafficInterfaces.hint') }}</small>
     </template>
+    <small v-else-if="host.kind === 'light_node' && host.platform === 'windows'">{{ t('cluster.trafficInterfaces.windowsUnsupported') }}</small>
     <template v-else-if="host.kind === 'light_node'">
       <small>{{ t('cluster.trafficInterfaces.lightHint') }}</small>
       <code class="cluster-traffic-interfaces__command">{{ lightCommand }}</code>
@@ -200,7 +201,7 @@ defineExpose({ dirty, validate, save })
 .cluster-traffic-interfaces__group summary:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 .cluster-traffic-interfaces__list li {
   display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px;
-  padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: .875rem;
+  padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: .875rem;
 }
 .cluster-traffic-interfaces__list code { font-size: .875rem; overflow-wrap: anywhere; }
 .cluster-traffic-interfaces__reason,
@@ -210,7 +211,7 @@ defineExpose({ dirty, validate, save })
 .cluster-traffic-interfaces__warning { margin: 0; font-size: .875rem; color: var(--warning); }
 .cluster-traffic-interfaces__note { margin: 0; font-size: .875rem; color: var(--text-soft); }
 .cluster-traffic-interfaces__command {
-  display: block; padding: 6px 8px; border-radius: 6px; background: var(--surface-muted);
+  display: block; padding: 6px 8px; border-radius: var(--radius-sm); background: var(--surface-muted);
   font-size: .8125rem; overflow-wrap: anywhere; user-select: all;
 }
 </style>

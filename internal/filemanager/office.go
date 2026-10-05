@@ -329,7 +329,7 @@ func (m *Manager) WriteOffice(ctx context.Context, virtual string, input contrac
 		patches["xl/workbook.xml"] = append(patches["xl/workbook.xml"], p.recalculatePatch())
 	}
 	parent := path.Dir(normalized)
-	temp, tempPath, err := m.createTemp(parent, ".kpanel-office-")
+	temp, tempPath, err := m.createTempWithSourceAccess(parent, ".kpanel-office-", source)
 	if err != nil {
 		return contract.FileEntry{}, err
 	}
