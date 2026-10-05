@@ -23,6 +23,8 @@ const immersive = ref(false)
 const height = ref(720)
 const url = computed(() => shareThemeURL(props.snapshot?.theme))
 const name = computed(() => props.snapshot?.theme?.name[locale.value] || props.snapshot?.theme?.name['en-US'] || '')
+const actionRefreshIntervalMs = 1000
+let lastActionRefreshAt = Number.NEGATIVE_INFINITY
 let timer: ReturnType<typeof setTimeout> | undefined
 function clearTimer() { if (timer) clearTimeout(timer); timer = undefined }
 function stop(error = false) { clearTimer(); fallback.value = true; ready.value = false; immersive.value = false; failed.value = error }
@@ -55,9 +57,16 @@ function message(event: MessageEvent) {
   // Controls the host would otherwise draw (refresh, light/dark, back to default) arrive as explicit, whitelisted actions.
   if (ready.value && immersive.value && event.data?.type === 'action') {
     const { action, mode } = event.data
-    if (action === 'refresh') emit('refresh')
-    else if (action === 'set-mode' && (mode === 'light' || mode === 'dark')) setTheme(mode)
-    else if (action === 'use-default') stop()
+    if (action === 'refresh') {
+      const now = Date.now()
+      if (now - lastActionRefreshAt < actionRefreshIntervalMs) return
+      lastActionRefreshAt = now
+      emit('refresh')
+    } else if (action === 'set-mode' && (mode === 'light' || mode === 'dark')) {
+      setTheme(mode)
+    } else if (action === 'use-default') {
+      stop()
+    }
     return
   }
   if (event.data?.type !== 'ready' || ready.value) return
@@ -67,7 +76,7 @@ function message(event: MessageEvent) {
   loadAssets()
 }
 watch(url, () => {
-  clearTimer(); ready.value = false; immersive.value = false; protocol = 1; assetKey = null; fallback.value = false; failed.value = false; height.value = 720
+  clearTimer(); ready.value = false; immersive.value = false; protocol = 1; assetKey = null; lastActionRefreshAt = Number.NEGATIVE_INFINITY; fallback.value = false; failed.value = false; height.value = 720
   if (url.value) timer = setTimeout(() => stop(true), 12_000)
 }, { immediate: true })
 watch(immersive, value => emit('immersive', value))

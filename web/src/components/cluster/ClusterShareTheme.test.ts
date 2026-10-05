@@ -82,6 +82,8 @@ describe('isolated public theme', () => {
     expect(own.get('section').classes()).toContain('is-immersive')
     ownSend({ source: 'kpanel-share-theme', type: 'action', action: 'refresh' })
     expect(own.emitted('refresh')).toHaveLength(1)
+    ownSend({ source: 'kpanel-share-theme', type: 'action', action: 'refresh' })
+    expect(own.emitted('refresh')).toHaveLength(1)
     ownSend({ source: 'kpanel-share-theme', type: 'action', action: 'refresh' }, window)
     ownSend({ source: 'kpanel-share-theme', type: 'action', action: 'delete-everything' })
     ownSend({ source: 'kpanel-share-theme', type: 'action', action: 'set-mode', mode: 'neon' })
