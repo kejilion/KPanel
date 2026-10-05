@@ -60,7 +60,7 @@ RC3 版本/preview index 为 `sha256:b0db852ee288ee68ae66ea36994e3c608d753fd6438
 桌面开始菜单复用现有系统应用、已安装应用、站点和快捷方式真源；隐藏条目仍可搜索，打开不会改变
 桌面隐藏偏好。搜索、键盘启动和菜单快捷操作不新增 API、宿主权限或工作区存储格式。
 
-Windows 轻量节点全功能正在独立候选 `feature/windows-node-rc2` 整合，尚未发布或准入。Panel/Agent 继续运行在 Linux，Windows 节点以原生 Windows 状态为真源，复用 `light_node` 与 Noise，并拆分低权限遥测/登录事件服务和 SYSTEM 终端/文件 broker。可选 RDP 涉及真实 Windows 管理员账户和系统 listener 变更；需要独立签名、原生生命周期与 RDP 验收，不能沿用 Linux L3 或 Mock 结果作通过依据。具体范围与待确认条件见 [Windows 轻量节点设计](windows-light-node-design.md)。
+Windows 轻量节点源码功能已进入 RC3 预览。Panel/Agent 继续运行在 Linux，Windows 节点以原生 Windows 状态为真源，复用 `light_node` 与 Noise，并拆分低权限遥测/登录事件服务和 SYSTEM 终端/文件 broker。可选 RDP 涉及真实 Windows 管理员账户和系统 listener 变更；原生生命周期与 RDP 真机验收由用户后续完成，不能沿用 Linux L3 或 Mock 结果作通过依据。外部代码签名前置条件已移除，实际发布边界以 [RC3 验收记录](release-v1.25.0-rc.3-acceptance.md) 与本文件首节为准。
 
 桌面网站状态摘要按真实对齐数（total - drifted）判定，未获得健康探测不等于漂移；缺失数据继续显示未知。
 轻量 Node 的 procd 路径仅在原生 PID 1 为 procd 时启用，四服务沿用固定动作和权限边界；
