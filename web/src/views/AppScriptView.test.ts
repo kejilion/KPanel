@@ -33,7 +33,7 @@ vi.mock('@/lib/api', () => ({
 vi.mock('@/components/apps/AppInteractiveTerminal.vue', () => ({
   default: {
     name: 'AppInteractiveTerminal',
-    props: ['jobId', 'inputOpen', 'kind'],
+    props: { jobId: String, inputOpen: Boolean, kind: String, headless: Boolean },
     template: '<div class="terminal-stub" />',
   },
 }))
@@ -106,6 +106,8 @@ describe('dedicated desktop app script terminal', () => {
     expect(wrapper.findComponent({ name: 'AppInteractiveTerminal' }).props()).toMatchObject({
       jobId: 'job-1',
       kind: 'app',
+      // The window title bar already names the app and owns maximize.
+      headless: true,
     })
     expect(window.localStorage.getItem('kpanel:active-app-job')).toBe('job-1')
     wrapper.unmount()

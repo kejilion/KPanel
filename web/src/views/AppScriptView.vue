@@ -231,14 +231,16 @@ onBeforeUnmount(() => {
       <small>{{ i18n.t('appScript.closingDescription') }}</small>
     </div>
 
-    <!-- The terminal stays mounted in unfocused windows so side-by-side
-         scripts keep updating; it pauses itself while minimized. -->
+    <!-- The window title bar already names the app and owns maximize, so the
+         terminal drops its own header. It stays mounted in unfocused windows so
+         side-by-side scripts keep updating; it pauses itself while minimized. -->
     <AppInteractiveTerminal
       v-else-if="job"
       class="app-script-page__terminal"
       :job-id="job.id"
       :input-open="job.inputOpen"
       kind="app"
+      headless
     />
     <div v-else class="app-script-page__state">
       <strong>{{ i18n.t('appScript.idleTitle') }}</strong>
