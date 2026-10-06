@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -804,9 +803,6 @@ func (s *Service) queryHistory(
 		Containers:      []contract.MonitoringContainerSeries{},
 		OperatorLatency: s.monitoringCheckCatalog(),
 		Storage:         s.Status(),
-	}
-	if runtime.GOOS == "windows" {
-		result.UnavailableMetrics = []string{"load", "swap", "diskIO", "networkConnections"}
 	}
 	hostPoints := make([]contract.MonitoringHostPoint, 0, maxHistoryPoints)
 	containerPoints := make(map[string]*contract.MonitoringContainerSeries)

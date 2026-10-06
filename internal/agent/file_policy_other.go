@@ -1,5 +1,3 @@
-//go:build !windows
-
 package agent
 
 import "github.com/kejilion/kejilion-panel/internal/filemanager"

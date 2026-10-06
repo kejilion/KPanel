@@ -47,9 +47,8 @@ async function selectHost(view: VueWrapper, id: string) {
 }
 
 describe('monitoring host selection', () => {
-  it('applies unavailable metrics from the selected history without leaking into local history', async () => {
+  it('loads each selected host history without platform-specific metric fallbacks', async () => {
     const remoteHistory = history(35)
-    remoteHistory.unavailableMetrics = ['load', 'swap', 'diskIO', 'networkConnections']
     mocks.hosts.mockResolvedValue({ items: [
       { id: 'local', isLocal: true, name: '本机', state: 'online' },
       { id: a, isLocal: false, name: '远端节点', kind: 'panel', state: 'online' },
@@ -58,10 +57,10 @@ describe('monitoring host selection', () => {
     mocks.history.mockResolvedValue(remoteHistory)
     await selectHost(view, a)
     expect(mocks.history.mock.calls.at(-1)?.[3]).toBe(a)
-    expect(view.text()).toContain('此系统不提供负载均值')
+    expect(view.text()).not.toContain('此系统不提供负载均值')
     const metricButton = (label: string) => view.findAll('button').find((button) => button.text() === label)!
-    expect(metricButton('读写 I/O').attributes('disabled')).toBeDefined()
-    expect(metricButton('连接数').attributes('disabled')).toBeDefined()
+    expect(metricButton('读写 I/O').attributes('disabled')).toBeUndefined()
+    expect(metricButton('连接数').attributes('disabled')).toBeUndefined()
     mocks.history.mockResolvedValue(history())
     await selectHost(view, 'local')
     expect(view.text()).not.toContain('此系统不提供负载均值')

@@ -1910,7 +1910,6 @@ export interface MonitoringStorageStatus {
 }
 
 export interface MonitoringHistory {
-  unavailableMetrics?: string[]
   range: MonitoringRange
   startedAt: string
   endedAt: string

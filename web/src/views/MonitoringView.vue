@@ -92,7 +92,6 @@ const orderedHosts = computed(() => {
   return sortClusterHosts(hosts.value, readClusterHostOrder())
 })
 const selectedHost = computed(() => hosts.value.find((host) => isRemoteHost.value ? host.id === selectedHostId.value : host.isLocal))
-const metricUnavailable = (metric: string): boolean => (history.value?.unavailableMetrics || []).includes(metric)
 const hostSwitcher = ref<InstanceType<typeof HostSwitcher>>()
 const activeHostLabel = computed(() => isRemoteHost.value
   ? selectedHost.value?.name || phrase('所选主机（未在列表中）') : phrase('本机'))
@@ -220,7 +219,7 @@ const hostCPU = computed<TrendSeries[]>(() => {
         : []),
     })
   }
-  if (!metricUnavailable('load')) series.push({
+  series.push({
     label: '1 分钟负载占核',
     color: 'var(--violet)',
     points: points.map((point) => ({
@@ -274,7 +273,7 @@ const hostDiskIO = computed<TrendSeries[]>(() => [
     })),
   },
 ])
-const activeHostDisk = computed(() => diskChartMode.value === 'io' && !metricUnavailable('diskIO') ? hostDiskIO.value : hostDiskCapacity.value)
+const activeHostDisk = computed(() => diskChartMode.value === 'io' ? hostDiskIO.value : hostDiskCapacity.value)
 const hostNetworkTraffic = computed<TrendSeries[]>(() => [
   {
     label: '下载',
@@ -311,7 +310,7 @@ const hostNetworkConnections = computed<TrendSeries[]>(() => [
     })),
   },
 ])
-const activeHostNetwork = computed(() => networkChartMode.value === 'traffic' || metricUnavailable('networkConnections')
+const activeHostNetwork = computed(() => networkChartMode.value === 'traffic'
   ? hostNetworkTraffic.value
   : hostNetworkConnections.value)
 const allMonitoringChecks = computed<MonitoringOperatorLatencySeries[]>(() => history.value?.operatorLatency || [])
@@ -965,7 +964,7 @@ onBeforeUnmount(() => {
         <article class="summary-card">
           <span class="summary-card__icon"><Cpu :size="19" /></span>
           <div><span>CPU</span><strong>{{ formatPercent(latestHost?.cpuPercent) }}</strong></div>
-          <small>{{ metricUnavailable('load') ? phrase('此系统不提供负载均值') : phrase(`${latestHost?.cpuCores || 0} 核 · 负载 ${latestHost?.loadOne.toFixed(2) || '0.00'}`) }}</small>
+          <small>{{ phrase(`${latestHost?.cpuCores || 0} 核 · 负载 ${latestHost?.loadOne.toFixed(2) || '0.00'}`) }}</small>
         </article>
         <article class="summary-card">
           <span class="summary-card__icon is-blue"><MemoryStick :size="19" /></span>
@@ -1021,13 +1020,13 @@ onBeforeUnmount(() => {
             <div><HardDrive :size="18" /><strong>磁盘</strong></div>
             <div class="chart-switch" aria-label="磁盘指标">
               <button type="button" :class="{ 'is-active': diskChartMode === 'capacity' }" @click="diskChartMode = 'capacity'">容量</button>
-              <button type="button" :disabled="metricUnavailable('diskIO')" :class="{ 'is-active': diskChartMode === 'io' && !metricUnavailable('diskIO') }" @click="diskChartMode = 'io'">读写 I/O</button>
+              <button type="button" :class="{ 'is-active': diskChartMode === 'io' }" @click="diskChartMode = 'io'">读写 I/O</button>
             </div>
           </header>
           <TrendChart
             :series="withHostGaps(activeHostDisk)"
-            :formatter="diskChartMode === 'io' && !metricUnavailable('diskIO') ? formatRate : formatPercent"
-            :max-value="diskChartMode === 'capacity' || metricUnavailable('diskIO') ? 100 : undefined"
+            :formatter="diskChartMode === 'io' ? formatRate : formatPercent"
+            :max-value="diskChartMode === 'capacity' ? 100 : undefined"
             :selectable="!updating"
             @select-range="zoomToRange"
           />
@@ -1041,10 +1040,10 @@ onBeforeUnmount(() => {
             <div><Network :size="18" /><strong>网络与连接</strong></div>
             <div class="chart-switch" aria-label="网络指标">
               <button type="button" :class="{ 'is-active': networkChartMode === 'traffic' }" @click="networkChartMode = 'traffic'">流量</button>
-              <button type="button" :disabled="metricUnavailable('networkConnections')" :class="{ 'is-active': networkChartMode === 'connections' && !metricUnavailable('networkConnections') }" @click="networkChartMode = 'connections'">连接数</button>
+              <button type="button" :class="{ 'is-active': networkChartMode === 'connections' }" @click="networkChartMode = 'connections'">连接数</button>
             </div>
           </header>
-          <TrendChart :series="withHostGaps(activeHostNetwork)" :formatter="networkChartMode === 'traffic' || metricUnavailable('networkConnections') ? formatRate : (value) => value.toFixed(0)" :selectable="!updating" @select-range="zoomToRange" />
+          <TrendChart :series="withHostGaps(activeHostNetwork)" :formatter="networkChartMode === 'traffic' ? formatRate : (value) => value.toFixed(0)" :selectable="!updating" @select-range="zoomToRange" />
         </article>
       </div>
       <EmptyState v-else title="所选时间内暂无历史数据" description="功能启用后约 1 分钟生成首个主机采样点，刷新页面即可查看。" />

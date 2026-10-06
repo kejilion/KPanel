@@ -110,16 +110,15 @@ type MonitoringStorageStatus struct {
 }
 
 type MonitoringHistory struct {
-	UnavailableMetrics []string                          `json:"unavailableMetrics,omitempty"`
-	Range              string                            `json:"range"`
-	StartedAt          time.Time                         `json:"startedAt"`
-	EndedAt            time.Time                         `json:"endedAt"`
-	BucketSeconds      int                               `json:"bucketSeconds"`
-	Host               []MonitoringHostPoint             `json:"host"`
-	Containers         []MonitoringContainerSeries       `json:"containers"`
-	OperatorLatency    []MonitoringOperatorLatencySeries `json:"operatorLatency"`
-	Storage            MonitoringStorageStatus           `json:"storage"`
-	ScannedBytes       int64                             `json:"scannedBytes"`
-	SkippedLines       int                               `json:"skippedLines"`
-	TruncatedSeries    int                               `json:"truncatedSeries"`
+	Range           string                            `json:"range"`
+	StartedAt       time.Time                         `json:"startedAt"`
+	EndedAt         time.Time                         `json:"endedAt"`
+	BucketSeconds   int                               `json:"bucketSeconds"`
+	Host            []MonitoringHostPoint             `json:"host"`
+	Containers      []MonitoringContainerSeries       `json:"containers"`
+	OperatorLatency []MonitoringOperatorLatencySeries `json:"operatorLatency"`
+	Storage         MonitoringStorageStatus           `json:"storage"`
+	ScannedBytes    int64                             `json:"scannedBytes"`
+	SkippedLines    int                               `json:"skippedLines"`
+	TruncatedSeries int                               `json:"truncatedSeries"`
 }
