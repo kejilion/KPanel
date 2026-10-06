@@ -2807,7 +2807,7 @@ function onDesktopClickCapture(event: MouseEvent): void {
 
 function onDesktopPointerDown(event: PointerEvent): void {
   const target = event.target instanceof Element ? event.target : undefined
-  if (target?.closest('.desktop-window, .desktop-widget-slot, .desktop-group, .desktop__widgets, .desktop__taskbar, .desktop-start-menu, .desktop__icon, .desktop__selection-actions, .desktop__context-menu, input, textarea, select, button, a, [contenteditable="true"]')) return
+  if (target?.closest('.desktop-window, .desktop-widget-slot, .desktop-group, .desktop-folder, .desktop__widgets, .desktop__taskbar, .desktop-start-menu, .desktop__icon, .desktop__selection-actions, .desktop__context-menu, input, textarea, select, button, a, [contenteditable="true"]')) return
   const currentTarget = event.currentTarget instanceof HTMLElement ? event.currentTarget : undefined
   currentTarget?.focus({ preventScroll: true })
   if ((event.pointerType === 'touch' || event.pointerType === 'pen') && event.button === 0 && event.isPrimary !== false) {
@@ -4473,7 +4473,8 @@ function onViewportResize(): void {
     </nav>
 
     <Transition name="desktop-folder">
-      <div v-if="openFolder" class="desktop-folder modal-scrim" @pointerdown.self="closePagerFolder()">
+      <!-- The sheet is not blank desktop: no desktop long-press or desktop menu from it. -->
+      <div v-if="openFolder" class="desktop-folder modal-scrim" @pointerdown.self="closePagerFolder()" @contextmenu.prevent.stop>
         <section
           ref="folderSheetElement"
           class="desktop-folder__sheet"

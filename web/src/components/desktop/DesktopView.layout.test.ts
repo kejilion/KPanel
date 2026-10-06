@@ -906,6 +906,10 @@ describe('DesktopView icon layout interaction', () => {
     expect(sheet.findAll('.desktop-folder__grid .desktop__icon').map(icon => icon.attributes('aria-label'))).toEqual(['文件', '终端'])
     expect(document.activeElement?.getAttribute('aria-label')).toBe('文件')
     expect(tile.attributes('aria-expanded')).toBe('true')
+    // The sheet is not blank desktop space.
+    await sheet.get('.desktop-folder__title').trigger('contextmenu', { clientX: 120, clientY: 300 })
+    await flushPromises()
+    expect(wrapper.find('.desktop__context-menu').exists()).toBe(false)
 
     document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
     await flushPromises()
