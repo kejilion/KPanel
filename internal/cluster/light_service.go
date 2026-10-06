@@ -126,11 +126,8 @@ func (s *Service) EnrollLightNodeAtOrigin(
 	if !s.lightEnrolls.Allow(cleanRateSubject(source), now) {
 		return LightEnrollResponse{}, ErrRateLimited
 	}
-	if input.Platform == "windows" {
-		return LightEnrollResponse{}, ErrLightPlatformUnsupported
-	}
-	if input.Platform != "" && input.Platform != "linux" {
-		return LightEnrollResponse{}, ErrProtocolMismatch
+	if err := validateLightPlatformChoice(input.Platform); err != nil {
+		return LightEnrollResponse{}, err
 	}
 	platform := input.Platform
 	if platform == "" {
@@ -200,8 +197,11 @@ func (s *Service) AcceptLightReport(auth LightReportAuth, rawBody []byte, input 
 	if err := validateLightPlatform(input); err != nil {
 		return LightReportResponse{}, err
 	}
-	if lightHostIsWindows(record) && input.Platform != "windows" {
-		return LightReportResponse{}, ErrProtocolMismatch
+	if record.LastSnapshot != nil && !lightNodePlatformSupported(record) {
+		return LightReportResponse{}, ErrLightPlatformUnsupported
+	}
+	if err := validateLightPlatformChoice(record.Platform); err != nil {
+		return LightReportResponse{}, err
 	}
 	latencyMilliseconds := parseLightReportLatency(auth.ReportLatencyMilliseconds)
 	if latencyMilliseconds == 0 && record.LastSnapshot != nil {
@@ -211,9 +211,6 @@ func (s *Service) AcceptLightReport(auth LightReportAuth, rawBody []byte, input 
 		latencyMilliseconds = max(0, record.LastSnapshot.LatencyMilliseconds)
 	}
 	snapshot := HostSnapshot{
-		Platform:            input.Platform,
-		UnavailableMetrics:  append([]string(nil), input.UnavailableMetrics...),
-		NodeCapabilities:    append([]string(nil), input.Capabilities...),
 		Telemetry:           cloneTelemetry(input.Telemetry),
 		ReceivedAt:          now,
 		LatencyMilliseconds: latencyMilliseconds,
@@ -314,6 +311,9 @@ func (s *Service) deleteLightHostLocked(id string, input DeleteHostInput) (Delet
 }
 
 func (s *Service) publicLightHost(record lightHostRecord, now time.Time) Host {
+	if !lightNodePlatformSupported(record) {
+		return publicLightHostWithCapabilities(record, now, false, false)
+	}
 	terminalAvailable := false
 	if s.lightTerminal != nil && s.lightTerminal.available(record.ID) {
 		key, err := s.light.ReadTerminalPublicKey(record)

@@ -83,10 +83,8 @@ type enrollResponse struct {
 }
 
 type reportRequest struct {
-	UnavailableMetrics []string                  `json:"unavailableMetrics,omitempty"`
-	Capabilities       []string                  `json:"capabilities,omitempty"`
-	Telemetry          contract.HostTelemetry    `json:"telemetry"`
-	Health             *contract.LightNodeHealth `json:"health,omitempty"`
+	Telemetry contract.HostTelemetry    `json:"telemetry"`
+	Health    *contract.LightNodeHealth `json:"health,omitempty"`
 }
 
 type reportResponse struct {
@@ -363,7 +361,6 @@ func collectAndReport(
 		Load: summary.Load, CPU: summary.CPU, Memory: summary.Memory, Disk: disk,
 		Network: summary.Network, PublicNetwork: summary.PublicNetwork, SSHLogin: sshLogin, CollectedAt: summary.CollectedAt,
 	}}
-	payload.UnavailableMetrics = append([]string(nil), summary.UnavailableMetrics...)
 	if config.Health {
 		payload.Health = collectLightHealth(ctx)
 	}

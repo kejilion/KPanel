@@ -83,15 +83,14 @@ afterEach(() => {
 })
 
 describe('light node enrollment form', () => {
-  it('offers Linux light-node enrollment only in this preview', async () => {
+  it('offers Linux light-node enrollment without platform selection', async () => {
     wrapper = mount(ClusterView, { attachTo: document.body, global: { stubs: { RouterLink: true } } })
     await flushPromises()
     await wrapper.get('.cluster-hero__add').trigger('click')
     const cards=Array.from(document.querySelectorAll<HTMLElement>('.cluster-light-enrollment'))
     expect(cards).toHaveLength(1)
     expect(cards[0]!.textContent).toContain('Linux')
-    expect(document.body.textContent).not.toContain('Windows 主机')
-    expect(document.querySelector('[name="cluster-light-batch-platform"]')).toBeNull()
+    expect(cards[0]!.querySelector('select')).toBeNull()
     mocks.createLightEnrollment.mockResolvedValue({id:'linux-node',command:'Linux enrollment command',expiresAt:'2026-09-12T10:05:00Z'})
     cards[0]!.querySelector<HTMLButtonElement>('button')!.click()
     await flushPromises()

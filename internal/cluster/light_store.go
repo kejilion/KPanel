@@ -51,6 +51,21 @@ type lightHostRecord struct {
 	LastError           string        `json:"lastError,omitempty"`
 }
 
+func validOptionalLightPlatform(platform string) bool {
+	if platform == "" {
+		return true
+	}
+	if len(platform) > 32 {
+		return false
+	}
+	for _, character := range platform {
+		if (character < 'a' || character > 'z') && (character < '0' || character > '9') && character != '-' && character != '_' {
+			return false
+		}
+	}
+	return true
+}
+
 type lightPersistedState struct {
 	SchemaVersion int                     `json:"schemaVersion"`
 	Enrollments   []lightEnrollmentRecord `json:"enrollments"`
@@ -178,7 +193,7 @@ func decodeLightState(content []byte, state *lightPersistedState) error {
 	for _, host := range state.Hosts {
 		validatedName, nameErr := validateRequiredName(host.Name)
 		if !validID(host.ID) || nameErr != nil || validatedName != host.Name || !validResourceVersion(host.ResourceVersion) ||
-			(host.Platform != "" && host.Platform != "linux" && host.Platform != "windows") ||
+			!validOptionalLightPlatform(host.Platform) ||
 			!validLightCredentialName(host.CredentialFile) || host.CreatedAt.IsZero() || host.UpdatedAt.IsZero() {
 			return errors.New("light node store contains an invalid host")
 		}

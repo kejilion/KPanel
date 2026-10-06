@@ -163,6 +163,15 @@ describe('GalleryView host switcher', () => {
     expect(rows[1]!.getAttribute('aria-pressed')).toBe('false')
   })
 
+  it('omits unsupported light nodes from gallery host choices', async () => {
+    const unsupportedNode = { id: 'unsupported-node', name: '不支持的测试节点', kind: 'light_node', platform: 'unknown', state: 'offline' }
+    const view = await mountWithHosts('/gallery', [...clusterHosts, unsupportedNode])
+    const rows = await openPicker(view)
+
+    expect(rows.map((row) => row.getAttribute('data-host-id'))).not.toContain('unsupported-node')
+    expect(rows.map((row) => row.getAttribute('data-host-id'))).toContain('lite-1')
+  })
+
   it('opens the chosen host library and returns to this panel without a host', async () => {
     const view = await mountWithHosts('/gallery?path=%2Fhome%2Fgallery%2FKyoto')
     ;(await openPicker(view))[1]!.click()

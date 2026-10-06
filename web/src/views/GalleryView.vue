@@ -48,6 +48,7 @@ import { ApiError, api } from '@/lib/api'
 import { applyClusterHostOrderPreference, readClusterHostOrder, sortClusterHosts } from '@/lib/clusterHostOrder'
 import { clusterHostPanelPageURL } from '@/lib/clusterHostNavigation'
 import { fileHostStatus } from '@/lib/fileHostStatus'
+import { withoutUnsupportedLightNodes } from '@/lib/nodeFeatureHosts'
 import type { HostSwitcherStatus } from '@/lib/hostSwitcher'
 import { desktopWindowActiveKey } from '@/lib/desktopRouteKeys'
 import { downloadFileEntries } from '@/lib/fileDownloads'
@@ -515,7 +516,7 @@ async function loadHosts(): Promise<void> {
     const inventory = await api.cluster.hosts()
     if (unmounted) return
     applyClusterHostOrderPreference(inventory.hostOrder)
-    hosts.value = inventory.items
+    hosts.value = withoutUnsupportedLightNodes(inventory.items)
   } catch {
     // The id label is enough, and the picker reports the failure, when the host list cannot be read.
     hostsError.value = true

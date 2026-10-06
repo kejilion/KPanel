@@ -151,7 +151,7 @@ func (s *Service) terminalHostCredential(id string) (hostRecordV2, v2Credential,
 
 func (s *Service) TerminalOpen(ctx context.Context, hostID string, input TerminalOpenRequest) (TerminalOpenResponse, error) {
 	if record, err := s.light.Host(hostID); err == nil {
-		if !lightPlatformAllows(record, "terminal", s.now().UTC()) {
+		if !lightNodePlatformSupported(record) {
 			return TerminalOpenResponse{}, ErrTerminalUnavailable
 		}
 		if input.Rows == 0 || input.Columns == 0 || input.Rows > 500 || input.Columns > 1000 {

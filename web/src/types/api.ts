@@ -214,10 +214,8 @@ export interface ClusterHostSnapshot {
 }
 
 export interface ClusterHost {
-	platform?: 'linux' | 'windows' | 'unknown'
+	platform?: 'linux' | 'unknown'
 	terminalShell?: 'posix'
-	pathStyle?: 'posix'
-	unavailableMetrics?: string[]
 	trafficPeriod?: ClusterTrafficPeriod
 	lightHealth?: LightNodeHealth
   id: string

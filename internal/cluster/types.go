@@ -74,10 +74,6 @@ const (
 )
 
 type HostSnapshot struct {
-	Platform                 string   `json:"-"`
-	UnavailableMetrics       []string `json:"-"`
-	NodeCapabilities         []string `json:"-"`
-	DesktopUnavailableReason string   `json:"-"`
 	// Health is ephemeral: old centers must still read persisted snapshots on rollback.
 	LightHealth            *contract.LightNodeHealth `json:"-"`
 	Telemetry              contract.HostTelemetry    `json:"telemetry"`
@@ -90,8 +86,6 @@ type HostSnapshot struct {
 type Host struct {
 	Platform                    string                    `json:"platform,omitempty"`
 	TerminalShell               string                    `json:"terminalShell,omitempty"`
-	PathStyle                   string                    `json:"pathStyle,omitempty"`
-	UnavailableMetrics          []string                  `json:"unavailableMetrics,omitempty"`
 	TrafficPeriod               *contract.TrafficPeriod   `json:"trafficPeriod,omitempty"`
 	LightHealth                 *contract.LightNodeHealth `json:"lightHealth,omitempty"`
 	ID                          string                    `json:"id"`
@@ -139,8 +133,6 @@ type LightEnrollment struct {
 }
 
 type CreateLightBatchEnrollmentInput struct {
-	EnableDesktop    bool   `json:"enableDesktop,omitempty"`
-	Platform         string `json:"platform,omitempty"`
 	NamePrefix       string `json:"namePrefix,omitempty"`
 	MaxUses          int    `json:"maxUses,omitempty"`
 	ExpiresInSeconds int    `json:"expiresInSeconds,omitempty"`
@@ -191,12 +183,9 @@ type LightFileCapabilityResponse struct {
 }
 
 type LightReportRequest struct {
-	DesktopUnavailableReason string                    `json:"desktopUnavailableReason,omitempty"`
-	Platform                 string                    `json:"platform,omitempty"`
-	UnavailableMetrics       []string                  `json:"unavailableMetrics,omitempty"`
-	Capabilities             []string                  `json:"capabilities,omitempty"`
-	Telemetry                contract.HostTelemetry    `json:"telemetry"`
-	Health                   *contract.LightNodeHealth `json:"health,omitempty"`
+	Platform  string                    `json:"platform,omitempty"`
+	Telemetry contract.HostTelemetry    `json:"telemetry"`
+	Health    *contract.LightNodeHealth `json:"health,omitempty"`
 }
 
 type LightReportResponse struct {

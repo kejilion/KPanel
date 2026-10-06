@@ -20,7 +20,7 @@ const hosts = ['local', 'a', 'b'].map((id) => ({
 const requests: { url: URL; method: string; body: unknown }[] = []
 const wrappers: ReturnType<typeof shallowMount>[] = []
 const entry = { name: 'test.txt', path: '/test.txt', kind: 'file', editable: true, resourceVersion: 'v1' }
-let availableHosts = hosts
+let availableHosts: Array<Record<string, unknown>> = hosts
 let respond: ((url: URL, init?: RequestInit) => Response | Promise<Response> | undefined) | undefined
 
 function dragEvent(): DragEvent {
@@ -72,6 +72,20 @@ async function windowFor(host: string) {
 }
 
 describe('FilesView real API multi-window host context', () => {
+  it('omits unsupported light nodes from file management choices', async () => {
+    availableHosts = [...hosts, {
+      id: 'unsupported-node', name: '不支持的测试节点', isLocal: false, kind: 'light_node',
+      platform: 'unknown', state: 'offline', fileManagementAvailable: false,
+    }]
+    const wrapper = shallowMount(FilesView)
+    wrappers.push(wrapper)
+    await flushPromises()
+    const vm = wrapper.vm as unknown as { fileHosts: Array<{ id: string }> }
+
+    expect(vm.fileHosts.map((host) => host.id)).not.toContain('unsupported-node')
+    expect(vm.fileHosts.map((host) => host.id)).toContain('a')
+  })
+
   it('keeps A reads and writes on A after B switches and unmounts', async () => {
     const a = await windowFor('a')
     const b = await windowFor('b')

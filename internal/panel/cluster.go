@@ -372,9 +372,7 @@ func (s *Server) handleLightEnrollmentCreate(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	var input struct {
-		Name          string `json:"name"`
-		Platform      string `json:"platform,omitempty"`
-		EnableDesktop bool   `json:"enableDesktop,omitempty"`
+		Name string `json:"name"`
 	}
 	if r.ContentLength > 0 {
 		if err := s.decodeJSON(w, r, &input); err != nil {
@@ -392,14 +390,6 @@ func (s *Server) handleLightEnrollmentCreate(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		_ = s.audit(r, session.User.ID, "cluster.light-enrollment.create", "cluster-node", s.cluster.NodeID(), "failure", nil)
 		s.writeClusterError(w, r, cluster.ErrLightHTTPSOrigin)
-		return
-	}
-	if input.EnableDesktop || input.Platform == "windows" {
-		s.writeClusterError(w, r, cluster.ErrLightPlatformUnsupported)
-		return
-	}
-	if input.Platform != "" && input.Platform != "linux" {
-		s.writeClusterError(w, r, cluster.ErrProtocolMismatch)
 		return
 	}
 	enrollment, err := s.cluster.CreateLightEnrollmentForOriginAndName(origin, input.Name)

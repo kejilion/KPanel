@@ -34,9 +34,6 @@ func (s *Service) CreateLightBatchEnrollmentForOrigin(
 ) (LightBatchEnrollment, error) {
 	s.mutationMu.Lock()
 	defer s.mutationMu.Unlock()
-	if err := validateLightPlatformChoice(input.Platform, input.EnableDesktop); err != nil {
-		return LightBatchEnrollment{}, err
-	}
 	validatedOrigin, err := validateLightOrigin(origin)
 	if err != nil {
 		return LightBatchEnrollment{}, ErrLightHTTPSOrigin
@@ -127,8 +124,12 @@ func (s *Service) EnrollLightNodeBatch(
 	if !s.lightBatchSources.Allow(cleanRateSubject(source), now) {
 		return LightEnrollResponse{}, "", ErrRateLimited
 	}
-	if err := validateLightPlatformChoice(input.Platform, false); err != nil {
+	if err := validateLightPlatformChoice(input.Platform); err != nil {
 		return LightEnrollResponse{}, "", err
+	}
+	platform := input.Platform
+	if platform == "" {
+		platform = "linux"
 	}
 	wire, secret, err := parseLightTokenForPrefix(input.Token, lightBatchTokenPrefix, maximumLightBatchDuration, now)
 	validatedOrigin, originErr := validateLightOrigin(origin)
@@ -182,7 +183,7 @@ func (s *Service) EnrollLightNodeBatch(
 			return LightEnrollResponse{}, "", err
 		}
 		record = lightHostRecord{
-			Platform: input.Platform,
+			Platform: platform,
 			ID:       attempt.NodeID, Name: attempt.Name, NodeVersion: attempt.NodeVersion,
 			CreatedAt: now, UpdatedAt: now,
 		}

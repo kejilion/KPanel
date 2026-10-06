@@ -18,6 +18,7 @@ import {
   subscribeClusterHostOrder,
 } from '@/lib/clusterHostOrder'
 import { detectOperatingSystemIdentity } from '@/lib/operatingSystem'
+import { withoutUnsupportedLightNodes } from '@/lib/nodeFeatureHosts'
 import type { ClusterHost, ClusterHostList } from '@/types/api'
 import { usePhraseCatalog } from '@/i18n/phrase'
 import { useI18n } from '@/i18n'
@@ -114,7 +115,8 @@ async function loadHosts(): Promise<void> {
   loading.value = true
   errorMessage.value = ''
   try {
-    inventory.value = await api.cluster.hosts(controller.signal)
+    const loadedInventory = await api.cluster.hosts(controller.signal)
+    inventory.value = { ...loadedInventory, items: withoutUnsupportedLightNodes(loadedInventory.items) }
     // A renamed host renames its open tabs too, so every terminal on one host
     // carries one name; only the number each got when it opened stays fixed.
     const names = new Map(inventory.value.items.map((host) => [host.id, host.name]))

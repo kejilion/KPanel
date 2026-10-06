@@ -81,6 +81,7 @@ import FileEntryIcon from '@/components/files/FileEntryIcon.vue'
 import { fileEntryIconKind as entryIconKind } from '@/lib/fileEntryPresentation'
 import { fileAPIForHost } from '@/lib/fileHostContext'
 import { fileHostStatus as sharedFileHostStatus, type FileHostStatus } from '@/lib/fileHostStatus'
+import { withoutUnsupportedLightNodes } from '@/lib/nodeFeatureHosts'
 import { filesSplitControlKey } from '@/lib/filesSplit'
 import { downloadFileEntries } from '@/lib/fileDownloads'
 import {
@@ -196,7 +197,7 @@ const i18n = useI18n()
 
 const fileHosts = computed(() => {
   clusterHostOrderRevision.value
-  return sortClusterHosts(fileHostInventory.value?.items || [], readClusterHostOrder())
+  return sortClusterHosts(withoutUnsupportedLightNodes(fileHostInventory.value?.items || []), readClusterHostOrder())
 })
 
 const activeFileHost = computed(() =>

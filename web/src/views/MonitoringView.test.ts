@@ -47,12 +47,12 @@ async function selectHost(view: VueWrapper, id: string) {
 }
 
 describe('monitoring host selection', () => {
-  it('queries a remote host and disables unavailable metrics without leaking them into the local view', async () => {
+  it('applies unavailable metrics from the selected history without leaking into local history', async () => {
     const remoteHistory = history(35)
     remoteHistory.unavailableMetrics = ['load', 'swap', 'diskIO', 'networkConnections']
     mocks.hosts.mockResolvedValue({ items: [
       { id: 'local', isLocal: true, name: '本机', state: 'online' },
-      { id: a, isLocal: false, name: '远端节点', kind: 'light_node', state: 'online', platform: 'linux', unavailableMetrics: remoteHistory.unavailableMetrics },
+      { id: a, isLocal: false, name: '远端节点', kind: 'panel', state: 'online' },
     ] })
     const { wrapper: view } = await mountAt()
     mocks.history.mockResolvedValue(remoteHistory)
@@ -292,6 +292,23 @@ describe('monitoring host selection', () => {
     await flushPromises()
     expect(mocks.history.mock.calls.at(-1)?.[3]).toBe(b)
     expect(body().find('.host-switcher__menu').exists()).toBe(false)
+  })
+
+  it('removes unsupported light nodes from history monitoring choices', async () => {
+    const unsupportedID = 'u'.repeat(32)
+    mocks.hosts.mockResolvedValue({ items: [
+      { id: 'local', isLocal: true, name: '本机', state: 'online' },
+      { id: a, isLocal: false, name: 'Linux 节点', kind: 'light_node', platform: 'linux', state: 'offline' },
+      { id: unsupportedID, isLocal: false, name: '不支持的节点', kind: 'light_node', platform: 'unknown', state: 'offline' },
+    ] as ClusterHost[] })
+    const { wrapper } = await mountAt()
+    await wrapper.get('.host-switcher__trigger').trigger('click')
+    await flushPromises()
+
+    expect(body().findAll('[data-host-id]').map((item) => item.attributes('data-host-id'))).not.toContain(unsupportedID)
+    expect(body().findAll('[data-host-id]').map((item) => item.attributes('data-host-id'))).toContain(a)
+    expect(mocks.history).toHaveBeenCalledTimes(1)
+    expect(mocks.history.mock.calls[0]?.[3]).toBeUndefined()
   })
 
   it('supports keyboard navigation, escape focus restoration and outside dismissal', async () => {

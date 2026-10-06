@@ -16,6 +16,7 @@ import TrendChart, { type TrendSeries } from '@/components/monitoring/TrendChart
 import MonitoringChecksDialog from '@/components/monitoring/MonitoringChecksDialog.vue'
 import { ApiError, api } from '@/lib/api'
 import { applyClusterHostOrderPreference, readClusterHostOrder, sortClusterHosts, subscribeClusterHostOrder } from '@/lib/clusterHostOrder'
+import { withoutUnsupportedLightNodes } from '@/lib/nodeFeatureHosts'
 import type { HostSwitcherStatus, HostSwitcherTone } from '@/lib/hostSwitcher'
 import type { ClusterHost } from '@/types/api'
 import { formatBytes, formatDateTime, formatPercent, formatRate } from '@/lib/format'
@@ -91,7 +92,7 @@ const orderedHosts = computed(() => {
   return sortClusterHosts(hosts.value, readClusterHostOrder())
 })
 const selectedHost = computed(() => hosts.value.find((host) => isRemoteHost.value ? host.id === selectedHostId.value : host.isLocal))
-const metricUnavailable = (metric: string): boolean => (history.value?.unavailableMetrics || selectedHost.value?.unavailableMetrics || []).includes(metric)
+const metricUnavailable = (metric: string): boolean => (history.value?.unavailableMetrics || []).includes(metric)
 const hostSwitcher = ref<InstanceType<typeof HostSwitcher>>()
 const activeHostLabel = computed(() => isRemoteHost.value
   ? selectedHost.value?.name || phrase('所选主机（未在列表中）') : phrase('本机'))
@@ -610,7 +611,7 @@ async function loadHosts(): Promise<void> {
     const result = await api.cluster.hosts(request.signal)
     if (hostsController === request) {
       applyClusterHostOrderPreference(result.hostOrder)
-      hosts.value = result.items
+      hosts.value = withoutUnsupportedLightNodes(result.items)
     }
   } catch {
     if (hostsController === request && !request.signal.aborted) hostsError.value = '主机列表读取失败，当前历史查询不受影响。'

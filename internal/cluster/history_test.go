@@ -151,7 +151,7 @@ func installHistoryTransport(t *testing.T, remote *RemoteClient, target *Service
 	})}
 }
 
-func TestClusterHistoryFullParityLargeEncryptedResponseAndWindows(t *testing.T) {
+func TestClusterHistoryFullParityLargeEncryptedResponse(t *testing.T) {
 	center, target, remote, host, now := historyPairFixture(t)
 	want := completeHistoryFixture(now, 720)
 	encoded, err := json.Marshal(want)
@@ -184,6 +184,39 @@ func TestClusterHistoryFullParityLargeEncryptedResponseAndWindows(t *testing.T) 
 	center.storeV2.mu.Unlock()
 	if _, err := center.History(context.Background(), host.ID, "6h", time.Time{}, time.Time{}); err != nil {
 		t.Fatalf("legacy scope: %v", err)
+	}
+}
+
+func TestUnsupportedLightNodeHistoryAndControlsAreUnavailable(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	service := newLightServiceForTest(t, &serviceTestClock{now: now})
+	for index, record := range []lightHostRecord{
+		{Platform: "unsupported"},
+		{},
+	} {
+		record.ID = strings.Repeat(string(rune('a'+index)), 32)
+		record.Name = "legacy unsupported node"
+		record.CreatedAt = now
+		record.UpdatedAt = now
+		if err := service.light.AddHost(record, bytes.Repeat([]byte{byte(index + 1)}, 32)); err != nil {
+			t.Fatalf("AddHost(%d) error = %v", index, err)
+		}
+		reopened, err := openLightStore(service.light.path)
+		if err != nil {
+			t.Fatalf("openLightStore(%d) error = %v", index, err)
+		}
+		persisted, err := reopened.Host(record.ID)
+		if err != nil || persisted.Platform != record.Platform {
+			t.Fatalf("legacy unsupported platform was not retained: %#v, %v", persisted, err)
+		}
+		if _, err := service.History(context.Background(), record.ID, "6h", time.Time{}, time.Time{}); !errors.Is(err, ErrHistoryUnsupported) {
+			t.Fatalf("History(%d) error = %v, want ErrHistoryUnsupported", index, err)
+		}
+		for _, capability := range []string{"files", "terminal"} {
+			if service.lightControlAllowed(record.ID, capability) {
+				t.Fatalf("unsupported node control %q was allowed", capability)
+			}
+		}
 	}
 }
 

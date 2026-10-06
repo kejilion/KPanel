@@ -2,9 +2,9 @@ package cluster
 
 import (
 	"bytes"
-	"slices"
 	"strings"
-	"time"
+
+	"github.com/kejilion/kejilion-panel/internal/contract"
 )
 
 const (
@@ -42,62 +42,44 @@ func (s *Service) ProbeLightCapabilities(auth LightReportAuth, body []byte) (Lig
 }
 
 func validateLightPlatform(input LightReportRequest) error {
-	if input.Platform == "windows" || strings.EqualFold(input.Telemetry.OSID, "windows") {
+	if err := validateLightPlatformChoice(input.Platform); err != nil {
+		return err
+	}
+	if !telemetryIdentifiesLinux(input.Telemetry) {
 		return ErrLightPlatformUnsupported
-	}
-	if input.Platform != "" && input.Platform != "linux" {
-		return ErrProtocolMismatch
-	}
-	if input.DesktopUnavailableReason != "" {
-		return ErrProtocolMismatch
-	}
-	for _, list := range []struct{ values, allowed []string }{
-		{input.UnavailableMetrics, []string{"load", "swap", "diskIO", "networkConnections"}},
-		{input.Capabilities, []string{"monitoring", "terminal", "files", "login"}},
-	} {
-		if len(list.values) > len(list.allowed) {
-			return ErrProtocolMismatch
-		}
-		for index, value := range list.values {
-			if !slices.Contains(list.allowed, value) || slices.Contains(list.values[:index], value) {
-				return ErrProtocolMismatch
-			}
-		}
 	}
 	return nil
 }
 
-func validateLightPlatformChoice(platform string, desktop bool) error {
-	if desktop || platform == "windows" {
-		return ErrLightPlatformUnsupported
-	}
+func validateLightPlatformChoice(platform string) error {
 	if platform != "" && platform != "linux" {
-		return ErrProtocolMismatch
+		return ErrLightPlatformUnsupported
 	}
 	return nil
 }
 
-func lightHostIsWindows(record lightHostRecord) bool {
-	return record.Platform == "windows" || record.LastSnapshot != nil && (record.LastSnapshot.Platform == "windows" ||
-		strings.EqualFold(record.LastSnapshot.Telemetry.OSID, "windows"))
-}
-
-// Windows light-node support is withdrawn from the next preview. Keep existing
-// records recognizable for safe display, but never authorize their controls.
-func lightPlatformAllows(record lightHostRecord, _ string, _ time.Time) bool {
-	if lightHostIsWindows(record) {
+// The stable light-node protocol predates platform metadata and supported only
+// Linux. Unknown persisted platforms stay visible as offline records, but do
+// not regain file, terminal, or history access.
+func lightNodePlatformSupported(record lightHostRecord) bool {
+	if record.Platform != "" {
+		return record.Platform == "linux"
+	}
+	if record.LastSnapshot == nil {
 		return false
 	}
-	// Current Linux enrollments persist their platform before the first report,
-	// so relay setup can proceed during startup. Older records without either a
-	// persisted platform or a snapshot remain unknown and fail closed.
-	return record.Platform == "linux" || record.LastSnapshot != nil
+	return telemetryIdentifiesLinux(record.LastSnapshot.Telemetry)
 }
 
-func (s *Service) lightControlAllowed(hostID, capability string) bool {
+func telemetryIdentifiesLinux(telemetry contract.HostTelemetry) bool {
+	return strings.EqualFold(strings.TrimSpace(telemetry.OSID), "linux") ||
+		strings.Contains(strings.ToLower(telemetry.OS), "linux") || len(telemetry.OSLike) > 0
+}
+
+func (s *Service) lightControlAllowed(hostID, _ string) bool {
 	record, err := s.light.Host(hostID)
 	if err == nil {
-		return lightPlatformAllows(record, capability, s.now().UTC())
+		return lightNodePlatformSupported(record)
 	}
 	// Non-light terminals belong to the v2 store. A deleted/missing lightweight
 	// record is not permission to continue using an existing stream.
@@ -106,22 +88,13 @@ func (s *Service) lightControlAllowed(hostID, capability string) bool {
 }
 
 func applyLightPlatform(host *Host, record lightHostRecord) {
-	if !lightHostIsWindows(record) {
-		if record.LastSnapshot == nil && record.Platform != "linux" {
-			host.Platform = "unknown"
-			host.TerminalShell, host.PathStyle = "", ""
-			host.TerminalAvailable = false
-			host.FileManagementAvailable = false
-			host.LightHealth = nil
-			host.LastSnapshot = nil
-			host.State = HostOffline
-			host.Scope = SummaryScope
-			return
-		}
-		host.Platform, host.TerminalShell, host.PathStyle = "linux", "posix", "posix"
+	if lightNodePlatformSupported(record) {
+		host.Platform = "linux"
+		host.TerminalShell = "posix"
 		return
 	}
-	host.Platform, host.TerminalShell, host.PathStyle = "windows", "", ""
+	host.Platform = "unknown"
+	host.TerminalShell = ""
 	host.TerminalAvailable = false
 	host.FileManagementAvailable = false
 	host.LightHealth = nil

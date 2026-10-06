@@ -99,6 +99,10 @@ func TestLightBatchEnrollmentCreatesUniqueNodesAndRetriesIdempotently(t *testing
 	if err != nil || policyID != enrollment.ID {
 		t.Fatalf("first enrollment = %#v, %q, %v", first, policyID, err)
 	}
+	firstRecord, err := service.light.Host(first.NodeID)
+	if err != nil || firstRecord.Platform != "linux" || !lightNodePlatformSupported(firstRecord) {
+		t.Fatalf("batch enrollment did not establish Linux support: %#v, %v", firstRecord, err)
+	}
 	retry, retryPolicyID, err := service.EnrollLightNodeBatch("198.51.100.10", "https://panel.example", firstInput)
 	if err != nil || retry != first || retryPolicyID != policyID {
 		t.Fatalf("idempotent retry = %#v, %q, %v; want %#v, %q", retry, retryPolicyID, err, first, policyID)

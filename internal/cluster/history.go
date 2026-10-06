@@ -110,7 +110,7 @@ func (s *Service) openHistory(ctx context.Context, host Host, query monitoring.Q
 		if err != nil {
 			return nil, ErrNotFound
 		}
-		if lightHostIsWindows(record) {
+		if !lightNodePlatformSupported(record) {
 			return nil, ErrHistoryUnsupported
 		}
 		if !s.lightHistory.available(host.ID) {

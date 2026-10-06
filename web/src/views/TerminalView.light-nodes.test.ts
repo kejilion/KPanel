@@ -15,7 +15,7 @@ vi.mock('@/components/terminal/HostTerminal.vue', () => ({ default: defineCompon
   },
 }) }))
 
-const windows = { id: 'win', name: 'Windows 测试机', platform: 'windows', kind: 'light_node', state: 'offline', terminalAvailable: false }
+const unsupported = { id: 'unsupported', name: '不支持的测试节点', platform: 'unknown', kind: 'light_node', state: 'offline', terminalAvailable: false }
 let wrapper: ReturnType<typeof mount> | undefined
 
 function button(text: string): HTMLButtonElement {
@@ -27,19 +27,17 @@ function button(text: string): HTMLButtonElement {
 beforeEach(() => {
   vi.clearAllMocks()
   localStorage.clear()
-  mocks.hosts.mockResolvedValue({ items: [windows, { id: 'linux', name: 'Linux 测试机', kind: 'light_node', terminalAvailable: true }] })
+  mocks.hosts.mockResolvedValue({ items: [unsupported, { id: 'linux', name: 'Linux 测试机', platform: 'linux', kind: 'light_node', terminalAvailable: true }] })
   mocks.open.mockResolvedValue({ sessionId: 'shell', offset: 0 })
 })
 afterEach(() => { wrapper?.unmount(); wrapper = undefined; document.body.innerHTML = '' })
 
-describe('withdrawn Windows light-node access', () => {
-  it('does not expose Windows PowerShell, file, or RDP entry points and keeps Linux terminal access', async () => {
+describe('supported light-node access', () => {
+  it('removes unsupported nodes from terminal management and keeps Linux terminal access', async () => {
     wrapper = mount(TerminalView, { attachTo: document.body })
     await flushPromises()
 
-    expect(button('Windows 测试机').disabled).toBe(true)
-    expect(document.body.textContent).not.toContain('远程桌面（RDP）')
-    expect(document.body.textContent).not.toContain('管理员 PowerShell')
+    expect(document.body.textContent).not.toContain('不支持的测试节点')
     expect(mocks.open).not.toHaveBeenCalled()
 
     button('Linux 测试机').click()
