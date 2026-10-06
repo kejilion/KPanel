@@ -24,6 +24,7 @@ import {
   Globe2,
   LoaderCircle,
   LockKeyhole,
+  Minus,
   Network,
   PackageCheck,
   Play,
@@ -1821,6 +1822,22 @@ watch(windowActive, syncJobPollingForWindow)
     >
       <template v-if="activeJob" #status>
         <StatusBadge :status="activeJob.status" />
+        <span
+          v-if="!activeJob.interactive"
+          class="job-detail-percent"
+          :title="phrase(activeJob.message || i18n.t('apps.jobRunning', { action: jobActionLabel(activeJob.action) }))"
+        >{{ activeJob.progress || 0 }}%</span>
+      </template>
+      <template v-if="isActiveJob(activeJob)" #actions>
+        <button
+          class="modal-panel__window-action"
+          type="button"
+          :title="phrase('后台运行')"
+          :aria-label="phrase('后台运行')"
+          @click="jobDetailsOpen = false"
+        >
+          <Minus :size="16" aria-hidden="true" />
+        </button>
       </template>
       <template v-if="activeJob">
         <div
@@ -1844,35 +1861,6 @@ watch(windowActive, syncJobPollingForWindow)
           <pre v-if="activeJob.logs.length" data-i18n-ignore>{{ activeJob.logs.join('\n') }}</pre>
           <p v-else>{{ phrase('任务已进入队列，正在等待首批输出…') }}</p>
         </section>
-      </template>
-      <template #footer>
-        <p
-          v-if="activeJob"
-          class="job-detail-status"
-          :title="i18n.t('apps.jobStage', { stage: activeJob.stage, id: activeJob.id })"
-        >
-          <span>{{ phrase(activeJob.message || i18n.t('apps.jobRunning', { action: jobActionLabel(activeJob.action) })) }}</span>
-          <strong v-if="!activeJob.interactive">{{ activeJob.progress || 0 }}%</strong>
-        </p>
-        <button
-          v-if="activeJobCancellable"
-          class="button button--danger"
-          type="button"
-          @click="requestCancelJob"
-        >
-          <Square :size="14" /> {{ phrase('结束任务') }}
-        </button>
-        <button class="button button--secondary" type="button" @click="jobDetailsOpen = false">
-          {{ phrase(isActiveJob(activeJob) ? '后台运行' : '关闭窗口') }}
-        </button>
-        <button
-          v-if="!isActiveJob(activeJob)"
-          class="button button--primary"
-          type="button"
-          @click="dismissJob"
-        >
-          {{ phrase('关闭记录') }}
-        </button>
       </template>
     </ModalDialog>
 
@@ -2876,28 +2864,11 @@ watch(windowActive, syncJobPollingForWindow)
   background: var(--terminal-shell-panel, #111a1d);
 }
 
-.job-detail-status {
-  display: flex;
-  min-width: 0;
-  flex: 1 1 auto;
-  align-items: center;
-  gap: 8px;
-  margin: 0 auto 0 4px;
-  color: var(--text-soft);
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.job-detail-status span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.job-detail-status strong {
+.job-detail-percent {
   flex: 0 0 auto;
   color: var(--market-accent);
+  font-size: 13px;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 

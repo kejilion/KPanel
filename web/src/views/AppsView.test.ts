@@ -1244,6 +1244,19 @@ describe('AppsView script management', () => {
     expect(view.jobDetailsOpen.value).toBe(true)
   })
 
+  it('gives the task window one title-bar minimize action and no footer', () => {
+    const source = readFileSync(new URL('./AppsView.vue', import.meta.url), 'utf8')
+    const dialog = source.match(/<ModalDialog\s+:open="jobDetailsOpen[\s\S]*?<\/ModalDialog>/)?.[0] || ''
+
+    expect(dialog).toContain('variant="workspace"')
+    // Minimize (run in the background) lives in the title bar while the task runs.
+    expect(dialog).toMatch(/v-if="isActiveJob\(activeJob\)" #actions[\s\S]*@click="jobDetailsOpen = false"/)
+    // The footer and its buttons are gone: ending goes through the close prompt.
+    expect(dialog).not.toContain('#footer')
+    expect(dialog).not.toContain('requestCancelJob')
+    expect(dialog).not.toContain('dismissJob')
+  })
+
   it('lets the close prompt send a running terminal to the background instead of ending it', () => {
     const view = setupView()
     view.activeJob.value = runningTerminalJob

@@ -54,7 +54,6 @@ export default [
   ["更新状态", "Update status"],
   ["更新状态未知", "Update status unknown"],
   ["关闭", "Close"],
-  ["关闭记录", "Close Record"],
   ["后台{0}失败", "background {0} failed"],
   ["后台{0}完成", "background {0} complete"],
   ["继续运行", "Continue running"],
