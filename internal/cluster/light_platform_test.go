@@ -115,3 +115,31 @@ func TestUnknownLightPlatformFailsClosedUntilFirstSnapshot(t *testing.T) {
 		t.Fatal("a reported Linux platform remained blocked")
 	}
 }
+
+func TestNewLinuxEnrollmentPersistsPlatformBeforeFirstReport(t *testing.T) {
+	now := time.Date(2026, 10, 6, 0, 0, 0, 0, time.UTC)
+	service := newLightServiceForTest(t, &serviceTestClock{now: now})
+	enrolled := enrollLightHostForTest(t, service, "edge-before-first-report")
+
+	reopened, err := openLightStore(service.light.path)
+	if err != nil {
+		t.Fatalf("openLightStore() error = %v", err)
+	}
+	record, err := reopened.Host(enrolled.NodeID)
+	if err != nil {
+		t.Fatalf("reopened.Host() error = %v", err)
+	}
+	if record.Platform != "linux" || record.LastSnapshot != nil {
+		t.Fatalf("persisted enrollment = %#v", record)
+	}
+	for _, capability := range []string{"terminal", "files"} {
+		if !lightPlatformAllows(record, capability, now) {
+			t.Fatalf("new Linux enrollment cannot start %s before its first report", capability)
+		}
+	}
+	host := publicLightHostWithCapabilities(record, now, true, true)
+	if host.Platform != "linux" || host.TerminalShell != "posix" || host.PathStyle != "posix" ||
+		!host.TerminalAvailable || !host.FileManagementAvailable {
+		t.Fatalf("new Linux enrollment projection = %#v", host)
+	}
+}

@@ -205,7 +205,7 @@ func TestLightEnrollmentIsHTTPSBoundOneUseAndPreservesValidTokenAfterBadInput(t 
 		t.Fatalf("reused enrollment error = %v, want ErrPairingCode", err)
 	}
 	host, err := service.Host(context.Background(), first.NodeID)
-	if err != nil || host.Kind != HostKindLightNode || host.Origin != "" || host.State != HostOffline || host.Platform != "unknown" || host.TerminalAvailable || host.FileManagementAvailable {
+	if err != nil || host.Kind != HostKindLightNode || host.Origin != "" || host.State != HostUnknown || host.Platform != "linux" || host.TerminalAvailable || host.FileManagementAvailable {
 		t.Fatalf("unexpected light host after enrollment: %#v, %v", host, err)
 	}
 }

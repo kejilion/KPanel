@@ -132,6 +132,10 @@ func (s *Service) EnrollLightNodeAtOrigin(
 	if input.Platform != "" && input.Platform != "linux" {
 		return LightEnrollResponse{}, ErrProtocolMismatch
 	}
+	platform := input.Platform
+	if platform == "" {
+		platform = "linux"
+	}
 	wire, secret, err := parseLightToken(input.Token, now)
 	validatedOrigin, originErr := validateLightOrigin(origin)
 	if err != nil || originErr != nil || wire.Origin != validatedOrigin {
@@ -158,7 +162,7 @@ func (s *Service) EnrollLightNodeAtOrigin(
 	}
 	hash := sha256.Sum256(secret)
 	if err := s.light.EnrollHost(wire.ID, hex.EncodeToString(hash[:]), lightHostRecord{
-		Platform: input.Platform,
+		Platform: platform,
 		ID:       nodeID, Name: name, NodeVersion: cleanDisplayText(input.NodeVersion, 64),
 		CreatedAt: now, UpdatedAt: now,
 	}, reportingKey, terminalPublicKey, now); err != nil {

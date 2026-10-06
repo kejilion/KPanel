@@ -62,7 +62,7 @@ describe('terminal host list semantics', () => {
     expect(wrapper.text()).not.toContain('加密直连')
     expect(wrapper.text()).not.toContain('https://tokyo.example.com')
     expect(hostButton(wrapper, '东京节点').attributes('title')).toContain('https://tokyo.example.com')
-    expect(hostButton(wrapper, '仅监控节点').attributes('aria-disabled')).toBe('true')
+    expect(hostButton(wrapper, '仅监控节点').element.disabled).toBe(true)
 
     wrapper.unmount()
   })

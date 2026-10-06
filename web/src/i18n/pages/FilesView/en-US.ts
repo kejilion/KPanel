@@ -1,7 +1,6 @@
 import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
-  ["请先选择目标磁盘目录。","Choose a target drive directory first."],
   ["文件编辑器", "File editor"],
   ["正在连接远程服务器", "Connecting to the remote server"],
   ["正在下载 {0}", "Downloading {0}"],

@@ -35,7 +35,7 @@ type lightEnrollmentRecord struct {
 }
 
 type lightHostRecord struct {
-	Platform            string        `json:"-"`
+	Platform            string        `json:"platform,omitempty"`
 	ID                  string        `json:"id"`
 	Name                string        `json:"name"`
 	CredentialFile      string        `json:"credentialFile"`
@@ -178,6 +178,7 @@ func decodeLightState(content []byte, state *lightPersistedState) error {
 	for _, host := range state.Hosts {
 		validatedName, nameErr := validateRequiredName(host.Name)
 		if !validID(host.ID) || nameErr != nil || validatedName != host.Name || !validResourceVersion(host.ResourceVersion) ||
+			(host.Platform != "" && host.Platform != "linux" && host.Platform != "windows") ||
 			!validLightCredentialName(host.CredentialFile) || host.CreatedAt.IsZero() || host.UpdatedAt.IsZero() {
 			return errors.New("light node store contains an invalid host")
 		}

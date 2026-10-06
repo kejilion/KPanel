@@ -144,16 +144,16 @@ describe('cluster counted interfaces', () => {
   })
 
   it('points other hosts to where their own selection lives without reading', async () => {
-    const light = await render({ id: 'n', isLocal: false, kind: 'light_node' } as unknown as ClusterHost)
+    const light = await render({ id: 'n', isLocal: false, kind: 'light_node', platform: 'linux' } as unknown as ClusterHost)
     expect(light.text()).toContain('/usr/local/lib/kejilion-node/kejilion-node interfaces include eth0')
     const remote = await render({ id: 'r', isLocal: false, kind: 'kpanel' } as unknown as ClusterHost)
     expect(remote.text()).toContain(t('cluster.trafficInterfaces.remoteHint'))
     expect(mocks.read).not.toHaveBeenCalled()
   })
 
-	it('does not offer Linux interface commands to an unknown-platform legacy node', async () => {
-		const wrapper = await render({ id: 'legacy', isLocal: false, kind: 'light_node', platform: 'unknown' } as unknown as ClusterHost)
-		expect(wrapper.text()).toContain(t('cluster.trafficInterfaces.platformUnsupported'))
+  it('does not offer Linux interface commands to an unknown-platform legacy node', async () => {
+    const wrapper = await render({ id: 'legacy', isLocal: false, kind: 'light_node', platform: 'unknown' } as unknown as ClusterHost)
+    expect(wrapper.text()).toContain(t('cluster.trafficInterfaces.platformUnsupported'))
     expect(wrapper.findAll('code')).toHaveLength(0)
     expect(mocks.read).not.toHaveBeenCalled()
     expect(exposed(wrapper).dirty).toBe(false)

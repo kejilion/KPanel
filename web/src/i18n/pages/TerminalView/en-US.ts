@@ -2,7 +2,6 @@ import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
   ["等待登录","Awaiting sign-in"],
-  ["此节点尚未启用命令行能力，或终端服务未就绪。","Command line access is not enabled or the terminal service is not ready."],
   ['关闭未确认，会话已保留。请检查目标主机连接后重试。', 'Close was not confirmed. The session is retained. Check the host connection and retry.'],
   ['重试关闭', 'Retry close'],
   ['正在关闭终端', 'Closing terminal'],

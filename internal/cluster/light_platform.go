@@ -85,16 +85,13 @@ func lightHostIsWindows(record lightHostRecord) bool {
 // Windows light-node support is withdrawn from the next preview. Keep existing
 // records recognizable for safe display, but never authorize their controls.
 func lightPlatformAllows(record lightHostRecord, _ string, _ time.Time) bool {
-	// An enrollment without a persisted platform snapshot has not established
-	// which host controls are safe to expose. In particular, older Windows
-	// enrollments could lose their in-memory platform marker after a restart.
-	if record.LastSnapshot == nil {
+	if lightHostIsWindows(record) {
 		return false
 	}
-	if !lightHostIsWindows(record) {
-		return true
-	}
-	return false
+	// Current Linux enrollments persist their platform before the first report,
+	// so relay setup can proceed during startup. Older records without either a
+	// persisted platform or a snapshot remain unknown and fail closed.
+	return record.Platform == "linux" || record.LastSnapshot != nil
 }
 
 func (s *Service) lightControlAllowed(hostID, capability string) bool {
@@ -110,7 +107,7 @@ func (s *Service) lightControlAllowed(hostID, capability string) bool {
 
 func applyLightPlatform(host *Host, record lightHostRecord) {
 	if !lightHostIsWindows(record) {
-		if record.LastSnapshot == nil {
+		if record.LastSnapshot == nil && record.Platform != "linux" {
 			host.Platform = "unknown"
 			host.TerminalShell, host.PathStyle = "", ""
 			host.TerminalAvailable = false
