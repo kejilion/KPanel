@@ -67,6 +67,26 @@ func TestOriginFromTokenRequiresStrictHTTPSOriginAndFutureExpiry(t *testing.T) {
 	}
 }
 
+func TestNodeCommandsRequireLinuxRuntime(t *testing.T) {
+	for _, goos := range []string{"windows", "darwin", "freebsd"} {
+		if err := validateNodeRuntime(goos); err == nil {
+			t.Errorf("validateNodeRuntime(%q) unexpectedly succeeded", goos)
+		}
+	}
+	if err := validateNodeRuntime("linux"); err != nil {
+		t.Fatalf("validateNodeRuntime(linux) = %v", err)
+	}
+}
+
+func TestRunRejectsUnsupportedRuntimeBeforeEnrollment(t *testing.T) {
+	if runtime.GOOS == "linux" {
+		t.Skip("the Linux runtime is supported")
+	}
+	if err := run([]string{"enroll"}); err == nil || !strings.Contains(err.Error(), "only on Linux") {
+		t.Fatalf("run(enroll) on %s = %v, want Linux-only rejection", runtime.GOOS, err)
+	}
+}
+
 func TestBatchEnrollmentTokenUsesDedicatedEndpointAndSevenDayBound(t *testing.T) {
 	token := lightBatchTokenForNodeTest(t, "https://panel.example", time.Now().UTC().Add(6*24*time.Hour))
 	target, err := enrollmentTargetFromToken(token)

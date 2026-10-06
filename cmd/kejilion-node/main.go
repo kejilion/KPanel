@@ -102,6 +102,9 @@ func main() {
 }
 
 func run(arguments []string) error {
+	if err := validateNodeRuntime(runtime.GOOS); err != nil {
+		return err
+	}
 	if handled, err := runPlatformCommand(arguments); handled {
 		return err
 	}
@@ -134,6 +137,13 @@ func run(arguments []string) error {
 	default:
 		return errors.New("unsupported kejilion-node command")
 	}
+}
+
+func validateNodeRuntime(goos string) error {
+	if goos != "linux" {
+		return errors.New("lightweight nodes are supported only on Linux")
+	}
+	return nil
 }
 
 func runEnroll(arguments []string) error {
