@@ -17,7 +17,7 @@ releaseTrain：1.25.0
 - 原分支 / 精确 tip / 处置分类：feature/remove-windows-light-node-20261006 / 9bd765d2fad423154ada4e3aec3e9e4741a59efe / 已快进纳入 main；远端 main 与 release/v1.25.0-candidate 在 RC8 发布时均指向该提交。
 - 归档 ref 与 SHA（或历史 tag/bundle 恢复证据）/ 远端复核结果：RC8 使用不可变 tag v1.25.0-rc.8；RC2–RC7 的历史 tags 与 Releases 保留。RC7 Windows 节点设计档案为 docs/archive/windows-light-node-design-rc2-rc6.md。旧本地 release/v1.25.0-candidate worktree 仍在 RC6 SHA 9a63e0f57bc257bfb3e8b62f136429da84827583，本次未重置或删除；远端候选分支已推进至 RC8 SHA。
 - 本次来源任务分支：feature/remove-windows-light-node-20261006 / 9bd765d2fad423154ada4e3aec3e9e4741a59efe 已纳入。其余非 Windows 候选 claude/compact-dialogs（2dd03bfd）、claude/share-theme-immersive（0be14dcd）、feature/latency-median-band（108162eb）、feature/office-light（b0513673）、feature/panel-login-notification（94d8b1b6）、fix/backup-archive-data-path（96d97075）的产品提交经 git cherry 对比均已在 origin/main 有等价 patch；没有重复重放。RC8 以 RC7 已整合代码线保留 RC2–RC7 的非 Windows 功能，移除 Windows 节点接入及衍生路径。
-- 本地分支/upstream/worktree：当前工作树 C:\GitHub\_codex-tasks\kpanel-remove-windows-light-node-20261006 保留在 RC8 源码 SHA；为保存审查、发布和回滚证据，未回收任务 worktree。主仓库本地 main worktree 与本次源码提交不同步，远端 main 已验证为 RC8 源码提交；本记录 docs-only 提交随后快进至远端 main，不移动 RC8 tag 或候选 ref。
+- 本地分支/upstream/worktree：任务 worktree C:\GitHub\_codex-tasks\kpanel-remove-windows-light-node-20261006 在 RC8 源码 SHA 9bd765d2 上新增本验收记录 docs-only 提交 92750aa1；为保存审查、发布和回滚证据，未回收任务 worktree。主仓库本地 main worktree 与远端 main 不同步；远端 main 已快进至 92750aa1，release/v1.25.0-candidate 与 RC8 tag 仍固定在 9bd765d2。
 - 未完成归档项 / 责任人 / 下次复核触发条件：codex/windows-installer-compat / 2c739c0d81cc6f60aed5cee6ab8ba84d5a94c6ac 属于 Windows 节点候选，按用户要求不纳入 RC8，保留源 worktree 供追溯；其他历史 Windows worktree 与不可变旧版 Release 也未删除。若未来重新引入 Windows 节点，须建立新候选并完整复核安全边界和 Windows 隔离验收。
 
 归档不代表生产上线；RC8 预览产物已发布，生产未部署。
