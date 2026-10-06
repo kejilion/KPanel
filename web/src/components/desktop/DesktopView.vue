@@ -41,6 +41,8 @@ import DesktopEntryIcon from '@/components/desktop/DesktopEntryIcon.vue'
 import DesktopWidgetHost from '@/components/desktop/DesktopWidgetHost.vue'
 import DesktopGroupCard from '@/components/desktop/DesktopGroupCard.vue'
 import DesktopGroupPreviewIcon from '@/components/desktop/DesktopGroupPreviewIcon.vue'
+import DesktopGroupFolder from '@/components/desktop/DesktopGroupFolder.vue'
+import { desktopPagerOrder, desktopPagerPageForScroll, layoutDesktopPager } from '@/lib/desktopPagerLayout'
 import { cloneDesktopGroups, normalizeDesktopGroupColumns, DESKTOP_GROUP_COLUMNS, desktopGroupItem, desktopGroupMembers, desktopGroupCells, desktopGroupCellAtPoint, desktopGroupSlots, desktopGroupRect, groupKey, MAX_DESKTOP_GROUPS, MAX_GROUP_CELLS, GROUP_DWELL_MS, moveGroupMembers, placeGroupMembers } from '@/lib/desktopGroups'
 import DesktopIconManagerDialog from '@/components/desktop/DesktopIconManagerDialog.vue'
 import DesktopStartMenu from '@/components/desktop/DesktopStartMenu.vue'
@@ -505,10 +507,10 @@ function groupCount(group: DesktopGroup): number {
   return group.members.filter(key => visibleKeySet.value.has(key)).length
 }
 
-function groupPreviewEntries(group: DesktopGroup) {
+function groupPreviewEntries(group: DesktopGroup, limit = 3) {
   const slots = desktopGroupSlots(group)
   return group.members.filter(key => visibleKeySet.value.has(key))
-    .sort((a, b) => slots[a]! - slots[b]!).slice(0, 3).map(key => {
+    .sort((a, b) => slots[a]! - slots[b]!).slice(0, limit).map(key => {
       const app = desktopApps.find(app => `nav:${app.path}` === key)
       const entry = [...visibleDynamicEntries.value, ...shortcutEntries.value].find(entry => entry.key === key)
       return { key, label: iconLabel(key), iconURL: app?.desktopIconURL || entry?.iconURL, icon: app?.icon || entry?.icon }
@@ -817,6 +819,163 @@ const iconScrollHeight = computed(() => Math.max(
   baseIconScrollHeight.value,
   iconDragSurfaceHeight.value,
 ))
+
+// Compact viewports page the desktop sideways like a phone home screen. The
+// order follows the saved wide layout and is never written back.
+const pagerPage = ref(0)
+const openFolderId = ref('')
+const folderSheetElement = ref<HTMLElement>()
+const pagerDotsElement = ref<HTMLElement>()
+let folderReturnFocus: HTMLElement | undefined
+let pagerWheelUntil = 0
+const pagerFolders = computed(() => compactIconLayout.value
+  ? localGroups.value.filter(group => groupCount(group) > 0 || (entriesLoading.value && group.members.length > 0))
+  : [])
+const pagerLayout = computed(() => {
+  if (!compactIconLayout.value) return undefined
+  const folders = new Set(pagerFolders.value.map(group => groupKey(group.id)))
+  const keys = allDesktopLayoutItems.value.map(item => item.key)
+    .filter(key => !key.startsWith('widget:') && (!key.startsWith('group:') || folders.has(key)))
+  return layoutDesktopPager(desktopPagerOrder(keys, localPositions.value), iconBounds.value)
+})
+const pagerPlacementByKey = computed(() => new Map(
+  (pagerLayout.value?.placements || []).map(placement => [placement.key, placement]),
+))
+const openFolder = computed(() => pagerFolders.value.find(group => group.id === openFolderId.value))
+const openFolderMembers = computed(() => {
+  const group = openFolder.value
+  if (!group) return []
+  const slots = desktopGroupSlots(group)
+  const dynamic = new Map([...visibleDynamicEntries.value, ...shortcutEntries.value].map(entry => [entry.key, entry]))
+  return group.members.filter(key => visibleKeySet.value.has(key))
+    .sort((left, right) => (slots[left] ?? 0) - (slots[right] ?? 0))
+    .flatMap(key => {
+      const app = desktopApps.find(item => `nav:${item.path}` === key)
+      const entry = app ? undefined : dynamic.get(key)
+      return app || entry ? [{ key, app, entry }] : []
+    })
+})
+const pagerListeners = computed(() => pagerLayout.value
+  ? { scroll: onIconsScroll, wheel: onIconsWheel, focusin: onIconsFocusIn }
+  : {})
+
+function pagerSlotStyle(key: string): Record<string, string> {
+  // Group members live in their folder sheet on phone screens.
+  const placement = groupMembership.value.has(key) ? undefined : pagerPlacementByKey.value.get(key)
+  if (!placement) return { display: 'none' }
+  return { left: '0px', top: '0px', transform: `translate3d(${placement.left}px, ${placement.top}px, 0)` }
+}
+
+function scrollPagerTo(page: number, smooth = true): void {
+  const element = iconsElement.value
+  const layout = pagerLayout.value
+  if (!element || !layout) return
+  const target = Math.min(layout.pageCount - 1, Math.max(0, Math.round(page)))
+  const left = target * layout.grid.pageWidth
+  pagerPage.value = target
+  if (Math.abs(element.scrollLeft - left) < 1) return
+  if (smooth && motionDuration(1) && typeof element.scrollTo === 'function') element.scrollTo({ left, behavior: 'smooth' })
+  else element.scrollLeft = left
+}
+
+function onIconsScroll(): void {
+  const element = iconsElement.value
+  const layout = pagerLayout.value
+  if (!element || !layout) return
+  pagerPage.value = desktopPagerPageForScroll(element.scrollLeft, layout.grid.pageWidth, layout.pageCount)
+}
+
+// A mouse wheel has no sideways axis; one vertical notch turns one page.
+function onIconsWheel(event: WheelEvent): void {
+  const layout = pagerLayout.value
+  if (!layout || layout.pageCount < 2 || event.ctrlKey) return
+  if (Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return
+  event.preventDefault()
+  const now = Date.now()
+  if (Math.abs(event.deltaY) < 4 || now < pagerWheelUntil) return
+  pagerWheelUntil = now + 450
+  scrollPagerTo(pagerPage.value + Math.sign(event.deltaY))
+}
+
+function onIconsFocusIn(event: FocusEvent): void {
+  const slot = (event.target as Element | null)?.closest<HTMLElement>('[data-icon-key], [data-pager-key]')
+  const key = slot?.dataset.iconKey || slot?.dataset.pagerKey
+  const page = key ? pagerPlacementByKey.value.get(key)?.page : undefined
+  if (page !== undefined) scrollPagerTo(page, false)
+}
+
+watch(() => pagerLayout.value ? `${pagerLayout.value.grid.pageWidth}:${pagerLayout.value.pageCount}` : '', async (next, previous) => {
+  await nextTick()
+  const element = iconsElement.value
+  if (!element) return
+  if (!next) {
+    // The wide desktop only scrolls vertically.
+    pagerPage.value = 0
+    element.scrollLeft = 0
+    return
+  }
+  if (!previous) element.scrollTop = 0
+  scrollPagerTo(pagerPage.value, false)
+}, { flush: 'post' })
+
+// Many pages (or a large zoom) can overflow the dot strip; keep the current dot in view.
+watch(pagerPage, async page => {
+  await nextTick()
+  const strip = pagerDotsElement.value
+  const dot = strip?.children[page] as HTMLElement | undefined
+  if (strip && dot && strip.scrollWidth > strip.clientWidth) {
+    strip.scrollLeft = dot.offsetLeft - (strip.clientWidth - dot.offsetWidth) / 2
+  }
+})
+
+function openPagerFolder(id: string, trigger: HTMLElement): void {
+  folderReturnFocus = trigger
+  openFolderId.value = id
+  void nextTick(() => {
+    const sheet = folderSheetElement.value
+    const target = sheet?.querySelector<HTMLElement>('.desktop__icon') || sheet?.querySelector<HTMLElement>('.desktop-folder__close')
+    target?.focus()
+  })
+}
+
+function closePagerFolder(restoreFocus = true): void {
+  if (!openFolderId.value) return
+  openFolderId.value = ''
+  const trigger = folderReturnFocus
+  folderReturnFocus = undefined
+  if (restoreFocus && trigger) void nextTick(() => { if (trigger.isConnected) trigger.focus({ preventScroll: true }) })
+}
+
+function launchFromFolder(open: () => void): void {
+  closePagerFolder(false)
+  open()
+}
+
+function onFolderKeydown(event: KeyboardEvent): void {
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    event.stopPropagation()
+    closePagerFolder()
+    return
+  }
+  if (event.key !== 'Tab') return
+  // Keep focus inside the modal sheet.
+  const focusable = [...folderSheetElement.value?.querySelectorAll<HTMLElement>('button:not([disabled])') || []]
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault()
+    last?.focus()
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault()
+    first?.focus()
+  }
+}
+
+watch(openFolder, group => { if (!group) closePagerFolder(false) })
+watch(() => desktop.windows.value.filter(windowState => !windowState.minimized).length, (count, previous) => {
+  if (count > previous) closePagerFolder(false)
+})
 
 watch(() => [workspace.value.positions, workspace.value.widgetPositions], ([positions, widgetPositions]) => {
   if (draggingIcons.value.size || draggingWidgets.value.size || pendingPositionWrites > 0) return
@@ -1407,6 +1566,7 @@ function resetIconDragSurface(): void {
 }
 
 function iconSlotStyle(key: string): Record<string, string> {
+  if (pagerLayout.value) return pagerSlotStyle(key)
   if (localGroups.value.length) {
     const size = renderedIconSizeByKey.value.get(key)
     const sizeStyle: Record<string, string> = size ? { width: `${size.width}px`, height: `${size.height}px` } : {}
@@ -2587,6 +2747,7 @@ function onGlobalKeyDown(event: KeyboardEvent): void {
   else if (iconDrag) cancelIconDrag()
   else if (widgetDrag) cancelWidgetDrag()
   else if (contextMenu.value.open) closeContextMenu()
+  else if (openFolderId.value) closePagerFolder()
   else clearIconSelection()
 }
 
@@ -4106,16 +4267,26 @@ function onViewportResize(): void {
     <nav
       ref="iconsElement"
       class="desktop__icons"
-      :class="{ 'desktop__icons--grouped': localGroups.length > 0, 'desktop__icons--initializing': !initialLayoutReady, 'desktop__icons--restoring': !initialLayoutTransitionsReady, 'desktop__icons--resizing': viewportLayoutResizing }"
+      :class="{ 'desktop__icons--paged': Boolean(pagerLayout), 'desktop__icons--grouped': localGroups.length > 0, 'desktop__icons--initializing': !initialLayoutReady, 'desktop__icons--restoring': !initialLayoutTransitionsReady, 'desktop__icons--resizing': viewportLayoutResizing }"
       :inert="!initialLayoutReady || undefined"
       :aria-label="i18n.t('desktop.gridLabel')"
       :aria-busy="!initialLayoutReady || entriesLoading"
+      v-on="pagerListeners"
     >
       <div
         class="desktop__icons-scroll-space"
-        :style="{ height: `${iconScrollHeight}px` }"
+        :style="{ height: pagerLayout ? '0px' : `${iconScrollHeight}px` }"
         aria-hidden="true"
       />
+      <template v-if="pagerLayout">
+        <span
+          v-for="page in pagerLayout.pageCount"
+          :key="`page-${page}`"
+          class="desktop__pager-page"
+          :style="{ left: `${(page - 1) * pagerLayout.grid.pageWidth}px`, width: `${pagerLayout.grid.pageWidth}px` }"
+          aria-hidden="true"
+        />
+      </template>
       <DesktopWidgetHost
         v-for="widget in visibleDesktopWidgets"
         v-if="widgetLayoutVisible"
@@ -4127,7 +4298,7 @@ function onViewportResize(): void {
         @drag-start="beginWidgetDrag($event, widget.key)"
         @nudge="nudgeWidget(widget.key, $event)"
       />
-      <TransitionGroup :css="initialLayoutTransitionsReady" name="desktop-group-surface" move-class="desktop-group-surface-no-move"
+      <TransitionGroup v-if="!pagerLayout" :css="initialLayoutTransitionsReady" name="desktop-group-surface" move-class="desktop-group-surface-no-move"
         @before-leave="(element: Element) => { (element as HTMLElement).inert = true; element.setAttribute('aria-hidden', 'true') }"
         @leave-cancelled="(element: Element) => { (element as HTMLElement).inert = false; element.removeAttribute('aria-hidden') }">
       <DesktopGroupCard v-for="group in localGroups" :key="group.id" :group="group" :count="groupCount(group)"
@@ -4143,8 +4314,19 @@ function onViewportResize(): void {
         </template>
       </DesktopGroupCard>
       </TransitionGroup>
+      <DesktopGroupFolder
+        v-for="group in pagerFolders"
+        :key="`folder-${group.id}`"
+        :name="group.name"
+        :count="groupCount(group)"
+        :expanded="openFolderId === group.id"
+        :previews="groupPreviewEntries(group, 4)"
+        :data-pager-key="groupKey(group.id)"
+        :style="pagerSlotStyle(groupKey(group.id))"
+        @open="(trigger) => openPagerFolder(group.id, trigger)"
+      />
       <p
-        v-if="renderedIconLayout.overflowKeys.length"
+        v-if="!pagerLayout && renderedIconLayout.overflowKeys.length"
         class="desktop__icons-overflow-note"
         :style="{ top: `${renderedIconLayout.contentHeight + 8}px` }"
         role="status"
@@ -4269,6 +4451,75 @@ function onViewportResize(): void {
       </span>
       <span class="desktop__sr-only" aria-live="polite">{{ iconAnnouncement }}</span>
     </nav>
+
+    <nav
+      v-if="pagerLayout && pagerLayout.pageCount > 1 && initialLayoutReady"
+      ref="pagerDotsElement"
+      class="desktop__pager"
+      :aria-label="i18n.t('desktop.pagerLabel')"
+    >
+      <button
+        v-for="page in pagerLayout.pageCount"
+        :key="page"
+        type="button"
+        class="desktop__pager-dot"
+        :class="{ 'desktop__pager-dot--active': page - 1 === pagerPage }"
+        :aria-label="i18n.t('desktop.pagerPage', { page, count: pagerLayout.pageCount })"
+        :aria-current="page - 1 === pagerPage ? 'page' : undefined"
+        @click="scrollPagerTo(page - 1)"
+      >
+        <span aria-hidden="true" />
+      </button>
+    </nav>
+
+    <Transition name="desktop-folder">
+      <div v-if="openFolder" class="desktop-folder modal-scrim" @pointerdown.self="closePagerFolder()">
+        <section
+          ref="folderSheetElement"
+          class="desktop-folder__sheet"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="desktop-folder-title"
+          @keydown="onFolderKeydown"
+        >
+          <header class="desktop-folder__header">
+            <h2 id="desktop-folder-title" class="desktop-folder__title">{{ openFolder.name }}</h2>
+            <span class="desktop-folder__count">{{ i18n.t('desktop.groupFolderCount', { count: openFolderMembers.length }) }}</span>
+            <button type="button" class="desktop-folder__close" :aria-label="i18n.t('desktop.groupFolderClose')" @click="closePagerFolder()">
+              <X :size="18" aria-hidden="true" />
+            </button>
+          </header>
+          <div class="desktop-folder__grid">
+            <template v-for="(member, index) in openFolderMembers" :key="member.key">
+              <DesktopEntryIcon
+                v-if="member.app"
+                :label="i18n.t(member.app.labelKey)"
+                :nav-icon="member.app.icon"
+                :nav-icon-u-r-l="member.app.desktopIconURL"
+                :gradient="gradientFor(member.app.path)"
+                :selected="selectedIcons.has(member.key)"
+                :order="index"
+                @select="(event) => selectNavIcon(member.app!.path, event)"
+                @open="launchFromFolder(() => openNavIcon(member.app!.path))"
+                @context="(event) => onNavContext(event, member.app!.path)"
+                @warm="warmNavIcon(member.app.path)"
+              />
+              <DesktopEntryIcon
+                v-else-if="member.entry"
+                :label="member.entry.name"
+                :entry="member.entry"
+                :gradient="entryGradient(member.entry)"
+                :selected="selectedIcons.has(member.key)"
+                :order="index"
+                @select="(event) => selectEntry(member.entry!, event)"
+                @open="(event) => launchFromFolder(() => onEntryOpen(event, member.entry!))"
+                @context="(event) => onEntryContext(event, member.entry!)"
+              />
+            </template>
+          </div>
+        </section>
+      </div>
+    </Transition>
 
     <DesktopWindow
       v-for="windowState in openWindows"

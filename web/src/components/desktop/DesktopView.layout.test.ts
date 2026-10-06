@@ -808,7 +808,7 @@ describe('DesktopView icon layout interaction', () => {
     wrapper.unmount()
   })
 
-  it('places icons beyond one compact page in the scroll surface without writing positions', async () => {
+  it('pages compact icons sideways in row-major order without writing positions', async () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 320 })
     Object.defineProperty(window, 'innerHeight', { configurable: true, value: 568 })
     const extra: DesktopEntry = {
@@ -825,13 +825,92 @@ describe('DesktopView icon layout interaction', () => {
 
     const wrapper = mount(DesktopView, { attachTo: document.body })
     await flushPromises()
-    const extraSlot = wrapper.find('[data-icon-key="app:extra"]')
-    const scrollSpace = wrapper.find('.desktop__icons-scroll-space')
+    const offset = (key: string) => (wrapper.get(`[data-icon-key="${key}"]`).attributes('style') || '')
+      .match(/translate3d\(([\d.]+)px,\s*([\d.]+)px/)!.slice(1, 3).map(Number)
+    const grid = wrapper.get('.desktop__icons')
 
-    expect(Number.parseFloat((extraSlot.attributes('style') || '').match(/translate3d\([^,]+,\s*([\d.]+)px/)?.[1] || '0'))
-      .toBeGreaterThan(480)
-    expect(Number.parseFloat((scrollSpace.attributes('style') || '').match(/height:\s*([\d.]+)px/)?.[1] || '0'))
-      .toBeGreaterThan(480)
+    // The jsdom work area is 296×480: three columns and four rows per page.
+    expect(grid.classes()).toContain('desktop__icons--paged')
+    const [overviewX, overviewY] = offset('nav:/overview')
+    const [monitoringX, monitoringY] = offset('nav:/monitoring')
+    const [, aiY] = offset('nav:/ai')
+    expect(monitoringY).toBe(overviewY)
+    expect(monitoringX).toBeGreaterThan(overviewX!)
+    expect(aiY).toBeGreaterThan(overviewY!)
+    const [extraX] = offset('app:extra')
+    expect(extraX).toBeGreaterThanOrEqual(296)
+    expect(wrapper.get('.desktop__icons-scroll-space').attributes('style')).toContain('height: 0px')
+    expect(wrapper.findAll('.desktop__pager-page')).toHaveLength(2)
+
+    const dots = wrapper.findAll('.desktop__pager-dot')
+    expect(dots.map(dot => dot.attributes('aria-label'))).toEqual(['第 1 页，共 2 页', '第 2 页，共 2 页'])
+    expect(dots[0]!.attributes('aria-current')).toBe('page')
+    await dots[1]!.trigger('click')
+    expect(dots[1]!.attributes('aria-current')).toBe('page')
+    expect(dots[0]!.attributes('aria-current')).toBeUndefined()
+    expect(updateWorkspace).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('follows the saved wide column order on compact pages', async () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 320 })
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 568 })
+    loadWorkspace.mockResolvedValueOnce(workspace({
+      positions: {
+        'nav:/settings': { x: 0, y: 0 },
+        'nav:/files': { x: 0, y: 0.2 },
+        'nav:/overview': { x: 0.1, y: 0 },
+      },
+    }))
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await flushPromises()
+    const offset = (key: string) => (wrapper.get(`[data-icon-key="${key}"]`).attributes('style') || '')
+      .match(/translate3d\(([\d.]+)px,\s*([\d.]+)px/)!.slice(1, 3).map(Number)
+
+    const [settingsX, settingsY] = offset('nav:/settings')
+    const [filesX, filesY] = offset('nav:/files')
+    const [overviewX, overviewY] = offset('nav:/overview')
+    const [monitoringX, monitoringY] = offset('nav:/monitoring')
+    expect([settingsY, filesY, overviewY]).toEqual([settingsY, settingsY, settingsY])
+    expect(settingsX).toBeLessThan(filesX!)
+    expect(filesX).toBeLessThan(overviewX!)
+    // Entries without a saved position follow the saved ones.
+    expect(monitoringY).toBeGreaterThan(settingsY!)
+    expect(monitoringX).toBe(settingsX)
+    expect(updateWorkspace).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('opens a compact group as a folder sheet and returns focus when it closes', async () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 })
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 844 })
+    const id = 'b'.repeat(32)
+    loadWorkspace.mockResolvedValueOnce(workspace({
+      groups: [{ id, name: 'Tools', columns: 4, rows: 0, collapsed: true,
+        members: ['nav:/terminal', 'nav:/files'], slots: { 'nav:/files': 0, 'nav:/terminal': 1 } }],
+    }))
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await flushPromises()
+
+    expect(wrapper.find('.desktop-group').exists()).toBe(false)
+    expect(wrapper.get('[data-icon-key="nav:/terminal"]').attributes('style')).toContain('display: none')
+    const tile = wrapper.get('.desktop-folder-tile')
+    expect(tile.attributes('aria-label')).toBe('打开分组「Tools」，2 项')
+    expect(tile.attributes('aria-expanded')).toBe('false')
+
+    await tile.trigger('click')
+    await flushPromises()
+    const sheet = wrapper.get('.desktop-folder [role="dialog"]')
+    expect(sheet.attributes('aria-modal')).toBe('true')
+    expect(sheet.get('.desktop-folder__title').text()).toBe('Tools')
+    expect(sheet.findAll('.desktop-folder__grid .desktop__icon').map(icon => icon.attributes('aria-label'))).toEqual(['文件', '终端'])
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('文件')
+    expect(tile.attributes('aria-expanded')).toBe('true')
+
+    document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    await flushPromises()
+    expect(wrapper.find('.desktop-folder [role="dialog"]').exists()).toBe(false)
+    expect(document.activeElement).toBe(tile.element)
     expect(updateWorkspace).not.toHaveBeenCalled()
     wrapper.unmount()
   })
