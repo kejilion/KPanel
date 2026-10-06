@@ -8,7 +8,6 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"net/url"
 	"strconv"
 	"strings"
@@ -186,7 +185,7 @@ func (s *Service) AcceptLightReport(auth LightReportAuth, rawBody []byte, input 
 		}
 		return LightReportResponse{}, ErrAuthentication
 	}
-	if _, err := s.light.Host(auth.NodeID); errors.Is(err, ErrNotFound) {
+	if !s.light.HasHost(auth.NodeID) {
 		// Keep unknown and retired node IDs from consuming the source budget of
 		// active Linux nodes that happen to share the same public IP.
 		if !s.lightUnknownSources.Allow(source, now) {

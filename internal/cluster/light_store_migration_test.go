@@ -47,6 +47,9 @@ func TestOpenLightStorePrunesRetiredWindowsRecords(t *testing.T) {
 		if err != nil {
 			t.Fatalf("seed node %s: %v", fixture.id, err)
 		}
+		if !store.HasHost(fixture.id) {
+			t.Fatalf("host index did not add %s", fixture.id)
+		}
 	}
 	for _, id := range []string{windowsID, legacyWindowsID} {
 		for _, name := range []string{"host-" + id + lightCredentialExtension, terminalKeyName(id)} {
@@ -63,6 +66,11 @@ func TestOpenLightStorePrunesRetiredWindowsRecords(t *testing.T) {
 	reopened, err := openLightStore(path)
 	if err != nil {
 		t.Fatal(err)
+	}
+	for _, id := range []string{windowsID, legacyWindowsID} {
+		if reopened.HasHost(id) {
+			t.Fatalf("retired Windows host %s remains in membership index", id)
+		}
 	}
 	got := reopened.Hosts()
 	if len(got) != 2 {
@@ -82,6 +90,9 @@ func TestOpenLightStorePrunesRetiredWindowsRecords(t *testing.T) {
 		}
 	}
 	for _, id := range []string{linuxID, ambiguousID} {
+		if !reopened.HasHost(id) {
+			t.Fatalf("preserved host %s is missing from membership index", id)
+		}
 		host, err := reopened.Host(id)
 		if err != nil {
 			t.Fatalf("preserved host %s lookup error = %v", id, err)

@@ -79,6 +79,7 @@ type lightStore struct {
 	secretDir   string
 	terminalDir string
 	state       lightPersistedState
+	hostIDs     map[string]struct{}
 	dirty       bool
 	ops         atomicFileOpsV2
 }
@@ -132,6 +133,7 @@ func openLightStore(path string) (*lightStore, error) {
 	if err := store.pruneRetiredWindowsHosts(); err != nil {
 		return nil, fmt.Errorf("prune retired Windows light nodes: %w", err)
 	}
+	store.rebuildHostIndex()
 	if err := store.cleanupOrphanCredentials(); err != nil {
 		return nil, err
 	}
@@ -157,6 +159,12 @@ func (s *lightStore) pruneRetiredWindowsHosts() error {
 	if err := s.persistLocked(); err != nil {
 		s.state.Hosts = previous
 		return err
+	}
+	if s.hostIDs != nil {
+		s.hostIDs = make(map[string]struct{}, len(filtered))
+		for _, record := range filtered {
+			s.hostIDs[record.ID] = struct{}{}
+		}
 	}
 	return nil
 }
@@ -269,6 +277,25 @@ func (s *lightStore) Host(id string) (lightHostRecord, error) {
 		}
 	}
 	return lightHostRecord{}, ErrNotFound
+}
+
+// HasHost provides an O(1) membership check for report authentication. Unknown
+// node IDs are public input and must be rate-limited without making every
+// rejected request scan the entire persisted host list.
+func (s *lightStore) HasHost(id string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, exists := s.hostIDs[id]
+	return exists
+}
+
+func (s *lightStore) rebuildHostIndex() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.hostIDs = make(map[string]struct{}, len(s.state.Hosts))
+	for _, record := range s.state.Hosts {
+		s.hostIDs[record.ID] = struct{}{}
+	}
 }
 
 func (s *lightStore) AddEnrollment(record lightEnrollmentRecord, now time.Time) error {
@@ -395,6 +422,9 @@ func (s *lightStore) EnrollHost(
 		}
 		return err
 	}
+	if s.hostIDs != nil {
+		s.hostIDs[record.ID] = struct{}{}
+	}
 	return nil
 }
 
@@ -452,6 +482,9 @@ func (s *lightStore) AddHostWithTerminal(
 			_ = os.Remove(terminalPath)
 		}
 		return err
+	}
+	if s.hostIDs != nil {
+		s.hostIDs[record.ID] = struct{}{}
 	}
 	return nil
 }
@@ -605,6 +638,9 @@ func (s *lightStore) DeleteHost(id, expected string) (lightHostRecord, bool, err
 		if err := s.persistLocked(); err != nil {
 			s.state.Hosts = previous
 			return lightHostRecord{}, false, err
+		}
+		if s.hostIDs != nil {
+			delete(s.hostIDs, record.ID)
 		}
 		credentialRemoved := true
 		if err := os.Remove(filepath.Join(s.secretDir, record.CredentialFile)); err != nil && !errors.Is(err, os.ErrNotExist) {

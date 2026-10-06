@@ -43,6 +43,9 @@ func TestLightStoreKeepsTerminalIdentityOutsideLegacyState(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
+	if !store.HasHost(hostID) {
+		t.Fatal("enrolled host missing from membership index")
+	}
 	content, err := os.ReadFile(statePath)
 	if err != nil {
 		t.Fatal(err)
@@ -73,6 +76,9 @@ func TestLightStoreKeepsTerminalIdentityOutsideLegacyState(t *testing.T) {
 	}
 	if _, removed, err := reopened.DeleteHost(hostID, reopenedRecord.ResourceVersion); err != nil || !removed {
 		t.Fatalf("DeleteHost() = removed:%v, error:%v", removed, err)
+	}
+	if reopened.HasHost(hostID) {
+		t.Fatal("deleted host remains in membership index")
 	}
 	if _, err := os.Stat(terminalKeyPath(filepath.Join(dataDir, lightTerminalKeysDirectory), hostID)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("terminal key file remains after deletion: %v", err)
