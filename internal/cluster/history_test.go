@@ -209,8 +209,8 @@ func TestUnsupportedLightNodeHistoryAndControlsAreUnavailable(t *testing.T) {
 		if err != nil || persisted.Platform != record.Platform {
 			t.Fatalf("legacy unsupported platform was not retained: %#v, %v", persisted, err)
 		}
-		if _, err := service.History(context.Background(), record.ID, "6h", time.Time{}, time.Time{}); !errors.Is(err, ErrHistoryUnsupported) {
-			t.Fatalf("History(%d) error = %v, want ErrHistoryUnsupported", index, err)
+		if _, err := service.History(context.Background(), record.ID, "6h", time.Time{}, time.Time{}); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("History(%d) error = %v, want hidden record", index, err)
 		}
 		for _, capability := range []string{"files", "terminal"} {
 			if service.lightControlAllowed(record.ID, capability) {

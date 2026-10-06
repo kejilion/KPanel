@@ -230,6 +230,9 @@ func (s *Service) handleHistoryRelayV2(ctx context.Context, envelope v2Envelope,
 	if err != nil || s.lightHistory == nil {
 		return FederationEnvelopeV2{}, ErrAuthentication
 	}
+	if !lightNodePlatformSupported(record) {
+		return FederationEnvelopeV2{}, ErrAuthentication
+	}
 	key, err := s.light.ReadTerminalPublicKey(record)
 	if err != nil || len(key) != 32 {
 		return FederationEnvelopeV2{}, ErrAuthentication

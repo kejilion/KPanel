@@ -433,12 +433,15 @@ func (s *Service) Hosts(ctx context.Context) HostList {
 		items = append(items, host)
 	}
 	for _, record := range lightRecords {
+		if !lightNodePlatformSupported(record) {
+			continue
+		}
 		items = append(items, s.publicLightHost(record, now))
 	}
 	s.mu.RUnlock()
 	return HostList{
 		Items: items, Total: len(items),
-		RemoteTotal: len(records) + len(recordsV2) + len(lightRecords), MaxHosts: MaxHosts,
+		RemoteTotal: len(records) + len(recordsV2) + supportedLightHostCount(lightRecords), MaxHosts: MaxHosts,
 		PollIntervalSeconds: max(1, int(s.pollInterval/time.Second)),
 		NodeID:              s.store.NodeID(),
 	}
@@ -475,6 +478,9 @@ func (s *Service) Host(ctx context.Context, id string) (Host, error) {
 		}
 		return Host{}, lightErr
 	}
+	if !lightNodePlatformSupported(lightRecord) {
+		return Host{}, ErrNotFound
+	}
 	return s.publicLightHost(lightRecord, s.now().UTC()), nil
 }
 
@@ -499,7 +505,7 @@ func (s *Service) AddHost(ctx context.Context, input AddHostInput) (Host, error)
 	}
 	existing := s.store.Hosts()
 	existingV2 := s.storeV2.Hosts()
-	if len(existing)+len(existingV2)+len(s.light.Hosts()) >= MaxHosts {
+	if len(existing)+len(existingV2)+supportedLightHostCount(s.light.Hosts()) >= MaxHosts {
 		return Host{}, ErrHostLimit
 	}
 	for _, item := range existing {
@@ -626,6 +632,10 @@ func (s *Service) RenameHost(id string, input UpdateHostInput) (Host, error) {
 	}
 	recordV2, err := s.storeV2.Host(id)
 	if err != nil {
+		storedLightRecord, lightErr := s.light.Host(id)
+		if lightErr == nil && !lightNodePlatformSupported(storedLightRecord) {
+			return Host{}, ErrNotFound
+		}
 		lightRecord, lightErr := s.light.RenameHost(id, name, input.ExpectedResourceVersion, s.now().UTC())
 		if lightErr != nil {
 			if !errors.Is(err, ErrNotFound) {
@@ -713,7 +723,7 @@ func (s *Service) Refresh(ctx context.Context, id string) (Host, error) {
 			return Host{}, err
 		}
 		if _, v2Err := s.storeV2.Host(id); v2Err != nil {
-			if record, lightErr := s.light.Host(id); lightErr == nil {
+			if record, lightErr := s.light.Host(id); lightErr == nil && lightNodePlatformSupported(record) {
 				return s.publicLightHost(record, s.now().UTC()), nil
 			}
 			return Host{}, v2Err

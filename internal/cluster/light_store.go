@@ -26,6 +26,7 @@ const (
 	maxLightEnrollments        = 16
 	lightCredentialExtension   = ".lightkey"
 	lightTerminalKeyExtension  = ".noisepub"
+	maxPersistedLightHosts     = MaxHosts * 2
 )
 
 type lightEnrollmentRecord struct {
@@ -185,7 +186,8 @@ func decodeLightState(content []byte, state *lightPersistedState) error {
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
 		return errors.New("light node store contains multiple JSON values")
 	}
-	if state.SchemaVersion != 1 || len(state.Enrollments) > maxLightEnrollments || len(state.Hosts) > MaxHosts {
+	if state.SchemaVersion != 1 || len(state.Enrollments) > maxLightEnrollments ||
+		len(state.Hosts) > maxPersistedLightHosts || supportedLightHostCount(state.Hosts) > MaxHosts {
 		return errors.New("light node store is invalid")
 	}
 	hostIDs := make(map[string]struct{}, len(state.Hosts))
@@ -317,7 +319,7 @@ func (s *lightStore) EnrollHost(
 	if enrollmentIndex < 0 {
 		return ErrPairingCode
 	}
-	if len(s.state.Hosts) >= MaxHosts {
+	if len(s.state.Hosts) >= maxPersistedLightHosts || supportedLightHostCount(s.state.Hosts) >= MaxHosts {
 		return ErrHostLimit
 	}
 	validatedName, nameErr := validateRequiredName(record.Name)
@@ -381,7 +383,7 @@ func (s *lightStore) AddHostWithTerminal(
 ) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if len(s.state.Hosts) >= MaxHosts {
+	if len(s.state.Hosts) >= maxPersistedLightHosts || supportedLightHostCount(s.state.Hosts) >= MaxHosts {
 		return ErrHostLimit
 	}
 	validatedName, nameErr := validateRequiredName(record.Name)

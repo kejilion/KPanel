@@ -152,7 +152,7 @@ func (s *Service) EnrollLightNodeBatch(
 		return LightEnrollResponse{}, "", err
 	}
 	hash := sha256.Sum256(secret)
-	hasCapacity := len(s.store.Hosts())+len(s.storeV2.Hosts())+len(s.light.Hosts()) < MaxHosts
+	hasCapacity := len(s.store.Hosts())+len(s.storeV2.Hosts())+supportedLightHostCount(s.light.Hosts()) < MaxHosts
 	attempt, _, err := s.lightBatches.Reserve(
 		wire.ID,
 		hex.EncodeToString(hash[:]),

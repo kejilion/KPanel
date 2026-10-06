@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -84,5 +86,40 @@ func TestDecodeLightStatePreservesLegacySchemaBoundary(t *testing.T) {
 	}
 	if err := decodeLightState([]byte(`{"schemaVersion":1,"enrollments":[],"hosts":[],"terminalPublicKey":"unexpected"}`), &state); err == nil {
 		t.Fatal("light state accepted a new terminal identity field")
+	}
+}
+
+func TestDecodeLightStateBoundsSupportedAndRetiredHostsSeparately(t *testing.T) {
+	now := time.Now().UTC()
+	state := lightPersistedState{SchemaVersion: 1, Enrollments: []lightEnrollmentRecord{}, Hosts: make([]lightHostRecord, MaxHosts+1)}
+	for index := range state.Hosts {
+		id := fmt.Sprintf("%032x", index+1)
+		record := lightHostRecord{
+			Platform: "linux", ID: id, Name: fmt.Sprintf("node-%d", index),
+			CredentialFile: "host-" + id + lightCredentialExtension,
+			CreatedAt:      now, UpdatedAt: now,
+		}
+		record.ResourceVersion = lightResourceVersion(record)
+		state.Hosts[index] = record
+	}
+	content, err := json.Marshal(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded lightPersistedState
+	if err := decodeLightState(content, &decoded); err == nil {
+		t.Fatal("store with more than MaxHosts supported records was accepted")
+	}
+
+	for index := range state.Hosts {
+		state.Hosts[index].Platform = "windows"
+		state.Hosts[index].ResourceVersion = lightResourceVersion(state.Hosts[index])
+	}
+	content, err = json.Marshal(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := decodeLightState(content, &decoded); err != nil {
+		t.Fatalf("bounded retired records blocked store recovery: %v", err)
 	}
 }

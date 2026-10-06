@@ -225,7 +225,7 @@ func TestLightBatchEnrollmentReservedRetryCannotExceedGlobalHostLimit(t *testing
 	for index := 0; index < MaxHosts; index++ {
 		nodeID := fmt.Sprintf("%032x", index+1)
 		record := lightHostRecord{
-			ID: nodeID, Name: "capacity", NodeVersion: "1.18.0",
+			Platform: "linux", ID: nodeID, Name: "capacity", NodeVersion: "1.18.0",
 			CreatedAt: now, UpdatedAt: now,
 		}
 		if err := service.light.AddHost(record, bytes.Repeat([]byte{byte(index + 1)}, 32)); err != nil {

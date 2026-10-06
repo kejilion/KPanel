@@ -42,7 +42,7 @@ func TestLightCapabilityProbeIsAuthenticatedReadOnlyAndReplaySafe(t *testing.T) 
 	}
 }
 
-func TestUnsupportedHostIsListedOfflineWithoutDerivedCapabilities(t *testing.T) {
+func TestUnsupportedLightHostProjectionHasNoDerivedCapabilities(t *testing.T) {
 	now := time.Now().UTC()
 	snapshot := HostSnapshot{ReceivedAt: now,
 		Telemetry: contract.HostTelemetry{OSID: "debian", OSLike: []string{"debian"}}}
@@ -112,9 +112,27 @@ func TestStoredUnsupportedLightNodeCannotSubmitReports(t *testing.T) {
 		response := LightEnrollResponse{NodeID: nodeID, ReportingKey: base64.RawURLEncoding.EncodeToString(key)}
 		input := LightReportRequest{Telemetry: serviceTelemetry(now, "legacy unsupported")}
 		body, auth := signedLightReportForTest(t, now, response, input, strings.Repeat(string(rune('e'+index)), 32))
-		if _, err := service.AcceptLightReport(auth, body, input); !errors.Is(err, ErrLightPlatformUnsupported) {
+		if _, err := service.AcceptLightReport(auth, body, input); !errors.Is(err, ErrAuthentication) {
 			t.Fatalf("unsupported stored node %d report error = %v", index, err)
 		}
+	}
+
+	// A platform-less record with no snapshot is a valid v1.24 migration shape.
+	// OSLike alone must not let a Windows identity self-assert back into Linux.
+	unknownID := strings.Repeat("a", 32)
+	unknownKey := bytes.Repeat([]byte{9}, 32)
+	if err := service.light.AddHost(lightHostRecord{
+		ID: unknownID, Name: "legacy unknown", CreatedAt: now, UpdatedAt: now,
+	}, unknownKey); err != nil {
+		t.Fatal(err)
+	}
+	response := LightEnrollResponse{NodeID: unknownID, ReportingKey: base64.RawURLEncoding.EncodeToString(unknownKey)}
+	telemetry := serviceTelemetry(now, "legacy unknown")
+	telemetry.OS, telemetry.OSID, telemetry.OSLike = "Windows Server 2025", "windows", []string{"debian"}
+	input := LightReportRequest{Telemetry: telemetry}
+	body, auth := signedLightReportForTest(t, now, response, input, strings.Repeat("d", 32))
+	if _, err := service.AcceptLightReport(auth, body, input); !errors.Is(err, ErrAuthentication) {
+		t.Fatalf("platform-less record with non-Linux OSLike was accepted: %v", err)
 	}
 }
 
@@ -144,10 +162,16 @@ func TestLegacyPlatformlessSnapshotRequiresPositiveLinuxIdentity(t *testing.T) {
 		t.Fatal("legacy Linux snapshot was not recognized")
 	}
 	legacyOther := lightHostRecord{LastSnapshot: &HostSnapshot{Telemetry: contract.HostTelemetry{
-		OS: "Windows Server 2025", OSID: "windows",
+		OS: "Windows Server 2025", OSID: "windows", OSLike: []string{"debian"},
 	}}}
 	if lightNodePlatformSupported(legacyOther) {
 		t.Fatal("legacy non-Linux snapshot was treated as Linux")
+	}
+	contradictory := lightHostRecord{LastSnapshot: &HostSnapshot{Telemetry: contract.HostTelemetry{
+		OSID: "linux", OSLike: []string{"windows"},
+	}}}
+	if lightNodePlatformSupported(contradictory) {
+		t.Fatal("contradictory Windows marker was treated as Linux")
 	}
 }
 

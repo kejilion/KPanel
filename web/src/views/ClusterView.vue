@@ -75,6 +75,7 @@ import {
 import { contextMenuFocusOrigin, type ContextMenuFocusOrigin } from '@/lib/contextMenu'
 import { desktopWindowActiveKey } from '@/lib/desktopRouteKeys'
 import { detectOperatingSystemIdentity } from '@/lib/operatingSystem'
+import { withoutUnsupportedLightNodes } from '@/lib/nodeFeatureHosts'
 import { clusterTrafficCounters, formatNetworkTrafficCounter } from '@/lib/networkTraffic'
 import ClusterTrafficHeading from '@/components/cluster/ClusterTrafficHeading.vue'
 import type { ClusterTrafficCalculation } from '@/types/api'
@@ -501,7 +502,14 @@ async function load(silent = false, replaceInFlight = false): Promise<void> {
   try {
     const freshInventory = await api.cluster.hosts(controller.signal)
     if (controller.signal.aborted) return
-    inventory.value = freshInventory
+    const visibleHosts = withoutUnsupportedLightNodes(freshInventory.items)
+    const hiddenHosts = freshInventory.items.length - visibleHosts.length
+    inventory.value = {
+      ...freshInventory,
+      items: visibleHosts,
+      total: visibleHosts.length,
+      remoteTotal: Math.max(0, freshInventory.remoteTotal - hiddenHosts),
+    }
     await applyPanelHostOrder(inventory.value.items, inventory.value.hostOrder)
     if (controller.signal.aborted) return
     if (selected.value) {

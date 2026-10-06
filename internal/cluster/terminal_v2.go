@@ -183,6 +183,9 @@ func (s *Service) TerminalOpen(ctx context.Context, hostID string, input Termina
 }
 
 func (s *Service) TerminalOutput(ctx context.Context, hostID string, input TerminalOutputRequest) (terminal.Output, error) {
+	if !s.lightControlAllowed(hostID, "terminal") {
+		return terminal.Output{}, ErrTerminalUnavailable
+	}
 	if t := s.streams.terminal(hostID, input.SessionID); t != nil {
 		return t.output(ctx, input)
 	}
@@ -240,6 +243,9 @@ func (s *Service) TerminalResize(ctx context.Context, hostID string, input Termi
 }
 
 func (s *Service) TerminalClose(ctx context.Context, hostID string, input TerminalCloseRequest) error {
+	if !s.lightControlAllowed(hostID, "terminal") {
+		return ErrTerminalUnavailable
+	}
 	if t := s.streams.terminal(hostID, input.SessionID); t != nil {
 		if err := t.close(ctx, input); err != nil {
 			return err

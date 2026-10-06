@@ -59,8 +59,9 @@ func validateLightPlatformChoice(platform string) error {
 }
 
 // The stable light-node protocol predates platform metadata and supported only
-// Linux. Unknown persisted platforms stay visible as offline records, but do
-// not regain file, terminal, or history access.
+// Linux. Unknown persisted platforms stay in protected local state for
+// compatibility, but are absent from the product surface and cannot regain
+// file, terminal, or history access.
 func lightNodePlatformSupported(record lightHostRecord) bool {
 	if record.Platform != "" {
 		return record.Platform == "linux"
@@ -71,9 +72,39 @@ func lightNodePlatformSupported(record lightHostRecord) bool {
 	return telemetryIdentifiesLinux(record.LastSnapshot.Telemetry)
 }
 
+func supportedLightHostCount(records []lightHostRecord) int {
+	count := 0
+	for _, record := range records {
+		if lightNodePlatformSupported(record) {
+			count++
+		}
+	}
+	return count
+}
+
 func telemetryIdentifiesLinux(telemetry contract.HostTelemetry) bool {
-	return strings.EqualFold(strings.TrimSpace(telemetry.OSID), "linux") ||
-		strings.Contains(strings.ToLower(telemetry.OS), "linux") || len(telemetry.OSLike) > 0
+	osID := strings.ToLower(strings.TrimSpace(telemetry.OSID))
+	osName := strings.ToLower(strings.TrimSpace(telemetry.OS))
+	if osID == "windows" || strings.Contains(osName, "windows") {
+		return false
+	}
+	for _, id := range telemetry.OSLike {
+		if strings.EqualFold(strings.TrimSpace(id), "windows") {
+			return false
+		}
+	}
+	if osID == "linux" || strings.Contains(osName, "linux") {
+		return true
+	}
+	for _, id := range append([]string{osID}, telemetry.OSLike...) {
+		switch strings.ToLower(strings.TrimSpace(id)) {
+		case "almalinux", "alpine", "amzn", "amazon", "arch", "centos", "debian", "fedora",
+			"gentoo", "kali", "linuxmint", "manjaro", "nixos", "ol", "opensuse", "oracle",
+			"rhel", "rocky", "sles", "slackware", "suse", "ubuntu", "void":
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) lightControlAllowed(hostID, _ string) bool {

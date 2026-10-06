@@ -227,8 +227,6 @@ Ed25519 签名。新前端调用 `/api/v1/cluster/pairing-codes/v2`，不会把�
 
 ### 3.3 轻量节点（遥测 `light-v1`，终端复用 v2 Noise）
 
-Windows 轻量节点已从 `v1.25.0-rc.7` 撤下。中心拒绝新的 Windows 单台/批量接入；RC2–RC6 留存的 Windows 节点记录显示为离线，并且不会开放终端、文件、桌面、历史或遥测管理。历史设计见[归档文档](archive/windows-light-node-design-rc2-rc6.md)，已发布 RC 验收记录保持不变。
-
 管理员在“集群 → 添加主机 → 非面板 Linux 主机”生成一次性命令：
 
 ```bash

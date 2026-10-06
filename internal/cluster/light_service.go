@@ -146,7 +146,7 @@ func (s *Service) EnrollLightNodeAtOrigin(
 	if err != nil {
 		return LightEnrollResponse{}, ErrPairingCode
 	}
-	if len(s.store.Hosts())+len(s.storeV2.Hosts())+len(s.light.Hosts()) >= MaxHosts {
+	if len(s.store.Hosts())+len(s.storeV2.Hosts())+supportedLightHostCount(s.light.Hosts()) >= MaxHosts {
 		return LightEnrollResponse{}, ErrHostLimit
 	}
 	nodeID := wire.ID
@@ -196,9 +196,6 @@ func (s *Service) AcceptLightReport(auth LightReportAuth, rawBody []byte, input 
 	}
 	if err := validateLightPlatform(input); err != nil {
 		return LightReportResponse{}, err
-	}
-	if record.LastSnapshot != nil && !lightNodePlatformSupported(record) {
-		return LightReportResponse{}, ErrLightPlatformUnsupported
 	}
 	if err := validateLightPlatformChoice(record.Platform); err != nil {
 		return LightReportResponse{}, err
@@ -273,7 +270,7 @@ func (s *Service) authenticateLightRequest(
 		return lightHostRecord{}, nil, ErrAuthentication
 	}
 	record, err := s.light.Host(auth.NodeID)
-	if err != nil {
+	if err != nil || !lightNodePlatformSupported(record) {
 		return lightHostRecord{}, nil, ErrAuthentication
 	}
 	timestamp, err := strconv.ParseInt(auth.Timestamp, 10, 64)

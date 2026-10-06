@@ -82,12 +82,3 @@ KPanel 只接受以下两种规范版本，所有数字段禁止前导零且不�
 Latest/prerelease 状态、版本镜像和通道标签 digest、候选分支处置、自更新通道用例及生产适用性。
 可执行发布步骤以 `.codex-workflows/release-kpanel.workflow.yaml` 为准，验收结构以
 `docs/release-acceptance-template.md` 为准。
-
-### 5.1 Windows 节点功能撤下
-
-`v1.25.0-rc.7` 起，KPanel 不接入或管理 Windows 轻量节点，不发布 Windows 节点/安装器附件，Release
-工作流也不再依赖 Windows Runner。RC2–RC6 的 Tag、Release、资产与验收记录均为历史事实并保持不变；
-该 RC 将旧 Windows 节点记录呈现为离线，并拒绝终端、桌面、文件、历史与遥测管理请求。
-
-恢复 Windows 节点支持前，必须重新评估完整用户旅程、发布物、安装更新安全、支持矩阵与真实 Windows
-验收；历史设计见[归档文档](archive/windows-light-node-design-rc2-rc6.md)。

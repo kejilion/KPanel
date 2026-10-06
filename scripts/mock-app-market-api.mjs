@@ -1392,6 +1392,12 @@ function send(response, status, body) {
   response.end(data)
 }
 
+function hasOnlyObjectKeys(value, keys) {
+  if (value === null) return true
+  if (typeof value !== 'object' || Array.isArray(value)) return false
+  return Object.keys(value).every((key) => keys.has(key))
+}
+
 function sendBinary(response, status, body, contentType, disposition = 'inline') {
   response.writeHead(status, {
     'Content-Type': contentType,
@@ -2637,9 +2643,13 @@ createServer(async (request, response) => {
     return
   }
   if (request.method === 'POST' && url.pathname === '/api/v1/cluster/light-enrollments') {
-    const input = await readJSON(request)
-    if (input.platform === 'windows' || input.enableDesktop) {
-      send(response, 410, { title: 'Windows light nodes are unavailable in this preview', code: 'cluster_light_platform_unsupported' })
+    const input = (await readJSON(request)) ?? {}
+    if (!hasOnlyObjectKeys(input, new Set(['platform', 'token', 'name', 'nodeVersion', 'terminalPublicKey', 'attemptId']))) {
+      send(response, 400, { title: '请求参数无效', code: 'invalid_json' })
+      return
+    }
+    if (input.platform && input.platform !== 'linux') {
+      send(response, 400, { title: '轻量节点平台不受支持', code: 'cluster_light_platform_unsupported' })
       return
     }
     send(response, 201, {
@@ -2654,9 +2664,9 @@ createServer(async (request, response) => {
     return
   }
   if (request.method === 'POST' && url.pathname === '/api/v1/cluster/light-batch-enrollments') {
-    const input = await readJSON(request)
-    if (input.platform === 'windows' || input.enableDesktop) {
-      send(response, 410, { title: 'Windows light nodes are unavailable in this preview', code: 'cluster_light_platform_unsupported' })
+    const input = (await readJSON(request)) ?? {}
+    if (!hasOnlyObjectKeys(input, new Set(['namePrefix', 'maxUses', 'expiresInSeconds']))) {
+      send(response, 400, { title: '请求参数无效', code: 'invalid_json' })
       return
     }
     const maxUses = Number(input.maxUses || 100)

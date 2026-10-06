@@ -167,7 +167,7 @@ func (s *Service) addHostV2Locked(
 	}
 	legacy := s.store.Hosts()
 	records := s.storeV2.Hosts()
-	if len(legacy)+len(records)+len(s.light.Hosts()) >= MaxHosts {
+	if len(legacy)+len(records)+supportedLightHostCount(s.light.Hosts()) >= MaxHosts {
 		return Host{}, ErrHostLimit
 	}
 	for _, record := range legacy {
@@ -765,7 +765,7 @@ func (s *Service) handleFileRelayV2(
 ) (FederationEnvelopeV2, error) {
 	record, err := s.light.Host(envelope.ControllerID)
 	if err == nil {
-		if s.lightFile == nil {
+		if !lightNodePlatformSupported(record) || s.lightFile == nil {
 			return FederationEnvelopeV2{}, ErrAuthentication
 		}
 		filePublicKey, keyErr := s.light.ReadTerminalPublicKey(record)
@@ -834,6 +834,9 @@ func (s *Service) handleTerminalRelayV2(
 ) (FederationEnvelopeV2, error) {
 	record, err := s.light.Host(envelope.ControllerID)
 	if err != nil || s.lightTerminal == nil {
+		return FederationEnvelopeV2{}, ErrAuthentication
+	}
+	if !lightNodePlatformSupported(record) {
 		return FederationEnvelopeV2{}, ErrAuthentication
 	}
 	terminalPublicKey, err := s.light.ReadTerminalPublicKey(record)
