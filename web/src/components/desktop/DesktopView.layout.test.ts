@@ -915,7 +915,41 @@ describe('DesktopView icon layout interaction', () => {
     await flushPromises()
     expect(wrapper.find('.desktop-folder [role="dialog"]').exists()).toBe(false)
     expect(document.activeElement).toBe(tile.element)
+
+    // Launching a member closes the sheet before the window opens.
+    await tile.trigger('click')
+    await flushPromises()
+    await wrapper.get('.desktop-folder__grid .desktop__icon[aria-label="终端"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.desktop-folder [role="dialog"]').exists()).toBe(false)
+    expect(useDesktopMode().windows.value.map(windowState => windowState.path)).toEqual(['/terminal'])
     expect(updateWorkspace).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('turns one compact page per vertical wheel notch', async () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 320 })
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 568 })
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await flushPromises()
+    const current = () => wrapper.findAll('.desktop__pager-dot').findIndex(dot => dot.attributes('aria-current') === 'page')
+    const grid = wrapper.get('.desktop__icons').element
+    const wheel = (deltaY: number, deltaX = 0) => {
+      const event = new WheelEvent('wheel', { deltaX, deltaY, bubbles: true, cancelable: true })
+      grid.dispatchEvent(event)
+      return event
+    }
+
+    expect(current()).toBe(0)
+    expect(wheel(120).defaultPrevented).toBe(true)
+    await flushPromises()
+    expect(current()).toBe(1)
+    // A burst of notches within the throttle window turns only one page.
+    wheel(120)
+    await flushPromises()
+    expect(current()).toBe(1)
+    // Horizontal trackpad gestures stay with native snapping.
+    expect(wheel(10, 80).defaultPrevented).toBe(false)
     wrapper.unmount()
   })
 
