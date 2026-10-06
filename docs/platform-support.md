@@ -20,11 +20,11 @@ Rocky 等系统分别制作 Panel 镜像。
 的真实服务器验收。进入正式支持层级前，必须在干净实例上完成安装、更新、清理、
 重启恢复和回滚演练。
 
-## Windows 轻量节点候选
+## Windows 轻量节点
 
-Windows 仅适配 `kejilion-node`，不提供 Windows Panel/Agent 或 Linux 网站/Docker/系统管理能力。完整候选含原生遥测、健康与服务探测、校验和安装/更新/回滚/卸载、ConPTY PowerShell/批量执行、多固定卷文件与图库、历史采样、远程登录事件和可选 RDP。支持目标、实际能力与尚未验收的首批矩阵以 [Windows 轻量节点设计](windows-light-node-design.md) 第 3、21、23 节为准。
+Windows 轻量节点在 `v1.25.0-rc.2` 至 `rc.6` 作为预览功能发布；从 `v1.25.0-rc.7` 起撤下接入和所有派生管理能力，不属于当前支持范围。升级后，既有 Windows 节点记录保留但强制离线，不能重新接入、执行终端/RDP、管理文件或读取节点历史；Linux Panel、Agent 与轻量节点行为不变。
 
-RC3 以未签名预览附件供主动选择测试；原生实机验收由用户后续承担（owner-deferred/尚未验证），不能将单元测试或交叉构建等同于真实安装/更新/RDP 登录通过。Server 2016 没有 ConPTY，不声明终端；Windows 家庭版没有 RDP 被控端。Windows 负载均值和 Docker 指标显示不可用，文件不提供 POSIX chmod/属主操作。
+完整历史设计和准入限制见[归档设计](archive/windows-light-node-design-rc2-rc6.md)，不可变的 RC2–RC6 验收记录保持原样。历史发行附件不代表新版本仍支持 Windows 节点。
 
 ## 功能差异
 

@@ -1,15 +1,16 @@
 # KPanel Windows 轻量节点与远程桌面设计
 
-- 状态：已形成本地实现候选；原提案 `b4e84aac`，实现基线 `52cc6436`，候选分支 `feature/windows-light-node`；实机与发布验收待执行，未发布
+- 归档状态：历史设计。Windows 节点仅在 `v1.25.0-rc.2` 至 `rc.6` 作为预览能力发布；从 `rc.7` 候选起已撤下接入及衍生功能。本文件与 RC2–RC6 验收记录用于历史追溯，不代表当前支持承诺。
+- 历史状态：曾形成本地实现候选；原提案 `b4e84aac`，实现基线 `52cc6436`，候选分支 `feature/windows-light-node`；真机准入未完成
 - 范围：`kejilion-node` 的 Windows 平台适配（遥测、健康、安装/更新/卸载、终端与批量执行、文件管理、
   登录事件、服务探测），以及可选的 Windows 远程桌面（第 13 节，P4）
 - 非目标：Windows 版 Panel/Agent；结构化 Windows 系统管理（服务、更新、防火墙配置）；自研屏幕采集；
   Windows 家庭版远程桌面；通用 TCP 端口转发
-- 业务真源：Windows 宿主机实时状态（Win32 API、服务控制管理器、事件日志、文件系统）。中心只缓存最新快照，
+- 历史业务真源：Windows 宿主机实时状态（Win32 API、服务控制管理器、事件日志、文件系统）。中心只缓存最新快照，
   与 Linux 轻量节点相同
-- 关联契约：[集群监控 §3.3](cluster-monitoring.md)、[多主机终端](multi-host-terminal.md)、
-  [终端与文件传输 v3](terminal-file-transport-v3.md)、[历史监控](history-monitoring-design.md)、
-  [平台支持](platform-support.md)
+- 历史关联契约：[集群监控 §3.3](../cluster-monitoring.md)、[多主机终端](../multi-host-terminal.md)、
+  [终端与文件传输 v3](../terminal-file-transport-v3.md)、[历史监控](../history-monitoring-design.md)、
+  [平台支持](../platform-support.md)
 
 本文区分三类内容：**原提案基线事实**（第 2 节，附命令、版本或代码位置，不代表新实现状态）、
 **设计决定**（第 3–19 节）和 **发布前置事项/未验证风险**（第 23–24 节）。实机矩阵与性能预算是验收目标，

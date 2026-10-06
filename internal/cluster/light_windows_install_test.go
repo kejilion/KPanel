@@ -2,99 +2,58 @@ package cluster
 
 import (
 	"errors"
-	"os/exec"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
 )
 
-func TestWindowsEnrollmentCommandPinsAndVerifiesBeforeExecution(t *testing.T) {
-	s := &Service{panelVersion: "1.25.0-rc.3"}
-	command, err := s.lightEnrollmentCommand("windows", "kpl1.test", "one'; $(Write-Error 'bad')")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	for _, expected := range []string{
-		powershellSingleQuote("https://github.com/kejilion/KPanel/releases/download/v1.25.0-rc.3/bootstrap-windows.ps1"),
-		"Assert-BootstrapDirectory $parent.FullName $true", "Assert-BootstrapDirectory $stage $false",
-		"O:BAG:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)", "262144", "Get-FileHash -LiteralPath $bootstrap", windowsBootstrapScriptSHA256(),
-		"-Version " + powershellSingleQuote("v1.25.0-rc.3"), "-Name " + powershellSingleQuote("one'; $(Write-Error 'bad')"), "GetFolderPath('ProgramFiles')",
+func TestWindowsLightNodeAndDesktopPathsAreRemoved(t *testing.T) {
+	s := newLightServiceForTest(t, &serviceTestClock{now: time.Now().UTC()})
+	for name, action := range map[string]func() error{
+		"single Windows platform": func() error { return validateLightPlatformChoice("windows", false) },
+		"single desktop opt-in":   func() error { return validateLightPlatformChoice("linux", true) },
+		"batch Windows platform": func() error {
+			_, err := s.CreateLightBatchEnrollment(CreateLightBatchEnrollmentInput{Platform: "windows"})
+			return err
+		},
+		"batch desktop opt-in": func() error {
+			_, err := s.CreateLightBatchEnrollment(CreateLightBatchEnrollmentInput{EnableDesktop: true})
+			return err
+		},
+		"single Windows enrollment": func() error {
+			_, err := s.EnrollLightNode("198.51.100.1", LightEnrollRequest{Platform: "windows"})
+			return err
+		},
+		"batch Windows enrollment": func() error {
+			_, _, err := s.EnrollLightNodeBatch("198.51.100.1", s.publicURL,
+				LightEnrollRequest{Platform: "windows", AttemptID: strings.Repeat("a", 32)})
+			return err
+		},
+		"Windows report": func() error {
+			return validateLightPlatform(LightReportRequest{Platform: "windows"})
+		},
 	} {
-		if !strings.Contains(command, expected) {
-			t.Errorf("missing %q", expected)
-		}
+		t.Run(name, func(t *testing.T) {
+			if err := action(); !errors.Is(err, ErrLightPlatformUnsupported) {
+				t.Fatalf("withdrawn feature was not rejected: %v", err)
+			}
+		})
 	}
-	if strings.ContainsAny(command, "\r\n") || strings.Contains(command, "Invoke-Expression") || strings.Contains(command, "Authenticode") || strings.Contains(command, "-Publisher") || strings.Contains(command, "install-windows.ps1") || strings.Contains(command, "SHA256SUMS") || strings.Contains(command, "-ExecutionPolicy") || !strings.Contains(command, "& $bootstrap -Version ") || strings.Contains(command, " -Token ") || strings.Index(command, "Get-FileHash") > strings.Index(command, "& $bootstrap") {
-		t.Fatal("bootstrap must be one line and verify before execution")
-	}
-	for _, invalid := range []string{"dev", "01.2.3", "1.2.3-rc.0", "1.2.3-dev", "1000000.2.3", "1.2.3;whoami"} {
-		s.panelVersion = invalid
-		if _, err := s.lightEnrollmentCommand("windows", "", ""); !errors.Is(err, ErrWindowsInstallerUnavailable) {
-			t.Fatalf("invalid %q: %v", invalid, err)
-		}
-	}
-	if _, err := s.lightEnrollmentCommand("macos", "", ""); !errors.Is(err, ErrProtocolMismatch) {
-		t.Fatal(err)
-	}
-}
-
-func TestWindowsEnrollmentCannotConsumePolicyBeforeReleaseVersionAvailable(t *testing.T) {
-	now := time.Now().UTC()
-	s := newLightServiceForTest(t, &serviceTestClock{now: now})
-	s.panelVersion = "dev"
-	if _, err := s.CreateLightEnrollmentForPlatform(s.publicURL, "", "windows"); !errors.Is(err, ErrWindowsInstallerUnavailable) {
-		t.Fatal(err)
-	}
-	if _, err := s.CreateLightBatchEnrollment(CreateLightBatchEnrollmentInput{Platform: "windows"}); !errors.Is(err, ErrWindowsInstallerUnavailable) {
-		t.Fatal(err)
+	if err := validateLightPlatform(LightReportRequest{DesktopUnavailableReason: "unsupported"}); !errors.Is(err, ErrProtocolMismatch) {
+		t.Fatalf("legacy desktop report error = %v, want ErrProtocolMismatch", err)
 	}
 	if got := s.LightBatchEnrollments(); got.Total != 0 {
-		t.Fatal("failed generation left active policy")
-	}
-	s.panelVersion = "1.25.0-rc.3"
-	enrollment, err := s.CreateLightBatchEnrollment(CreateLightBatchEnrollmentInput{Platform: "windows"})
-	if err != nil || enrollment.Platform != "windows" || !strings.Contains(enrollment.Command, "$env:KPANEL_NODE_TOKEN=") {
-		t.Fatalf("%#v, %v", enrollment, err)
+		t.Fatalf("rejected Windows request left batch enrollment: %#v", got)
 	}
 }
 
-func TestWindowsDesktopEnrollmentRequiresExplicitOptIn(t *testing.T) {
+func TestLinuxLightNodeEnrollmentRemainsUnchanged(t *testing.T) {
 	s := newLightServiceForTest(t, &serviceTestClock{now: time.Now().UTC()})
-	s.panelVersion = "1.25.0-rc.3"
-	defaultCommand, err := s.lightEnrollmentCommand("windows", "kpl1.test", "")
-	if err != nil || strings.Contains(defaultCommand, "-EnableDesktop") {
-		t.Fatal("default enabled desktop", err)
+	command, err := s.lightEnrollmentCommand("kpl1.token", "linux node")
+	if err != nil || !strings.Contains(command, "kpanel node join 'kpl1.token'") || !strings.Contains(command, "--name 'linux node'") {
+		t.Fatalf("Linux command = %q, %v", command, err)
 	}
-	single, err := s.CreateLightEnrollmentWithDesktop(s.publicURL, "", "windows", true)
-	if err != nil || !strings.Contains(single.Command, "-EnableDesktop") {
-		t.Fatal("single did not opt in", err)
-	}
-	batch, err := s.CreateLightBatchEnrollment(CreateLightBatchEnrollmentInput{Platform: "windows", EnableDesktop: true})
-	if err != nil || !strings.Contains(batch.Command, "-EnableDesktop") {
-		t.Fatal("batch did not opt in", err)
-	}
-	if _, err := s.lightEnrollmentCommandWithDesktop("linux", "", "", true); !errors.Is(err, ErrProtocolMismatch) {
-		t.Fatal("Linux accepted desktop", err)
-	}
-}
-
-func TestWindowsBootstrapPowerShellSyntax(t *testing.T) {
-	if runtime.GOOS != "windows" {
-		t.Skip("PowerShell parser is exercised on native Windows CI")
-	}
-	command, err := (&Service{panelVersion: "1.25.0-rc.3"}).lightEnrollmentCommand("windows", "kpl1.dummy", "dummy name")
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Parse only: never execute an installer or mutate host services.
-	parser := "$tokens=$null;$errors=$null;$null=[Management.Automation.Language.Parser]::ParseInput([Console]::In.ReadToEnd(),[ref]$tokens,[ref]$errors);if($errors.Count){$errors|%{[Console]::Error.WriteLine($_.Message)};exit 1}"
-	for label, source := range map[string]string{"launcher": command, "bootstrap asset": string(windowsBootstrapScript)} {
-		cmd := exec.Command("pwsh", "-NoProfile", "-NonInteractive", "-Command", parser)
-		cmd.Stdin = strings.NewReader(source)
-		if output, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("%s PowerShell syntax: %v\n%s", label, err, output)
-		}
+	if err := validateLightPlatformChoice("macos", false); !errors.Is(err, ErrProtocolMismatch) {
+		t.Fatalf("unknown platform error = %v", err)
 	}
 }

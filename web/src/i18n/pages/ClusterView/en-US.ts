@@ -1,16 +1,8 @@
 import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
-  ["目标系统", "Target system"],
   ["重新生成", "Regenerate"],
-  ["启用管理员远程桌面（RDP），接入后自动登录","Enable administrator remote desktop (RDP) with automatic sign-in"],
-  ["支持的非域 Windows 将启用 RDP 并创建专用本地管理员，保留 UAC、NLA。已有防火墙规则可能允许其他授权账户从网络登录。域机器沿用已有 RDP 设置和账户。","Supported non-domain Windows enables RDP and creates a dedicated local administrator, preserving UAC and NLA. Existing firewall rules may also allow other authorized accounts to connect over the network. Domain machines retain their existing RDP settings and accounts."],
-  ["选择目标系统，生成一条可在多台主机上重复使用的接入命令。","Choose the target system to generate an enrollment command for multiple hosts."],
-  ["Windows 安装包签名尚未配置，暂时无法生成接入命令。","Windows package signing is not configured. Enrollment commands are currently unavailable."],
-  ["Windows 主机","Windows host"],
-  ["在管理员 PowerShell 执行一行命令，自动安装并接入。加入域的主机默认仅监控；远程桌面需单独启用。","Run one command in administrator PowerShell to install and enroll. Domain-joined hosts default to monitoring only; enable remote desktop separately."],
-  ["复制命令并在目标机的管理员 PowerShell 执行，首次上报后自动确认连接。","Copy and run the command in administrator PowerShell on the target. Connection is confirmed after its first report."],
-  ["命令只在本次生成后展示；复制后可在每台目标机的管理员 PowerShell 执行。","The command is shown only once. Copy it and run it in administrator PowerShell on each target."],
+  ["为多台 Linux 轻量节点生成一条可重复使用的接入命令。","Generate one reusable enrollment command for multiple Linux lightweight nodes."],
   ["查看通知记录", "View notification history"],
   ["更新与服务","Updates and services"],
   ["在线仅表示遥测连接正常，服务状态与可用权限分别判断。","Online indicates a telemetry connection. Service state and granted access are evaluated separately."],

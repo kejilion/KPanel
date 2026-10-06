@@ -90,16 +90,6 @@ async function seed() {
 
 await seed()
 
-// Explicit mock-only Windows volumes; reuse bundled media without touching a host.
-if (process.env.KPANEL_MOCK_WINDOWS_GALLERY === '1') {
-  for (const path of ['/', '/D', '/E', '/E/Pictures']) addDirectory(path)
-  for (const [path, node] of [...nodes]) {
-    if (path !== ROOT && !path.startsWith(`${ROOT}/`)) continue
-    const target = '/D/Pictures' + path.slice(ROOT.length)
-    nodes.set(target, { ...node, entry: { ...node.entry, path: target, name: target.slice(target.lastIndexOf('/') + 1) } })
-  }
-}
-
 /** Directory entries the generic mock should show at `/`. */
 export const mockGalleryRootEntries = [nodes.get('/home').entry]
 
@@ -188,11 +178,9 @@ function validName(name) {
   return typeof name === 'string' && name.trim() && !name.includes('/') && name !== '.' && name !== '..'
 }
 
-export async function mockGallery(request, response, url, send, readJSON, windowsHost = false) {
+export async function mockGallery(request, response, url, send, readJSON) {
   const path = url.searchParams.get('path')
-  const acceptsPath = windowsHost && process.env.KPANEL_MOCK_WINDOWS_GALLERY === '1'
-    ? (value) => typeof value === 'string' && (value === '/' || /^\/[DE](?:\/|$)/u.test(value))
-    : inScope
+  const acceptsPath = inScope
   if (request.method === 'GET' && url.pathname === '/api/v1/files' && acceptsPath(path)) {
     if (!nodes.has(path)) {
       send(response, 404, { title: '文件不存在', status: 404, code: 'not_found' })
@@ -254,7 +242,7 @@ export async function mockGallery(request, response, url, send, readJSON, window
       return true
     }
     send(response, 200, {
-      downloadUrl: `/api/v1/files/content?path=${encodeURIComponent(input.path)}&disposition=attachment${windowsHost ? `&hostId=${encodeURIComponent(url.searchParams.get('hostId') || '')}` : ''}`,
+      downloadUrl: `/api/v1/files/content?path=${encodeURIComponent(input.path)}&disposition=attachment`,
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
     })
     return true

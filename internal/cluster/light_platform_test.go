@@ -29,7 +29,9 @@ func TestLightCapabilityProbeIsAuthenticatedReadOnlyAndReplaySafe(t *testing.T) 
 		t.Fatalf("cross-endpoint signature accepted: %v", err)
 	}
 	response, err := s.ProbeLightCapabilities(auth, body)
-	if err != nil || !slices.Contains(response.Capabilities, WindowsNodeCapability) {
+	if err != nil || slices.Contains(response.Capabilities, "windows-node-v1") ||
+		slices.Contains(response.Capabilities, "desktop-v1") || slices.Contains(response.Capabilities, "desktop-managed-v1") ||
+		!slices.Contains(response.Capabilities, LightHealthCapability) {
 		t.Fatalf("probe = %#v, %v", response, err)
 	}
 	if _, err := s.ProbeLightCapabilities(auth, body); !errors.Is(err, ErrReplay) {
@@ -42,14 +44,15 @@ func TestLightCapabilityProbeIsAuthenticatedReadOnlyAndReplaySafe(t *testing.T) 
 	}
 }
 
-func TestWindowsMetadataDoesNotChangePersistedSnapshotAndRequiresFreshCapabilities(t *testing.T) {
+func TestWindowsHostIsListedOfflineWithoutDerivedCapabilities(t *testing.T) {
 	now := time.Now().UTC()
 	snapshot := HostSnapshot{Platform: "windows", ReceivedAt: now,
 		UnavailableMetrics: []string{"load"}, NodeCapabilities: []string{"monitoring", "terminal", "files"},
 		Telemetry: contract.HostTelemetry{OSID: "windows"}}
 	record := lightHostRecord{LastSnapshot: &snapshot}
 	host := publicLightHostWithCapabilities(record, now, true, true)
-	if host.Platform != "windows" || host.TerminalShell != "powershell" || !host.TerminalAvailable || !host.FileManagementAvailable {
+	if host.Platform != "windows" || host.State != HostOffline || host.TerminalAvailable || host.FileManagementAvailable ||
+		host.LastSnapshot != nil || host.LightHealth != nil {
 		t.Fatalf("fresh Windows host = %#v", host)
 	}
 	copy := cloneSnapshot(&snapshot)
@@ -68,35 +71,47 @@ func TestWindowsMetadataDoesNotChangePersistedSnapshotAndRequiresFreshCapabiliti
 	}
 	record.LastSnapshot = &restarted
 	host = publicLightHostWithCapabilities(record, now, true, true)
-	if host.Platform != "windows" || host.TerminalAvailable || host.FileManagementAvailable || !slices.Contains(host.UnavailableMetrics, "load") {
+	if host.Platform != "windows" || host.State != HostOffline || host.TerminalAvailable || host.FileManagementAvailable ||
+		host.TerminalShell != "" || host.PathStyle != "" || host.LastSnapshot != nil || len(host.UnavailableMetrics) != 0 {
 		t.Fatalf("restart must retain display but fail closed: %#v", host)
 	}
 	record.LastSnapshot = &snapshot
-	if lightPlatformAllows(record, "terminal", now.Add(91*time.Second)) {
-		t.Fatal("stale capability accepted")
+	for _, capability := range []string{"terminal", "files", "desktop", "desktop-managed"} {
+		if lightPlatformAllows(record, capability, now) {
+			t.Fatalf("withdrawn Windows capability %q accepted", capability)
+		}
 	}
 }
 
-func TestWindowsReportMetadataValidation(t *testing.T) {
-	valid := LightReportRequest{Platform: "windows", Telemetry: contract.HostTelemetry{OSID: "windows"},
+func TestWindowsReportMetadataIsRejectedButLegacyLinuxRemainsAccepted(t *testing.T) {
+	windows := LightReportRequest{Platform: "windows", Telemetry: contract.HostTelemetry{OSID: "windows"},
 		UnavailableMetrics: []string{"load"}, Capabilities: []string{"monitoring", "terminal"}}
-	if err := validateLightPlatform(valid); err != nil {
-		t.Fatal(err)
+	if err := validateLightPlatform(windows); !errors.Is(err, ErrLightPlatformUnsupported) {
+		t.Fatalf("Windows report = %v", err)
 	}
-	for _, mutate := range []func(*LightReportRequest){
-		func(v *LightReportRequest) { v.UnavailableMetrics = nil },
-		func(v *LightReportRequest) { v.Capabilities = []string{"root"} },
-		func(v *LightReportRequest) { v.Capabilities = []string{"terminal", "terminal"} },
-		func(v *LightReportRequest) { v.Platform = "" },
-		func(v *LightReportRequest) { v.Telemetry.OSID = "linux" },
-	} {
-		input := valid
-		mutate(&input)
-		if validateLightPlatform(input) == nil {
-			t.Fatalf("invalid metadata accepted: %#v", input)
-		}
+	windows.Platform = ""
+	if err := validateLightPlatform(windows); !errors.Is(err, ErrLightPlatformUnsupported) {
+		t.Fatalf("Windows report without platform marker = %v", err)
 	}
 	if err := validateLightPlatform(LightReportRequest{Telemetry: contract.HostTelemetry{OSID: "debian"}}); err != nil {
 		t.Fatalf("legacy Linux rejected: %v", err)
+	}
+}
+
+func TestUnknownLightPlatformFailsClosedUntilFirstSnapshot(t *testing.T) {
+	now := time.Now().UTC()
+	unknown := lightHostRecord{}
+	for _, capability := range []string{"terminal", "files", "desktop", "desktop-managed"} {
+		if lightPlatformAllows(unknown, capability, now) {
+			t.Fatalf("unknown platform capability %q was allowed", capability)
+		}
+	}
+	host := publicLightHostWithCapabilities(unknown, now, true, true)
+	if host.Platform != "unknown" || host.State != HostOffline || host.TerminalAvailable || host.FileManagementAvailable {
+		t.Fatalf("unknown host projection = %#v", host)
+	}
+	linux := lightHostRecord{LastSnapshot: &HostSnapshot{Platform: "linux", Telemetry: contract.HostTelemetry{OSID: "debian"}}}
+	if !lightPlatformAllows(linux, "terminal", now) {
+		t.Fatal("a reported Linux platform remained blocked")
 	}
 }

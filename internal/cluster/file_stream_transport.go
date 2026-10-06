@@ -16,20 +16,18 @@ import (
 )
 
 type fileStreamHub struct {
-	mu                 sync.Mutex
-	ctx                context.Context
-	stop               context.CancelFunc
-	connections        map[*fileStreamConn]string
-	controls           map[string]*fileStreamControl
-	streamNodes        map[string]bool
-	pending            map[string]*fileStreamPending
-	requests           map[*fileStreamLease]string
-	preauth            chan struct{}
-	sockets            *fileStreamLimiter
-	limits             *fileStreamLimits
-	terminalControls   map[string]*fileStreamControl
-	desktopControls    map[string]*fileStreamControl
-	desktopConnections map[*fileStreamConn]string
+	mu               sync.Mutex
+	ctx              context.Context
+	stop             context.CancelFunc
+	connections      map[*fileStreamConn]string
+	controls         map[string]*fileStreamControl
+	streamNodes      map[string]bool
+	pending          map[string]*fileStreamPending
+	requests         map[*fileStreamLease]string
+	preauth          chan struct{}
+	sockets          *fileStreamLimiter
+	limits           *fileStreamLimits
+	terminalControls map[string]*fileStreamControl
 }
 
 type fileStreamLease struct {
@@ -53,7 +51,7 @@ func newFileStreamHub() *fileStreamHub {
 	return &fileStreamHub{ctx: ctx, stop: stop, connections: make(map[*fileStreamConn]string),
 		controls: make(map[string]*fileStreamControl), streamNodes: make(map[string]bool), pending: make(map[string]*fileStreamPending),
 		requests: make(map[*fileStreamLease]string), preauth: make(chan struct{}, 64),
-		sockets: newFileStreamLimiter(128, 16), limits: newFileStreamLimits(), terminalControls: make(map[string]*fileStreamControl), desktopControls: make(map[string]*fileStreamControl)}
+		sockets: newFileStreamLimiter(128, 16), limits: newFileStreamLimits(), terminalControls: make(map[string]*fileStreamControl)}
 }
 
 func (h *fileStreamHub) closePeer(peer string) {
@@ -281,18 +279,11 @@ func (s *Service) ServeFileStream(w http.ResponseWriter, r *http.Request, source
 	c := newFileStreamConn(h.ctx, ws, tx, rx)
 	defer func() { result.Completed = c.completed.Load(); result.StatusCode = int(c.responseStatus.Load()) }()
 	h.connections[c] = owner
-	if hello.Role == streamRoleLightDesktopControl || hello.Role == streamRoleLightDesktopData {
-		if h.desktopConnections == nil {
-			h.desktopConnections = make(map[*fileStreamConn]string)
-		}
-		h.desktopConnections[c] = envelope.ControllerID
-	}
 	h.mu.Unlock()
 	defer func() {
 		c.close()
 		h.mu.Lock()
 		delete(h.connections, c)
-		delete(h.desktopConnections, c)
 		h.mu.Unlock()
 	}()
 	if err := ws.Write(ctx, websocket.MessageBinary, message); err != nil {
@@ -305,15 +296,10 @@ func (s *Service) ServeFileStream(w http.ResponseWriter, r *http.Request, source
 		h.serveControl(c, envelope.ControllerID, envelope.RequestID, "light-control")
 	case streamRoleLightTerminalControl:
 		h.serveControl(c, envelope.ControllerID, envelope.RequestID, streamRoleLightTerminalControl)
-	case streamRoleLightDesktopControl:
-		h.serveControl(c, envelope.ControllerID, envelope.RequestID, streamRoleLightDesktopControl)
-	case "light-data", streamRoleLightTerminalData, streamRoleLightDesktopData:
+	case "light-data", streamRoleLightTerminalData:
 		controls := h.controls
 		if hello.Role == streamRoleLightTerminalData {
 			controls = h.terminalControls
-		}
-		if hello.Role == streamRoleLightDesktopData {
-			controls = h.desktopControls
 		}
 		h.mu.Lock()
 		pending := h.pending[hello.RequestID]
@@ -323,10 +309,6 @@ func (s *Service) ServeFileStream(w http.ResponseWriter, r *http.Request, source
 			return
 		}
 		delete(h.pending, hello.RequestID)
-		if hello.Role == streamRoleLightDesktopData {
-			stopWithControl := context.AfterFunc(pending.control.conn.ctx, c.close)
-			defer stopWithControl()
-		}
 		pending.ready <- c
 		h.mu.Unlock()
 		<-c.ctx.Done()
@@ -476,17 +458,10 @@ func (s *Service) authorizeFileStream(envelope v2Envelope) (fileStreamHello, *no
 		if !s.lightControlAllowed(envelope.ControllerID, capability) {
 			return fail()
 		}
-	case streamRoleLightDesktopControl, streamRoleLightDesktopData:
-		node, err := s.light.Host(envelope.ControllerID)
-		// Authorization and socket registration share the hub lock with the
-		// revocation sweep, so delayed data/control handshakes cannot escape it.
-		if panel || err != nil || !s.desktopAllowed(envelope.ControllerID) || !lightHostIsWindows(node) || !lightPlatformAllows(node, "desktop", now) {
-			return fail()
-		}
 	default:
 		return fail()
 	}
-	if hello.Role == "light-data" || hello.Role == streamRoleLightTerminalData || hello.Role == streamRoleLightDesktopData {
+	if hello.Role == "light-data" || hello.Role == streamRoleLightTerminalData {
 		if !validID(hello.RequestID) || !validID(hello.Generation) {
 			return fail()
 		}
@@ -507,9 +482,6 @@ func (h *fileStreamHub) serveControl(c *fileStreamConn, node, generation, role s
 	controls := h.controls
 	if role == streamRoleLightTerminalControl {
 		controls = h.terminalControls
-	}
-	if role == streamRoleLightDesktopControl {
-		controls = h.desktopControls
 	}
 	h.mu.Lock()
 	if c.ctx.Err() != nil {

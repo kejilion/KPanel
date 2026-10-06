@@ -49,8 +49,6 @@ func runFileBroker(arguments []string) error {
 	}
 	ctx, stop := nodeSignalContext()
 	defer stop()
-	stopWindowsHealth := startPlatformHealthPublisher(ctx)
-	defer stopWindowsHealth()
 	stopProcdHealth := startNodeProcdHealth(ctx)
 	defer stopProcdHealth()
 	stateDir, err := nodeStateDirectory("/")
@@ -63,12 +61,6 @@ func runFileBroker(arguments []string) error {
 	for {
 		// Local sampling must survive an offline center during boot. Remote
 		// identity provisioning and each subsequent connection still fail closed.
-		if err := requireWindowsCapability(ctx, config, "files"); err != nil {
-			if !waitContext(ctx, time.Minute) {
-				return nil
-			}
-			continue
-		}
 		updated, relayIdentity, capabilityErr := ensureFileCapability(ctx, *configPath, config, secret, *fileConfigPath)
 		if capabilityErr == nil {
 			config, identity = updated, relayIdentity
@@ -107,12 +99,6 @@ func runFileBroker(arguments []string) error {
 	fileHandler := agent.NewFileHandler(manager)
 	backoff := time.Second
 	for ctx.Err() == nil {
-		if err := requireWindowsCapability(ctx, config, "files"); err != nil {
-			if !waitContext(ctx, time.Minute) {
-				break
-			}
-			continue
-		}
 		streamErr := relay.RunFileStream(ctx, config.Origin, config.NodeID, config.TargetNodeID, identity.Key, identity.Peer, fileHandler)
 		if errors.Is(streamErr, cluster.ErrFileStreamUnsupported) {
 			// Compatibility is selected before any file action. Keep this mode for

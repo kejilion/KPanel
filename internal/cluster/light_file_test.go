@@ -32,6 +32,7 @@ func TestFileRelayUsesV2NoiseAndEnablesCapabilityOnlyAfterAuthentication(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
+	reportLinuxLightHostForTest(t, service, response, now)
 	peer, err := decodeTerminalRelayPublicKey(response.TerminalPeerPublicKey)
 	if err != nil || response.TargetNodeID == "" {
 		t.Fatalf("invalid file relay enrollment response: %#v, %v", response, err)

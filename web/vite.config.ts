@@ -1,11 +1,9 @@
 import { fileURLToPath, URL } from 'node:url'
 import vue from '@vitejs/plugin-vue'
 import { defineConfig } from 'vitest/config'
-import { ironRdpWasm } from './scripts/ironrdp-wasm-plugin'
 
 export default defineConfig({
-  plugins: [ironRdpWasm(), vue()],
-  optimizeDeps: { exclude: ['@devolutions/iron-remote-desktop-rdp'] },
+  plugins: [vue()],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),

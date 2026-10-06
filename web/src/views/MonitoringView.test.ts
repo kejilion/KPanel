@@ -47,15 +47,15 @@ async function selectHost(view: VueWrapper, id: string) {
 }
 
 describe('monitoring host selection', () => {
-  it('queries the Windows host and disables unavailable metrics without leaking them into Linux', async () => {
-    const windows = history(35)
-    windows.unavailableMetrics = ['load', 'swap', 'diskIO', 'networkConnections']
+  it('queries a remote host and disables unavailable metrics without leaking them into the local view', async () => {
+    const remoteHistory = history(35)
+    remoteHistory.unavailableMetrics = ['load', 'swap', 'diskIO', 'networkConnections']
     mocks.hosts.mockResolvedValue({ items: [
       { id: 'local', isLocal: true, name: '本机', state: 'online' },
-      { id: a, isLocal: false, name: 'Windows', kind: 'light_node', state: 'online', platform: 'windows', unavailableMetrics: windows.unavailableMetrics },
+      { id: a, isLocal: false, name: '远端节点', kind: 'light_node', state: 'online', platform: 'linux', unavailableMetrics: remoteHistory.unavailableMetrics },
     ] })
     const { wrapper: view } = await mountAt()
-    mocks.history.mockResolvedValue(windows)
+    mocks.history.mockResolvedValue(remoteHistory)
     await selectHost(view, a)
     expect(mocks.history.mock.calls.at(-1)?.[3]).toBe(a)
     expect(view.text()).toContain('此系统不提供负载均值')

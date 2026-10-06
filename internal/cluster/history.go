@@ -106,8 +106,12 @@ func (s *Service) readHistory(ctx context.Context, id, requestedRange string, st
 
 func (s *Service) openHistory(ctx context.Context, host Host, query monitoring.Query) (*http.Response, error) {
 	if host.Kind == HostKindLightNode {
-		if _, err := s.light.Host(host.ID); err != nil {
+		record, err := s.light.Host(host.ID)
+		if err != nil {
 			return nil, ErrNotFound
+		}
+		if lightHostIsWindows(record) {
+			return nil, ErrHistoryUnsupported
 		}
 		if !s.lightHistory.available(host.ID) {
 			return nil, ErrHistoryUnavailable

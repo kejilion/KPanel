@@ -30,7 +30,6 @@ import (
 	"github.com/kejilion/kejilion-panel/internal/backupremote"
 	"github.com/kejilion/kejilion-panel/internal/cluster"
 	"github.com/kejilion/kejilion-panel/internal/contract"
-	"github.com/kejilion/kejilion-panel/internal/desktopcredentials"
 	"github.com/kejilion/kejilion-panel/internal/desktopwallpapers"
 	"github.com/kejilion/kejilion-panel/internal/desktopworkspace"
 	"github.com/kejilion/kejilion-panel/internal/dockerx"
@@ -98,9 +97,6 @@ type Server struct {
 	fileShareMetadataGate   chan struct{}
 	terminalMu              sync.Mutex
 	terminalSessions        map[string]panelTerminalSession
-	desktopSessionMu        sync.Mutex
-	desktopSessions         map[string]*panelDesktopSession
-	desktopCredentials      *desktopcredentials.Store
 	terminalOpening         int
 	terminalOpeningUser     map[string]int
 	terminalStreams         *terminalStreamHub
@@ -261,9 +257,6 @@ func NewServer(config Config, authService *auth.Service, storage *store.Store, a
 	}
 	server.hostOps = newHostOperationService(server)
 	server.mcp = newMCPService(config.DataDir)
-	// An unreadable credential vault disables saved RDP logins, not Panel or
-	// explicit per-session RDP authentication. Never recreate a missing key.
-	server.desktopCredentials, _ = desktopcredentials.Open(filepath.Join(config.DataDir, "desktop-credentials"))
 	server.cluster.SetManagedOperationHandler(server.handleManagedClusterOperation, func() bool { access := server.mcp.access.Snapshot(); return access.Available && access.Enabled })
 	server.backups, err = backup.OpenManager(filepath.Join(config.DataDir, "backups"))
 	if err != nil {
@@ -460,8 +453,6 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/api/v1/terminal-sessions" ||
 		strings.HasPrefix(r.URL.Path, "/api/v1/terminal-sessions/"):
 		s.handleTerminalSession(w, r)
-	case r.URL.Path == desktopSessionsPath || strings.HasPrefix(r.URL.Path, desktopSessionsPath+"/"):
-		s.handleDesktopSession(w, r)
 	case strings.HasPrefix(r.URL.Path, jobTerminalInputPrefix):
 		s.handleJobTerminalInput(w, r)
 	case r.URL.Path == terminalStreamPath || r.URL.Path == terminalStreamSubscriptionsPath:

@@ -214,12 +214,10 @@ export interface ClusterHostSnapshot {
 }
 
 export interface ClusterHost {
-	platform?: 'linux' | 'windows'
-	terminalShell?: 'posix' | 'powershell'
-	pathStyle?: 'posix' | 'windows-volumes'
+	platform?: 'linux' | 'windows' | 'unknown'
+	terminalShell?: 'posix'
+	pathStyle?: 'posix'
 	unavailableMetrics?: string[]
-	desktopAvailable?: boolean
-	desktopUnavailableReason?: string
 	trafficPeriod?: ClusterTrafficPeriod
 	lightHealth?: LightNodeHealth
   id: string
@@ -472,14 +470,12 @@ export interface TerminalQuickCommandsUpdate {
 }
 
 export interface ClusterLightEnrollment {
-	platform?: 'linux' | 'windows'
   id: string
   command: string
   expiresAt: string
 }
 
 export interface ClusterLightBatchEnrollment {
-	platform?: 'linux' | 'windows'
   id: string
   command?: string
   namePrefix?: string

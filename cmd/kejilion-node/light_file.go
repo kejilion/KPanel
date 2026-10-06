@@ -73,13 +73,6 @@ func runLightFileControl(
 		if ctx.Err() != nil {
 			return
 		}
-		if err := requireWindowsCapability(ctx, config, "files"); err != nil {
-			control.resetSessions()
-			if !waitContext(ctx, time.Minute) {
-				return
-			}
-			continue
-		}
 		events, _ := control.collectEvents()
 		response, err := relay.PollV2(
 			ctx, config.Origin, config.NodeID, config.TargetNodeID,

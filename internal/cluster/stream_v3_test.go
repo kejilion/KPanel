@@ -324,6 +324,7 @@ func TestLightTerminalStreamRunsOverControlConnection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	reportLinuxLightHostForTest(t, f.service, enrolled, time.Now().UTC())
 	peer, _ := decodeTerminalRelayPublicKey(enrolled.TerminalPeerPublicKey)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

@@ -61,7 +61,7 @@ KPanel 只接受以下两种规范版本，所有数字段禁止前导零且不�
 - 更新前冷备份 Panel 与 Agent 数据；失败按既有事务恢复原版本和数据，并隔离失败的版本/digest。
 - 完整 KPanel 自动更新当前只在 systemd 宿主机可用。OpenRC 继续保持“不支持自动更新”的显式状态，
   未完成等价 unit、恢复和真实 PID 1 验收前不得静默放宽。
-- 轻量 Node 的无人值守更新继续只跟踪稳定版。Release 可以附带 RC Node 二进制供隔离验收，但设置页的
+- Linux 轻量 Node 的无人值守更新继续只跟踪稳定版。预览版可附带 Linux RC Node 二进制供隔离验收，但设置页的
   预览版计划不隐式改变远程 Node 策略。
 
 ## 5. 发布与验收
@@ -83,34 +83,11 @@ Latest/prerelease 状态、版本镜像和通道标签 digest、候选分支处�
 可执行发布步骤以 `.codex-workflows/release-kpanel.workflow.yaml` 为准，验收结构以
 `docs/release-acceptance-template.md` 为准。
 
-### 5.1 Windows 轻量节点产物
+### 5.1 Windows 节点功能撤下
 
-Windows 附件为未签名产物，不依赖 Azure、Authenticode 或发布者/profile 配置。固定官方 GitHub HTTPS
-来源与 SHA-256 用于完整性检查，不提供独立的证书发布者身份保证；同源清单不能防御官方发布源一并被攻破。
-安装不修改 ExecutionPolicy，也不关闭 Defender、SmartScreen、WDAC/AppLocker 或其他系统保护。
+`v1.25.0-rc.7` 起，KPanel 不接入或管理 Windows 轻量节点，不发布 Windows 节点/安装器附件，Release
+工作流也不再依赖 Windows Runner。RC2–RC6 的 Tag、Release、资产与验收记录均为历史事实并保持不变；
+该 RC 将旧 Windows 节点记录呈现为离线，并拒绝终端、桌面、文件、历史与遥测管理请求。
 
-每次 Release 必须在 windows-2025 Runner 执行版本检查、双架构构建和最终字节验证。只有 Windows
-任务成功，后续公开发布才可运行；失败、取消或跳过不能公开缺少 Windows 附件的版本、镜像或通道。
-Runner 只有仓库读取权限，不持有 Release 写权限；没有额外签名服务 Environment 或秘密配置。
-
-固定附件为 `kejilion-node-windows-amd64.exe`、`kejilion-node-windows-arm64.exe`、`bootstrap-windows.ps1`、
-`install-windows.ps1`。源码安装器 `deploy/windows/install.ps1` 构建时先确定 UTF-8 BOM/CRLF 字节；
-bootstrap 从 Go 源码逐字节复制，确保与面板二进制内置的 SHA-256 一致。四个常规文件通过限额与
-清单检查后才生成 `SHA256SUMS.windows`，Linux 任务复核同一次 workflow 的文件清单与摘要并合并到
-公开 `SHA256SUMS`。任何校验失败都会在公开写入前停止。
-
-Panel 命令先验证 ProgramFiles 祖先权限，在创建时封闭临时目录的 ACL，再从固定版本下载 bootstrap
-（256 KiB 上限），与面板二进制内置的 SHA-256 比对后才启动。bootstrap 再下载清单（64 KiB 上限）
-及源码安装器（1 MiB 上限），校验唯一 SHA-256 条目后才执行。安装器再次核对自身与 EXE
-摘要（EXE 64 MiB 上限），并在服务写入前核对 stdin 中的 EXE digest。旧 `trust.json`
-是此前签名策略状态，新版本不再读取它；遗留文件不会限制正常安装/更新，也不会授予额外信任。
-
-下载仅允许官方 GitHub HTTPS 与资产 hosts，受限跳转；目录 owner/ACL、reparse 防护、版本/协议核对、
-原子替换和失败回滚继续生效。无人值守更新仍只解析一次稳定 Release 并固定其 tag，不将 preview
-通道作为自动更新源。RC 仅供主动选择的测试，stable/latest 和生产部署保持既有隔离规则。
-
-本地回归运行 `scripts/tests/windows-node-release.test.ps1`、
-`scripts/tests/windows-installer-integrity.test.ps1`、
-`node --test scripts/tests/merge-windows-release.test.mjs scripts/tests/release-channel-contract.test.mjs`。
-CI 包含 Windows 原生单元测试/vet 与 amd64/arm64 构建；这些证据不能代替真实服务生命周期、RDP 或
-系统保护兼容性验收。本轮预览的原生矩阵由用户后续承担，记录 owner-deferred，尚未验证。
+恢复 Windows 节点支持前，必须重新评估完整用户旅程、发布物、安装更新安全、支持矩阵与真实 Windows
+验收；历史设计见[归档文档](archive/windows-light-node-design-rc2-rc6.md)。

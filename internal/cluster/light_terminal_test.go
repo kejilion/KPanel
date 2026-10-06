@@ -33,6 +33,7 @@ func TestTerminalRelayUsesV2NoiseAndEnablesCapabilityOnlyAfterAuthentication(t *
 	if err != nil {
 		t.Fatal(err)
 	}
+	reportLinuxLightHostForTest(t, service, response, now)
 	peer, err := decodeTerminalRelayPublicKey(response.TerminalPeerPublicKey)
 	if err != nil || response.TargetNodeID == "" {
 		t.Fatalf("invalid terminal enrollment response: %#v, %v", response, err)

@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.25.0-rc.7] - 2026-10-06
+
+从下一预览版撤下 Windows 轻量节点接入及其衍生能力，回到仅发布 Linux 节点的范围。
+
+### 移除
+
+- 移除 Windows 节点单台/批量接入、PowerShell 会话、远程桌面、文件/图库、历史监控和配套安装/更新入口。已有 Windows 节点记录保留，但在本版中心中强制离线且不可管理；Linux 节点不受影响。
+- Release 不再构建或上传 Windows 节点及安装器附件，也不再以 Windows Runner 成功作为预览版发布条件。
+- Windows 节点原设计和 RC2–RC6 已发布验收记录保留在历史归档中；既有 RC Tag 与 Release 不变。
+
+### 升级注意事项
+
+- 本 RC 会停止已登记 Windows 节点的连接和管理。继续使用集群功能请接入 Linux 轻量节点；不要把升级后显示离线理解为节点自身故障。
+- 本版仅发布预览通道，不改变 GitHub Latest、Docker `latest`、稳定更新源或生产部署。
+- `scriptLinkageState=not-required`：沿用已发布的 `kejilion.sh` 固定脚本基线，本版不改配套脚本契约。
+
 ## [1.25.0-rc.6] - 2026-10-05
 
 整合 RC5 后的应用终端、Windows 安装和主机备份候选。

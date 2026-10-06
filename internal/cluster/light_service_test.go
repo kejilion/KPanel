@@ -79,6 +79,15 @@ func signedLightReportForTest(
 	}
 }
 
+func reportLinuxLightHostForTest(t *testing.T, service *Service, response LightEnrollResponse, now time.Time) {
+	t.Helper()
+	input := LightReportRequest{Platform: "linux", Telemetry: serviceTelemetry(now, "edge")}
+	body, auth := signedLightReportForTest(t, now, response, input, strings.Repeat("9", 32))
+	if _, err := service.AcceptLightReport(auth, body, input); err != nil {
+		t.Fatalf("AcceptLightReport() error = %v", err)
+	}
+}
+
 func signedLightCapabilityForTest(
 	t *testing.T,
 	now time.Time,
@@ -107,6 +116,7 @@ func TestLightFileCapabilityUpgradeUsesTheExistingReportingCredential(t *testing
 	clock := &serviceTestClock{now: now}
 	service := newLightServiceForTest(t, clock)
 	enrollment := enrollLightHostForTest(t, service, "edge-1")
+	reportLinuxLightHostForTest(t, service, enrollment, now)
 	before, err := service.Host(context.Background(), enrollment.NodeID)
 	if err != nil {
 		t.Fatal(err)
@@ -195,7 +205,7 @@ func TestLightEnrollmentIsHTTPSBoundOneUseAndPreservesValidTokenAfterBadInput(t 
 		t.Fatalf("reused enrollment error = %v, want ErrPairingCode", err)
 	}
 	host, err := service.Host(context.Background(), first.NodeID)
-	if err != nil || host.Kind != HostKindLightNode || host.Origin != "" || host.State != HostUnknown {
+	if err != nil || host.Kind != HostKindLightNode || host.Origin != "" || host.State != HostOffline || host.Platform != "unknown" || host.TerminalAvailable || host.FileManagementAvailable {
 		t.Fatalf("unexpected light host after enrollment: %#v, %v", host, err)
 	}
 }

@@ -179,13 +179,13 @@ defineExpose({ dirty, validate, save })
       </template>
       <small>{{ t('cluster.trafficInterfaces.hint') }}</small>
     </template>
-    <small v-else-if="host.kind === 'light_node' && host.platform === 'windows'">{{ t('cluster.trafficInterfaces.windowsUnsupported') }}</small>
-    <template v-else-if="host.kind === 'light_node'">
+    <template v-else-if="host.kind === 'light_node' && host.platform === 'linux'">
       <small>{{ t('cluster.trafficInterfaces.lightHint') }}</small>
       <code class="cluster-traffic-interfaces__command">{{ lightCommand }}</code>
       <code class="cluster-traffic-interfaces__command">{{ lightCommand }} include eth0</code>
       <small>{{ t('cluster.trafficInterfaces.lightAuto') }}</small>
     </template>
+    <small v-else-if="host.kind === 'light_node'">{{ t('cluster.trafficInterfaces.platformUnsupported') }}</small>
     <small v-else>{{ t('cluster.trafficInterfaces.remoteHint') }}</small>
   </div>
 </template>

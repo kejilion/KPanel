@@ -13,60 +13,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  windows-node:
-    runs-on: windows-2025
-    timeout-minutes: 20
-    permissions:
-      contents: read
-    steps:
-      - name: Check out
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Validate Windows release version
-        shell: pwsh
-        run: ./scripts/windows-node-release.ps1 -Mode Check
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version: "1.27.1"
-          cache: true
-
-      - name: Build Windows node and installer
-        shell: pwsh
-        run: |
-          $output = Join-Path $env:RUNNER_TEMP 'windows-node-release'
-          New-Item -ItemType Directory -Path $output | Out-Null
-          ./scripts/windows-node-release.ps1 -Mode Build -OutputDirectory $output
-
-      - name: Verify Windows assets and generate checksums
-        shell: pwsh
-        run: ./scripts/windows-node-release.ps1 -Mode Verify -OutputDirectory (Join-Path $env:RUNNER_TEMP 'windows-node-release')
-
-      - name: Transfer verified Windows release assets
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: windows-node-release
-          path: ${{ runner.temp }}/windows-node-release/*
-          if-no-files-found: error
-          retention-days: 7
-
   release:
-    needs: windows-node
-    # Every release includes all four checksum-verified Windows assets.
-    # No failed, cancelled, or skipped Windows lane may publish a partial release.
-    if: ${{ !cancelled() && needs.windows-node.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
-      actions: read
       contents: write
     env:
       DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE || 'kjlion/kejilion-panel' }}
       DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME || 'kjlion' }}
-      KPANEL_WINDOWS_NODE_RELEASE: ${{ needs.windows-node.result == 'success' }}
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -227,16 +181,6 @@ jobs:
               "kejilion-panel-meta-$VERSION.tar.gz" > SHA256SUMS
           )
 
-      - name: Merge verified Windows assets into release checksums
-        if: needs.windows-node.result == 'success'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          gh run download "$GITHUB_RUN_ID" --name windows-node-release --dir "$RUNNER_TEMP/windows-node-release"
-          node scripts/merge-windows-release.mjs "$RUNNER_TEMP/windows-node-release" release
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         with:
@@ -327,13 +271,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.release.outputs.version }}
           STABLE: ${{ steps.release.outputs.stable }}
-          WINDOWS_NODE_RELEASE: ${{ needs.windows-node.result }}
         run: |
           set -euo pipefail
-          windows_assets=()
-          if [ "$WINDOWS_NODE_RELEASE" = success ]; then
-            windows_assets=(release/kejilion-node-windows-amd64.exe release/kejilion-node-windows-arm64.exe release/bootstrap-windows.ps1 release/install-windows.ps1)
-          fi
           create_flags=(--latest=false)
           prerelease_value=false
           if [ "$STABLE" = false ]; then
@@ -356,7 +295,6 @@ jobs:
               --title "KPanel $VERSION" \
               --notes-file release/DRAFT_NOTES.md
             gh release upload "$GITHUB_REF_NAME" --clobber \
-              "${windows_assets[@]}" \
               release/kpanel-mcp-* \
               release/kejilion-agent-linux-amd64 \
               release/kejilion-agent-linux-arm64 \
@@ -368,7 +306,6 @@ jobs:
               THIRD_PARTY_NOTICES.md
           else
             gh release create "$GITHUB_REF_NAME" \
-              "${windows_assets[@]}" \
               release/kpanel-mcp-* \
               --verify-tag \
               --draft \

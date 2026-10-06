@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -42,18 +41,15 @@ const (
 )
 
 type nodeConfig struct {
-	SchemaVersion       int      `json:"schemaVersion"`
-	Origin              string   `json:"origin"`
-	NodeID              string   `json:"nodeId"`
-	TargetNodeID        string   `json:"targetNodeId,omitempty"`
-	ReportingKey        string   `json:"reportingKey"`
-	ReportInterval      int      `json:"reportIntervalSeconds"`
-	SSHLogin            bool     `json:"sshLogin,omitempty"`
-	Health              bool     `json:"-"`
-	ServiceChecks       bool     `json:"-"`
-	WindowsNode         bool     `json:"windowsNode,omitempty"`
-	Capabilities        []string `json:"capabilities,omitempty"`
-	EnrollmentTokenHash string   `json:"enrollmentTokenHash,omitempty"`
+	SchemaVersion  int    `json:"schemaVersion"`
+	Origin         string `json:"origin"`
+	NodeID         string `json:"nodeId"`
+	TargetNodeID   string `json:"targetNodeId,omitempty"`
+	ReportingKey   string `json:"reportingKey"`
+	ReportInterval int    `json:"reportIntervalSeconds"`
+	SSHLogin       bool   `json:"sshLogin,omitempty"`
+	Health         bool   `json:"-"`
+	ServiceChecks  bool   `json:"-"`
 }
 
 type tokenWire struct {
@@ -65,7 +61,6 @@ type tokenWire struct {
 }
 
 type enrollRequest struct {
-	Platform          string `json:"platform,omitempty"`
 	Token             string `json:"token"`
 	Name              string `json:"name,omitempty"`
 	NodeVersion       string `json:"nodeVersion"`
@@ -88,12 +83,10 @@ type enrollResponse struct {
 }
 
 type reportRequest struct {
-	DesktopUnavailableReason string                    `json:"desktopUnavailableReason,omitempty"`
-	Platform                 string                    `json:"platform,omitempty"`
-	UnavailableMetrics       []string                  `json:"unavailableMetrics,omitempty"`
-	Capabilities             []string                  `json:"capabilities,omitempty"`
-	Telemetry                contract.HostTelemetry    `json:"telemetry"`
-	Health                   *contract.LightNodeHealth `json:"health,omitempty"`
+	UnavailableMetrics []string                  `json:"unavailableMetrics,omitempty"`
+	Capabilities       []string                  `json:"capabilities,omitempty"`
+	Telemetry          contract.HostTelemetry    `json:"telemetry"`
+	Health             *contract.LightNodeHealth `json:"health,omitempty"`
 }
 
 type reportResponse struct {
@@ -152,7 +145,6 @@ func runEnroll(arguments []string) error {
 	flags := flag.NewFlagSet("kejilion-node enroll", flag.ContinueOnError)
 	token := flags.String("token", "", "one-time enrollment token")
 	name := flags.String("name", "", "optional display name")
-	capabilities := flags.String("capabilities", "", "Windows capabilities")
 	configPath := flags.String("config", defaultConfigPath, "configuration path")
 	terminalConfigPath := flags.String("terminal-config", defaultTerminalConfigPath, "root-only terminal configuration path")
 	attemptPath := flags.String("attempt-file", "", "root-only resumable batch enrollment state")
@@ -161,10 +153,6 @@ func runEnroll(arguments []string) error {
 	}
 	if flags.NArg() != 0 {
 		return errors.New("unexpected enrollment argument")
-	}
-	selectedCapabilities, err := enrollmentCapabilities(*capabilities)
-	if err != nil {
-		return err
 	}
 	target, err := enrollmentTargetFromToken(*token)
 	if err != nil {
@@ -199,15 +187,12 @@ func runEnroll(arguments []string) error {
 		Token: strings.TrimSpace(*token), Name: strings.TrimSpace(*name), NodeVersion: version.Version,
 		TerminalPublicKey: base64.RawURLEncoding.EncodeToString(terminalKey.Public),
 	}
-	if runtime.GOOS == "windows" {
-		request.Platform = "windows"
-	}
 	if target.Batch {
 		request.AttemptID = batchAttempt.AttemptID
 	}
 	var response enrollResponse
 	status, responseHeaders, err := postJSONWithStatusAndHeaders(context.Background(), target.Origin+target.Path, request, nil, &response)
-	if err != nil && runtime.GOOS != "windows" && !target.Batch && status == http.StatusBadRequest {
+	if err != nil && !target.Batch && status == http.StatusBadRequest {
 		// A pre-v2 center rejects the optional key field because its decoder is
 		// strict. Retry the same one-time token without terminal capability so
 		// the node remains telemetry-compatible and never guesses a protocol.
@@ -245,16 +230,11 @@ func runEnroll(arguments []string) error {
 		return err
 	}
 	config := nodeConfig{
-		Capabilities: selectedCapabilities, WindowsNode: hasResponseCapability(responseHeaders, "windows-node-v1"),
 		SchemaVersion: 1, Origin: target.Origin, NodeID: response.NodeID,
 		ReportingKey: response.ReportingKey, ReportInterval: response.ReportInterval,
 		SSHLogin:      hasResponseCapability(responseHeaders, cluster.SSHLoginCapability),
 		Health:        hasResponseCapability(responseHeaders, cluster.LightHealthCapability),
 		ServiceChecks: hasResponseCapability(responseHeaders, cluster.ServiceChecksCapability),
-	}
-	if runtime.GOOS == "windows" {
-		digest := sha256.Sum256([]byte(strings.TrimSpace(*token)))
-		config.EnrollmentTokenHash = hex.EncodeToString(digest[:])
 	}
 	if terminalEnabled {
 		config.TargetNodeID = response.TargetNodeID
@@ -348,13 +328,10 @@ func collectAndReport(
 	sshReader *sshlogin.Reader,
 	previousReportLatency *int64,
 ) (nodeConfig, int64, error) {
-	if err := requireWindowsCapability(parent, config, "monitoring"); err != nil {
-		return config, 0, err
-	}
 	ctx, cancel := context.WithTimeout(parent, 15*time.Second)
 	defer cancel()
 	summary, collectErr := collector.Collect(ctx)
-	if collectErr != nil && (runtime.GOOS == "windows" || summary.Hostname == "") {
+	if collectErr != nil && summary.Hostname == "" {
 		return config, 0, fmt.Errorf("collect host telemetry: %w", collectErr)
 	}
 	disk := contract.DiskCapacitySummary{}
@@ -386,7 +363,6 @@ func collectAndReport(
 		Load: summary.Load, CPU: summary.CPU, Memory: summary.Memory, Disk: disk,
 		Network: summary.Network, PublicNetwork: summary.PublicNetwork, SSHLogin: sshLogin, CollectedAt: summary.CollectedAt,
 	}}
-	applyPlatformReport(&payload, config)
 	payload.UnavailableMetrics = append([]string(nil), summary.UnavailableMetrics...)
 	if config.Health {
 		payload.Health = collectLightHealth(ctx)
@@ -438,7 +414,6 @@ func enableSSHLoginCapability(config nodeConfig, headers http.Header) nodeConfig
 	config.SSHLogin = hasResponseCapability(headers, cluster.SSHLoginCapability)
 	config.Health = hasResponseCapability(headers, cluster.LightHealthCapability)
 	config.ServiceChecks = hasResponseCapability(headers, cluster.ServiceChecksCapability)
-	config.WindowsNode = hasResponseCapability(headers, "windows-node-v1")
 	return config
 }
 

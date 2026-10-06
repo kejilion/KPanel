@@ -151,9 +151,9 @@ describe('cluster counted interfaces', () => {
     expect(mocks.read).not.toHaveBeenCalled()
   })
 
-  it('explains the Windows limitation without offering Linux commands', async () => {
-    const wrapper = await render({ id: 'windows', isLocal: false, kind: 'light_node', platform: 'windows' } as unknown as ClusterHost)
-    expect(wrapper.text()).toContain(t('cluster.trafficInterfaces.windowsUnsupported'))
+	it('does not offer Linux interface commands to an unknown-platform legacy node', async () => {
+		const wrapper = await render({ id: 'legacy', isLocal: false, kind: 'light_node', platform: 'unknown' } as unknown as ClusterHost)
+		expect(wrapper.text()).toContain(t('cluster.trafficInterfaces.platformUnsupported'))
     expect(wrapper.findAll('code')).toHaveLength(0)
     expect(mocks.read).not.toHaveBeenCalled()
     expect(exposed(wrapper).dirty).toBe(false)

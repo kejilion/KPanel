@@ -141,6 +141,7 @@ func TestTerminalSequencedStreamPanelAndLightParity(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
+				reportLinuxLightHostForTest(t, f.service, enrolled, time.Now().UTC())
 				peer, _ := decodeTerminalRelayPublicKey(enrolled.TerminalPeerPublicKey)
 				relay, _ := NewTerminalRelayClient(f.server.Client())
 				owner = "light-owner"

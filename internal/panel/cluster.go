@@ -98,7 +98,6 @@ func (s *Server) Close() error {
 	s.closeRemoteDownloadJobs()
 	s.terminalStreams.closeAll()
 	s.closeTerminalSessions()
-	s.closeDesktopSessions()
 	s.closeFileShareStreams()
 	// Cluster-owned relay connections can outlive HTTP shutdown. Close their
 	// transport before waiting for handlers, or restore restarts can deadlock.
@@ -334,11 +333,6 @@ func (s *Server) handleClusterHostDelete(w http.ResponseWriter, r *http.Request,
 		s.writeClusterError(w, r, err)
 		return
 	}
-	if s.desktopCredentials != nil {
-		if err := s.desktopCredentials.DeleteHost(id); err != nil {
-			result.CredentialRemoved = false
-		}
-	}
 	change["remoteRevoked"] = result.RemoteRevoked
 	change["credentialRemoved"] = result.CredentialRemoved
 	_ = s.audit(r, session.User.ID, "cluster.host.delete", "cluster-host", id, "success", change)
@@ -400,7 +394,15 @@ func (s *Server) handleLightEnrollmentCreate(w http.ResponseWriter, r *http.Requ
 		s.writeClusterError(w, r, cluster.ErrLightHTTPSOrigin)
 		return
 	}
-	enrollment, err := s.cluster.CreateLightEnrollmentWithDesktop(origin, input.Name, input.Platform, input.EnableDesktop)
+	if input.EnableDesktop || input.Platform == "windows" {
+		s.writeClusterError(w, r, cluster.ErrLightPlatformUnsupported)
+		return
+	}
+	if input.Platform != "" && input.Platform != "linux" {
+		s.writeClusterError(w, r, cluster.ErrProtocolMismatch)
+		return
+	}
+	enrollment, err := s.cluster.CreateLightEnrollmentForOriginAndName(origin, input.Name)
 	if err != nil {
 		_ = s.audit(r, session.User.ID, "cluster.light-enrollment.create", "cluster-node", s.cluster.NodeID(), "failure", nil)
 		s.writeClusterError(w, r, err)
@@ -1086,8 +1088,8 @@ func (s *Server) writeClusterError(w http.ResponseWriter, r *http.Request, err e
 		status, code, title = http.StatusUnprocessableEntity, "cluster_light_https_required", "Light node HTTPS origin is required"
 	case errors.Is(err, cluster.ErrLightBatchInvalid):
 		status, code, title = http.StatusUnprocessableEntity, "cluster_light_batch_invalid", "Light node batch enrollment settings are invalid"
-	case errors.Is(err, cluster.ErrWindowsInstallerUnavailable):
-		status, code, title = http.StatusServiceUnavailable, "cluster_windows_installer_unavailable", "Windows node release version is not available"
+	case errors.Is(err, cluster.ErrLightPlatformUnsupported):
+		status, code, title = http.StatusGone, "cluster_light_platform_unsupported", "Light node platform is not included in this preview"
 	case errors.Is(err, cluster.ErrPrivateOrigin):
 		status, code, title = http.StatusUnprocessableEntity, "cluster_origin_blocked", "Cluster origin is blocked"
 	case errors.Is(err, cluster.ErrPairingCode):

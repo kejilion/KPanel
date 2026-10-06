@@ -161,7 +161,7 @@ func (c *Collector) Collect(ctx context.Context) (contract.SystemSummary, error)
 	if c.PublicNetworkLookupEnabled {
 		result.PublicNetwork = c.readPublicNetwork(ctx)
 	}
-	if result.Platform != "windows" {
+	if runtime.GOOS != "windows" || c.ProcRoot != "/proc" {
 		c.readManagement(&result.Management)
 	}
 	return result, errors.Join(errs...)

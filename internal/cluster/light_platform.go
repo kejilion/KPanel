@@ -9,7 +9,6 @@ import (
 
 const (
 	LightCapabilitiesPath = "/api/v3/federation/light/capabilities"
-	WindowsNodeCapability = "windows-node-v1"
 )
 
 type LightCapabilitiesResponse struct {
@@ -17,7 +16,7 @@ type LightCapabilitiesResponse struct {
 }
 
 func LightCenterCapabilities() []string {
-	return []string{SSHLoginCapability, LightHealthCapability, ServiceChecksCapability, WindowsNodeCapability, DesktopCapability, ManagedDesktopCapability}
+	return []string{SSHLoginCapability, LightHealthCapability, ServiceChecksCapability}
 }
 
 // ProbeLightCapabilities is read-only. It must never provision a privileged
@@ -43,22 +42,18 @@ func (s *Service) ProbeLightCapabilities(auth LightReportAuth, body []byte) (Lig
 }
 
 func validateLightPlatform(input LightReportRequest) error {
-	if !slices.Contains([]string{"", "desktop_platform_unsupported", "desktop_rdp_disabled", "desktop_rdp_service_stopped", "desktop_rdp_configuration_unavailable", "desktop_rdp_certificate_unavailable", "desktop_not_enabled", "desktop_broker_unavailable"}, input.DesktopUnavailableReason) || input.Platform != "windows" && input.DesktopUnavailableReason != "" {
+	if input.Platform == "windows" || strings.EqualFold(input.Telemetry.OSID, "windows") {
+		return ErrLightPlatformUnsupported
+	}
+	if input.Platform != "" && input.Platform != "linux" {
 		return ErrProtocolMismatch
 	}
-	if input.Platform != "" && input.Platform != "linux" && input.Platform != "windows" {
-		return ErrProtocolMismatch
-	}
-	if input.Platform == "windows" && (!strings.EqualFold(input.Telemetry.OSID, "windows") ||
-		!slices.Contains(input.UnavailableMetrics, "load")) {
-		return ErrProtocolMismatch
-	}
-	if input.Platform != "windows" && strings.EqualFold(input.Telemetry.OSID, "windows") {
+	if input.DesktopUnavailableReason != "" {
 		return ErrProtocolMismatch
 	}
 	for _, list := range []struct{ values, allowed []string }{
 		{input.UnavailableMetrics, []string{"load", "swap", "diskIO", "networkConnections"}},
-		{input.Capabilities, []string{"monitoring", "terminal", "files", "login", "desktop", "desktop-managed"}},
+		{input.Capabilities, []string{"monitoring", "terminal", "files", "login"}},
 	} {
 		if len(list.values) > len(list.allowed) {
 			return ErrProtocolMismatch
@@ -72,26 +67,37 @@ func validateLightPlatform(input LightReportRequest) error {
 	return nil
 }
 
+func validateLightPlatformChoice(platform string, desktop bool) error {
+	if desktop || platform == "windows" {
+		return ErrLightPlatformUnsupported
+	}
+	if platform != "" && platform != "linux" {
+		return ErrProtocolMismatch
+	}
+	return nil
+}
+
 func lightHostIsWindows(record lightHostRecord) bool {
 	return record.Platform == "windows" || record.LastSnapshot != nil && (record.LastSnapshot.Platform == "windows" ||
 		strings.EqualFold(record.LastSnapshot.Telemetry.OSID, "windows"))
 }
 
-// Platform metadata is deliberately not persisted, so an old center can read
-// its state after rollback. Windows must re-advertise before control is allowed.
-func lightPlatformAllows(record lightHostRecord, capability string, now time.Time) bool {
+// Windows light-node support is withdrawn from the next preview. Keep existing
+// records recognizable for safe display, but never authorize their controls.
+func lightPlatformAllows(record lightHostRecord, _ string, _ time.Time) bool {
+	// An enrollment without a persisted platform snapshot has not established
+	// which host controls are safe to expose. In particular, older Windows
+	// enrollments could lose their in-memory platform marker after a restart.
+	if record.LastSnapshot == nil {
+		return false
+	}
 	if !lightHostIsWindows(record) {
 		return true
 	}
-	snapshot := record.LastSnapshot
-	return snapshot != nil && snapshot.Platform == "windows" && now.Sub(snapshot.ReceivedAt) <= 90*time.Second &&
-		slices.Contains(snapshot.NodeCapabilities, capability)
+	return false
 }
 
 func (s *Service) lightControlAllowed(hostID, capability string) bool {
-	if capability == "desktop" && !s.desktopAllowed(hostID) {
-		return false
-	}
 	record, err := s.light.Host(hostID)
 	if err == nil {
 		return lightPlatformAllows(record, capability, s.now().UTC())
@@ -102,26 +108,27 @@ func (s *Service) lightControlAllowed(hostID, capability string) bool {
 	return err == nil
 }
 
-func applyLightPlatform(host *Host, record lightHostRecord, now time.Time) {
+func applyLightPlatform(host *Host, record lightHostRecord) {
 	if !lightHostIsWindows(record) {
+		if record.LastSnapshot == nil {
+			host.Platform = "unknown"
+			host.TerminalShell, host.PathStyle = "", ""
+			host.TerminalAvailable = false
+			host.FileManagementAvailable = false
+			host.LightHealth = nil
+			host.LastSnapshot = nil
+			host.State = HostOffline
+			host.Scope = SummaryScope
+			return
+		}
 		host.Platform, host.TerminalShell, host.PathStyle = "linux", "posix", "posix"
 		return
 	}
-	host.Platform, host.TerminalShell, host.PathStyle = "windows", "powershell", "windows-volumes"
-	host.UnavailableMetrics = []string{"load", "swap", "diskIO", "networkConnections"}
-	if record.LastSnapshot != nil && record.LastSnapshot.Platform == "windows" {
-		host.UnavailableMetrics = append([]string(nil), record.LastSnapshot.UnavailableMetrics...)
-	}
-	host.TerminalAvailable = host.TerminalAvailable && lightPlatformAllows(record, "terminal", now)
-	host.FileManagementAvailable = host.FileManagementAvailable && lightPlatformAllows(record, "files", now)
+	host.Platform, host.TerminalShell, host.PathStyle = "windows", "", ""
+	host.TerminalAvailable = false
+	host.FileManagementAvailable = false
+	host.LightHealth = nil
+	host.LastSnapshot = nil
+	host.State = HostOffline
 	host.Scope = SummaryScope
-	if host.FileManagementAvailable {
-		host.Scope = SummaryFilesScope
-		if host.TerminalAvailable {
-			host.Scope = SummaryTerminalFilesScope
-		}
-	} else if host.TerminalAvailable {
-		host.Scope = SummaryTerminalScope
-	}
-	host.DesktopUnavailableReason = "desktop_not_enabled"
 }

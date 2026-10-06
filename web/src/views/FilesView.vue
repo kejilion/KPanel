@@ -204,14 +204,7 @@ const activeFileHost = computed(() =>
     || (!fileHostId.value ? fileHosts.value.find((host) => host.isLocal) : undefined),
 )
 const isRemoteFileHost = computed(() => Boolean(fileHostId.value))
-const isWindowsFileHost = computed(() => activeFileHost.value?.pathStyle === 'windows-volumes')
-const fileShortcuts = computed(() => isWindowsFileHost.value ? ['/'] : ['/', '/home', '/root', '/etc', '/var'])
-const isWindowsVolumeList = computed(() => isWindowsFileHost.value && currentPath.value === '/')
-function rejectVolumeListTarget(target: string): boolean {
-  if (!isWindowsFileHost.value || target !== '/') return false
-  toast.show(phrase('请先选择目标磁盘目录。'))
-  return true
-}
+const fileShortcuts = ['/', '/home', '/root', '/etc', '/var']
 const activeFileHostNodeId = computed(() => {
   const host = activeFileHost.value
   return fileHostId.value ? (host?.remoteNodeId || '') : localClusterNodeId.value
@@ -1207,7 +1200,6 @@ async function addEntriesToDesktop(entry?: FileEntry, currentDirectory = false):
 }
 
 function startEntryDrag(event: DragEvent, entry: FileEntry): void {
-  if (isWindowsVolumeList.value) { event.preventDefault(); return }
   const targets = (selected.value.has(entry.path) ? entriesForBatch(entry) : [entry]).filter(canAddToDesktop)
   const directFile = targets.length === 1 && targets[0]!.kind === 'file'
   const nativeArchiveName = directFile
@@ -1247,12 +1239,6 @@ function isOtherFileHostDrag(event: DragEvent): boolean {
 }
 
 function updateInternalDropTarget(event: DragEvent, target: string): boolean {
-  if (isWindowsFileHost.value && target === '/') {
-    event.preventDefault()
-    if (event.dataTransfer) event.dataTransfer.dropEffect = 'none'
-    clearInternalDropTarget()
-    return false
-  }
   if (fileTransferState.value?.phase === 'running') return false
   if (isOtherFileHostDrag(event) && !/^[a-f0-9]{32}$/.test(peekDesktopFileDragSourceNodeId(event) || '')) {
     event.preventDefault()
@@ -1354,7 +1340,6 @@ function cancelFileTransfer(): void {
 }
 
 async function transferInternalFileDrop(event: DragEvent, target: string): Promise<void> {
-  if (rejectVolumeListTarget(target)) return
   const hostId = fileHostId.value
   if (isOtherFileHostDrag(event)) {
     await transferCrossPanelFileDrop(event, target)
@@ -1432,7 +1417,6 @@ async function transferInternalFileDrop(event: DragEvent, target: string): Promi
 }
 
 async function transferCrossPanelFileDrop(event: DragEvent, target: string): Promise<void> {
-  if (rejectVolumeListTarget(target)) return
   const hostId = fileHostId.value
   const payload = crossPanelFileDragEntries(event)
   clearInternalDropTarget()
@@ -1585,10 +1569,6 @@ function handleContextMenuKeydown(event: KeyboardEvent): void {
 }
 
 function openDialog(action: DialogAction, entry?: FileEntry): void {
-  if (isWindowsFileHost.value && (action === 'chmod' || isWindowsVolumeList.value || (entry && /^\/[A-Za-z]$/.test(entry.path)))) {
-    toast.show(phrase('请进入磁盘目录后操作；Windows 权限由系统 ACL 管理。'))
-    return
-  }
   const archiveAction = action === 'compress' || action === 'extract'
   if (contextMenu.value && archiveAction) contextMenuOpener?.focus({ preventScroll: true })
   contextMenu.value = undefined
@@ -1610,7 +1590,7 @@ function openDialog(action: DialogAction, entry?: FileEntry): void {
   else if (action === 'rename') dialogValue.value = dialogEntries.value[0]?.name || ''
   else if (action === 'chmod') dialogValue.value = '644'
   else if (action === 'compress') {
-    dialogFormat.value = isWindowsFileHost.value ? 'zip' : 'tar.gz'
+    dialogFormat.value = 'tar.gz'
     dialogValue.value = dialogEntries.value.length === 1
       ? `${dialogEntries.value[0]?.name || 'archive'}${archiveSuffix(dialogFormat.value)}`
       : `archive${archiveSuffix(dialogFormat.value)}`
@@ -1667,7 +1647,6 @@ function cancelArchive(): void {
 }
 
 function setClipboard(mode: FileTransferOperation, entry?: FileEntry): void {
-  if (rejectVolumeListTarget(currentPath.value)) return
   contextMenu.value = undefined
   const entriesToStore = entriesForBatch(entry)
   if (!entriesToStore.length) return
@@ -1699,7 +1678,6 @@ async function applySuccessfulFileChanges(
 }
 
 async function pasteClipboard(target = currentPath.value): Promise<void> {
-  if (rejectVolumeListTarget(target)) return
   const hostId = fileHostId.value
   const stored = clipboard.value
   if (!stored?.entries.length || pasteBusy.value) return
@@ -2322,10 +2300,6 @@ async function uploadFiles(
   hostId = fileHostId.value,
 ): Promise<void> {
   const values = Array.from(files)
-  if (fileHosts.value.find((host) => host.id === hostId)?.pathStyle === 'windows-volumes' && target === '/') {
-    toast.show(phrase('请先选择目标磁盘目录。'))
-    return
-  }
   if (!values.length) return
   // A few uploads in flight hide per-file round trips (request, atomic
   // commit, audit) without competing with one another for bandwidth.
@@ -2394,7 +2368,7 @@ async function uploadDirectoryManifest(
   signal: AbortSignal,
   hostId = fileHostId.value,
 ): Promise<void> {
-  if (hostId !== fileHostId.value || rejectVolumeListTarget(target)) return
+  if (hostId !== fileHostId.value) return
   const source = { kind: 'directory', manifest, target, hostId } as const
   const task = createUploadTask(source)
   await runDirectoryUploadTask(task.id, manifest, target, signal, source.hostId)
@@ -2677,7 +2651,7 @@ onBeforeUnmount(() => {
   <section
     ref="filesPage"
     class="files-page"
-    :class="{ 'files-page--batch-active': selected.size > 0, 'files-page--windows': isWindowsFileHost }"
+    :class="{ 'files-page--batch-active': selected.size > 0 }"
     tabindex="-1"
     @pointerdown="focusFilesPage"
   >
@@ -2686,7 +2660,7 @@ onBeforeUnmount(() => {
     <div class="file-command-bar">
       <nav class="file-shortcuts" aria-label="常用目录">
         <button v-for="item in fileShortcuts" :key="item" type="button" @click="navigateDirectory(item)">
-          {{ item === '/' ? (isWindowsFileHost ? phrase('磁盘列表') : '根目录 /') : item }}
+          {{ item === '/' ? '根目录 /' : item }}
         </button>
       </nav>
       <div class="file-command-bar__actions">
@@ -2715,7 +2689,7 @@ onBeforeUnmount(() => {
         >
           <Share2 :size="15" /> <span class="file-command-bar__label">分享管理</span>
         </button>
-        <button class="button button--secondary button--small" type="button" title="新建目录" aria-label="新建目录" :disabled="isWindowsVolumeList" @click="openDialog('mkdir')">
+        <button class="button button--secondary button--small" type="button" title="新建目录" aria-label="新建目录" @click="openDialog('mkdir')">
           <Plus :size="15" /> <span class="file-command-bar__label">新建目录</span>
         </button>
         <button
@@ -2728,7 +2702,7 @@ onBeforeUnmount(() => {
         >
           <Download :size="15" /> <span class="file-command-bar__label">{{ i18n.t('files.remoteDownload.label') }}</span>
         </button>
-        <button class="button button--primary button--small" type="button" :disabled="isWindowsVolumeList" @click="uploadInput?.click()">
+        <button class="button button--primary button--small" type="button" @click="uploadInput?.click()">
           <Upload :size="15" /> 上传文件
         </button>
         <input
@@ -2857,7 +2831,7 @@ onBeforeUnmount(() => {
               <template v-if="clipboard.entries.length > 1"> 等 {{ clipboard.entries.length }} 项</template>
             </small>
           </span>
-          <button type="button" :disabled="pasteBusy || isWindowsVolumeList" @click="pasteClipboard()">
+          <button type="button" :disabled="pasteBusy" @click="pasteClipboard()">
             <ClipboardPaste :size="15" />{{ pasteBusy ? '粘贴中…' : `粘贴到 ${currentPath}` }}
           </button>
           <button type="button" :disabled="pasteBusy" @click="clearClipboard">取消</button>
@@ -3268,7 +3242,7 @@ onBeforeUnmount(() => {
           <button v-if="archiveTools?.available && selectedEntries.every(entry => archiveFormat(entry))" type="button" @click="openDialog('extract')"><FolderOpen :size="15" />{{ i18n.t('files.archive.extractAll') }}</button>
           <button type="button" @click="setClipboard('copy')"><Copy :size="15" />复制</button>
           <button type="button" @click="setClipboard('move')"><Scissors :size="15" />剪切</button>
-          <button v-if="!isWindowsFileHost" type="button" @click="openDialog('chmod')"><ShieldCheck :size="15" />权限</button>
+          <button type="button" @click="openDialog('chmod')"><ShieldCheck :size="15" />权限</button>
           <button
             v-if="!isRemoteFileHost && selectedEntries.some(canAddToDesktop)"
             type="button"
@@ -3348,7 +3322,7 @@ onBeforeUnmount(() => {
         :disabled="pasteBusy"
         @click="pasteClipboard()"
       ><ClipboardPaste :size="15" />{{ phrase('粘贴到当前目录') }}</button>
-      <button v-if="contextMenu.entry && !isWindowsFileHost" role="menuitem" type="button" @click="openDialog('chmod', contextMenu.entry)">
+      <button v-if="contextMenu.entry" role="menuitem" type="button" @click="openDialog('chmod', contextMenu.entry)">
         <ShieldCheck :size="15" />{{ phrase('修改权限') }}
       </button>
       <button
@@ -5117,12 +5091,6 @@ onBeforeUnmount(() => {
     display: none;
   }
 }
-
-@media (min-width: 721px) {
-  .files-page--windows .file-row { grid-template-columns: 42px minmax(220px, 2fr) 90px 118px 46px; }
-}
-.files-page--windows .file-row > :nth-child(4),
-.files-page--windows .file-row > :nth-child(5) { display: none; }
 
 @media (max-width: 1100px) {
   .file-command-bar {

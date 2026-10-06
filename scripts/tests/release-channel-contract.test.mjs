@@ -2,14 +2,13 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 
 const repoRoot = resolve(import.meta.dirname, '..', '..');
 const bash = process.env.KPANEL_TEST_BASH ||
   (process.platform === 'win32' ? 'C:\\Program Files\\Git\\bin\\bash.exe' : 'bash');
 
-function render(version, windowsEnabled = false) {
+function render(version) {
   const temporary = mkdtempSync(join(repoRoot, '.release-channel-test-'));
   const relativeDirectory = basename(temporary);
   const changelog = join(temporary, 'CHANGELOG.md');
@@ -24,7 +23,7 @@ function render(version, windowsEnabled = false) {
   ], {
     cwd: repoRoot,
     encoding: 'utf8',
-    env: { ...process.env, CHANGELOG_FILE: `${relativeDirectory}/CHANGELOG.md`, KPANEL_WINDOWS_NODE_RELEASE: String(windowsEnabled) },
+    env: { ...process.env, CHANGELOG_FILE: `${relativeDirectory}/CHANGELOG.md` },
   });
   const notes = result.status === 0 ? readFileSync(output, 'utf8') : '';
   rmSync(temporary, { recursive: true, force: true });
@@ -51,15 +50,12 @@ test('release notes reject unsupported prerelease names', () => {
   assert.match(invalid.stderr, /X\.Y\.Z or X\.Y\.Z-rc\.N/);
 });
 
-test('only releases with verified Windows assets advertise the unsigned installer and integrity boundary', () => {
-  assert.doesNotMatch(render('1.2.3').notes, /install-windows\.ps1/);
+test('release notes describe only Linux node artifacts', () => {
   for (const version of ['1.2.3', '1.3.0-rc.2']) {
-    const result = render(version, true);
+    const result = render(version);
     assert.equal(result.status, 0, result.stderr);
-    assert.match(result.notes, /install-windows\.ps1/);
-    assert.match(result.notes, /未签名/);
-    assert.match(result.notes, /SHA256SUMS/);
-    assert.match(result.notes, /不提供证书发布者身份保证/);
+    assert.match(result.notes, /Linux Agent、Linux 轻量节点/);
+    assert.doesNotMatch(result.notes, /Windows|install-windows\.ps1|bootstrap-windows\.ps1/);
   }
 });
 
@@ -77,36 +73,18 @@ test('release workflow publishes isolated stable and preview channels', () => {
   assert.doesNotMatch(workflow, /gh api --method DELETE/);
 });
 
-test('release requires successful Windows build and checksum merge before public writes', () => {
+test('release has no Windows node build or release-artifact dependency', () => {
   const workflow = readFileSync(join(repoRoot, '.github', 'workflows', 'release.yml'), 'utf8').replaceAll('\r\n', '\n');
-  const windows = workflow.match(/^  windows-node:\n([\s\S]+?)^  release:/m)?.[1];
-  assert.ok(windows, 'mandatory Windows job is present');
-  assert.doesNotMatch(windows, /^    if:/m, 'Windows assets cannot be disabled by an optional flag');
-  assert.doesNotMatch(windows, /artifact-signing|windows-node-signing|KPANEL_AZURE|KPANEL_SIGNING|Authenticode/);
+  assert.doesNotMatch(workflow, /^  windows-node:/m);
+  assert.doesNotMatch(workflow, /needs\.windows-node|windows-node-release|merge-windows-release|kejilion-node-windows|bootstrap-windows\.ps1|install-windows\.ps1/);
   const release = workflow.slice(workflow.indexOf('  release:\n'));
-  assert.match(release, /^    needs: windows-node$/m);
-  const guard = release.match(/^    if: \$\{\{ (.+) \}\}$/m)?.[1];
-  assert.ok(guard, 'downstream release has an explicit Windows result guard');
-  const expression = guard.replaceAll('needs.windows-node.result', 'windowsResult');
-  for (const windowsResult of ['success', 'failure', 'cancelled', 'skipped']) {
-    for (const wasCancelled of [false, true]) {
-      assert.equal(runInNewContext(expression, { windowsResult, cancelled: () => wasCancelled }),
-        windowsResult === 'success' && !wasCancelled, `${windowsResult}, cancelled=${wasCancelled}`);
-    }
-  }
-  let previous = -1;
-  for (const marker of ['-Mode Check', 'name: Build Windows node and installer',
-    '-Mode Verify', 'name: Transfer verified Windows release assets']) {
-    const position = windows.indexOf(marker);
-    assert.ok(position > previous, `${marker} must follow verified prerequisites`);
-    previous = position;
-  }
-  const merge = release.indexOf('node scripts/merge-windows-release.mjs');
-  assert.ok(merge >= 0, 'four verified assets are merged into release checksums');
   for (const marker of ['name: Prepare draft GitHub release', 'name: Build and push multi-architecture image',
     'name: Promote image to its release channel', 'name: Publish GitHub release']) {
-    assert.ok(release.indexOf(marker) > merge, `${marker} must follow Windows checksum merge`);
+    assert.ok(release.includes(marker), `${marker} remains part of the release lane`);
   }
+  const ci = readFileSync(join(repoRoot, '.github', 'workflows', 'ci.yml'), 'utf8').replaceAll('\r\n', '\n');
+  assert.doesNotMatch(ci, /^  windows-node:/m);
+  assert.doesNotMatch(ci, /internal\/windowsnode|cmd\/kejilion-node|windows-node-release/);
 });
 
 test('release metadata archive is named and described consistently', () => {
