@@ -148,6 +148,7 @@ type Service struct {
 	lightBatchSources     *fixedWindowLimiter
 	lightBatchPolicies    *fixedWindowLimiter
 	lightSources          *fixedWindowLimiter
+	lightUnknownSources   *fixedWindowLimiter
 	lightReports          *fixedWindowLimiter
 	lightTerminalRequests *fixedWindowLimiter
 	lightFileSources      *fixedWindowLimiter
@@ -315,6 +316,7 @@ func NewService(config ServiceConfig) (*Service, error) {
 		lightBatchSources:     newFixedWindowLimiter(240, time.Minute, 2048),
 		lightBatchPolicies:    newFixedWindowLimiter(240, time.Minute, maxLightBatchPolicyRateSubjects),
 		lightSources:          newFixedWindowLimiter(240, time.Minute, 2048),
+		lightUnknownSources:   newFixedWindowLimiter(240, time.Minute, 2048),
 		lightReports:          newFixedWindowLimiter(180, time.Minute, MaxHosts),
 		lightTerminalRequests: newFixedWindowLimiter(300, time.Minute, MaxHosts),
 		lightFileSources:      newFixedWindowLimiter(1200, time.Minute, MaxHosts),

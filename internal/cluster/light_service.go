@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/url"
 	"strconv"
 	"strings"
@@ -178,7 +179,22 @@ func (s *Service) EnrollLightNodeAtOrigin(
 
 func (s *Service) AcceptLightReport(auth LightReportAuth, rawBody []byte, input LightReportRequest) (LightReportResponse, error) {
 	now := s.now().UTC()
-	if !s.lightSources.Allow(cleanRateSubject(auth.Source), now) {
+	source := cleanRateSubject(auth.Source)
+	if !validID(auth.NodeID) {
+		if !s.lightSources.Allow(source, now) {
+			return LightReportResponse{}, ErrRateLimited
+		}
+		return LightReportResponse{}, ErrAuthentication
+	}
+	if _, err := s.light.Host(auth.NodeID); errors.Is(err, ErrNotFound) {
+		// Keep unknown and retired node IDs from consuming the source budget of
+		// active Linux nodes that happen to share the same public IP.
+		if !s.lightUnknownSources.Allow(source, now) {
+			return LightReportResponse{}, ErrRateLimited
+		}
+		return LightReportResponse{}, ErrAuthentication
+	}
+	if !s.lightSources.Allow(source, now) {
 		return LightReportResponse{}, ErrRateLimited
 	}
 	record, _, err := s.authenticateLightRequest(auth, lightReportPath, rawBody, MaxSummaryBytes, now)

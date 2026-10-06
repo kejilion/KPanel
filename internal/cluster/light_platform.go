@@ -82,17 +82,31 @@ func supportedLightHostCount(records []lightHostRecord) int {
 	return count
 }
 
-func telemetryIdentifiesLinux(telemetry contract.HostTelemetry) bool {
-	osID := strings.ToLower(strings.TrimSpace(telemetry.OSID))
-	osName := strings.ToLower(strings.TrimSpace(telemetry.OS))
-	if osID == "windows" || strings.Contains(osName, "windows") {
-		return false
+func retiredWindowsLightHost(record lightHostRecord) bool {
+	if record.Platform == "windows" {
+		return true
+	}
+	return record.Platform == "" && record.LastSnapshot != nil && telemetryIdentifiesWindows(record.LastSnapshot.Telemetry)
+}
+
+func telemetryIdentifiesWindows(telemetry contract.HostTelemetry) bool {
+	if strings.EqualFold(strings.TrimSpace(telemetry.OSID), "windows") || strings.Contains(strings.ToLower(telemetry.OS), "windows") {
+		return true
 	}
 	for _, id := range telemetry.OSLike {
 		if strings.EqualFold(strings.TrimSpace(id), "windows") {
-			return false
+			return true
 		}
 	}
+	return false
+}
+
+func telemetryIdentifiesLinux(telemetry contract.HostTelemetry) bool {
+	if telemetryIdentifiesWindows(telemetry) {
+		return false
+	}
+	osID := strings.ToLower(strings.TrimSpace(telemetry.OSID))
+	osName := strings.ToLower(strings.TrimSpace(telemetry.OS))
 	if osID == "linux" || strings.Contains(osName, "linux") {
 		return true
 	}

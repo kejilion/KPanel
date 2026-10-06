@@ -129,10 +129,36 @@ func openLightStore(path string) (*lightStore, error) {
 	default:
 		return nil, fmt.Errorf("read light node store: %w", err)
 	}
+	if err := store.pruneRetiredWindowsHosts(); err != nil {
+		return nil, fmt.Errorf("prune retired Windows light nodes: %w", err)
+	}
 	if err := store.cleanupOrphanCredentials(); err != nil {
 		return nil, err
 	}
 	return store, nil
+}
+
+// pruneRetiredWindowsHosts persists the removal before cleanupOrphanCredentials
+// deletes their file credentials. Platform-ambiguous records remain recoverable.
+func (s *lightStore) pruneRetiredWindowsHosts() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	filtered := make([]lightHostRecord, 0, len(s.state.Hosts))
+	for _, record := range s.state.Hosts {
+		if !retiredWindowsLightHost(record) {
+			filtered = append(filtered, record)
+		}
+	}
+	if len(filtered) == len(s.state.Hosts) {
+		return nil
+	}
+	previous := s.state.Hosts
+	s.state.Hosts = filtered
+	if err := s.persistLocked(); err != nil {
+		s.state.Hosts = previous
+		return err
+	}
+	return nil
 }
 
 // A missing target can be the middle of an atomic replacement, not a first

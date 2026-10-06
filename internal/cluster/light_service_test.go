@@ -425,6 +425,38 @@ func TestForgedLightReportsCannotExhaustAValidNodeQuota(t *testing.T) {
 	}
 }
 
+func TestUnknownLightReportsCannotExhaustActiveSourceBudget(t *testing.T) {
+	now := time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
+	clock := &serviceTestClock{now: now}
+	service := newLightServiceForTest(t, clock)
+	enrollment := enrollLightHostForTest(t, service, "edge-1")
+	input := LightReportRequest{Platform: "linux", Telemetry: serviceTelemetry(now, "edge-1")}
+	body, auth := signedLightReportForTest(t, now, enrollment, input, strings.Repeat("e", 32))
+	const source = "198.51.100.20"
+	auth.Source = source
+	unknownID := strings.Repeat("f", 32)
+	if unknownID == enrollment.NodeID {
+		t.Fatal("test unknown node ID unexpectedly matches enrolled node")
+	}
+
+	for index := 0; index < 241; index++ {
+		unknown := LightReportAuth{
+			Source: source, NodeID: unknownID, Timestamp: strconv.FormatInt(now.Unix(), 10),
+			RequestID: fmt.Sprintf("%032x", index+1), Signature: "invalid",
+		}
+		_, err := service.AcceptLightReport(unknown, []byte(`{}`), LightReportRequest{})
+		if index < 240 && !errors.Is(err, ErrAuthentication) {
+			t.Fatalf("unknown report %d error = %v, want ErrAuthentication", index, err)
+		}
+		if index == 240 && !errors.Is(err, ErrRateLimited) {
+			t.Fatalf("unknown report past its limit error = %v, want ErrRateLimited", err)
+		}
+	}
+	if _, err := service.AcceptLightReport(auth, body, input); err != nil {
+		t.Fatalf("valid Linux report was blocked by unknown IDs from the same source: %v", err)
+	}
+}
+
 func TestLightHostRenameAndDeleteUseResourceVersion(t *testing.T) {
 	clock := &serviceTestClock{now: time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC)}
 	service := newLightServiceForTest(t, clock)
