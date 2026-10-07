@@ -5614,7 +5614,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   padding: 16px 16px 24px;
   overflow-x: hidden;
   overflow-y: auto;
-  overscroll-behavior: contain;
+  overscroll-behavior-y: contain;
   scrollbar-width: none;
   touch-action: pan-x pan-y;
   mask-image: linear-gradient(to bottom, transparent, #000 16px, #000 calc(100% - 24px), transparent);
