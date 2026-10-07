@@ -2025,6 +2025,7 @@ export type DockerMaintenanceAction =
   | 'compose_start'
   | 'compose_stop'
   | 'compose_restart'
+  | 'compose_remove'
   | 'container_access'
   | 'image_pull'
   | 'image_remove'
@@ -2066,6 +2067,8 @@ export interface DockerMaintenanceInput {
   compose?: string
   composeEnvironment?: string
   composeFile?: string
+  removeComposeFiles?: boolean
+  removeVolumes?: boolean
   allowedIp?: string
   backupId?: string
   migrationHost?: string

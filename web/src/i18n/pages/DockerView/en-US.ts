@@ -1,6 +1,15 @@
 import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
+  ['删除项目', 'Delete project'],
+  ['确认删除 Compose 项目', 'Confirm Compose project deletion'],
+  ['停止并删除此项目的全部容器及非外部网络，容器内未持久化的数据将丢失。', 'Stop and remove all containers and non-external networks in this project. Data not persisted outside containers will be lost.'],
+  ['移除 Compose 配置（保留备份）', 'Remove Compose configuration (keep backups)'],
+  ['配置文件将重命名备份，.env 和项目目录保留；可通过恢复原文件名重新部署。', 'Configuration files will be renamed as backups. The .env file and project directory are retained. Restore the original filenames to redeploy.'],
+  ['配置保留，项目仍会显示在列表中，可随时重新部署。', 'Configuration is retained. The project remains in the list and can be redeployed.'],
+  ['同时删除 Docker 数据卷', 'Also delete Docker volumes'],
+  ['项目声明的命名卷和容器匿名卷将删除，数据不可恢复；外部卷、宿主机挂载目录和镜像保留。', 'Declared named volumes and attached anonymous volumes will be deleted permanently. External volumes, host bind mounts and images are retained.'],
+  ['默认保留数据卷、宿主机挂载目录和镜像。', 'Volumes, host bind mounts and images are retained by default.'],
   ["刷新 Docker 状态", "Refresh Docker status"],
   ["· 观测于", "• Observations"],
   ["{0} 将移除与 kejilion.sh 相同的 DOCKER-USER 限制规则", "{0} will remove the DOCKER-USER restriction rules that are the same as kejilion.sh"],

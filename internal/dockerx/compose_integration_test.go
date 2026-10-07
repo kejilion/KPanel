@@ -161,6 +161,36 @@ func TestComposeLifecycleAgainstDocker(t *testing.T) {
 	if !errors.Is(err, ErrResourceConflict) {
 		t.Fatalf("stale resource version error = %v", err)
 	}
+
+	// Removing a deployment retains the same shared source and supports redeployment.
+	input := MaintenanceInput{Action: "compose_remove", Name: projectName, ExpectedResourceVersion: project.ResourceVersion}
+	if _, err := client.removeComposeProject(ctx, input, ""); err != nil {
+		t.Fatalf("remove real Compose deployment: %v", err)
+	}
+	project = requireComposeProject(t, client, projectName)
+	if err := client.redeployComposeProject(ctx, MaintenanceInput{
+		Action: "compose_redeploy", Name: projectName, ComposeFile: project.ConfigFiles[0].Path,
+		Compose: updated, ExpectedResourceVersion: project.ResourceVersion,
+	}); err != nil {
+		t.Fatalf("restore removed Compose deployment: %v", err)
+	}
+	project = requireComposeProject(t, client, projectName)
+	archiveID := strings.Repeat("e", 32)
+	if _, err := client.removeComposeProject(ctx, MaintenanceInput{
+		Action: "compose_remove", Name: projectName, ExpectedResourceVersion: project.ResourceVersion,
+		RemoveComposeFiles: true, RemoveVolumes: true,
+	}, archiveID); err != nil {
+		t.Fatalf("remove real Compose project with configuration archive: %v", err)
+	}
+	data, err := os.ReadFile(project.ConfigFiles[0].Path + ".kpanel-removed-" + archiveID)
+	if err != nil || string(data) != updated {
+		t.Fatalf("real configuration archive = %q, %v", data, err)
+	}
+	for _, candidate := range client.ComposeProjects() {
+		if candidate.Name == projectName {
+			t.Fatal("removed real Compose project was rediscovered")
+		}
+	}
 }
 
 func requireComposeProject(t *testing.T, client *Client, name string) ComposeProject {

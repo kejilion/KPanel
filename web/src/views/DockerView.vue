@@ -1213,6 +1213,16 @@ function askComposeLifecycle(action: 'compose_start' | 'compose_stop' | 'compose
   }, action === 'compose_stop')
 }
 
+function askComposeRemoval(): void {
+  const project = composeProject.value
+  if (!project) return
+  closeComposeProject()
+  askTask('确认删除 Compose 项目', project.name, {
+    action: 'compose_remove', name: project.name, expectedResourceVersion: project.resourceVersion,
+    removeComposeFiles: true, removeVolumes: false,
+  }, true)
+}
+
 function submitComposeRedeploy(): void {
   const project = composeProject.value
   const file = selectedComposeFile.value
@@ -2246,6 +2256,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <template #footer>
+         <button class="button button--danger compose-remove-button" type="button" :disabled="!composeProject" @click="askComposeRemoval"><Trash2 :size="15" /> {{ phrase('删除项目') }}</button>
          <button class="button button--secondary" type="button" :disabled="!composeProject" @click="askComposeLifecycle('compose_start')"><Play :size="15" /> {{ phrase('启动项目') }}</button>
          <button class="button button--secondary" type="button" :disabled="!composeProject" @click="askComposeLifecycle('compose_restart')"><RotateCw :size="15" /> {{ phrase('重启项目') }}</button>
          <button class="button button--secondary" type="button" :disabled="!composeProject" @click="askComposeLifecycle('compose_stop')"><CircleStop :size="15" /> {{ phrase('停止项目') }}</button>
@@ -2316,6 +2327,13 @@ onBeforeUnmount(() => {
         <span class="confirm-content__icon" :class="{ 'is-danger': pendingMaintenance?.danger }"><Trash2 v-if="pendingMaintenance?.danger" :size="23" /><ShieldCheck v-else :size="23" /></span>
         <p>{{ phrase('Agent 会在执行前重新校验输入和 Docker 实际状态；任务进入后台后可以离开当前页面。') }}</p>
       </div>
+      <section v-if="pendingMaintenance?.input.action === 'compose_remove'" class="compose-remove-options">
+        <p>{{ phrase('停止并删除此项目的全部容器及非外部网络，容器内未持久化的数据将丢失。') }}</p>
+        <label class="inline-check"><input v-model="pendingMaintenance.input.removeComposeFiles" type="checkbox" /> {{ phrase('移除 Compose 配置（保留备份）') }}</label>
+        <p class="compose-remove-options__hint">{{ phrase(pendingMaintenance.input.removeComposeFiles ? '配置文件将重命名备份，.env 和项目目录保留；可通过恢复原文件名重新部署。' : '配置保留，项目仍会显示在列表中，可随时重新部署。') }}</p>
+        <label class="inline-check"><input v-model="pendingMaintenance.input.removeVolumes" type="checkbox" /> {{ phrase('同时删除 Docker 数据卷') }}</label>
+        <p class="compose-remove-options__hint" :class="{ 'text-danger': pendingMaintenance.input.removeVolumes }">{{ phrase(pendingMaintenance.input.removeVolumes ? '项目声明的命名卷和容器匿名卷将删除，数据不可恢复；外部卷、宿主机挂载目录和镜像保留。' : '默认保留数据卷、宿主机挂载目录和镜像。') }}</p>
+      </section>
       <template #footer><button class="button button--secondary" type="button" @click="pendingMaintenance = undefined">{{ phrase('取消') }}</button><button class="button" :class="pendingMaintenance?.danger ? 'button--danger' : 'button--primary'" type="button" :disabled="taskRunning || !pendingMaintenance" @click="pendingMaintenance && submitTask(pendingMaintenance.input)"><LoaderCircle v-if="taskRunning" class="spin" :size="16" />{{ phrase(taskRunning ? '正在提交…' : '确认执行') }}</button></template>
     </ModalDialog>
 
@@ -2338,6 +2356,12 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.compose-remove-button { margin-right: auto; }
+.compose-remove-options { display: grid; gap: 12px; font-size: 14px; overflow-wrap: anywhere; }
+.compose-remove-options p { margin: 0; }
+.compose-remove-options .inline-check { align-items: flex-start; font-size: 14px; }
+.compose-remove-options__hint { color: var(--muted); font-size: 14px; line-height: 1.6; }
+.compose-remove-options__hint.text-danger { color: var(--danger); }
 .docker-container-icon { position: relative; }
 .docker-page { gap: 14px; }
 .docker-job { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(160px, 28%); align-items: center; gap: 12px; }

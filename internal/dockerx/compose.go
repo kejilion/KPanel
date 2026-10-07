@@ -597,6 +597,89 @@ func (c *Client) runComposeProjectLifecycle(ctx context.Context, input Maintenan
 	return nil
 }
 
+// Move only the configuration files, never the project directory or bind-mounted data.
+// Both paths remain in the same directory; the guard preserves external edits.
+func (guard *composeEditGuard) move(source, target string) error {
+	if err := guard.check(); err != nil {
+		return err
+	}
+	original, ok := guard.files[source]
+	if !ok || original.info == nil || guard.files[target].info != nil {
+		return composeEditConflict()
+	}
+	if err := os.Rename(source, target); err != nil {
+		return err
+	}
+	guard.files[source] = composeEditFile{}
+	guard.files[target] = original
+	return syncDirectoryPath(filepath.Dir(source))
+}
+
+func (c *Client) removeComposeProject(ctx context.Context, input MaintenanceInput, archiveID string) (string, error) {
+	state, err := c.resolveComposeProject(ctx, input.Name)
+	if err != nil {
+		return "", err
+	}
+	if input.ExpectedResourceVersion == "" || input.ExpectedResourceVersion != state.ResourceVersion {
+		return "", ErrResourceConflict
+	}
+	guard, err := newComposeEditGuard(state.ComposeProject)
+	if err != nil {
+		return "", err
+	}
+	if input.RemoveComposeFiles {
+		if !dockerJobIDPattern.MatchString(archiveID) {
+			return "", ErrInvalidDockerJob
+		}
+		for _, file := range state.ConfigFiles {
+			// Missing backup targets are guarded as well, so existing files are never replaced.
+			guard.files[file.Path+".kpanel-removed-"+archiveID] = composeEditFile{}
+		}
+	}
+	if err := guard.check(); err != nil {
+		return "", err
+	}
+	arguments := append(composeProjectBase(state.ComposeProject), "down", "--remove-orphans")
+	if input.RemoveVolumes {
+		arguments = append(arguments, "--volumes")
+	}
+	if _, err := c.runCompose(ctx, arguments...); err != nil {
+		return "", fmt.Errorf("Compose project removal failed; configuration preserved: %w", err)
+	}
+	containers, err := c.ContainerListSummaries(ctx)
+	if err != nil {
+		return "", fmt.Errorf("Compose removal result could not be verified; configuration preserved: %w", err)
+	}
+	for _, container := range containers {
+		if container.ComposeProject == input.Name {
+			return "", errors.New("Compose project containers still exist; configuration preserved for retry")
+		}
+	}
+	if !input.RemoveComposeFiles {
+		return "", nil
+	}
+	var moved []string
+	for _, file := range state.ConfigFiles {
+		backup := file.Path + ".kpanel-removed-" + archiveID
+		err = ctx.Err()
+		if err == nil {
+			err = guard.move(file.Path, backup)
+		}
+		if guard.files[file.Path].info == nil {
+			moved = append(moved, file.Path)
+		}
+		if err != nil {
+			// Restore only files still owned by this task. Never overwrite external changes.
+			for index := len(moved) - 1; index >= 0; index-- {
+				path := moved[index]
+				err = errors.Join(err, guard.move(path+".kpanel-removed-"+archiveID, path))
+			}
+			return state.WorkingDirectory, fmt.Errorf("Compose deployment removed but configuration archive failed; inspect original files and .kpanel-removed-%s backups: %w", archiveID, err)
+		}
+	}
+	return state.WorkingDirectory, nil
+}
+
 func (c *Client) redeployComposeProject(ctx context.Context, input MaintenanceInput) error {
 	state, err := c.resolveComposeProject(ctx, input.Name)
 	if err != nil {

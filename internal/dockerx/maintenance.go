@@ -38,7 +38,7 @@ var (
 )
 
 var maintenanceActions = []string{
-	"container_create", "compose_deploy", "compose_redeploy", "compose_start", "compose_stop", "compose_restart",
+	"container_create", "compose_deploy", "compose_redeploy", "compose_start", "compose_stop", "compose_restart", "compose_remove",
 	"container_access", "image_pull", "image_remove",
 	"network_create", "network_remove", "network_connect", "network_disconnect",
 	"volume_create", "volume_remove", "prune", "container_prune", "image_prune",
@@ -81,6 +81,8 @@ type MaintenanceInput struct {
 	Compose                  string                       `json:"compose,omitempty"`
 	ComposeEnvironment       *string                      `json:"composeEnvironment,omitempty"`
 	ComposeFile              string                       `json:"composeFile,omitempty"`
+	RemoveComposeFiles       bool                         `json:"removeComposeFiles,omitempty"`
+	RemoveVolumes            bool                         `json:"removeVolumes,omitempty"`
 	AllowedIP                string                       `json:"allowedIp,omitempty"`
 	BackupID                 string                       `json:"backupId,omitempty"`
 	MigrationHost            string                       `json:"migrationHost,omitempty"`
@@ -255,7 +257,7 @@ func (c *Client) validateMaintenanceInput(ctx context.Context, input Maintenance
 		if err := c.validateComposeDeploymentInput(ctx, input); err != nil {
 			return err
 		}
-	case "compose_redeploy", "compose_start", "compose_stop", "compose_restart":
+	case "compose_redeploy", "compose_start", "compose_stop", "compose_restart", "compose_remove":
 		if err := c.validateExistingComposeProjectInput(ctx, input); err != nil {
 			return err
 		}
@@ -385,6 +387,8 @@ func (c *Client) runMaintenance(record dockerJobRecord) {
 		err = c.runComposeProjectLifecycle(ctx, record.Input, "stop")
 	case "compose_restart":
 		err = c.runComposeProjectLifecycle(ctx, record.Input, "restart")
+	case "compose_remove":
+		record.ResultPath, err = c.removeComposeProject(ctx, record.Input, record.ID)
 	case "container_access":
 		err = c.updateContainerAccess(
 			ctx,
@@ -449,6 +453,18 @@ func (c *Client) runMaintenance(record dockerJobRecord) {
 		record.Status = "succeeded"
 		record.Stage = "completed"
 		record.Message = dockerActionCompleted(record.Action)
+		if record.Action == "compose_remove" {
+			if record.Input.RemoveComposeFiles {
+				record.Message += "；Compose 配置已重命名备份"
+			} else {
+				record.Message += "；配置保留，可重新部署"
+			}
+			if record.Input.RemoveVolumes {
+				record.Message += "；已请求删除项目数据卷，挂载目录和镜像保留"
+			} else {
+				record.Message += "；数据卷、挂载目录和镜像保留"
+			}
+		}
 	}
 	record.Input = MaintenanceInput{Action: record.Action, Target: record.Target}
 	c.jobs.finish(record)
@@ -1080,6 +1096,8 @@ func dockerActionProgress(action string) string {
 		return "正在停止 Docker Compose 项目"
 	case "compose_restart":
 		return "正在重启 Docker Compose 项目"
+	case "compose_remove":
+		return "正在删除 Docker Compose 项目部署"
 	case "container_access":
 		return "正在更新容器外部访问规则"
 	case "image_pull":
@@ -1129,6 +1147,8 @@ func dockerActionCompleted(action string) string {
 		return "Docker Compose 项目已停止"
 	case "compose_restart":
 		return "Docker Compose 项目已重启"
+	case "compose_remove":
+		return "Docker Compose 项目部署已删除"
 	case "container_access":
 		return "容器外部访问规则已更新"
 	case "image_pull":

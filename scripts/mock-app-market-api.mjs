@@ -91,6 +91,27 @@ const mockDockerMonitorContainers = [
   mockProfile: { cpu, memory, pids },
 }))
 const mockDockerContainers = [...mockDockerUpdateContainers, ...mockDockerMonitorContainers]
+const mockDockerComposeProjects = new Map([...new Set(mockDockerContainers.map(item => item.composeProject).filter(Boolean))].map(name => {
+  const items = mockDockerContainers.filter(item => item.composeProject === name)
+  const workingDirectory = name === 'web' ? '/home/web' : `/home/docker/${name}`
+  return [name, { name, workingDirectory,
+    configFiles: [{ path: `${workingDirectory}/docker-compose.yml`, name: 'docker-compose.yml',
+      source: `services:\n${items.map(item => `  ${item.composeService}:\n    image: ${item.image}\n    restart: always\n`).join('')}` }],
+    services: items.map(item => item.composeService), resourceVersion: `sha256:${'5'.repeat(64)}` }]
+}))
+const mockDockerJobs = new Map()
+let mockDockerJobCounter = 0
+function materializeMockDockerJob(record) {
+  if (record.job.status === 'queued' && Date.now() - record.created >= 600) {
+    for (let index = mockDockerContainers.length - 1; index >= 0; index--) {
+      if (mockDockerContainers[index].composeProject === record.job.target) mockDockerContainers.splice(index, 1)
+    }
+    if (record.removeComposeFiles) mockDockerComposeProjects.delete(record.job.target)
+    Object.assign(record.job, { status: 'succeeded', stage: 'completed', progress: 100,
+      message: 'Mock · Compose 项目部署已删除；数据处理按确认选项模拟', finishedAt: new Date().toISOString() })
+  }
+  return record.job
+}
 const mockDockerStatsStartedAt = Date.now()
 function mockDockerStats(item) {
   const profile = item.mockProfile
@@ -2860,17 +2881,38 @@ createServer(async (request, response) => {
   }
   const mockComposeProjectMatch = request.method === 'GET' && url.pathname.match(/^\/api\/v1\/docker\/compose-projects\/([a-z0-9][a-z0-9_-]*)$/)
   if (mockComposeProjectMatch) {
-    const name = mockComposeProjectMatch[1]
-    const services = mockDockerContainers.filter(item => item.composeProject === name).map(item => item.composeService)
-    if (!services.length) { send(response, 404, { code: 'docker_resource_not_found', title: 'Docker 资源不存在' }); return }
-    const source = `services:\n${services.map(service => `  ${service}:\n    image: ${mockDockerContainers.find(item => item.composeService === service && item.composeProject === name).image}\n    restart: always\n`).join('')}`
-    const workingDirectory = name === 'web' ? '/home/web' : `/home/docker/${name}`
-    send(response, 200, { name, workingDirectory,
-      configFiles: [{ path: `${workingDirectory}/docker-compose.yml`, name: 'docker-compose.yml', source }],
-      services, resourceVersion: `sha256:${'5'.repeat(64)}` })
+    const project = mockDockerComposeProjects.get(mockComposeProjectMatch[1])
+    send(response, project ? 200 : 404, project || { code: 'docker_resource_not_found', title: 'Docker 资源不存在' })
     return
   }
-  if (request.method === 'GET' && /^\/api\/v1\/docker\/(images|networks|volumes|backups|jobs|compose-projects)$/.test(url.pathname)) {
+  if (request.method === 'GET' && url.pathname === '/api/v1/docker/compose-projects') {
+    send(response, 200, { items: [...mockDockerComposeProjects.keys()].map(name => ({ name })) })
+    return
+  }
+  if (request.method === 'POST' && url.pathname === '/api/v1/docker/tasks') {
+    const input = await readJSON(request)
+    const project = mockDockerComposeProjects.get(input?.name)
+    if (input?.action !== 'compose_remove' || !project) { send(response, 400, { title: 'Mock · 删除项目输入无效' }); return }
+    if (input.expectedResourceVersion !== project.resourceVersion) { send(response, 409, { title: 'Mock · 项目配置已变化，请刷新后重试' }); return }
+    const id = `d${(++mockDockerJobCounter).toString(16).padStart(31, '0')}`
+    const job = { id, action: input.action, target: input.name, status: 'queued', stage: 'queued', progress: 0,
+      message: 'Mock · 正在删除 Compose 项目', createdAt: new Date().toISOString() }
+    if (mockDockerJobs.size >= 50) mockDockerJobs.delete(mockDockerJobs.keys().next().value)
+    mockDockerJobs.set(id, { job, created: Date.now(), removeComposeFiles: input.removeComposeFiles === true })
+    send(response, 202, job)
+    return
+  }
+  if (request.method === 'GET' && url.pathname === '/api/v1/docker/jobs') {
+    send(response, 200, { items: [...mockDockerJobs.values()].map(materializeMockDockerJob) })
+    return
+  }
+  const mockDockerJobMatch = request.method === 'GET' && url.pathname.match(/^\/api\/v1\/docker\/jobs\/([a-f0-9]{32})$/)
+  if (mockDockerJobMatch) {
+    const record = mockDockerJobs.get(mockDockerJobMatch[1])
+    send(response, record ? 200 : 404, record ? materializeMockDockerJob(record) : { title: 'Mock · Docker 任务不存在' })
+    return
+  }
+  if (request.method === 'GET' && /^\/api\/v1\/docker\/(images|networks|volumes|backups)$/.test(url.pathname)) {
     send(response, 200, { items: [], total: 0 })
     return
   }
