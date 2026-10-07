@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import DesktopMonitor from '@/components/desktop/DesktopMonitor.vue'
@@ -47,6 +47,10 @@ describe('DesktopMonitor', () => {
     vi.mocked(api.system.resources).mockResolvedValue(makeOverview())
   })
 
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
   it('loads on a phone-width widget page', async () => {
     vi.stubGlobal('matchMedia', (query: string) => ({
       matches: query.includes('max-width'), media: query, addEventListener() {}, removeEventListener() {},
@@ -57,7 +61,6 @@ describe('DesktopMonitor', () => {
     expect(api.system.resources).toHaveBeenCalledTimes(1)
     expect(wrapper.find('.desktop-monitor__host').text()).toContain('Ubuntu 24.04 LTS')
     wrapper.unmount()
-    vi.unstubAllGlobals()
   })
 
   it('renders the monitor title', async () => {
