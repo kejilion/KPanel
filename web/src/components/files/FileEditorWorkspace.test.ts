@@ -60,9 +60,9 @@ function entry(name: string): FileEntry {
 const a = entry('a.json'),
   b = entry('b.json')
 const wrappers: ReturnType<typeof mount>[] = []
-async function setup(navigationPath?: string, showDirectoryNavigation = true) {
+async function setup(navigationPath?: string) {
   const wrapper = mount(FileEditorWorkspace, {
-    props: { entry: a, content: 'original a', hostId: 'remote-a', navigationPath, showDirectoryNavigation },
+    props: { entry: a, content: 'original a', hostId: 'remote-a', navigationPath },
     global: { stubs: { CodeEditor: Editor } },
     attachTo: document.body,
   })
@@ -90,12 +90,14 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 describe('file editor workspace', () => {
-  it('skips the directory list for a standalone file preview', async () => {
-    const wrapper = await setup(undefined, false)
+  it('shows the containing directory sidebar in a standalone file preview', async () => {
+    const wrapper = await setup()
 
-    expect(mocks.list).not.toHaveBeenCalled()
-    expect(wrapper.find('.editor-sidebar').exists()).toBe(false)
-    expect(wrapper.find('button[aria-label="文件列表"]').exists()).toBe(false)
+    expect(mocks.list).toHaveBeenCalledOnce()
+    expect(mocks.list.mock.calls[0]?.[0]).toBe('/demo')
+    expect(wrapper.find('.editor-sidebar').exists()).toBe(true)
+    expect(wrapper.find('.editor-sidebar__path').text()).toBe('/demo')
+    expect(wrapper.find('button[aria-label="文件列表"]').exists()).toBe(true)
     expect(wrapper.find('.editor-main').exists()).toBe(true)
   })
 

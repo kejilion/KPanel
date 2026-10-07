@@ -1117,7 +1117,7 @@ describe('FilesView desktop shortcuts', () => {
     expect(view.previewEntry.value).toEqual(entry)
   })
 
-  it('opens a standalone desktop file preview without loading its containing directory', async () => {
+  it('keeps a standalone desktop file route focused on the requested file', async () => {
     const filePath = '/etc/nginx/nginx.conf'
     const entry = { ...testEntry('nginx.conf'), path: filePath, editable: false }
     const requestDesktopWindowClose = vi.fn(async () => undefined)
