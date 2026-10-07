@@ -1,0 +1,123 @@
+{
+  "run_id": "run-19",
+  "source_ref": "9bce646f1a4eff5323b9dea9085e98076de1c345",
+  "source_tree": "40ac8ed6fd15804f90824a0672c9180f2ddf7f64",
+  "source_dirty": false,
+  "scope_mode": "scoped",
+  "profile": "quick",
+  "comparison_base": "4c0694aa8e02e46145a775707b8d5a0355f7ce10",
+  "reviewed_commits": [
+    "659a108d8cd30c6ad35dfbe7fa97bc64fa705da7",
+    "f870d58a32fb3e9f961b4bb2c24dec290332c810",
+    "24df7e45f48ed67b7ab1ca4604df0752e0baba44",
+    "c134fa88796305c2b506ff9d2e810a6c20dc1670"
+  ],
+  "scope_paths": [
+    "internal/dockerx/compose.go",
+    "internal/dockerx/maintenance.go",
+    "internal/dockerx/compose_remove_test.go",
+    "internal/dockerx/compose_integration_test.go",
+    "web/src/views/DockerView.vue",
+    "web/src/views/DockerView.compose-remove.test.ts",
+    "web/src/types/api.ts",
+    "web/src/i18n/pages/DockerView/en-US.ts",
+    "web/src/i18n/pages/DockerView/zh-TW.ts",
+    "scripts/mock-app-market-api.mjs",
+    "docs/docker-command-deployment.md",
+    "internal/panel/server.go",
+    "internal/panel/jobs.go",
+    "internal/agent/server.go",
+    "web/src/lib/api.ts"
+  ],
+  "skill_commit": "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8",
+  "started_at": "2026-10-07T15:42:07Z",
+  "ended_at": "2026-10-07T16:17:50Z",
+  "audit_cutoff": "2026-10-07T16:12:07Z",
+  "metadata_closed_at": "2026-10-07T16:22:32.297Z",
+  "run_status": "incomplete",
+  "scope_complete": false,
+  "coverage_counted": false,
+  "target_execution_performed": false,
+  "execution_plan": {
+    "pre_recon_estimate": {
+      "profile": "quick",
+      "hunter_waves": 1,
+      "rationale": "24 次严格上限；四个基线侦察调用后，一个两 hunter 波与一个 quick 最终 critic；预留约 30% 后续余额（6 次）给候选 Phase 3/5 独立复核。超出预留的候选按 fingerprint 顺序验证，不足则 incomplete。",
+      "validation_reserve_agents": 6,
+      "planned_minimum_total": 13,
+      "reconnaissance_calls": 4,
+      "hunters_planned": 2,
+      "final_critic_calls": 1,
+      "budget_covers_plan": true
+    },
+    "max_wall_seconds": 1800,
+    "max_concurrency": 2,
+    "dynamic_validation": [
+      {
+        "owner": "root（本轮发布维护者）",
+        "validation": "只在完整 OS 沙箱可用时用隔离 fixtures 与 dummy Docker CLI/daemon 验证；部署事实由 owner 只读取证",
+        "review_due": "2026-10-21",
+        "status": "仅当猎取形成具体候选后登记",
+        "risk": "任何依赖 Docker CLI/daemon 实际效果、宿主机文件系统/权限/符号链接行为或部署代理/Origin 配置的结论"
+      }
+    ],
+    "max_agent_invocations": 24,
+    "reasoning_effort": "max",
+    "scope_reason": "本批覆盖 Compose 删除新增的宿主机文件删除、配置保留、部分失败恢复与资源版本不变量；其他后续提交仍 pending/out_of_scope。",
+    "validation_mode": "source-only",
+    "model": "gpt-6-luna",
+    "reviewed_commits": [
+      "659a108d8cd30c6ad35dfbe7fa97bc64fa705da7",
+      "f870d58a32fb3e9f961b4bb2c24dec290332c810",
+      "24df7e45f48ed67b7ab1ca4604df0752e0baba44",
+      "c134fa88796305c2b506ff9d2e810a6c20dc1670"
+    ],
+    "stop_conditions": [
+      "不执行 KPanel 测试、构建、浏览器、目标代码或真实 Docker",
+      "预算或墙钟到限即保留已验证证据、标记未完成单元并准确写 incomplete",
+      "只有源码无法决定的 Docker/OS/部署事实可成为 needs_validation，需列具体缺失事实与最小验证计划"
+    ]
+  },
+  "actual_cost": {
+    "cost_reason": "未提供平台金额计量",
+    "agents_spent": null,
+    "ended_at": "2026-10-07T16:17:50Z",
+    "validation_rework": null,
+    "model": "gpt-6-luna",
+    "reasoning_effort": "max",
+    "platform_wait_seconds": null,
+    "tokens_reason": "平台不提供可靠 token 计量",
+    "agent_invocations": null,
+    "max_agent_invocations": 24,
+    "started_at": "2026-10-07T15:42:07Z",
+    "tokens": null,
+    "wall_seconds": 2143,
+    "cost_usd": null,
+    "wall_seconds_definition": "Elapsed start to the audit parent stopping its failed bounded documentation closeout; includes post-cutoff shutdown/closeout, not 2143 seconds of coverage work.",
+    "accounting_reason": "Complete invocation accounting was not serialized; observed completed responses establish only a lower bound of seven distinct child agents. Planned counts must not be used as actual counts.",
+    "observed_child_agent_lower_bound": 7,
+    "parent_agent_instances": 1
+  },
+  "interruption_reason": "Audit wall budget exhausted; platform agent thread limit prevented coverage critic. A bounded documentation closeout then failed before writing artifacts and stopped. No completed coverage is claimed.",
+  "finding_summary": {
+    "candidates": 1,
+    "independently_rejected": 1,
+    "surviving_confirmed": 0,
+    "surviving_needs_validation": 0,
+    "whole_scope_conclusion": "unavailable; incomplete"
+  },
+  "validation_limits": [
+    "coverage-ledger.json",
+    "findings.json",
+    "coverage critic",
+    "independent Phase-5 record audit",
+    "REPORT.md",
+    "FINDINGS-DETAIL.md",
+    "NEEDS-VALIDATION.md",
+    "two skill validator logs",
+    "reliable complete agent invocation accounting"
+  ],
+  "private_initial_metadata_sha256": "f071dfe03480ba5c1a361f0ae7ffca193452e3f6fedbf33e78e930c2f2005c0c",
+  "private_closed_metadata_sha256": "061c356f3e485a0ad4b6db110edf57837fe80cadb4ddebb0797b9d0d0676d218",
+  "disclosure_policy": "PROJECT_RULES.md 5.4: publish summary metadata; retain detailed candidate and independent verification transcript privately. No coverage ledger was produced, no completed coverage or clean conclusion is claimed."
+}
