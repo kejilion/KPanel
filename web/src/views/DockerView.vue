@@ -2256,11 +2256,13 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <template #footer>
+       <div class="compose-manager-actions">
          <button class="button button--danger compose-remove-button" type="button" :disabled="!composeProject" @click="askComposeRemoval"><Trash2 :size="15" /> {{ phrase('删除项目') }}</button>
          <button class="button button--secondary" type="button" :disabled="!composeProject" @click="askComposeLifecycle('compose_start')"><Play :size="15" /> {{ phrase('启动项目') }}</button>
          <button class="button button--secondary" type="button" :disabled="!composeProject" @click="askComposeLifecycle('compose_restart')"><RotateCw :size="15" /> {{ phrase('重启项目') }}</button>
          <button class="button button--secondary" type="button" :disabled="!composeProject" @click="askComposeLifecycle('compose_stop')"><CircleStop :size="15" /> {{ phrase('停止项目') }}</button>
          <button class="button button--primary" type="button" :disabled="!composeCanRedeploy" @click="submitComposeRedeploy"><RefreshCw :size="15" /> {{ phrase('保存并重新部署') }}</button>
+       </div>
       </template>
     </ModalDialog>
 
@@ -2356,6 +2358,8 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.compose-manager-actions { display: flex; width: 100%; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.compose-manager-actions .button { max-width: 100%; }
 .compose-remove-button { margin-right: auto; }
 .compose-remove-options { display: grid; gap: 12px; font-size: 14px; overflow-wrap: anywhere; }
 .compose-remove-options p { margin: 0; }
