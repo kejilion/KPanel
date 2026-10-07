@@ -47,6 +47,19 @@ describe('DesktopMonitor', () => {
     vi.mocked(api.system.resources).mockResolvedValue(makeOverview())
   })
 
+  it('loads on a phone-width widget page', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query.includes('max-width'), media: query, addEventListener() {}, removeEventListener() {},
+    }))
+    const wrapper = mount(DesktopMonitor)
+    await new Promise((r) => setTimeout(r, 50))
+    await nextTick()
+    expect(api.system.resources).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('.desktop-monitor__host').text()).toContain('Ubuntu 24.04 LTS')
+    wrapper.unmount()
+    vi.unstubAllGlobals()
+  })
+
   it('renders the monitor title', async () => {
     const wrapper = mount(DesktopMonitor)
     await new Promise((r) => setTimeout(r, 50))

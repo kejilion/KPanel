@@ -23,7 +23,6 @@ const loading = ref(true)
 let refreshTimer: number | undefined
 let controller: AbortController | undefined
 let refreshActive = false
-let compactMedia: MediaQueryList | undefined
 
 const cpuPercent = computed(() => overview.value?.cpu.percent)
 const cpuCores = computed(() => overview.value?.cpu.cores)
@@ -96,8 +95,10 @@ function startPolling(): void {
   refreshTimer = window.setInterval(() => void refresh(true), 20_000)
 }
 
+// The desktop mounts widgets only where they are shown (wide side column or
+// the phone widget page), so only page visibility pauses polling.
 function onVisibilityChange(): void {
-  if (document.hidden || compactMedia?.matches) {
+  if (document.hidden) {
     stopPolling()
     controller?.abort()
     return
@@ -106,14 +107,8 @@ function onVisibilityChange(): void {
   startPolling()
 }
 
-function onCompactChange(): void {
-  onVisibilityChange()
-}
-
 onMounted(() => {
-  compactMedia = window.matchMedia?.('(max-width: 900px)')
-  compactMedia?.addEventListener('change', onCompactChange)
-  if (!document.hidden && !compactMedia?.matches) {
+  if (!document.hidden) {
     void refresh()
     startPolling()
   }
@@ -123,7 +118,6 @@ onMounted(() => {
 onBeforeUnmount(() => {
   stopPolling()
   controller?.abort()
-  compactMedia?.removeEventListener('change', onCompactChange)
   document.removeEventListener('visibilitychange', onVisibilityChange)
 })
 </script>

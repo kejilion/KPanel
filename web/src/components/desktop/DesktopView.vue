@@ -28,6 +28,7 @@ import {
   Maximize2,
   Minimize2,
   SwitchCamera,
+  LayoutDashboard,
   X,
 } from '@lucide/vue'
 import { useSceneMotionPreference } from '@/lib/desktopScenes/motionPreference'
@@ -112,6 +113,7 @@ import {
   type WindowSnap,
 } from '@/lib/desktopWindowGeometry'
 import {
+  DEFAULT_DESKTOP_ICON_METRICS,
   desktopIconGrid,
   desktopIconGridSlotForPosition,
   desktopIconPositionForGridSlot,
@@ -130,7 +132,7 @@ import {
   type DesktopGridItem,
   type DesktopGridPlacement,
 } from '@/lib/desktopGridLayout'
-import { desktopWidgetKeys, desktopWidgets } from '@/lib/desktopWidgets'
+import { desktopWidgetKeys, desktopWidgets, type DesktopWidgetDefinition } from '@/lib/desktopWidgets'
 import { prefetchNavigationRoute } from '@/lib/navigation'
 import {
   desktopCloseGuardCoordinator,
@@ -841,6 +843,15 @@ const pagerLayout = computed(() => {
 const pagerPlacementByKey = computed(() => new Map(
   (pagerLayout.value?.placements || []).map(placement => [placement.key, placement]),
 ))
+// Like a phone's -1 screen, the widgets get their own page left of the first icon page.
+const widgetPageOffset = computed(() => pagerLayout.value && visibleDesktopWidgets.value.length ? 1 : 0)
+const pagerTotalPages = computed(() => (pagerLayout.value?.pageCount ?? 0) + widgetPageOffset.value)
+const widgetPageWidgets = computed(() => {
+  const byKey = new Map(visibleDesktopWidgets.value.map(widget => [widget.key, widget]))
+  return desktopPagerOrder([...byKey.keys()], localWidgetPositions.value).map(key => byKey.get(key)!)
+})
+// Widgets poll the server, so they mount only once the page is first revealed.
+const widgetPageSeen = ref(false)
 const openFolder = computed(() => pagerFolders.value.find(group => group.id === openFolderId.value))
 const openFolderMembers = computed(() => {
   const group = openFolder.value
@@ -863,16 +874,28 @@ function pagerSlotStyle(key: string): Record<string, string> {
   // Group members live in their folder sheet on phone screens.
   const placement = groupMembership.value.has(key) ? undefined : pagerPlacementByKey.value.get(key)
   if (!placement) return { display: 'none' }
-  return { left: '0px', top: '0px', transform: `translate3d(${placement.left}px, ${placement.top}px, 0)` }
+  const left = placement.left + widgetPageOffset.value * pagerLayout.value!.grid.pageWidth
+  return { left: '0px', top: '0px', transform: `translate3d(${left}px, ${placement.top}px, 0)` }
+}
+
+function widgetPageHeight(widget: DesktopWidgetDefinition): number {
+  const { height, rowGap } = DEFAULT_DESKTOP_ICON_METRICS
+  return (widget.rows ?? 1) * (height + rowGap) - rowGap
+}
+
+function pagerDotLabel(index: number): string {
+  if (index < widgetPageOffset.value) return i18n.t('desktop.widgetPageLabel')
+  return i18n.t('desktop.pagerPage', { page: index - widgetPageOffset.value + 1, count: pagerLayout.value?.pageCount ?? 1 })
 }
 
 function scrollPagerTo(page: number, smooth = true): void {
   const element = iconsElement.value
   const layout = pagerLayout.value
   if (!element || !layout) return
-  const target = Math.min(layout.pageCount - 1, Math.max(0, Math.round(page)))
+  const target = Math.min(pagerTotalPages.value - 1, Math.max(0, Math.round(page)))
   const left = target * layout.grid.pageWidth
   pagerPage.value = target
+  if (target < widgetPageOffset.value) widgetPageSeen.value = true
   if (Math.abs(element.scrollLeft - left) < 1) return
   if (smooth && motionDuration(1) && typeof element.scrollTo === 'function') element.scrollTo({ left, behavior: 'smooth' })
   else element.scrollLeft = left
@@ -882,14 +905,17 @@ function onIconsScroll(): void {
   const element = iconsElement.value
   const layout = pagerLayout.value
   if (!element || !layout) return
-  pagerPage.value = desktopPagerPageForScroll(element.scrollLeft, layout.grid.pageWidth, layout.pageCount)
+  pagerPage.value = desktopPagerPageForScroll(element.scrollLeft, layout.grid.pageWidth, pagerTotalPages.value)
+  if (widgetPageOffset.value && element.scrollLeft < layout.grid.pageWidth - 1) widgetPageSeen.value = true
 }
 
 // A mouse wheel has no sideways axis; one vertical notch turns one page.
 function onIconsWheel(event: WheelEvent): void {
   const layout = pagerLayout.value
-  if (!layout || layout.pageCount < 2 || event.ctrlKey) return
+  if (!layout || pagerTotalPages.value < 2 || event.ctrlKey) return
   if (Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return
+  // The widget page scrolls its own column of widgets.
+  if ((event.target as Element | null)?.closest('.desktop__widget-page')) return
   event.preventDefault()
   const now = Date.now()
   if (Math.abs(event.deltaY) < 4 || now < pagerWheelUntil) return
@@ -898,13 +924,20 @@ function onIconsWheel(event: WheelEvent): void {
 }
 
 function onIconsFocusIn(event: FocusEvent): void {
-  const slot = (event.target as Element | null)?.closest<HTMLElement>('[data-icon-key], [data-pager-key]')
+  const target = event.target as Element | null
+  if (target?.closest('.desktop__widget-page')) {
+    scrollPagerTo(0, false)
+    return
+  }
+  const slot = target?.closest<HTMLElement>('[data-icon-key], [data-pager-key]')
   const key = slot?.dataset.iconKey || slot?.dataset.pagerKey
   const page = key ? pagerPlacementByKey.value.get(key)?.page : undefined
-  if (page !== undefined) scrollPagerTo(page, false)
+  if (page !== undefined) scrollPagerTo(page + widgetPageOffset.value, false)
 }
 
-watch(() => pagerLayout.value ? `${pagerLayout.value.grid.pageWidth}:${pagerLayout.value.pageCount}` : '', async (next, previous) => {
+watch(() => pagerLayout.value
+  ? `${pagerLayout.value.grid.pageWidth}:${pagerLayout.value.pageCount}:${widgetPageOffset.value}`
+  : '', async (next, previous) => {
   await nextTick()
   const element = iconsElement.value
   if (!element) return
@@ -914,9 +947,16 @@ watch(() => pagerLayout.value ? `${pagerLayout.value.grid.pageWidth}:${pagerLayo
     element.scrollLeft = 0
     return
   }
-  if (!previous) element.scrollTop = 0
+  if (!previous) {
+    // Like a phone, the desktop opens on the first icon page, not the widget page.
+    element.scrollTop = 0
+    pagerPage.value = widgetPageOffset.value
+  } else {
+    // Keep the same icon page when the widget page appears or disappears.
+    pagerPage.value += widgetPageOffset.value - Number(previous.split(':')[2])
+  }
   scrollPagerTo(pagerPage.value, false)
-}, { flush: 'post' })
+}, { flush: 'post', immediate: true })
 
 // Many pages (or a large zoom) can overflow the dot strip; keep the current dot in view.
 watch(pagerPage, async page => {
@@ -4280,12 +4320,31 @@ function onViewportResize(): void {
       />
       <template v-if="pagerLayout">
         <span
-          v-for="page in pagerLayout.pageCount"
+          v-for="page in pagerTotalPages"
           :key="`page-${page}`"
           class="desktop__pager-page"
           :style="{ left: `${(page - 1) * pagerLayout.grid.pageWidth}px`, width: `${pagerLayout.grid.pageWidth}px` }"
           aria-hidden="true"
         />
+        <section
+          v-if="widgetPageOffset"
+          class="desktop__widget-page"
+          :style="{ width: `${pagerLayout.grid.pageWidth}px` }"
+          :aria-label="i18n.t('desktop.widgetPageLabel')"
+        >
+          <template v-if="widgetPageSeen">
+            <DesktopWidgetHost
+              v-for="widget in widgetPageWidgets"
+              :key="`page-${widget.key}`"
+              :widget="widget"
+              :component-props="widgetComponentProps(widget.key)"
+              :style="{ height: `${widgetPageHeight(widget)}px` }"
+            />
+          </template>
+          <button type="button" class="desktop__widget-page-edit" @click="iconManagerOpen = true">
+            {{ i18n.t('desktop.widgetPageEdit') }}
+          </button>
+        </section>
       </template>
       <DesktopWidgetHost
         v-for="widget in visibleDesktopWidgets"
@@ -4453,22 +4512,23 @@ function onViewportResize(): void {
     </nav>
 
     <nav
-      v-if="pagerLayout && pagerLayout.pageCount > 1 && initialLayoutReady"
+      v-if="pagerLayout && pagerTotalPages > 1 && initialLayoutReady"
       ref="pagerDotsElement"
       class="desktop__pager"
       :aria-label="i18n.t('desktop.pagerLabel')"
     >
       <button
-        v-for="page in pagerLayout.pageCount"
+        v-for="page in pagerTotalPages"
         :key="page"
         type="button"
         class="desktop__pager-dot"
         :class="{ 'desktop__pager-dot--active': page - 1 === pagerPage }"
-        :aria-label="i18n.t('desktop.pagerPage', { page, count: pagerLayout.pageCount })"
+        :aria-label="pagerDotLabel(page - 1)"
         :aria-current="page - 1 === pagerPage ? 'page' : undefined"
         @click="scrollPagerTo(page - 1)"
       >
-        <span aria-hidden="true" />
+        <LayoutDashboard v-if="page <= widgetPageOffset" :size="12" aria-hidden="true" />
+        <span v-else aria-hidden="true" />
       </button>
     </nav>
 

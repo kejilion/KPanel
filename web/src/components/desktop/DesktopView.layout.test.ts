@@ -47,6 +47,8 @@ function pointer(
   return event
 }
 
+const ALL_WIDGET_KEYS = ['widget:clock', 'widget:monitor', 'widget:services'] as const
+
 function workspace(overrides: Partial<DesktopWorkspace> = {}): DesktopWorkspace {
   return {
     schemaVersion: 3,
@@ -822,6 +824,7 @@ describe('DesktopView icon layout interaction', () => {
     loadEntries.mockResolvedValueOnce({
       apps: [extra], sites: [], visible: [extra], loadedAt: Date.now(),
     })
+    loadWorkspace.mockResolvedValueOnce(workspace({ hiddenWidgetKeys: [...ALL_WIDGET_KEYS] }))
 
     const wrapper = mount(DesktopView, { attachTo: document.body })
     await flushPromises()
@@ -841,6 +844,7 @@ describe('DesktopView icon layout interaction', () => {
     expect(extraX).toBeGreaterThanOrEqual(296)
     expect(wrapper.get('.desktop__icons-scroll-space').attributes('style')).toContain('height: 0px')
     expect(wrapper.findAll('.desktop__pager-page')).toHaveLength(2)
+    expect(wrapper.find('.desktop__widget-page').exists()).toBe(false)
 
     const dots = wrapper.findAll('.desktop__pager-dot')
     expect(dots.map(dot => dot.attributes('aria-label'))).toEqual(['第 1 页，共 2 页', '第 2 页，共 2 页'])
@@ -930,6 +934,7 @@ describe('DesktopView icon layout interaction', () => {
   it('turns one compact page per vertical wheel notch', async () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 320 })
     Object.defineProperty(window, 'innerHeight', { configurable: true, value: 568 })
+    loadWorkspace.mockResolvedValueOnce(workspace({ hiddenWidgetKeys: [...ALL_WIDGET_KEYS] }))
     const wrapper = mount(DesktopView, { attachTo: document.body })
     await flushPromises()
     const current = () => wrapper.findAll('.desktop__pager-dot').findIndex(dot => dot.attributes('aria-current') === 'page')
@@ -951,6 +956,46 @@ describe('DesktopView icon layout interaction', () => {
     // Horizontal trackpad gestures stay with native snapping.
     expect(wheel(10, 80).defaultPrevented).toBe(false)
     wrapper.unmount()
+  })
+
+  it('shows the widgets on a phone -1 page that loads only once revealed', async () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 320 })
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 568 })
+    const resources = vi.spyOn(api.system, 'resources').mockRejectedValue(new Error('offline'))
+    loadWorkspace.mockResolvedValueOnce(workspace({
+      hiddenWidgetKeys: ['widget:services'],
+      widgetPositions: { 'widget:monitor': { x: 1, y: 0 }, 'widget:clock': { x: 1, y: 0.4 } },
+    }))
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await flushPromises()
+    const dots = () => wrapper.findAll('.desktop__pager-dot')
+    const current = () => dots().findIndex(dot => dot.attributes('aria-current') === 'page')
+
+    // The desktop opens on the first icon page; the widget page sits to its left.
+    expect(dots().map(dot => dot.attributes('aria-label'))).toEqual(['小插件', '第 1 页，共 2 页', '第 2 页，共 2 页'])
+    expect(current()).toBe(1)
+    expect(wrapper.findAll('.desktop__pager-page')).toHaveLength(3)
+    const overviewX = Number((wrapper.get('[data-icon-key="nav:/overview"]').attributes('style') || '')
+      .match(/translate3d\(([\d.]+)px/)![1])
+    expect(overviewX).toBeGreaterThanOrEqual(296)
+    const page = wrapper.get('.desktop__widget-page')
+    expect(page.attributes('aria-label')).toBe('小插件')
+    expect(page.findAll('.desktop-widget-slot')).toHaveLength(0)
+    expect(resources).not.toHaveBeenCalled()
+
+    await dots()[0]!.trigger('click')
+    await flushPromises()
+    expect(current()).toBe(0)
+    // Visible widgets only, in their saved top-to-bottom order.
+    expect(page.findAll('.desktop-widget-slot').map(slot => slot.attributes('aria-label'))).toEqual(['widget:monitor', 'widget:clock'])
+    expect(resources).toHaveBeenCalledTimes(1)
+
+    await page.get('.desktop__widget-page-edit').trigger('click')
+    await flushPromises()
+    expect(document.body.querySelector('.desktop-icon-manager__section--widgets')?.textContent).toContain('桌面小插件')
+    expect(updateWorkspace).not.toHaveBeenCalled()
+    wrapper.unmount()
+    resources.mockRestore()
   })
 
   it.each([false, true])('keeps a held group pixel-following across cells and collisions (collapsed=%s)', async collapsed => {

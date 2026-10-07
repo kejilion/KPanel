@@ -25,7 +25,7 @@ describe('DesktopIconManagerDialog', () => {
     await nextTick()
 
     const manager = document.body.querySelector<HTMLElement>('.desktop-icon-manager')
-    expect(manager?.querySelector('.desktop-icon-manager__section--widgets')?.textContent).toContain('右侧小插件')
+    expect(manager?.querySelector('.desktop-icon-manager__section--widgets')?.textContent).toContain('桌面小插件')
     expect(manager?.querySelector('.desktop-icon-manager__collections')?.textContent).toContain('自定义快捷方式')
     expect(manager?.querySelector('.desktop-icon-manager__collections')?.textContent).toContain('已从桌面移除')
     expect(manager?.querySelector('.desktop-icon-manager__layout-action')?.textContent).toContain('自动整理图标')
