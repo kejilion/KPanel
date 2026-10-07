@@ -164,7 +164,7 @@ Docker 批处理、未完成备份路径工作、其他新功能、生产部署�
 首个纳入时间取 14 条精确映射原始源提交的最早 committer timestamp（ab01f598），不是 cherry-pick 时间；前后 UTC/上海日期如实保留。发布时刻见上文，未用发布时间替代生产完成。
 
 <!-- kpanel-release-process-metrics:start -->
-- 已记录发布流程异常或无效证据拦截次数：27
+- 已记录发布流程异常或无效证据拦截次数：28
 - 其中生产写操作开始后异常次数：0
 <!-- kpanel-release-process-metrics:end -->
 
@@ -329,11 +329,22 @@ Docker 批处理、未完成备份路径工作、其他新功能、生产部署�
     "recoveryEvidence": "Root tool chunk 99de0f preserves duplicate fingerprint errors for items 9 and 15. acceptance-first-validation-failed.md and process-incidents-before-acceptance-normalization.json retain original inputs. Duplicate rows were aggregated without lowering any event count; final canonical result is recorded in docs-metrics-validation.log before documentation handoff.",
     "permanentAction": "Use unique canonical fingerprint rows and sum all retained per-event counts before acceptance validation. Owner release task; review 2026-10-14 before next production L3; permanent shared parser/preflight change not claimed.",
     "historicalReleases": []
+  },
+  {
+    "fingerprint": "ci/govulncheck/upstream-http-504",
+    "position": "before-production-write",
+    "count": 1,
+    "impact": "Documentation main CI 37665104797 on 998697fec931cdae88a096db4f9087ea74b21aae failed during govulncheck at 2026-10-07T18:17:03Z because vuln.go.dev returned HTTP 504. Core race and governance checks passed. Scanner did not complete; this is not a reported reachable vulnerability.",
+    "recoveryEvidence": "docs-main-ci-first-failure.log retains the complete decoded original job 112942209586 output; official jobs and annotations are retained. Exact product code remains fd2a243c. A focused evidence correction records this incident, then final docs candidate and main CI must pass on the same new documentation SHA before archive; actual recovery is in docs-closeout-result.json.",
+    "permanentAction": "Uncontrollable upstream transient vulnerability-database failure: bounded existing CI retry with unchanged product code, preserve original failure and require successful complete govulncheck. Owner release task; review 2026-10-14; exit when final same-SHA docs candidate/main CI complete successfully. No scanner bypass, shared workflow repair or advisory suppression claimed.",
+    "historicalReleases": []
   }
 ]
 <!-- kpanel-release-process-incidents:end -->
 
 最近五个正式版本 v1.24.0/v1.23.0/v1.22.0/v1.21.0/v1.20.0 已只读比较：路径猜测在 v1.24.0 重复，代理 thread-limit 在 v1.23.0/v1.24.0 重复。永久唯一入口/回归尚未声称完成；责任人 release/audit owner，2026-10-14、下一次生产 L3/稳定复核前处理。GitHub 三次候选 push 500 在第四次同 SHA push 和候选 CI 后恢复，未跳过门禁或改用 force push。
+
+文档首轮候选 CI 37664511417 在 `998697fe` 成功；同 SHA 主线 CI 37665104797 的 govulncheck 于 2026-10-07T18:17:03Z 获取漏洞数据库时遭遇 HTTP 504，未完成扫描，原 core race/治理检查通过。保留完整原日志，不将其写成漏洞检出或主线成功。本次只修正异常计数和证据；最终文档候选与主线同 SHA 的 CI、恢复时间和归档结果由 `docs-closeout-result.json` 记录。公开产品仍为 fd2，标签/镜像不重发。
 
 本次发布前 report-release-metrics 原件：生成 2026-10-07T16:06:13.895Z；滚动 14 天正式发布 3/生产部署 0，最近 20 份验收生产完成 15、中位数 4.07 h、变更失败 1/20=5%；流程数据 19/20 reported、258 异常、35 post-production、22 repeated、undeclared=0。它是发布前快照，不混为包含本版的统计。
 
