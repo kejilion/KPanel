@@ -4342,7 +4342,7 @@ function onViewportResize(): void {
     <nav
       ref="iconsElement"
       class="desktop__icons"
-      :class="{ 'desktop__icons--paged': Boolean(pagerLayout), 'desktop__icons--grouped': localGroups.length > 0, 'desktop__icons--initializing': !initialLayoutReady, 'desktop__icons--restoring': !initialLayoutTransitionsReady, 'desktop__icons--resizing': viewportLayoutResizing }"
+      :class="{ 'desktop__icons--paged': Boolean(pagerLayout), 'desktop__icons--widget-page': Boolean(widgetPageOffset) && pagerPage < widgetPageOffset, 'desktop__icons--grouped': localGroups.length > 0, 'desktop__icons--initializing': !initialLayoutReady, 'desktop__icons--restoring': !initialLayoutTransitionsReady, 'desktop__icons--resizing': viewportLayoutResizing }"
       :inert="!initialLayoutReady || undefined"
       :aria-label="i18n.t('desktop.gridLabel')"
       :aria-busy="!initialLayoutReady || entriesLoading"

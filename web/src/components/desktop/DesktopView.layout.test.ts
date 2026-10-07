@@ -988,6 +988,7 @@ describe('DesktopView icon layout interaction', () => {
     await flushPromises()
     expect(current()).toBe(0)
     expect(wrapper.get('.desktop__pager').isVisible()).toBe(false)
+    expect(wrapper.get('.desktop__icons').classes()).toContain('desktop__icons--widget-page')
     // Visible widgets only, in their saved top-to-bottom order.
     expect(page.findAll('.desktop-widget-slot').map(slot => slot.attributes('aria-label'))).toEqual(['widget:monitor', 'widget:clock'])
     expect(resources).toHaveBeenCalledTimes(1)
@@ -1010,6 +1011,7 @@ describe('DesktopView icon layout interaction', () => {
     expect(current()).toBe(1)
 
     expect(wrapper.get('.desktop__pager').isVisible()).toBe(true)
+    expect(wrapper.get('.desktop__icons').classes()).not.toContain('desktop__icons--widget-page')
     await page.get('.desktop__widget-page-edit').trigger('click')
     await flushPromises()
     expect(document.body.querySelector('.desktop-icon-manager__section--widgets')?.textContent).toContain('桌面小插件')
