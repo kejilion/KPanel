@@ -473,6 +473,7 @@ const mediaErrorMessage = ref('')
 const mediaErrorDetail = ref('')
 const mediaRetryable = ref(false)
 const mediaReloadKey = ref(0)
+const previewVideo = ref<HTMLVideoElement>()
 const editorWorkspace = ref<{ openFile: (entry: FileEntry) => Promise<void> }>()
 const trashOpen = ref(false)
 const trashLoading = ref(false)
@@ -1056,6 +1057,20 @@ function retryMedia(): void {
   if (!entry || !entry.mime?.startsWith('video/')) return
   mediaReloadKey.value += 1
   resetMediaState(entry)
+}
+
+async function toggleVideoFullscreen(): Promise<void> {
+  const video = previewVideo.value
+  if (!video) return
+  try {
+    if (document.fullscreenElement === video) await document.exitFullscreen()
+    else await video.requestFullscreen()
+    video.focus({ preventScroll: true })
+  } catch {
+    toast.show(i18n.t('desktop.fullscreenUnavailableTitle'), {
+      message: i18n.t('desktop.fullscreenUnavailableMessage'),
+    })
+  }
 }
 
 function closePreview(): void {
@@ -2527,6 +2542,18 @@ function handleFileShortcut(event: KeyboardEvent): void {
     return
   }
   const target = event.target as HTMLElement | null
+  const video = previewVideo.value
+  if (
+    video && previewMode.value === 'video' &&
+    (document.fullscreenElement === video || video.closest('.modal-panel')?.contains(target)) &&
+    event.key.toLowerCase() === 'f' && !event.ctrlKey && !event.metaKey && !event.altKey &&
+    !event.defaultPrevented && !event.repeat && !event.isComposing &&
+    !target?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')
+  ) {
+    event.preventDefault()
+    void toggleVideoFullscreen()
+    return
+  }
   const focusInside = filesPage.value?.contains(document.activeElement)
   if (!filesPage.value || (!filesPage.value.contains(target) && !focusInside)) return
   if (
@@ -3645,8 +3672,10 @@ onBeforeUnmount(() => {
       <div v-else-if="previewEntry" class="media-viewer" :class="`media-viewer--${previewMode}`">
         <div v-if="previewMode === 'video'" class="media-player">
           <video
+            ref="previewVideo"
             :key="mediaReloadKey"
             :aria-label="previewEntry.name"
+            aria-keyshortcuts="F"
             controls
             preload="metadata"
             playsinline
