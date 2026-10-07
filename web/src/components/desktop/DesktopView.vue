@@ -1266,11 +1266,25 @@ function parentFilePath(filePath: string): string {
 
 function fileShortcutRoute(entry: DesktopEntry): string | undefined {
   if (!entry.path || (entry.launch !== 'file' && entry.launch !== 'directory')) return undefined
-  const query = new URLSearchParams({
-    path: entry.launch === 'directory' ? entry.path : parentFilePath(entry.path),
-  })
-  if (entry.launch === 'file') query.set('file', entry.path)
+  const query = new URLSearchParams(entry.launch === 'file'
+    ? { file: entry.path }
+    : { path: entry.path })
   return `/files?${query.toString()}`
+}
+
+function fileShortcutDirectoryRoute(entry: DesktopEntry): string | undefined {
+  if (!entry.path || entry.launch !== 'file') return undefined
+  const query = new URLSearchParams({ path: parentFilePath(entry.path) })
+  return `/files?${query.toString()}`
+}
+
+function isDesktopFilePreviewRoute(fullPath: string): boolean {
+  if (desktopRoutePath(fullPath) !== '/files') return false
+  const queryIndex = fullPath.indexOf('?')
+  if (queryIndex === -1) return false
+  const hashIndex = fullPath.indexOf('#', queryIndex)
+  const query = new URLSearchParams(fullPath.slice(queryIndex + 1, hashIndex === -1 ? undefined : hashIndex))
+  return query.has('file') && !query.has('hostId')
 }
 
 function fileWindowDirectory(fullPath: string): string | undefined {
@@ -1280,7 +1294,7 @@ function fileWindowDirectory(fullPath: string): string | undefined {
   const hashIndex = fullPath.indexOf('#', queryIndex)
   const query = new URLSearchParams(fullPath.slice(queryIndex + 1, hashIndex === -1 ? undefined : hashIndex))
   // Desktop shortcuts refer to this Panel; a remote window is a different identity.
-  if (query.get('hostId')) return undefined
+  if (query.get('hostId') || query.getAll('file').length) return undefined
   const pathValues = query.getAll('path')
   if (pathValues.length > 1) return undefined
   const path = pathValues[0] || '/'
@@ -1293,17 +1307,17 @@ function fileWindowDirectory(fullPath: string): string | undefined {
   return path
 }
 
-function openFileShortcut(entry: DesktopEntry): void {
-  const route = fileShortcutRoute(entry)
-  if (!route) return
+function openDesktopFilesRoute(route: string, mode: 'file-preview' | 'directory'): void {
   const app = findDesktopApp('/files')
   if (!app) return
   const directory = fileWindowDirectory(route)
   const existing = openWindows.value.find(
-    (windowState) => directory !== undefined && fileWindowDirectory(windowState.path) === directory,
+    (windowState) => mode === 'file-preview'
+      ? isDesktopFilePreviewRoute(windowState.path)
+      : directory !== undefined && fileWindowDirectory(windowState.path) === directory,
   )
   if (existing) {
-    if (entry.launch === 'file' && existing.path !== route) {
+    if (existing.path !== route) {
       desktop.updateWindowRoute(existing.id, route, app.labelKey)
     }
     desktop.restoreWindow(existing.id)
@@ -1313,6 +1327,16 @@ function openFileShortcut(entry: DesktopEntry): void {
   if (windowId === 0) {
     toast.show(i18n.t('desktop.windowLimitTitle'), { message: i18n.t('desktop.windowLimitMessage') })
   }
+}
+
+function openFileShortcut(entry: DesktopEntry): void {
+  const route = fileShortcutRoute(entry)
+  if (route) openDesktopFilesRoute(route, entry.launch === 'file' ? 'file-preview' : 'directory')
+}
+
+function openFileShortcutDirectory(entry: DesktopEntry): void {
+  const route = fileShortcutDirectoryRoute(entry)
+  if (route) openDesktopFilesRoute(route, 'directory')
 }
 
 function requestExternalOpen(entry: DesktopEntry): void {
@@ -3637,6 +3661,14 @@ function onEntryMenuOpen(): void {
   if (entry) openEntry(entry)
 }
 
+function onEntryMenuOpenContainingDirectory(): void {
+  const entry = menuEntry.value
+  closeContextMenu()
+  if (entry?.kind === 'shortcut' && entry.launch === 'file') {
+    openFileShortcutDirectory(entry)
+  }
+}
+
 async function onFileMenuDownload(): Promise<void> {
   const entries = [...menuDownloadEntries.value]
   closeContextMenu()
@@ -4666,6 +4698,15 @@ function onViewportResize(): void {
               : menuEntry.url
                 ? i18n.t('desktop.systemBrowserOpen')
                 : i18n.t('desktop.entryOpen') }}
+          </button>
+          <button
+            v-if="menuEntry.kind === 'shortcut' && menuEntry.launch === 'file'"
+            type="button"
+            role="menuitem"
+            @click="onEntryMenuOpenContainingDirectory"
+          >
+            <FolderOpen :size="15" aria-hidden="true" />
+            {{ i18n.t('desktop.fileOpenContainingDirectory') }}
           </button>
           <button
             v-if="menuDownloadEntries.length"

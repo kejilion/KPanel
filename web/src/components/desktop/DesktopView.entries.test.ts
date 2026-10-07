@@ -587,7 +587,7 @@ describe('DesktopView dynamic entries', () => {
     wrapper.unmount()
   })
 
-  it('reuses an existing window for the same directory and keeps different directories independent', async () => {
+  it('reuses one direct file preview and keeps directory windows independent', async () => {
     mockedWorkspace.mockResolvedValueOnce(makeWorkspace({
       shortcuts: [
         {
@@ -623,29 +623,60 @@ describe('DesktopView dynamic entries', () => {
     await wrapper.get(`[data-icon-key="shortcut:${'c'.repeat(32)}"] button`).trigger('dblclick')
     await wrapper.get(`[data-icon-key="shortcut:${'d'.repeat(32)}"] button`).trigger('dblclick')
     expect(desktop.windows.value.map((windowState) => windowState.path)).toEqual([
-      '/files?path=%2Fetc%2Fnginx&file=%2Fetc%2Fnginx%2Fnginx.conf',
+      '/files?file=%2Fetc%2Fnginx%2Fnginx.conf',
       '/files?path=%2Fhome%2Fweb',
     ])
     const firstWindowID = desktop.windows.value[0]!.id
     await wrapper.get(`[data-icon-key="shortcut:${'f'.repeat(32)}"] button`).trigger('dblclick')
-    expect(desktop.windows.value).toHaveLength(2)
-    expect(desktop.focusedId.value).toBe(firstWindowID)
+    expect(desktop.windows.value).toHaveLength(3)
+    expect(desktop.focusedId.value).toBe(desktop.windows.value[2]!.id)
 
     await wrapper.get(`[data-icon-key="shortcut:${'e'.repeat(32)}"] button`).trigger('dblclick')
-    expect(desktop.windows.value).toHaveLength(2)
+    expect(desktop.windows.value).toHaveLength(3)
     expect(desktop.focusedId.value).toBe(firstWindowID)
     expect(desktop.windows.value[0]?.path).toBe(
-      '/files?path=%2Fetc%2Fnginx&file=%2Fetc%2Fnginx%2Fmime.types',
+      '/files?file=%2Fetc%2Fnginx%2Fmime.types',
     )
 
     await wrapper.get('button[title="文件"]').trigger('dblclick')
-    expect(desktop.windows.value).toHaveLength(3)
-    expect(desktop.windows.value[2]?.path).toBe('/files')
-    const rootWindowID = desktop.windows.value[2]!.id
+    expect(desktop.windows.value).toHaveLength(4)
+    expect(desktop.windows.value[3]?.path).toBe('/files')
+    const rootWindowID = desktop.windows.value[3]!.id
 
     await wrapper.get('button[title="文件"]').trigger('dblclick')
-    expect(desktop.windows.value).toHaveLength(3)
+    expect(desktop.windows.value).toHaveLength(4)
     expect(desktop.focusedId.value).toBe(rootWindowID)
+    wrapper.unmount()
+  })
+
+  it('opens a file shortcut preview and its containing directory as separate actions', async () => {
+    const shortcutID = '7'.repeat(32)
+    mockedWorkspace.mockResolvedValueOnce(makeWorkspace({
+      shortcuts: [{
+        id: shortcutID, name: 'nginx.conf', description: '', targetType: 'file', path: '/home/nginx.conf',
+        createdAt: '2026-08-20T00:00:00Z', updatedAt: '2026-08-20T00:00:00Z',
+      }],
+    }))
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await flushPromises()
+    const shortcut = wrapper.get(`[data-icon-key="shortcut:${shortcutID}"] button`)
+    const desktop = useDesktopMode()
+
+    await shortcut.trigger('dblclick')
+    expect(desktop.windows.value.map((windowState) => windowState.path)).toEqual([
+      '/files?file=%2Fhome%2Fnginx.conf',
+    ])
+
+    await shortcut.trigger('contextmenu', { clientX: 120, clientY: 140 })
+    await nextTick()
+    const menu = wrapper.findAll('.desktop__context-menu [role="menuitem"]')
+    expect(menu.map((item) => item.text().trim())).toContain('打开所在目录')
+    await menu.find((item) => item.text().trim() === '打开所在目录')!.trigger('click')
+
+    expect(desktop.windows.value.map((windowState) => windowState.path)).toEqual([
+      '/files?file=%2Fhome%2Fnginx.conf',
+      '/files?path=%2Fhome',
+    ])
     wrapper.unmount()
   })
 

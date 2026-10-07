@@ -30,6 +30,9 @@ export const desktopWindowVisibleKey = Symbol('desktop-window-visible') as Injec
 /** Consume the one-time launch intent of a newly opened window, never a restored window. */
 export const desktopWindowLaunchKey = Symbol('desktop-window-launch') as InjectionKey<() => boolean>
 
+/** Request the owning desktop window to close through its registered guards. */
+export const desktopWindowCloseKey = Symbol('desktop-window-close') as InjectionKey<() => Promise<void>>
+
 /** Native document-history bridge shared by all independent desktop windows. */
 export const desktopBrowserHistoryKey = Symbol(
   'desktop-browser-history',

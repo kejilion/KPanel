@@ -5,6 +5,7 @@ import FilesView from './FilesView.vue'
 import { resetDesktopIconsForTest } from '@/stores/desktopIcons'
 import { resetFileWindowTransferForTest } from '@/lib/fileWindowTransfer'
 import { resetLocaleForTest, setLocale } from '@/i18n'
+import { desktopWindowCloseKey } from '@/lib/desktopRouteKeys'
 import {
   beginDesktopFileDrag,
   clearDesktopFileDrag,
@@ -117,8 +118,10 @@ function testDirectory(path: string): FileDirectoryResult {
 
 interface FileBindings {
   requestedFilePath: (value: unknown) => string | undefined
+  loadRequestedRoute: () => Promise<void>
   openRequestedFile: (value: unknown) => Promise<void>
   openPreview: (entry: TestFileEntry) => Promise<void>
+  closePreview: () => void
   loadDirectory: (path?: string, append?: boolean) => Promise<string | undefined>
   navigateDirectory: (path: string) => Promise<void>
   download: (entry: TestFileEntry) => Promise<void>
@@ -384,12 +387,13 @@ function externalFileDrop(entry: ReturnType<typeof externalFileEntry>): DragEven
   } as unknown as DragEvent
 }
 
-function setupView(): FileBindings {
+function setupView(requestDesktopWindowClose?: () => Promise<void>): FileBindings {
   const component = FilesView as unknown as {
     setup: (props: Record<string, never>, context: { expose: () => void }) => FileBindings
   }
   const app = createSSRApp({ render: () => null })
   app.provide(ssrContextKey, { modules: new Set<string>() })
+  if (requestDesktopWindowClose) app.provide(desktopWindowCloseKey, requestDesktopWindowClose)
   const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
   try {
     return app.runWithContext(() => component.setup({}, { expose: () => undefined }))
@@ -1110,6 +1114,24 @@ describe('FilesView desktop shortcuts', () => {
 
     expect(mocks.entry).toHaveBeenCalledWith(entry.path, undefined, '')
     expect(view.selected.value).toEqual(new Set([entry.path]))
+    expect(view.previewEntry.value).toEqual(entry)
+  })
+
+  it('opens a standalone desktop file preview without loading its containing directory', async () => {
+    const filePath = '/etc/nginx/nginx.conf'
+    const entry = { ...testEntry('nginx.conf'), path: filePath, editable: false }
+    const requestDesktopWindowClose = vi.fn(async () => undefined)
+    mocks.route.query = { file: filePath }
+    mocks.entry.mockResolvedValueOnce(entry)
+    const view = setupView(requestDesktopWindowClose)
+
+    await view.loadRequestedRoute()
+
+    expect(mocks.list).not.toHaveBeenCalled()
+    expect(mocks.entry).toHaveBeenCalledWith(filePath, undefined, '')
+    expect(view.previewEntry.value).toEqual(entry)
+    view.closePreview()
+    expect(requestDesktopWindowClose).toHaveBeenCalledOnce()
     expect(view.previewEntry.value).toEqual(entry)
   })
 })

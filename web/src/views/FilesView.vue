@@ -68,6 +68,7 @@ import {
 import {
   desktopCloseGuardCoordinator,
   desktopWindowActiveKey,
+  desktopWindowCloseKey,
   desktopWindowCloseGuardKey,
 } from '@/lib/desktopRouteKeys'
 import { transferCrossPanelFileBatch } from '@/lib/crossPanelFileTransfer'
@@ -129,6 +130,7 @@ const OfficeWorkspace = defineAsyncComponent(() => import('@/components/files/Of
 const route = useRoute()
 const router = useRouter()
 const desktopWindowActive = inject(desktopWindowActiveKey, computed(() => true))
+const requestDesktopWindowClose = inject(desktopWindowCloseKey, undefined)
 const desktopWindowCloseGuards = inject(desktopWindowCloseGuardKey, undefined)
 // Present only inside the classic split workspace.
 const filesSplit = inject(filesSplitControlKey, undefined)
@@ -173,6 +175,10 @@ function requestedFilePath(value: unknown): string | undefined {
   }
   return candidate
 }
+const shortcutFilePreviewOnly = computed(() => {
+  const filePath = requestedFilePath(route.query.file)
+  return Boolean(requestDesktopWindowClose && filePath && filePath !== '/')
+})
 type PreviewMode = 'text' | 'office' | 'image' | 'audio' | 'video' | 'pdf' | 'metadata'
 type ArchiveFormat = 'tar.gz' | 'zip' | 'tar'
 type FileViewMode = 'list' | 'grid'
@@ -870,6 +876,10 @@ async function openRequestedFile(value: unknown): Promise<void> {
 }
 
 async function loadRequestedRoute(): Promise<void> {
+  if (shortcutFilePreviewOnly.value) {
+    await openRequestedFile(route.query.file)
+    return
+  }
   const hostId = fileHostId.value
   await loadDirectory(requestedFilePath(route.query.path) || '/')
   if (unmounted || hostId !== fileHostId.value) return
@@ -1049,6 +1059,10 @@ function retryMedia(): void {
 }
 
 function closePreview(): void {
+  if (shortcutFilePreviewOnly.value && requestDesktopWindowClose) {
+    void requestDesktopWindowClose()
+    return
+  }
   if (previewSaving.value) return
   if (previewDirty.value && !window.confirm('文件尚未保存，确认关闭吗？')) return
   previewRequestId += 1
@@ -2549,6 +2563,10 @@ function focusFilesPage(event: PointerEvent): void {
   filesPage.value?.focus({ preventScroll: true })
 }
 
+function refreshDirectoryAfterPreviewSave(): void {
+  if (!shortcutFilePreviewOnly.value) void loadDirectory()
+}
+
 watch(desktopWindowActive, (active) => {
   if (!active) contextMenu.value = undefined
   if (!active) closeFileHostPicker()
@@ -2580,9 +2598,9 @@ onMounted(() => {
     void loadDirectory()
   })
   restoreViewMode()
-  void loadFileHosts()
+  if (!shortcutFilePreviewOnly.value) void loadFileHosts()
   void loadRequestedRoute().finally(() => {
-    if (!unmounted) void loadRemoteDownloadJobs()
+    if (!unmounted && !shortcutFilePreviewOnly.value) void loadRemoteDownloadJobs()
   })
 })
 
@@ -2600,9 +2618,11 @@ watch(
       remoteDownloadJobs.value = []
     }
     if (!hostChanged && pathValue === previous?.[0] && fileValue === previous?.[1]) return
-    const directoryPath = requestedFilePath(pathValue) || '/'
     void (async () => {
-      if (hostChanged || directoryPath !== currentPath.value) await loadDirectory(directoryPath)
+      if (!shortcutFilePreviewOnly.value) {
+        const directoryPath = requestedFilePath(pathValue) || '/'
+        if (hostChanged || directoryPath !== currentPath.value) await loadDirectory(directoryPath)
+      }
       if (unmounted || hostId !== fileHostId.value) return
       if (hostChanged || fileValue !== previous?.[1]) {
         openedRouteFile = ''
@@ -2652,6 +2672,7 @@ onBeforeUnmount(() => {
   <section
     ref="filesPage"
     class="files-page"
+    v-show="!(shortcutFilePreviewOnly && previewEntry)"
     :class="{ 'files-page--batch-active': selected.size > 0 }"
     tabindex="-1"
     @pointerdown="focusFilesPage"
@@ -2840,6 +2861,7 @@ onBeforeUnmount(() => {
       </Transition>
 
       <FileArchiveTools
+        v-if="!shortcutFilePreviewOnly"
         ref="archiveTools"
         :host-id="fileHostId"
         :path="currentPath"
@@ -3603,10 +3625,11 @@ onBeforeUnmount(() => {
         :content="previewContent"
         :host-id="fileHostId"
         :navigation-path="requestedFilePath(route.query.path) || '/'"
+        :show-directory-navigation="!shortcutFilePreviewOnly"
         @navigate="navigateEditorDirectory"
         @dirty="previewDirty = $event"
         @saving="previewSaving = $event"
-        @saved="loadDirectory()"
+        @saved="refreshDirectoryAfterPreviewSave"
         @close="closePreview"
       >
         <template #window-controls><ModalWindowControls /></template>

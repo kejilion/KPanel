@@ -60,9 +60,9 @@ function entry(name: string): FileEntry {
 const a = entry('a.json'),
   b = entry('b.json')
 const wrappers: ReturnType<typeof mount>[] = []
-async function setup(navigationPath?: string) {
+async function setup(navigationPath?: string, showDirectoryNavigation = true) {
   const wrapper = mount(FileEditorWorkspace, {
-    props: { entry: a, content: 'original a', hostId: 'remote-a', navigationPath },
+    props: { entry: a, content: 'original a', hostId: 'remote-a', navigationPath, showDirectoryNavigation },
     global: { stubs: { CodeEditor: Editor } },
     attachTo: document.body,
   })
@@ -90,6 +90,15 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 describe('file editor workspace', () => {
+  it('skips the directory list for a standalone file preview', async () => {
+    const wrapper = await setup(undefined, false)
+
+    expect(mocks.list).not.toHaveBeenCalled()
+    expect(wrapper.find('.editor-sidebar').exists()).toBe(false)
+    expect(wrapper.find('button[aria-label="文件列表"]').exists()).toBe(false)
+    expect(wrapper.find('.editor-main').exists()).toBe(true)
+  })
+
   it('preserves file categories across the directory, active tabs and unsaved state', async () => {
     const readme = entry('README.md')
     mocks.list.mockResolvedValue({ path: '/demo', entries: [a, readme, { ...entry('assets'), kind: 'directory' }], offset: 0, truncated: false })

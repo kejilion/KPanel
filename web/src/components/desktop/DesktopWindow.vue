@@ -11,6 +11,7 @@ import {
 import {
   desktopBrowserHistoryKey,
   desktopWindowActiveKey,
+  desktopWindowCloseKey,
   desktopWindowLaunchKey,
   desktopCloseGuardCoordinatorKey,
   desktopWindowCloseGuardKey,
@@ -250,6 +251,8 @@ async function onClose(): Promise<void> {
     checkingClose.value = false
   }
 }
+
+provide(desktopWindowCloseKey, onClose)
 
 defineExpose({
   requestClose: onClose,

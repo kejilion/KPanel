@@ -825,6 +825,7 @@ export const zhTWMessages = {
   "desktop.aboutTitle": "桌面模式",
   "desktop.aboutMessage": "KPanel 桌面模式：點擊圖示開啟視窗，可拖動、縮放、最小化並從 Dock恢復；右上角可切換回經典模式。",
   "desktop.entryOpen": "開啟",
+  "desktop.fileOpenContainingDirectory": "開啟所在目錄",
   "desktop.entryScriptManage": "腳本管理",
   "desktop.scriptWindowTitle": "腳本終端",
   "desktop.namedScriptWindowTitle": "{name} 的腳本終端",

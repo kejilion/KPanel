@@ -28,12 +28,15 @@ import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
 import type { CodeEditorSession } from '@/lib/code-editor-session'
 import type { FileDirectory, FileEntry } from '@/types/api'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   entry: FileEntry
   content: string
   hostId: string
   navigationPath?: string
-}>()
+  showDirectoryNavigation?: boolean
+}>(), {
+  showDirectoryNavigation: true,
+})
 const emit = defineEmits<{
   dirty: [value: boolean]
   saving: [value: boolean]
@@ -85,7 +88,7 @@ const moreRoot = ref<HTMLElement>()
 const moreToggle = ref<HTMLButtonElement>()
 const moreOpen = ref(false)
 const compact = ref(false)
-const sidebarOpen = ref(true)
+const sidebarOpen = ref(props.showDirectoryNavigation)
 const directory = ref<FileDirectory>()
 const directoryPath = ref(props.navigationPath || parentPath(props.entry.path))
 const directoryLoading = ref(false)
@@ -319,6 +322,7 @@ function retryDirectory(): void {
 watch(
   () => props.navigationPath,
   (path) => {
+    if (!props.showDirectoryNavigation) return
     // Own successful pushes already have this directory. History traversal must
     // still cancel an in-flight read, even when returning to the displayed path.
     const target = path || parentPath(props.entry.path)
@@ -387,7 +391,7 @@ function beforeUnload(event: BeforeUnloadEvent): void {
   }
 }
 onMounted(() => {
-  void loadDirectory()
+  if (props.showDirectoryNavigation) void loadDirectory()
   if (typeof ResizeObserver !== 'undefined') {
     observer = new ResizeObserver(([entry]) => {
       if (!entry) return
@@ -395,7 +399,7 @@ onMounted(() => {
       if (next !== compact.value) {
         moreOpen.value = false
         compact.value = next
-        sidebarOpen.value = !next
+        sidebarOpen.value = props.showDirectoryNavigation && !next
       }
       void nextTick(revealActiveTab)
     })
@@ -426,6 +430,7 @@ defineExpose({ openFile })
   >
     <header class="editor-toolbar">
       <button
+        v-if="props.showDirectoryNavigation"
         ref="sidebarToggle"
         class="editor-tool"
         :class="{ 'is-active': sidebarOpen }"
@@ -552,14 +557,14 @@ defineExpose({ openFile })
     </header>
     <div class="editor-workspace__body">
       <button
-        v-if="compact && sidebarOpen"
+        v-if="props.showDirectoryNavigation && compact && sidebarOpen"
         class="editor-sidebar-backdrop"
         type="button"
         :aria-label="phrase('收起文件列表')"
         @click="dismissSidebar"
       />
       <aside
-        v-if="sidebarOpen"
+        v-if="props.showDirectoryNavigation && sidebarOpen"
         :id="`${id}-files`"
         class="editor-sidebar"
         :aria-label="phrase('文件列表')"
