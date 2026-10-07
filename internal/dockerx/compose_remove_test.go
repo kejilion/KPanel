@@ -316,6 +316,33 @@ func TestComposeRemovalRecoveryEnvironmentRollbackAndExternalEdits(t *testing.T)
 	}
 }
 
+func TestComposeRemovalPartialDownFailureRetainsRecoveryIdentity(t *testing.T) {
+	for _, archive := range []bool{false, true} {
+		t.Run(fmt.Sprintf("archive=%t", archive), func(t *testing.T) {
+			client, before, removed := composeRemovalIdentityClient(t, "kejilion-demo", true, false, "services:\n  web:\n    restart: always\n")
+			client.composeCommand = func(_ context.Context, _ ...string) ([]byte, error) {
+				removed.Store(true)
+				return nil, errors.New("network cleanup failed after container removal")
+			}
+			_, err := client.removeComposeProject(context.Background(), MaintenanceInput{
+				Name: before.Name, ExpectedResourceVersion: before.ResourceVersion, RemoveComposeFiles: archive,
+			}, strings.Repeat("e", 32))
+			if err == nil {
+				t.Fatal("partial failure was reported as success")
+			}
+			after, err := client.ComposeProject(context.Background(), before.Name)
+			if err != nil || len(after.ConfigFiles) != len(before.ConfigFiles) {
+				t.Fatalf("partial failure lost recovery identity: %#v, %v", after, err)
+			}
+			for index, file := range before.ConfigFiles {
+				if after.ConfigFiles[index] != file {
+					t.Fatalf("partial failure changed recovery files: %#v", after.ConfigFiles)
+				}
+			}
+		})
+	}
+}
+
 func TestComposeRemovalSharedConfigurationPreservesOtherProject(t *testing.T) {
 	for _, scenario := range []string{"archive", "keep-default", "keep-multiple"} {
 		t.Run(scenario, func(t *testing.T) {

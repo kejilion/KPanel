@@ -831,13 +831,9 @@ func (c *Client) removeComposeProject(ctx context.Context, input MaintenanceInpu
 	if err != nil {
 		return "", err
 	}
-	var recoveryEnvironment []byte
-	var updateEnvironment bool
-	if !input.RemoveComposeFiles {
-		recoveryEnvironment, updateEnvironment, err = composeRemovalRecoveryEnvironment(state.ComposeProject)
-		if err != nil {
-			return "", err
-		}
+	recoveryEnvironment, updateEnvironment, err := composeRemovalRecoveryEnvironment(state.ComposeProject)
+	if err != nil {
+		return "", err
 	}
 	if input.RemoveComposeFiles || updateEnvironment {
 		containers, err := c.ContainerListSummaries(ctx)
@@ -884,7 +880,17 @@ func (c *Client) removeComposeProject(ctx context.Context, input MaintenanceInpu
 	}
 	if _, err := c.runCompose(ctx, arguments...); err != nil {
 		if updateEnvironment {
-			err = errors.Join(err, guard.restore(environmentPath, originalEnvironment))
+			// down may remove all containers before failing on a network or volume.
+			// Keep native recovery variables if labels are gone or cannot be queried.
+			containers, listErr := c.ContainerListSummaries(ctx)
+			if listErr == nil {
+				for _, container := range containers {
+					if container.ComposeProject == state.Name {
+						err = errors.Join(err, guard.restore(environmentPath, originalEnvironment))
+						break
+					}
+				}
+			}
 		}
 		return "", fmt.Errorf("Compose project removal failed; configuration preserved: %w", err)
 	}

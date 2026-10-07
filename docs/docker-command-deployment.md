@@ -40,7 +40,9 @@ KPanel 的“新建容器”使用一个粘贴入口覆盖两类常见部署资�
   `removeComposeFiles` 时也按保留配置处理；不会归档未参与本次项目配置的其他文件。
   根目录项目同样参与发现；若项目名或多文件组合仅存在于容器 labels 中，删除前通过受保护的原子写入，
   在原 `.env` 末尾保存 Compose 原生 `COMPOSE_PROJECT_NAME`、`COMPOSE_FILE`、`COMPOSE_PATH_SEPARATOR`，
-  原有变量保留，失败时恢复仍属于本任务的环境文件。需要持久化的路径使用字面值，不猜测动态插值。
+  原有变量保留；归档模式同样在必要时保存这些变量，以便恢复备份后沿用原配置组合。
+  删除失败且仍有项目容器时恢复本任务的环境文件；若容器已全部移除或无法查询，则保留原生恢复变量，
+  避免丢失标签中的信息。需要持久化的路径使用字面值，不猜测动态插值。
   这些变量同样可供 CLI 使用，遵循 [Docker 原生环境变量](https://docs.docker.com/compose/how-tos/environment-variables/envvars/)
   与 [dotenv 字面值规则](https://docs.docker.com/compose/how-tos/environment-variables/variable-interpolation/)。
 - 其他运行中或已停止的 Compose 项目仍引用同一配置时，阻止归档共享文件；若需要保存身份且 `.env`
