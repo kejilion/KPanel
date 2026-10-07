@@ -74,12 +74,11 @@ function commandSegments(command: string[]): RunCommandSegment[] {
   const segments: RunCommandSegment[] = []
   let hideNext = false
   for (const argument of command) {
-    if (hideNext && !argument.startsWith('-')) {
+    if (hideNext) {
       segments.push(hidden(argument, ''))
       hideNext = false
       continue
     }
-    hideNext = false
     const flag = argument.match(/^(--?[A-Za-z0-9_.-]+)(=.*)?$/)
     if (flag && isSensitiveName(flag[1]!.replace(/^-+/, ''))) {
       if (flag[2] !== undefined) segments.push(hidden(argument, `${flag[1]}=`))

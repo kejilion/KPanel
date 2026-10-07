@@ -89,6 +89,15 @@ describe('docker run command formatting', () => {
     }
   })
 
+  it('hides secret option values that begin with a dash', () => {
+    const result = formatRunCommand(spec({ command: ['redis-server', '--requirepass', '-hunter2'] }))
+    const secret = result.lines.flat().find((segment) => segment.concealed)
+
+    expect(secret?.concealed).toEqual({ prefix: '' })
+    expect(secret?.text).toBe('-hunter2')
+    expect(result.secrets).toBe(1)
+  })
+
   it('adds docker network connect lines for additional networks', () => {
     const result = formatRunCommand(spec({
       networks: [{ name: 'frontend', ip: '172.31.0.5', aliases: ['www'] }, { name: 'monitor' }],
