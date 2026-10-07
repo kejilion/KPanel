@@ -2359,7 +2359,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .compose-manager-actions { display: flex; width: 100%; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
-.compose-manager-actions .button { max-width: 100%; }
+.compose-manager-actions .button { flex: 0 1 auto; max-width: 100%; }
 .compose-remove-button { margin-right: auto; }
 .compose-remove-options { display: grid; gap: 12px; font-size: 14px; overflow-wrap: anywhere; }
 .compose-remove-options p { margin: 0; }
