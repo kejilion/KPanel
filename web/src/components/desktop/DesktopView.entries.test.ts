@@ -321,7 +321,7 @@ describe('DesktopView dynamic entries', () => {
     await wrapper.find('button[title="blog.example.com"]').trigger('contextmenu', { clientX: 120, clientY: 80 })
     await nextTick()
     const siteItems = wrapper.findAll('.desktop__context-menu [role="menuitem"]')
-    expect(siteItems[0]?.text()).toContain('在系统浏览器中打开')
+    expect(siteItems[0]?.text()).toContain('浏览器打开')
     await siteItems[0]?.trigger('click')
     expect(window.open).not.toHaveBeenCalled()
     expect(document.body.querySelector('.desktop__external-confirm')).not.toBeNull()

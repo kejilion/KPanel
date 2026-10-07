@@ -726,7 +726,7 @@ export const zhTWMessages = {
   "desktop.splitResizeHint": "拖曳調整寬度；方向鍵微調，Enter 恢復均分",
   "desktop.splitResizeValue": "左側 {left}%，右側 {right}%",
   "desktop.back": "返回上一頁",
-  "desktop.systemBrowserOpen": "在系統瀏覽器中開啟",
+  "desktop.systemBrowserOpen": "瀏覽器開啟",
   "desktop.externalOpenConfirmTitle": "確認跳轉",
   "desktop.windowLoadFailed": "視窗內容載入失敗",
   "desktop.windowLimitTitle": "視窗數量已達上限",

@@ -739,7 +739,7 @@ export const enUSMessages = {
   'desktop.splitResizeHint': 'Drag to resize; use arrow keys for fine control, or Enter to split evenly',
   'desktop.splitResizeValue': 'Left {left}%, right {right}%',
   'desktop.back': 'Go back',
-  'desktop.systemBrowserOpen': 'Open in system browser',
+  'desktop.systemBrowserOpen': 'Open in browser',
   'desktop.externalOpenConfirmTitle': 'Confirm navigation',
   'desktop.windowLoadFailed': 'Window content failed to load',
   'desktop.windowLimitTitle': 'Window limit reached',

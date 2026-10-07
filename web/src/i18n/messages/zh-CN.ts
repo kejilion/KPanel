@@ -740,7 +740,7 @@ export const zhCNMessages = {
   'desktop.splitResizeHint': '拖拽调整宽度；方向键微调，Enter 恢复均分',
   'desktop.splitResizeValue': '左侧 {left}%，右侧 {right}%',
   'desktop.back': '返回上一页',
-  'desktop.systemBrowserOpen': '在系统浏览器中打开',
+  'desktop.systemBrowserOpen': '浏览器打开',
   'desktop.externalOpenConfirmTitle': '确认跳转',
   'desktop.windowLoadFailed': '窗口内容加载失败',
   'desktop.windowLimitTitle': '窗口数量已达上限',
