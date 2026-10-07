@@ -5607,7 +5607,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   flex-direction: column;
   align-items: center;
   gap: 12px;
-  padding: 4px 8px 16px;
+  padding: 16px 16px 24px;
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -5623,8 +5623,14 @@ body.desktop-mode-open::-webkit-scrollbar {
   position: relative;
   width: min(100%, 420px);
   flex: 0 0 auto;
+  overflow: visible;
   cursor: default;
   touch-action: pan-x pan-y;
+}
+
+.desktop__widget-page .desktop-widget-slot > * {
+  height: auto;
+  min-height: inherit;
 }
 
 .desktop__widget-page-edit {

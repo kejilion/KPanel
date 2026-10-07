@@ -4534,7 +4534,7 @@ function onViewportResize(): void {
             :key="`page-${widget.key}`"
             :widget="widget"
             :component-props="widgetComponentProps(widget.key)"
-            :style="{ height: `${widgetPageHeight(widget)}px` }"
+            :style="{ minHeight: `${widgetPageHeight(widget)}px` }"
           />
         </template>
         <button type="button" class="desktop__widget-page-edit" @click="iconManagerOpen = true">
@@ -4549,6 +4549,7 @@ function onViewportResize(): void {
 
     <nav
       v-if="pagerLayout && pagerTotalPages > 1 && initialLayoutReady"
+      v-show="pagerPage >= widgetPageOffset"
       ref="pagerDotsElement"
       class="desktop__pager"
       :aria-label="i18n.t('desktop.pagerLabel')"

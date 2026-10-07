@@ -975,6 +975,7 @@ describe('DesktopView icon layout interaction', () => {
     expect(dots().map(dot => dot.attributes('aria-label'))).toEqual(['小插件', '第 1 页，共 2 页', '第 2 页，共 2 页'])
     expect(current()).toBe(1)
     expect(wrapper.findAll('.desktop__pager-page')).toHaveLength(3)
+    expect(wrapper.get('.desktop__pager').isVisible()).toBe(true)
     const overviewX = Number((wrapper.get('[data-icon-key="nav:/overview"]').attributes('style') || '')
       .match(/translate3d\(([\d.]+)px/)![1])
     expect(overviewX).toBeGreaterThanOrEqual(296)
@@ -986,6 +987,7 @@ describe('DesktopView icon layout interaction', () => {
     await dots()[0]!.trigger('click')
     await flushPromises()
     expect(current()).toBe(0)
+    expect(wrapper.get('.desktop__pager').isVisible()).toBe(false)
     // Visible widgets only, in their saved top-to-bottom order.
     expect(page.findAll('.desktop-widget-slot').map(slot => slot.attributes('aria-label'))).toEqual(['widget:monitor', 'widget:clock'])
     expect(resources).toHaveBeenCalledTimes(1)
@@ -1007,6 +1009,7 @@ describe('DesktopView icon layout interaction', () => {
     expect(edge.defaultPrevented).toBe(true)
     expect(current()).toBe(1)
 
+    expect(wrapper.get('.desktop__pager').isVisible()).toBe(true)
     await page.get('.desktop__widget-page-edit').trigger('click')
     await flushPromises()
     expect(document.body.querySelector('.desktop-icon-manager__section--widgets')?.textContent).toContain('桌面小插件')
