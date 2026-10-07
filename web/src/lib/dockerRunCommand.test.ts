@@ -100,14 +100,14 @@ describe('docker run command formatting', () => {
 
   it('adds docker network connect lines for additional networks', () => {
     const result = formatRunCommand(spec({
-      networks: [{ name: 'frontend', ip: '172.31.0.5', aliases: ['www'] }, { name: 'monitor' }],
+      networks: [{ name: 'frontend', ip: '172.31.0.5', linkLocalIps: ['169.254.10.5'], aliases: ['www'] }, { name: 'monitor' }],
     }))
     expect(result.followUps.map(lineText)).toEqual([
-      'docker network connect --ip 172.31.0.5 --alias www frontend web',
+      'docker network connect --ip 172.31.0.5 --link-local-ip 169.254.10.5 --alias www frontend web',
       'docker network connect monitor web',
     ])
     expect(result.text.split('\n').slice(-2)).toEqual([
-      'docker network connect --ip 172.31.0.5 --alias www frontend web',
+      'docker network connect --ip 172.31.0.5 --link-local-ip 169.254.10.5 --alias www frontend web',
       'docker network connect monitor web',
     ])
   })

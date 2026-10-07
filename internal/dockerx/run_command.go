@@ -41,10 +41,11 @@ type RunOption struct {
 // RunNetwork is an additional network that `docker run` cannot attach in the
 // same command on every Engine version; it maps to `docker network connect`.
 type RunNetwork struct {
-	Name    string   `json:"name"`
-	IP      string   `json:"ip,omitempty"`
-	IPv6    string   `json:"ipv6,omitempty"`
-	Aliases []string `json:"aliases,omitempty"`
+	Name          string   `json:"name"`
+	IP            string   `json:"ip,omitempty"`
+	IPv6          string   `json:"ipv6,omitempty"`
+	LinkLocalIPs  []string `json:"linkLocalIps,omitempty"`
+	Aliases       []string `json:"aliases,omitempty"`
 }
 
 type runInspect struct {
@@ -102,6 +103,7 @@ type runInspect struct {
 		Tmpfs           map[string]string `json:"Tmpfs"`
 		UTSMode         string            `json:"UTSMode"`
 		UsernsMode      string            `json:"UsernsMode"`
+		CgroupnsMode    string            `json:"CgroupnsMode"`
 		ShmSize         int64             `json:"ShmSize"`
 		Sysctls         map[string]string `json:"Sysctls"`
 		Runtime         string            `json:"Runtime"`
@@ -200,11 +202,14 @@ type runHostMount struct {
 
 type runEndpoint struct {
 	IPAMConfig *struct {
-		IPv4Address string `json:"IPv4Address"`
-		IPv6Address string `json:"IPv6Address"`
+		IPv4Address  string   `json:"IPv4Address"`
+		IPv6Address  string   `json:"IPv6Address"`
+		LinkLocalIPs []string `json:"LinkLocalIPs"`
 	} `json:"IPAMConfig"`
-	Aliases   []string `json:"Aliases"`
-	NetworkID string   `json:"NetworkID"`
+	Aliases    []string          `json:"Aliases"`
+	NetworkID  string            `json:"NetworkID"`
+	DriverOpts map[string]string `json:"DriverOpts"`
+	GwPriority int               `json:"GwPriority"`
 }
 
 type runImageConfig struct {
@@ -374,6 +379,9 @@ func buildRunCommand(raw runInspect, image *runImageConfig, daemon runDaemonDefa
 			if endpoint.IPAMConfig.IPv6Address != "" {
 				add("--ip6", endpoint.IPAMConfig.IPv6Address)
 			}
+			for _, ip := range endpoint.IPAMConfig.LinkLocalIPs {
+				add("--link-local-ip", ip)
+			}
 		}
 		for _, alias := range userAliases(endpoint.Aliases, name, raw.ID) {
 			add("--network-alias", alias)
@@ -386,6 +394,7 @@ func buildRunCommand(raw runInspect, image *runImageConfig, daemon runDaemonDefa
 			extra := RunNetwork{Name: network, Aliases: userAliases(endpoint.Aliases, name, raw.ID)}
 			if endpoint.IPAMConfig != nil {
 				extra.IP, extra.IPv6 = endpoint.IPAMConfig.IPv4Address, endpoint.IPAMConfig.IPv6Address
+				extra.LinkLocalIPs = append([]string(nil), endpoint.IPAMConfig.LinkLocalIPs...)
 			}
 			result.Networks = append(result.Networks, extra)
 		}
@@ -531,6 +540,9 @@ func buildRunCommand(raw runInspect, image *runImageConfig, daemon runDaemonDefa
 	if host.UsernsMode != "" {
 		add("--userns", host.UsernsMode)
 	}
+	if host.CgroupnsMode != "" {
+		add("--cgroupns", host.CgroupnsMode)
+	}
 
 	if host.Memory > 0 {
 		add("--memory", byteSizeOption(host.Memory))
@@ -644,8 +656,11 @@ func buildRunCommand(raw runInspect, image *runImageConfig, daemon runDaemonDefa
 	if len(host.StorageOpt) > 0 {
 		unsupported("--storage-opt")
 	}
-	if host.BlkioWeight > 0 || len(host.BlkioWeightDevice) > 0 {
+	if host.BlkioWeight > 0 {
 		unsupported("--blkio-weight")
+	}
+	if len(host.BlkioWeightDevice) > 0 {
+		unsupported("--blkio-weight-device")
 	}
 	if len(host.BlkioReadBps) > 0 {
 		unsupported("--device-read-bps")
@@ -659,11 +674,23 @@ func buildRunCommand(raw runInspect, image *runImageConfig, daemon runDaemonDefa
 	if len(host.BlkioWriteIOps) > 0 {
 		unsupported("--device-write-iops")
 	}
-	if host.CPURealtimePeriod > 0 || host.CPURealtimeRun > 0 {
+	if host.CPURealtimePeriod > 0 {
+		unsupported("--cpu-rt-period")
+	}
+	if host.CPURealtimeRun > 0 {
 		unsupported("--cpu-rt-runtime")
 	}
 	if len(host.Annotations) > 0 {
 		unsupported("--annotation")
+	}
+	for _, network := range sortedKeys(raw.NetworkSettings.Networks) {
+		endpoint := raw.NetworkSettings.Networks[network]
+		if len(endpoint.DriverOpts) > 0 {
+			unsupported("--driver-opt")
+		}
+		if endpoint.GwPriority != 0 {
+			unsupported("--gw-priority")
+		}
 	}
 	return result
 }

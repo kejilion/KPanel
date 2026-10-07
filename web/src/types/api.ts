@@ -1781,6 +1781,7 @@ export interface DockerRunNetwork {
   name: string
   ip?: string
   ipv6?: string
+  linkLocalIps?: string[]
   aliases?: string[]
 }
 

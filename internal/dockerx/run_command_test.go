@@ -119,7 +119,8 @@ func TestBuildRunCommandReconstructsExplicitOptions(t *testing.T) {
 				"7000/tcp":[{"HostIp":"::1","HostPort":"7000"}],
 				"6000/tcp":[]
 			},
-			"RestartPolicy":{"Name":"on-failure","MaximumRetryCount":3},
+			"RestartPolicy":{"Name":"on-failure","MaximumRetryCount":3},"CgroupnsMode":"private",
+			"BlkioWeight":500,"BlkioWeightDevice":[{}],"CpuRealtimePeriod":1000000,"CpuRealtimeRuntime":950000,
 			"Privileged":true,"CapAdd":["CAP_NET_ADMIN"],"CapDrop":["MKNOD"],
 			"Devices":[{"PathOnHost":"/dev/net/tun","PathInContainer":"/dev/net/tun","CgroupPermissions":"rwm"},
 				{"PathOnHost":"/dev/sda","PathInContainer":"/dev/xvda","CgroupPermissions":"r"}],
@@ -135,8 +136,8 @@ func TestBuildRunCommandReconstructsExplicitOptions(t *testing.T) {
 			"Links":["/db:/app-1/database"]
 		},
 		"NetworkSettings":{"Networks":{
-			"backend":{"IPAMConfig":{"IPv4Address":"172.30.0.10"},"Aliases":["app-1","app","dddddddddddd"]},
-			"frontend":{"IPAMConfig":null,"Aliases":["web"]}
+			"backend":{"IPAMConfig":{"IPv4Address":"172.30.0.10","LinkLocalIPs":["169.254.1.10"]},"Aliases":["app-1","app","dddddddddddd"],"DriverOpts":{"com.docker.network.endpoint.sysctls":"net.ipv4.conf.IFNAME.forwarding=0"},"GwPriority":1},
+			"frontend":{"IPAMConfig":{"LinkLocalIPs":["169.254.2.10"]},"Aliases":["web"],"GwPriority":-1}
 		}}
 	}`)
 	image := decodeRunImage(t, `{
@@ -148,7 +149,7 @@ func TestBuildRunCommandReconstructsExplicitOptions(t *testing.T) {
 	want := []string{
 		"-d", "-it", "--name app-1", "--hostname app", "--domainname example.test",
 		"--restart on-failure:3",
-		"--network backend", "--ip 172.30.0.10", "--network-alias app",
+		"--network backend", "--ip 172.30.0.10", "--link-local-ip 169.254.1.10", "--network-alias app",
 		"--link db:database",
 		"-p 6000", "-p 18000-18002:8000-8002", "-p 127.0.0.1:9000:9000", "-p [::1]:7000:7000", "-p 5353:53/udp",
 		"-v /srv/app/config:/etc/app:ro", "-v appdata:/var/lib/app",
@@ -159,7 +160,7 @@ func TestBuildRunCommandReconstructsExplicitOptions(t *testing.T) {
 		"--user 1000:1000", "--workdir /srv", "--entrypoint /bin/app",
 		"--privileged", "--cap-add NET_ADMIN", "--cap-drop MKNOD",
 		"--device /dev/net/tun", "--device /dev/sda:/dev/xvda:r", "--gpus all",
-		"--security-opt apparmor=unconfined", "--pid host",
+		"--security-opt apparmor=unconfined", "--pid host", "--cgroupns private",
 		"--memory 512m", "--cpus 1.5", "--cpu-shares 512", "--pids-limit 256", "--shm-size 256m",
 		"--ulimit nofile=65535", "--ulimit nproc=1024:2048", "--sysctl net.core.somaxconn=1024",
 		"--add-host host.docker.internal:host-gateway", "--dns 1.1.1.1",
@@ -173,10 +174,13 @@ func TestBuildRunCommandReconstructsExplicitOptions(t *testing.T) {
 	if !reflect.DeepEqual(result.Command, []string{"serve", "--port", "9000"}) {
 		t.Fatalf("command = %#v", result.Command)
 	}
-	if !reflect.DeepEqual(result.Networks, []RunNetwork{{Name: "frontend", Aliases: []string{"web"}}}) {
+	if !reflect.DeepEqual(result.Networks, []RunNetwork{{Name: "frontend", LinkLocalIPs: []string{"169.254.2.10"}, Aliases: []string{"web"}}}) {
 		t.Fatalf("networks = %#v", result.Networks)
 	}
-	if !reflect.DeepEqual(result.Unsupported, []string{"--mac-address", "--storage-opt"}) {
+	if !reflect.DeepEqual(result.Unsupported, []string{
+		"--mac-address", "--storage-opt", "--blkio-weight", "--blkio-weight-device",
+		"--cpu-rt-period", "--cpu-rt-runtime", "--driver-opt", "--gw-priority",
+	}) {
 		t.Fatalf("unsupported = %#v", result.Unsupported)
 	}
 }

@@ -121,6 +121,7 @@ export function formatRunCommand(spec: DockerContainerRunCommand): FormattedRunC
     const parts: RunCommandSegment[] = [plain('docker network connect')]
     if (network.ip) parts.push(plain(`--ip ${shellQuote(network.ip)}`))
     if (network.ipv6) parts.push(plain(`--ip6 ${shellQuote(network.ipv6)}`))
+    for (const ip of network.linkLocalIps || []) parts.push(plain(`--link-local-ip ${shellQuote(ip)}`))
     for (const alias of network.aliases || []) parts.push(plain(`--alias ${shellQuote(alias)}`))
     parts.push(plain(shellQuote(network.name)), plain(shellQuote(spec.name)))
     return joinSegments(parts)
