@@ -3689,6 +3689,7 @@ onBeforeUnmount(() => {
             :aria-label="previewEntry.name"
             aria-keyshortcuts="F"
             controls
+            autoplay
             preload="metadata"
             playsinline
             @loadstart="handleMediaLoadStart"
