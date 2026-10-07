@@ -914,8 +914,11 @@ function onIconsWheel(event: WheelEvent): void {
   const layout = pagerLayout.value
   if (!layout || pagerTotalPages.value < 2 || event.ctrlKey) return
   if (Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return
-  // The widget page scrolls its own column of widgets.
-  if ((event.target as Element | null)?.closest('.desktop__widget-page')) return
+  // The widget page scrolls its own column first and turns the page only at its edge.
+  const widgetPage = (event.target as Element | null)?.closest('.desktop__widget-page')
+  if (widgetPage && (event.deltaY < 0
+    ? widgetPage.scrollTop > 0
+    : widgetPage.scrollTop + widgetPage.clientHeight < widgetPage.scrollHeight - 1)) return
   event.preventDefault()
   const now = Date.now()
   if (Math.abs(event.deltaY) < 4 || now < pagerWheelUntil) return
@@ -4326,25 +4329,6 @@ function onViewportResize(): void {
           :style="{ left: `${(page - 1) * pagerLayout.grid.pageWidth}px`, width: `${pagerLayout.grid.pageWidth}px` }"
           aria-hidden="true"
         />
-        <section
-          v-if="widgetPageOffset"
-          class="desktop__widget-page"
-          :style="{ width: `${pagerLayout.grid.pageWidth}px` }"
-          :aria-label="i18n.t('desktop.widgetPageLabel')"
-        >
-          <template v-if="widgetPageSeen">
-            <DesktopWidgetHost
-              v-for="widget in widgetPageWidgets"
-              :key="`page-${widget.key}`"
-              :widget="widget"
-              :component-props="widgetComponentProps(widget.key)"
-              :style="{ height: `${widgetPageHeight(widget)}px` }"
-            />
-          </template>
-          <button type="button" class="desktop__widget-page-edit" @click="iconManagerOpen = true">
-            {{ i18n.t('desktop.widgetPageEdit') }}
-          </button>
-        </section>
       </template>
       <DesktopWidgetHost
         v-for="widget in visibleDesktopWidgets"
@@ -4505,6 +4489,26 @@ function onViewportResize(): void {
           @nudge="(x, y) => nudgeIcon(entry.key, x, y)"
         />
       </div>
+      <!-- Positioned left of the first icon page, but after the icons in Tab order. -->
+      <section
+        v-if="pagerLayout && widgetPageOffset"
+        class="desktop__widget-page"
+        :style="{ width: `${pagerLayout.grid.pageWidth}px` }"
+        :aria-label="i18n.t('desktop.widgetPageLabel')"
+      >
+        <template v-if="widgetPageSeen">
+          <DesktopWidgetHost
+            v-for="widget in widgetPageWidgets"
+            :key="`page-${widget.key}`"
+            :widget="widget"
+            :component-props="widgetComponentProps(widget.key)"
+            :style="{ height: `${widgetPageHeight(widget)}px` }"
+          />
+        </template>
+        <button type="button" class="desktop__widget-page-edit" @click="iconManagerOpen = true">
+          {{ i18n.t('desktop.widgetPageEdit') }}
+        </button>
+      </section>
       <span v-if="entriesLoading" class="desktop__sr-only" aria-live="polite">
         {{ i18n.t('desktop.entriesLoading') }}
       </span>

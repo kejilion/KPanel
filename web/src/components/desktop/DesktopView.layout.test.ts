@@ -990,6 +990,23 @@ describe('DesktopView icon layout interaction', () => {
     expect(page.findAll('.desktop-widget-slot').map(slot => slot.attributes('aria-label'))).toEqual(['widget:monitor', 'widget:clock'])
     expect(resources).toHaveBeenCalledTimes(1)
 
+    // Inside the widget column the wheel scrolls; at its bottom edge it turns to the icons.
+    const column = page.element as HTMLElement
+    Object.defineProperties(column, {
+      scrollHeight: { configurable: true, value: 800 },
+      clientHeight: { configurable: true, value: 300 },
+    })
+    const inside = new WheelEvent('wheel', { deltaY: 120, bubbles: true, cancelable: true })
+    column.dispatchEvent(inside)
+    expect(inside.defaultPrevented).toBe(false)
+    expect(current()).toBe(0)
+    Object.defineProperty(column, 'scrollTop', { configurable: true, value: 500 })
+    const edge = new WheelEvent('wheel', { deltaY: 120, bubbles: true, cancelable: true })
+    column.dispatchEvent(edge)
+    await flushPromises()
+    expect(edge.defaultPrevented).toBe(true)
+    expect(current()).toBe(1)
+
     await page.get('.desktop__widget-page-edit').trigger('click')
     await flushPromises()
     expect(document.body.querySelector('.desktop-icon-manager__section--widgets')?.textContent).toContain('桌面小插件')
