@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/kejilion/kejilion-panel/internal/contract"
 )
 
 const maxComposeSourceBytes = 24 << 10
@@ -199,25 +201,9 @@ func (c *Client) ComposeProject(ctx context.Context, name string) (ComposeProjec
 
 func (c *Client) ComposeProjects() []ComposeProjectSummary {
 	names := make(map[string]struct{})
-	for _, root := range []string{c.appRoot, c.webRoot} {
-		resolvedRoot, err := filepath.EvalSymlinks(filepath.Clean(root))
-		if err != nil || !filepath.IsAbs(resolvedRoot) {
-			continue
-		}
-		entries, err := os.ReadDir(resolvedRoot)
-		if err != nil {
-			continue
-		}
-		for _, entry := range entries {
-			name := entry.Name()
-			if !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 || !composeProjectPattern.MatchString(name) {
-				continue
-			}
-			candidate, err := filepath.EvalSymlinks(filepath.Join(resolvedRoot, name))
-			if err != nil || !pathWithin(candidate, resolvedRoot) || candidate == resolvedRoot ||
-				len(discoverDefaultComposeFiles(candidate)) == 0 {
-				continue
-			}
+	for _, directory := range c.managedComposeDirectories() {
+		name, files, err := discoverComposeProject(directory)
+		if err == nil && composeProjectPattern.MatchString(name) && len(files) > 0 {
 			names[name] = struct{}{}
 		}
 	}
@@ -227,6 +213,38 @@ func (c *Client) ComposeProjects() []ComposeProjectSummary {
 	}
 	sort.Slice(result, func(left, right int) bool { return result[left].Name < result[right].Name })
 	return result
+}
+
+// Include the roots themselves: the shared web stack commonly lives in /home/web.
+func (c *Client) managedComposeDirectories() []string {
+	seen := make(map[string]bool)
+	var directories []string
+	for _, root := range []string{c.appRoot, c.webRoot} {
+		resolvedRoot, err := filepath.EvalSymlinks(filepath.Clean(root))
+		if err != nil || !filepath.IsAbs(resolvedRoot) {
+			continue
+		}
+		if !seen[resolvedRoot] {
+			seen[resolvedRoot] = true
+			directories = append(directories, resolvedRoot)
+		}
+		entries, err := os.ReadDir(resolvedRoot)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
+				continue
+			}
+			candidate, err := filepath.EvalSymlinks(filepath.Join(resolvedRoot, entry.Name()))
+			if err != nil || !pathWithin(candidate, resolvedRoot) || candidate == resolvedRoot || seen[candidate] {
+				continue
+			}
+			seen[candidate] = true
+			directories = append(directories, candidate)
+		}
+	}
+	return directories
 }
 
 func (c *Client) resolveComposeProject(ctx context.Context, name string) (composeProjectState, error) {
@@ -283,7 +301,10 @@ func (c *Client) resolveComposeProject(ctx context.Context, name string) (compos
 
 	paths := composeConfigPaths(configLabel, resolvedDirectory)
 	if len(paths) == 0 {
-		paths = discoverDefaultComposeFiles(resolvedDirectory)
+		_, paths, err = discoverComposeProject(resolvedDirectory)
+		if err != nil {
+			return composeProjectState{}, err
+		}
 	}
 	if len(paths) == 0 || len(paths) > maxComposeProjectFiles {
 		return composeProjectState{}, ErrActionUnsupported
@@ -362,25 +383,11 @@ func (c *Client) resolveComposeProject(ctx context.Context, name string) (compos
 
 func (c *Client) discoverManagedComposeProjectDirectory(name string) (string, error) {
 	var candidates []string
-	for _, root := range []string{c.appRoot, c.webRoot} {
-		resolvedRoot, err := filepath.EvalSymlinks(filepath.Clean(root))
-		if err != nil || !filepath.IsAbs(resolvedRoot) {
-			continue
+	for _, directory := range c.managedComposeDirectories() {
+		candidateName, files, err := discoverComposeProject(directory)
+		if err == nil && candidateName == name && len(files) > 0 {
+			candidates = append(candidates, directory)
 		}
-		candidate := filepath.Join(resolvedRoot, name)
-		if !pathWithin(candidate, resolvedRoot) || candidate == resolvedRoot {
-			continue
-		}
-		resolvedCandidate, err := filepath.EvalSymlinks(candidate)
-		if err != nil || !pathWithin(resolvedCandidate, resolvedRoot) || resolvedCandidate == resolvedRoot {
-			continue
-		}
-		info, err := os.Lstat(resolvedCandidate)
-		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 ||
-			len(discoverDefaultComposeFiles(resolvedCandidate)) == 0 {
-			continue
-		}
-		candidates = append(candidates, resolvedCandidate)
 	}
 	if len(candidates) == 0 {
 		return "", ErrDockerJobNotFound
@@ -442,6 +449,126 @@ func discoverDefaultComposeFiles(workingDirectory string) []string {
 		}
 	}
 	return nil
+}
+
+// Read only literal native Compose discovery variables. Other dotenv values are
+// skipped, including multiline quoted values; interpolation is left to Compose.
+func composeDiscoveryVariables(data []byte) (map[string]string, error) {
+	values := make(map[string]string)
+	if !utf8.Valid(data) || bytes.IndexByte(data, 0) >= 0 {
+		return nil, ErrActionUnsupported
+	}
+	source := strings.TrimPrefix(string(data), "\ufeff")
+	for source != "" {
+		source = strings.TrimLeft(source, " \t\r\n")
+		if source == "" {
+			break
+		}
+		line, rest, _ := strings.Cut(source, "\n")
+		if strings.HasPrefix(line, "#") {
+			source = rest
+			continue
+		}
+		index := strings.IndexAny(line, "=:")
+		if index < 0 {
+			source = rest
+			continue
+		}
+		key := strings.TrimSpace(strings.TrimPrefix(line[:index], "export "))
+		wanted := key == "COMPOSE_PROJECT_NAME" || key == "COMPOSE_FILE" || key == "COMPOSE_PATH_SEPARATOR"
+		source = strings.TrimLeft(source[index+1:], " \t")
+		var value string
+		literal := false
+		if source != "" && (source[0] == '\'' || source[0] == '"') {
+			quote := source[0]
+			literal = quote == '\''
+			var builder strings.Builder
+			closed := false
+			for index = 1; index < len(source); index++ {
+				character := source[index]
+				if character == quote {
+					closed = true
+					break
+				}
+				if character == '\\' && index+1 < len(source) && (source[index+1] == quote || quote == '"') {
+					if source[index+1] != quote {
+						builder.WriteByte(character)
+					}
+					index++
+					character = source[index]
+				}
+				builder.WriteByte(character)
+			}
+			if !closed {
+				return nil, ErrActionUnsupported
+			}
+			value = builder.String()
+			tail, remaining, _ := strings.Cut(source[index+1:], "\n")
+			tail = strings.TrimSpace(tail)
+			if tail != "" && !strings.HasPrefix(tail, "#") {
+				return nil, ErrActionUnsupported
+			}
+			source = remaining
+		} else {
+			value, source, _ = strings.Cut(source, "\n")
+			if comment := strings.Index(value, " #"); comment >= 0 {
+				value = value[:comment]
+			}
+			value = strings.TrimSpace(value)
+		}
+		if wanted {
+			// Do not guess shell expansions or double-quoted escape sequences.
+			if !literal && strings.ContainsAny(value, "$\\") || strings.ContainsAny(value, "\r\n") {
+				return nil, ErrActionUnsupported
+			}
+			values[key] = value
+		}
+	}
+	return values, nil
+}
+
+func discoverComposeProject(directory string) (string, []string, error) {
+	data, err := readBoundedRegularFile(filepath.Join(directory, ".env"), maxComposeEnvironmentBytes)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", nil, ErrActionUnsupported
+	}
+	variables, err := composeDiscoveryVariables(data)
+	if err != nil {
+		return "", nil, err
+	}
+	name := variables["COMPOSE_PROJECT_NAME"]
+	if name == "" {
+		name = filepath.Base(directory)
+	}
+	files := discoverDefaultComposeFiles(directory)
+	if value := variables["COMPOSE_FILE"]; value != "" {
+		separator := variables["COMPOSE_PATH_SEPARATOR"]
+		if separator == "" {
+			separator = string(filepath.ListSeparator)
+		}
+		// Native environment paths need not use Docker's comma-separated label format.
+		files = nil
+		for _, path := range strings.Split(value, separator) {
+			if path == "" {
+				continue
+			}
+			path = filepath.FromSlash(path)
+			if !filepath.IsAbs(path) {
+				path = filepath.Join(directory, path)
+			}
+			files = append(files, filepath.Clean(path))
+		}
+	}
+	for _, path := range files {
+		info, err := os.Lstat(path)
+		if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+			return "", nil, ErrActionUnsupported
+		}
+	}
+	if len(files) > maxComposeProjectFiles {
+		return "", nil, ErrActionUnsupported
+	}
+	return name, files, nil
 }
 
 func (c *Client) validateComposeDeploymentInput(ctx context.Context, input MaintenanceInput) error {
@@ -615,6 +742,83 @@ func (guard *composeEditGuard) move(source, target string) error {
 	return syncDirectoryPath(filepath.Dir(source))
 }
 
+func composeRemovalRecoveryEnvironment(project ComposeProject) ([]byte, bool, error) {
+	name, files, err := discoverComposeProject(project.WorkingDirectory)
+	if err != nil {
+		return nil, false, err
+	}
+	matches := name == project.Name && len(files) == len(project.ConfigFiles)
+	for index, file := range project.ConfigFiles {
+		if index >= len(files) || files[index] != file.Path {
+			matches = false
+		}
+	}
+	if matches {
+		return nil, false, nil
+	}
+	paths := make([]string, 0, len(project.ConfigFiles))
+	for _, file := range project.ConfigFiles {
+		path := filepath.ToSlash(file.Path)
+		if strings.ContainsAny(path, "\r\n\\") {
+			return nil, false, ErrActionUnsupported
+		}
+		paths = append(paths, path)
+	}
+	separator := ""
+	for _, candidate := range []string{string(filepath.ListSeparator), "|", "^", ";", ":"} {
+		if !strings.Contains(strings.Join(paths, ""), candidate) {
+			separator = candidate
+			break
+		}
+	}
+	if separator == "" {
+		return nil, false, ErrActionUnsupported
+	}
+	var source string
+	if project.EnvironmentFile != nil {
+		source = project.EnvironmentFile.Source
+	}
+	if source != "" && !strings.HasSuffix(source, "\n") {
+		source += "\n"
+	}
+	// Native Compose variables preserve label-only identity after down, including
+	// for CLI users. No Panel project registry is introduced.
+	source += "# Compose project and file selection preserved for redeployment\n"
+	for _, variable := range [][2]string{{"COMPOSE_PROJECT_NAME", project.Name},
+		{"COMPOSE_FILE", strings.Join(paths, separator)}, {"COMPOSE_PATH_SEPARATOR", separator}} {
+		source += variable[0] + "='" + strings.ReplaceAll(variable[1], "'", "\\'") + "'\n"
+	}
+	if len(source) > maxComposeEnvironmentBytes {
+		return nil, false, ErrActionUnsupported
+	}
+	return []byte(source), true, nil
+}
+
+func composeRemovalSharedFiles(project ComposeProject, containers []contract.ContainerSummary, environment bool) error {
+	for _, container := range containers {
+		if container.ComposeProject == "" || container.ComposeProject == project.Name {
+			continue
+		}
+		directory := container.Labels["com.docker.compose.project.working_dir"]
+		resolvedDirectory, _ := filepath.EvalSymlinks(filepath.Clean(filepath.FromSlash(directory)))
+		if environment && resolvedDirectory == project.WorkingDirectory {
+			return fmt.Errorf("Compose environment is shared with project %s; configuration preserved: %w", container.ComposeProject, ErrResourceConflict)
+		}
+		for _, path := range composeConfigPaths(container.Labels["com.docker.compose.project.config_files"], directory) {
+			resolved, err := filepath.EvalSymlinks(path)
+			if err != nil {
+				continue
+			}
+			for _, file := range project.ConfigFiles {
+				if resolved == file.Path {
+					return fmt.Errorf("Compose configuration is shared with project %s; retain configuration to remove only this deployment: %w", container.ComposeProject, ErrResourceConflict)
+				}
+			}
+		}
+	}
+	return nil
+}
+
 func (c *Client) removeComposeProject(ctx context.Context, input MaintenanceInput, archiveID string) (string, error) {
 	state, err := c.resolveComposeProject(ctx, input.Name)
 	if err != nil {
@@ -626,6 +830,23 @@ func (c *Client) removeComposeProject(ctx context.Context, input MaintenanceInpu
 	guard, err := newComposeEditGuard(state.ComposeProject)
 	if err != nil {
 		return "", err
+	}
+	var recoveryEnvironment []byte
+	var updateEnvironment bool
+	if !input.RemoveComposeFiles {
+		recoveryEnvironment, updateEnvironment, err = composeRemovalRecoveryEnvironment(state.ComposeProject)
+		if err != nil {
+			return "", err
+		}
+	}
+	if input.RemoveComposeFiles || updateEnvironment {
+		containers, err := c.ContainerListSummaries(ctx)
+		if err != nil {
+			return "", err
+		}
+		if err := composeRemovalSharedFiles(state.ComposeProject, containers, updateEnvironment); err != nil {
+			return "", err
+		}
 	}
 	if input.RemoveComposeFiles {
 		if !dockerJobIDPattern.MatchString(archiveID) {
@@ -639,11 +860,32 @@ func (c *Client) removeComposeProject(ctx context.Context, input MaintenanceInpu
 	if err := guard.check(); err != nil {
 		return "", err
 	}
+	environmentPath := filepath.Join(state.WorkingDirectory, ".env")
+	originalEnvironment := guard.files[environmentPath]
+	if updateEnvironment {
+		stagedPath, err := stageComposeEnvironmentFile(environmentPath, recoveryEnvironment, originalEnvironment.info)
+		if err != nil {
+			return "", err
+		}
+		defer os.Remove(stagedPath)
+		staged, err := readComposeEditFile(stagedPath)
+		if err != nil {
+			return "", err
+		}
+		if err := guard.replace(stagedPath, environmentPath, staged); err != nil {
+			return "", errors.Join(err, guard.restore(environmentPath, originalEnvironment))
+		}
+		// Explicitly load the newly created .env even when no environment file existed.
+		state.EnvironmentFile = &ComposeProjectFile{Path: environmentPath}
+	}
 	arguments := append(composeProjectBase(state.ComposeProject), "down", "--remove-orphans")
 	if input.RemoveVolumes {
 		arguments = append(arguments, "--volumes")
 	}
 	if _, err := c.runCompose(ctx, arguments...); err != nil {
+		if updateEnvironment {
+			err = errors.Join(err, guard.restore(environmentPath, originalEnvironment))
+		}
 		return "", fmt.Errorf("Compose project removal failed; configuration preserved: %w", err)
 	}
 	containers, err := c.ContainerListSummaries(ctx)
@@ -656,7 +898,10 @@ func (c *Client) removeComposeProject(ctx context.Context, input MaintenanceInpu
 		}
 	}
 	if !input.RemoveComposeFiles {
-		return "", nil
+		return "", guard.check()
+	}
+	if err := composeRemovalSharedFiles(state.ComposeProject, containers, false); err != nil {
+		return "", err
 	}
 	var moved []string
 	for _, file := range state.ConfigFiles {

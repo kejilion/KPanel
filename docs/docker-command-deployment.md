@@ -38,6 +38,13 @@ KPanel 的“新建容器”使用一个粘贴入口覆盖两类常见部署资�
   标准配置文件不再参与项目发现；恢复原文件名后，脚本、Compose 和 KPanel 可继续发现及重新部署。
 - 取消配置选项即只移除部署，配置继续保留，列表保留可重新部署的 `0` 容器项目。API 未提供
   `removeComposeFiles` 时也按保留配置处理；不会归档未参与本次项目配置的其他文件。
+  根目录项目同样参与发现；若项目名或多文件组合仅存在于容器 labels 中，删除前通过受保护的原子写入，
+  在原 `.env` 末尾保存 Compose 原生 `COMPOSE_PROJECT_NAME`、`COMPOSE_FILE`、`COMPOSE_PATH_SEPARATOR`，
+  原有变量保留，失败时恢复仍属于本任务的环境文件。需要持久化的路径使用字面值，不猜测动态插值。
+  这些变量同样可供 CLI 使用，遵循 [Docker 原生环境变量](https://docs.docker.com/compose/how-tos/environment-variables/envvars/)
+  与 [dotenv 字面值规则](https://docs.docker.com/compose/how-tos/environment-variables/variable-interpolation/)。
+- 其他运行中或已停止的 Compose 项目仍引用同一配置时，阻止归档共享文件；若需要保存身份且 `.env`
+  被其他项目共用，同样保留文件并报告资源冲突。使用默认配置且无需写入环境文件时，可只移除目标部署。
 - 「同时删除 Docker 数据卷」默认关闭；明确勾选才增加 `--volumes`，删除 Compose 声明的命名卷及容器
   匿名卷。外部卷、宿主机挂载目录和镜像仍由 Docker 原生语义保留。容器内未持久化的数据随容器删除。
 - 删除失败、残留容器或执行期间配置被外部修改时，不继续归档配置。多文件归档失败会尝试恢复仍属于本任务

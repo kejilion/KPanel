@@ -17,6 +17,11 @@ import (
 
 func composeRemovalTestClient(t *testing.T, additionalSources ...string) (*Client, ComposeProject, *atomic.Bool) {
 	t.Helper()
+	return composeRemovalIdentityClient(t, "demo", false, false, additionalSources...)
+}
+
+func composeRemovalIdentityClient(t *testing.T, name string, rootProject, shared bool, additionalSources ...string) (*Client, ComposeProject, *atomic.Bool) {
+	t.Helper()
 	root := t.TempDir()
 	dir := filepath.Join(root, "demo")
 	if err := os.MkdirAll(filepath.Join(dir, "data"), 0o750); err != nil {
@@ -47,9 +52,13 @@ func composeRemovalTestClient(t *testing.T, additionalSources ...string) (*Clien
 		items := []containerListItem{{ID: strings.Repeat("b", 64), Labels: map[string]string{
 			"com.docker.compose.project": "unrelated",
 		}}}
+		if shared {
+			items[0].Labels["com.docker.compose.project.working_dir"] = dir
+			items[0].Labels["com.docker.compose.project.config_files"] = strings.Join(configPaths, ",")
+		}
 		if !removed.Load() {
 			items = append(items, containerListItem{ID: strings.Repeat("a", 64), Labels: map[string]string{
-				"com.docker.compose.project": "demo", "com.docker.compose.service": "web",
+				"com.docker.compose.project": name, "com.docker.compose.service": "web",
 				"com.docker.compose.project.working_dir":  dir,
 				"com.docker.compose.project.config_files": strings.Join(configPaths, ","),
 			}})
@@ -59,7 +68,11 @@ func composeRemovalTestClient(t *testing.T, additionalSources ...string) (*Clien
 	t.Cleanup(server.Close)
 	client := testHTTPClient(server)
 	client.appRoot = root
-	project, err := client.ComposeProject(context.Background(), "demo")
+	if rootProject {
+		client.appRoot = t.TempDir()
+		client.webRoot = dir
+	}
+	project, err := client.ComposeProject(context.Background(), name)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,6 +198,166 @@ func TestComposeRemovalCanRetainConfigurationForRedeployment(t *testing.T) {
 	data, err := os.ReadFile(project.ConfigFiles[0].Path)
 	if err != nil || string(data) != project.ConfigFiles[0].Source || len(client.ComposeProjects()) != 1 {
 		t.Fatalf("configuration not retained: %q, %v", data, err)
+	}
+}
+
+func TestComposeRemovalRetainsRootAliasAndMultipleFileIdentity(t *testing.T) {
+	for _, scenario := range []struct {
+		name  string
+		root  bool
+		multi bool
+	}{{"demo", true, false}, {"kejilion-demo", false, false}, {"demo", false, true}, {"kejilion-demo", true, true}} {
+		t.Run(fmt.Sprintf("%s-root=%t-multi=%t", scenario.name, scenario.root, scenario.multi), func(t *testing.T) {
+			var additional []string
+			if scenario.multi {
+				additional = append(additional, "services:\n  web:\n    ports: ['127.0.0.1:18080:80']\n")
+			}
+			client, before, removed := composeRemovalIdentityClient(t, scenario.name, scenario.root, false, additional...)
+			var commands [][]string
+			client.composeCommand = func(_ context.Context, args ...string) ([]byte, error) {
+				commands = append(commands, append([]string(nil), args...))
+				removed.Store(true)
+				if containsArgumentSequence(args, "config", "--services") {
+					return []byte("web\n"), nil
+				}
+				if containsArgumentSequence(args, "ps", "--all", "--quiet") {
+					return []byte(strings.Repeat("a", 64) + "\n"), nil
+				}
+				return nil, nil
+			}
+			if _, err := client.removeComposeProject(context.Background(), MaintenanceInput{
+				Action: "compose_remove", Name: before.Name, ExpectedResourceVersion: before.ResourceVersion,
+			}, ""); err != nil {
+				t.Fatal(err)
+			}
+			projects := client.ComposeProjects()
+			if len(projects) != 1 || projects[0].Name != before.Name {
+				t.Fatalf("project identity after removal = %#v", projects)
+			}
+			after, err := client.ComposeProject(context.Background(), before.Name)
+			if err != nil || after.Name != before.Name || after.WorkingDirectory != before.WorkingDirectory || len(after.ConfigFiles) != len(before.ConfigFiles) {
+				t.Fatalf("retained project = %#v, %v", after, err)
+			}
+			for index, file := range before.ConfigFiles {
+				if after.ConfigFiles[index] != file {
+					t.Fatalf("active file %d changed: %#v", index, after.ConfigFiles)
+				}
+			}
+			if after.EnvironmentFile == nil || !strings.HasPrefix(after.EnvironmentFile.Source, "PASSWORD=keep-private\n") {
+				t.Fatal("original environment variables were not preserved")
+			}
+			if err := client.redeployComposeProject(context.Background(), MaintenanceInput{
+				Name: after.Name, ExpectedResourceVersion: after.ResourceVersion,
+				ComposeFile: after.ConfigFiles[0].Path, Compose: after.ConfigFiles[0].Source,
+			}); err != nil {
+				t.Fatal(err)
+			}
+			start := commands[len(commands)-2]
+			if !containsArgumentSequence(start, "--project-name", before.Name, "up", "--detach") {
+				t.Fatalf("redeployment identity = %v", start)
+			}
+			for _, file := range before.ConfigFiles {
+				if !containsArgumentSequence(start, "--file", file.Path) {
+					t.Fatalf("redeployment omitted %s: %v", file.Path, start)
+				}
+			}
+		})
+	}
+}
+
+func TestComposeRemovalRecoveryEnvironmentRollbackAndExternalEdits(t *testing.T) {
+	for _, scenario := range []string{"existing", "absent", "external-edit"} {
+		t.Run(scenario, func(t *testing.T) {
+			client, project, _ := composeRemovalTestClient(t, "services:\n  web:\n    restart: always\n")
+			path := filepath.Join(project.WorkingDirectory, ".env")
+			if scenario == "absent" {
+				if err := os.Remove(path); err != nil {
+					t.Fatal(err)
+				}
+				var err error
+				project, err = client.ComposeProject(context.Background(), project.Name)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			client.composeCommand = func(_ context.Context, args ...string) ([]byte, error) {
+				data, err := os.ReadFile(path)
+				if err != nil || !strings.Contains(string(data), "COMPOSE_FILE='") || !containsArgumentSequence(args, "--env-file", path) {
+					t.Fatalf("native recovery was not saved before down: %q, %v, %v", data, err, args)
+				}
+				if scenario == "external-edit" {
+					if err := os.WriteFile(path, []byte("PASSWORD=externally-changed\n"), 0o600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				return nil, errors.New("down failed")
+			}
+			_, err := client.removeComposeProject(context.Background(), MaintenanceInput{
+				Name: project.Name, ExpectedResourceVersion: project.ResourceVersion,
+			}, "")
+			if err == nil {
+				t.Fatal("expected failure")
+			}
+			data, readErr := os.ReadFile(path)
+			if scenario == "absent" {
+				if !errors.Is(readErr, os.ErrNotExist) {
+					t.Fatalf("new environment not rolled back: %v", readErr)
+				}
+			} else {
+				want := "PASSWORD=keep-private\n"
+				if scenario == "external-edit" {
+					want = "PASSWORD=externally-changed\n"
+				}
+				if readErr != nil || string(data) != want {
+					t.Fatalf("environment overwritten: %q, %v", data, readErr)
+				}
+			}
+		})
+	}
+}
+
+func TestComposeRemovalSharedConfigurationPreservesOtherProject(t *testing.T) {
+	for _, scenario := range []string{"archive", "keep-default", "keep-multiple"} {
+		t.Run(scenario, func(t *testing.T) {
+			var additional []string
+			if scenario == "keep-multiple" {
+				additional = append(additional, "services:\n  web:\n    restart: always\n")
+			}
+			client, project, removed := composeRemovalIdentityClient(t, "demo", false, true, additional...)
+			calls := 0
+			client.composeCommand = func(_ context.Context, _ ...string) ([]byte, error) { calls++; removed.Store(true); return nil, nil }
+			_, err := client.removeComposeProject(context.Background(), MaintenanceInput{
+				Name: project.Name, ExpectedResourceVersion: project.ResourceVersion, RemoveComposeFiles: scenario == "archive",
+			}, strings.Repeat("f", 32))
+			if scenario == "keep-default" {
+				if err != nil || calls != 1 {
+					t.Fatalf("shared deployment removal = %v, calls=%d", err, calls)
+				}
+			} else if !errors.Is(err, ErrResourceConflict) || calls != 0 {
+				t.Fatalf("shared files were not protected before down: %v, calls=%d", err, calls)
+			}
+			data, err := os.ReadFile(filepath.Join(project.WorkingDirectory, ".env"))
+			if err != nil || string(data) != "PASSWORD=keep-private\n" {
+				t.Fatalf("shared environment changed: %q, %v", data, err)
+			}
+			for _, file := range project.ConfigFiles {
+				data, err := os.ReadFile(file.Path)
+				if err != nil || string(data) != file.Source {
+					t.Fatalf("shared configuration changed: %q, %v", data, err)
+				}
+			}
+		})
+	}
+}
+
+func TestComposeDiscoveryIgnoresVariablesInsideMultilineSecrets(t *testing.T) {
+	data := []byte("SECRET='first line\nCOMPOSE_PROJECT_NAME=wrong\nlast line'\nCOMPOSE_PROJECT_NAME='real-project' # comment\nCOMPOSE_FILE='a\\'b.yml|override.yml'\nCOMPOSE_PATH_SEPARATOR='|'\n")
+	values, err := composeDiscoveryVariables(data)
+	if err != nil || values["COMPOSE_PROJECT_NAME"] != "real-project" || values["COMPOSE_FILE"] != "a'b.yml|override.yml" {
+		t.Fatalf("literal discovery = %#v, %v", values, err)
+	}
+	if _, err := composeDiscoveryVariables([]byte("COMPOSE_FILE=${FILE}\n")); !errors.Is(err, ErrActionUnsupported) {
+		t.Fatalf("dynamic file selection was guessed: %v", err)
 	}
 }
 
