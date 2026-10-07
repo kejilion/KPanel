@@ -41,11 +41,11 @@ type RunOption struct {
 // RunNetwork is an additional network that `docker run` cannot attach in the
 // same command on every Engine version; it maps to `docker network connect`.
 type RunNetwork struct {
-	Name          string   `json:"name"`
-	IP            string   `json:"ip,omitempty"`
-	IPv6          string   `json:"ipv6,omitempty"`
-	LinkLocalIPs  []string `json:"linkLocalIps,omitempty"`
-	Aliases       []string `json:"aliases,omitempty"`
+	Name         string   `json:"name"`
+	IP           string   `json:"ip,omitempty"`
+	IPv6         string   `json:"ipv6,omitempty"`
+	LinkLocalIPs []string `json:"linkLocalIps,omitempty"`
+	Aliases      []string `json:"aliases,omitempty"`
 }
 
 type runInspect struct {
