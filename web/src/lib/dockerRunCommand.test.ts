@@ -81,7 +81,7 @@ describe('docker run command formatting', () => {
   })
 
   it('recognises common secret names without hiding ordinary ones', () => {
-    for (const name of ['DB_PASSWORD', 'POSTGRES_PASSWORD', 'GITHUB_TOKEN', 'SECRET_KEY_BASE', 'AWS_ACCESS_KEY_ID', 'pwd', 'masterauth', 'PRIVATE_KEY']) {
+    for (const name of ['DB_PASSWORD', 'POSTGRES_PASSWORD', 'PASSPHRASE', 'GITHUB_TOKEN', 'SECRET_KEY_BASE', 'AWS_ACCESS_KEY_ID', 'pwd', 'masterauth', 'PRIVATE_KEY']) {
       expect(isSensitiveName(name), name).toBe(true)
     }
     for (const name of ['TZ', 'PUID', 'PATH', 'LANG', 'KEYBOARD_LAYOUT', 'MONKEY', 'PASSIVE_PORTS', 'traefik.enable']) {

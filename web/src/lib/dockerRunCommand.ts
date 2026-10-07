@@ -23,7 +23,7 @@ export interface FormattedRunCommand {
 
 export const runCommandMask = '••••••'
 
-const strongSecretWords = /password|passwd|secret|token|credential|apikey|privatekey|accesskey|requirepass|masterauth/
+const strongSecretWords = /password|passwd|passphrase|secret|token|credential|apikey|privatekey|accesskey|requirepass|masterauth/
 const weakSecretWords = new Set(['pass', 'pwd', 'key', 'auth', 'salt', 'cookie', 'pin'])
 const urlCredentials = /[a-z][a-z0-9+.-]*:\/\/[^/\s:@]+:[^/\s@]+@/i
 
