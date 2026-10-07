@@ -3,9 +3,12 @@ import { DOMWrapper, flushPromises, mount, shallowMount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import FilesView from './FilesView.vue'
+import { desktopWindowCloseKey } from '@/lib/desktopRouteKeys'
 
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
+  entry: vi.fn(),
+  text: vi.fn(),
   remoteDownload: vi.fn(),
   createRemoteDownloadJob: vi.fn(),
   remoteDownloadJobs: vi.fn(),
@@ -37,8 +40,8 @@ vi.mock('@/lib/api', () => ({
       remoteDownloadJob: mocks.remoteDownloadJob,
       cancelRemoteDownloadJob: mocks.cancelRemoteDownloadJob,
       deleteRemoteDownloadJob: mocks.deleteRemoteDownloadJob,
-      entry: vi.fn(),
-      text: vi.fn(),
+      entry: mocks.entry,
+      text: mocks.text,
       write: vi.fn(),
       action: vi.fn(),
       transferFromPanel: vi.fn(),
@@ -89,6 +92,8 @@ beforeEach(() => {
   vi.clearAllMocks()
   mocks.route.query = {}
   mocks.list.mockResolvedValue(directory('/'))
+  mocks.entry.mockReset()
+  mocks.text.mockResolvedValue('shortcut file content')
   mocks.remoteDownloadJobs.mockResolvedValue({ items: [] })
   mocks.hosts.mockResolvedValue({ nodeId: 'local-node', items: [] })
   window.localStorage.removeItem('kpanel:cluster-host-order')
@@ -883,6 +888,91 @@ describe('FilesView context menu', () => {
       wrapper.unmount()
       desktop.remove()
       boundsSpy.mockRestore()
+    }
+  })
+})
+
+describe('FilesView desktop shortcut loading', () => {
+  const shortcutEntry = {
+    name: 'README.md', path: '/editor-demo/README.md', kind: 'file' as const,
+    sizeBytes: 20, mode: '-rw-r--r--', owner: 'demo', group: 'demo',
+    modifiedAt: '', resourceVersion: 'readme-v1', editable: true, previewable: true,
+  }
+
+  function mountShortcut() {
+    mocks.route.query = { file: shortcutEntry.path }
+    return mount(FilesView, {
+      attachTo: document.body,
+      global: {
+        provide: { [desktopWindowCloseKey as symbol]: vi.fn(async () => undefined) },
+        stubs: {
+          FileEditorWorkspace: {
+            props: ['content'],
+            template: '<div class="shortcut-preview-content">{{ content }}</div>',
+          },
+        },
+      },
+    })
+  }
+
+  it('keeps the directory page hidden while a slow file lookup opens the preview', async () => {
+    let resolveEntry!: (entry: typeof shortcutEntry) => void
+    mocks.entry.mockReturnValueOnce(new Promise((resolve) => { resolveEntry = resolve }))
+    const wrapper = mountShortcut()
+    try {
+      await flushPromises()
+      expect(wrapper.get('.files-page').isVisible()).toBe(false)
+      expect(wrapper.get('.file-shortcut-preview').text()).toContain('正在打开文件…')
+      expect(mocks.list).not.toHaveBeenCalled()
+
+      resolveEntry(shortcutEntry)
+      await flushPromises()
+      expect(wrapper.get('.files-page').isVisible()).toBe(false)
+      expect(wrapper.find('.file-shortcut-preview').exists()).toBe(false)
+      const preview = new DOMWrapper(document.body).get('.shortcut-preview-content')
+      expect(preview.isVisible()).toBe(true)
+      expect(preview.text()).toBe('shortcut file content')
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('retries a failed file lookup without falling back to the directory page', async () => {
+    mocks.entry.mockRejectedValueOnce(new Error('file lookup unavailable')).mockResolvedValueOnce(shortcutEntry)
+    const wrapper = mountShortcut()
+    try {
+      await flushPromises()
+      expect(wrapper.get('.files-page').isVisible()).toBe(false)
+      expect(wrapper.get('.file-shortcut-preview').attributes('role')).toBe('alert')
+      expect(wrapper.get('.file-shortcut-preview').text()).toContain('file lookup unavailable')
+
+      await wrapper.get('.file-shortcut-preview button').trigger('click')
+      await flushPromises()
+      expect(mocks.entry).toHaveBeenCalledTimes(2)
+      expect(wrapper.get('.files-page').isVisible()).toBe(false)
+      expect(new DOMWrapper(document.body).get('.shortcut-preview-content').text()).toBe('shortcut file content')
+      expect(mocks.list).not.toHaveBeenCalled()
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('retries a failed content read without showing the directory underneath', async () => {
+    mocks.entry.mockResolvedValue(shortcutEntry)
+    mocks.text.mockRejectedValueOnce(new Error('file content unavailable')).mockResolvedValueOnce('recovered file content')
+    const wrapper = mountShortcut()
+    try {
+      await flushPromises()
+      expect(wrapper.get('.files-page').isVisible()).toBe(false)
+      expect(wrapper.get('.file-shortcut-preview').text()).toContain('file content unavailable')
+
+      await wrapper.get('.file-shortcut-preview button').trigger('click')
+      await flushPromises()
+      expect(mocks.text).toHaveBeenCalledTimes(2)
+      expect(wrapper.get('.files-page').isVisible()).toBe(false)
+      expect(new DOMWrapper(document.body).get('.shortcut-preview-content').text()).toBe('recovered file content')
+    } finally {
+      wrapper.unmount()
     }
   })
 })

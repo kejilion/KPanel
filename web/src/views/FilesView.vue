@@ -463,6 +463,7 @@ const desktopAdding = ref(false)
 const previewEntry = ref<FileEntry>()
 const previewContent = ref('')
 const previewLoading = ref(false)
+const shortcutPreviewError = ref('')
 let previewRequestId = 0
 const previewSaving = ref(false)
 const previewDirty = ref(false)
@@ -861,10 +862,12 @@ async function openRequestedFile(value: unknown): Promise<void> {
   const filePath = requestedFilePath(value)
   if (!filePath || filePath === '/' || filePath === openedRouteFile) return
   openedRouteFile = filePath
+  shortcutPreviewError.value = ''
   try {
     const entry = await fileAPI.value.entry(filePath)
-    if (unmounted || hostId !== fileHostId.value) return
+    if (unmounted || hostId !== fileHostId.value || filePath !== openedRouteFile) return
     if (entry.kind !== 'file') {
+      shortcutPreviewError.value = phrase('该路径现在不是普通文件，请从文件管理重新添加。')
       toast.show('目标类型已变化', { message: '该路径现在不是普通文件，请从文件管理重新添加。' })
       return
     }
@@ -872,8 +875,16 @@ async function openRequestedFile(value: unknown): Promise<void> {
     selectionAnchor.value = entry.path
     await openPreview(entry)
   } catch (error) {
+    if (unmounted || hostId !== fileHostId.value || filePath !== openedRouteFile) return
+    shortcutPreviewError.value = errorMessage(error)
     toast.danger('桌面目标无法打开', errorMessage(error))
   }
+}
+
+function retryShortcutPreview(): void {
+  if (!shortcutPreviewError.value) return
+  openedRouteFile = ''
+  void openRequestedFile(route.query.file)
 }
 
 async function loadRequestedRoute(): Promise<void> {
@@ -983,6 +994,7 @@ async function openPreview(entry: FileEntry): Promise<void> {
     previewContent.value = content
   } catch (error) {
     if (unmounted || hostId !== fileHostId.value || requestId !== previewRequestId) return
+    shortcutPreviewError.value = errorMessage(error)
     toast.danger('文件打开失败', errorMessage(error))
     previewEntry.value = undefined
   } finally {
@@ -2699,7 +2711,7 @@ onBeforeUnmount(() => {
   <section
     ref="filesPage"
     class="files-page"
-    v-show="!(shortcutFilePreviewOnly && previewEntry)"
+    v-show="!shortcutFilePreviewOnly"
     :class="{ 'files-page--batch-active': selected.size > 0 }"
     tabindex="-1"
     @pointerdown="focusFilesPage"
@@ -3720,6 +3732,22 @@ onBeforeUnmount(() => {
       </div>
     </ModalDialog>
   </section>
+  <div
+    v-if="shortcutFilePreviewOnly && !previewEntry"
+    class="file-empty file-shortcut-preview"
+    :role="shortcutPreviewError ? 'alert' : 'status'"
+  >
+    <template v-if="shortcutPreviewError">
+      <CircleAlert :size="34" />
+      <strong>{{ phrase('文件打开失败') }}</strong>
+      <span>{{ shortcutPreviewError }}</span>
+      <button class="button button--secondary" type="button" @click="retryShortcutPreview">{{ phrase('重试') }}</button>
+    </template>
+    <template v-else>
+      <RefreshCw :size="22" class="spinning" />
+      <span>{{ phrase('正在打开文件…') }}</span>
+    </template>
+  </div>
 </template>
 
 <style scoped>
@@ -4674,7 +4702,8 @@ onBeforeUnmount(() => {
   color: var(--text);
 }
 
-.file-directory-error {
+.file-directory-error,
+.file-shortcut-preview {
   padding: 16px;
   text-align: center;
   overflow-wrap: anywhere;
