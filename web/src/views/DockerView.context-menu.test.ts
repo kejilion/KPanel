@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => ({
   jobs: vi.fn(),
   publicNetwork: vi.fn(),
   checkUpdate: vi.fn(),
+  runCommand: vi.fn(),
+  composeProject: vi.fn(),
 }))
 
 vi.mock('@/lib/api', () => ({
@@ -32,7 +34,8 @@ vi.mock('@/lib/api', () => ({
       jobs: mocks.jobs,
       job: vi.fn(),
       action: vi.fn(),
-      composeProject: vi.fn(),
+      composeProject: mocks.composeProject,
+      runCommand: mocks.runCommand,
       exec: vi.fn(),
       logs: vi.fn(),
       stats: vi.fn(),
@@ -215,5 +218,41 @@ describe('Docker context menu', () => {
     await flushPromises()
     expect(document.body.querySelector('.docker-context-menu')).toBeNull()
     expect(document.activeElement).toBe(opener.element)
+  })
+
+  it('opens the run command from the container menu and hands Compose containers to their project', async () => {
+    const data = inventory()
+    data.containers[0] = { ...data.containers[0]!, project: 'blog' }
+    data.composeProjects = ['blog']
+    mocks.inventory.mockResolvedValue(data)
+    mocks.runCommand.mockResolvedValue({
+      containerId: data.containers[0].id, name: 'web', image: 'nginx:alpine',
+      composeProject: 'blog', composeService: 'web',
+      options: [{ flag: '-d' }, { flag: '--name', value: 'web' }], command: [], networks: [], unsupported: [],
+      imageDefaults: true, collectedAt: '2026-10-07T08:00:00Z',
+    })
+    mocks.composeProject.mockReturnValue(new Promise(() => undefined))
+    wrapper = mount(DockerView, { attachTo: windowBody })
+    await flushPromises()
+
+    wrapper.get<HTMLButtonElement>('.docker-context-trigger').element.click()
+    await flushPromises()
+    const entry = [...document.body.querySelectorAll<HTMLButtonElement>('.docker-context-menu [role="menuitem"]')]
+      .find((item) => item.textContent?.includes('查看创建命令'))
+    expect(entry).toBeDefined()
+    entry!.click()
+    await flushPromises()
+
+    expect(document.body.querySelector('.docker-context-menu')).toBeNull()
+    expect(mocks.runCommand).toHaveBeenCalledWith(data.containers[0].id, expect.any(AbortSignal))
+    expect(document.body.querySelector('.run-command__code')?.textContent).toContain('docker run -d')
+    const openCompose = [...document.body.querySelectorAll<HTMLButtonElement>('.run-command__compose button')]
+      .find((button) => button.textContent?.includes('打开 Compose 配置'))
+    expect(openCompose).toBeDefined()
+    openCompose!.click()
+    await flushPromises()
+
+    expect(document.body.querySelector('.run-command')).toBeNull()
+    expect(mocks.composeProject).toHaveBeenCalledWith('blog', expect.any(AbortSignal))
   })
 })

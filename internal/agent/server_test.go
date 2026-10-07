@@ -514,6 +514,34 @@ func TestExternalContainerLogsReachDockerWithoutOwnershipGate(t *testing.T) {
 	}
 }
 
+func TestContainerRunCommandRouteIsReadOnly(t *testing.T) {
+	if os.PathSeparator == '\\' {
+		t.Skip("Unix Socket integration test")
+	}
+	server := testServer(t)
+	id := strings.Repeat("a", 64)
+	for _, test := range []struct {
+		method, path string
+		want         int
+	}{
+		{http.MethodGet, "/v1/docker/containers/" + id + "/run-command", http.StatusOK},
+		{http.MethodPost, "/v1/docker/containers/" + id + "/run-command", http.StatusMethodNotAllowed},
+		{http.MethodGet, "/v1/docker/containers/" + id + "/run-command?full=1", http.StatusMethodNotAllowed},
+		{http.MethodGet, "/v1/docker/containers/not-an-id/run-command", http.StatusBadGateway},
+	} {
+		request := httptest.NewRequest(test.method, test.path, strings.NewReader(`{}`))
+		request.Header.Set("Authorization", "Bearer "+strings.Repeat("x", 32))
+		response := httptest.NewRecorder()
+		server.ServeHTTP(response, request)
+		if response.Code != test.want {
+			t.Fatalf("%s %s status = %d, want %d; body=%s", test.method, test.path, response.Code, test.want, response.Body.String())
+		}
+		if test.want == http.StatusOK && !strings.Contains(response.Body.String(), `"containerId":"`+id+`"`) {
+			t.Fatalf("run command body = %s", response.Body.String())
+		}
+	}
+}
+
 func testServer(t *testing.T) *Server {
 	t.Helper()
 	root := t.TempDir()

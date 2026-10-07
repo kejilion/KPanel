@@ -109,6 +109,40 @@ function mockDockerStats(item) {
     pids: profile.pids, collectedAt: new Date(now).toISOString(),
   }
 }
+// Equivalent `docker run` options per demo container, shaped like the Agent's
+// run-command response: secrets, Compose membership, extra networks and
+// settings docker run cannot express are all represented.
+function mockDockerRunCommand(item) {
+  const option = (flag, value) => value === undefined ? { flag } : { flag, value }
+  const base = [option('-d'), option('--name', item.name)]
+  const network = item.composeProject ? [option('--network', `${item.composeProject}_default`), option('--network-alias', item.composeService)] : []
+  const byName = {
+    mysql: { options: [...base, option('--restart', 'always'), ...network, option('-p', '127.0.0.1:3306:3306'),
+      option('-v', '/home/web/mysql:/var/lib/mysql'), option('-e', 'TZ=Asia/Shanghai'),
+      option('-e', 'MYSQL_ROOT_PASSWORD=kpanel-demo-root'), option('-e', 'MYSQL_DATABASE=wordpress'),
+      option('--log-opt', 'max-size=20m')], command: ['--character-set-server=utf8mb4'] },
+    nginx: { options: [...base, option('--restart', 'always'), ...network, option('-p', '80:80'), option('-p', '443:443'),
+      option('-p', '443:443/udp'), option('-v', '/home/web/nginx.conf:/etc/nginx/nginx.conf:ro'),
+      option('-v', '/home/web/conf.d:/etc/nginx/conf.d'), option('-v', '/home/web/certs:/etc/nginx/certs'),
+      option('-v', '/home/web/html:/var/www/html'), option('-e', 'TZ=Asia/Shanghai')], command: [] },
+    redis: { options: [...base, option('--restart', 'always'), ...network, option('-v', '/home/web/redis:/data'),
+      option('--memory', '256m')], command: ['redis-server', '--appendonly', 'yes', '--requirepass', 'kpanel-demo-redis'] },
+    'legacy-worker': { options: [...base, option('--hostname', 'worker'), option('--restart', 'on-failure:5'),
+      option('-p', '9000-9002:9000-9002'), option('-v', 'worker-data:/srv/data'), option('--tmpfs', '/run:size=64m'),
+      option('-e', 'DATABASE_URL=postgres://worker:kpanel-demo-db@db.internal:5432/jobs'), option('-e', 'WORKERS=4'),
+      option('--label', 'com.example.team=ops'), option('--cap-add', 'NET_ADMIN'), option('--cpus', '1.5'),
+      option('--memory', '1g'), option('--add-host', 'host.docker.internal:host-gateway'), option('--init')],
+      command: ['--queue', 'default', '--concurrency', '4'],
+      networks: [{ name: 'monitoring', aliases: ['worker-metrics'] }], unsupported: ['--mac-address'] },
+  }
+  const detail = byName[item.name] || { options: [...base, option('--restart', 'unless-stopped'), ...network], command: [] }
+  return {
+    containerId: item.id, name: item.name, image: item.image,
+    composeProject: item.composeProject, composeService: item.composeService,
+    options: detail.options, command: detail.command, networks: detail.networks || [], unsupported: detail.unsupported || [],
+    imageDefaults: item.mockUpdateStatus !== 'unavailable', collectedAt: new Date().toISOString(),
+  }
+}
 let mockRemoteDownloadJobCounter = 0
 const mockFiles = [
   ...mockEditorFiles,
@@ -2814,6 +2848,26 @@ createServer(async (request, response) => {
     await new Promise(resolve => setTimeout(resolve, 400 + Math.round(Math.random() * 400)))
     if (!stats) { send(response, 404, { code: 'mock_not_found' }); return }
     send(response, 200, stats)
+    return
+  }
+  const mockRunCommandMatch = request.method === 'GET' && url.pathname.match(/^\/api\/v1\/docker\/containers\/([1-4]{64})\/run-command$/)
+  if (mockRunCommandMatch) {
+    const item = mockDockerContainers.find(candidate => candidate.id === mockRunCommandMatch[1])
+    await new Promise(resolve => setTimeout(resolve, 250))
+    if (!item) { send(response, 404, { code: 'docker_resource_not_found', title: 'Docker 资源不存在' }); return }
+    send(response, 200, mockDockerRunCommand(item))
+    return
+  }
+  const mockComposeProjectMatch = request.method === 'GET' && url.pathname.match(/^\/api\/v1\/docker\/compose-projects\/([a-z0-9][a-z0-9_-]*)$/)
+  if (mockComposeProjectMatch) {
+    const name = mockComposeProjectMatch[1]
+    const services = mockDockerContainers.filter(item => item.composeProject === name).map(item => item.composeService)
+    if (!services.length) { send(response, 404, { code: 'docker_resource_not_found', title: 'Docker 资源不存在' }); return }
+    const source = `services:\n${services.map(service => `  ${service}:\n    image: ${mockDockerContainers.find(item => item.composeService === service && item.composeProject === name).image}\n    restart: always\n`).join('')}`
+    const workingDirectory = name === 'web' ? '/home/web' : `/home/docker/${name}`
+    send(response, 200, { name, workingDirectory,
+      configFiles: [{ path: `${workingDirectory}/docker-compose.yml`, name: 'docker-compose.yml', source }],
+      services, resourceVersion: `sha256:${'5'.repeat(64)}` })
     return
   }
   if (request.method === 'GET' && /^\/api\/v1\/docker\/(images|networks|volumes|backups|jobs|compose-projects)$/.test(url.pathname)) {

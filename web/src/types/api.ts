@@ -1771,6 +1771,34 @@ export interface DockerContainerStats {
   collectedAt: string
 }
 
+/** One `docker run` flag; a missing value marks a switch such as `-d`. */
+export interface DockerRunOption {
+  flag: string
+  value?: string
+}
+
+export interface DockerRunNetwork {
+  name: string
+  ip?: string
+  ipv6?: string
+  aliases?: string[]
+}
+
+/** An equivalent `docker run` reconstructed from the container's current configuration. */
+export interface DockerContainerRunCommand {
+  containerId: string
+  name: string
+  image: string
+  composeProject?: string
+  composeService?: string
+  options: DockerRunOption[]
+  command: string[]
+  networks: DockerRunNetwork[]
+  unsupported: string[]
+  imageDefaults: boolean
+  collectedAt: string
+}
+
 export type MonitoringRange = '1h' | '6h' | '24h' | '7d' | '30d' | '3m' | '6m' | '12m'
 
 export interface MonitoringHistoryQuery {

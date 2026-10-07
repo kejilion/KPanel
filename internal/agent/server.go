@@ -2020,6 +2020,25 @@ func (s *Server) containerOperation(w http.ResponseWriter, r *http.Request, requ
 		writeJSON(w, http.StatusOK, stats)
 		return
 	}
+	if action == "run-command" {
+		if r.Method != http.MethodGet || r.URL.RawPath != "" || r.URL.RawQuery != "" {
+			w.Header().Set("Allow", http.MethodGet)
+			writeProblem(w, requestID, http.StatusMethodNotAllowed, "method_not_allowed", "请求方法不允许", "")
+			return
+		}
+		command, err := s.docker.ContainerRunCommand(r.Context(), id)
+		if err != nil {
+			var apiError *dockerx.APIError
+			if errors.As(err, &apiError) && apiError.Status == http.StatusNotFound {
+				writeProblem(w, requestID, http.StatusNotFound, "docker_resource_not_found", "Docker 资源不存在", "")
+				return
+			}
+			writeProblem(w, requestID, http.StatusBadGateway, "docker_inspect_failed", "容器配置不可用", safeDetail(err))
+			return
+		}
+		writeJSON(w, http.StatusOK, command)
+		return
+	}
 	if action == "exec" {
 		if r.Method != http.MethodPost || r.URL.RawPath != "" || r.URL.RawQuery != "" {
 			w.Header().Set("Allow", http.MethodPost)

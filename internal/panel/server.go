@@ -1410,7 +1410,7 @@ func allowedAgentPath(publicPath string) (string, bool) {
 		}
 	}
 	const prefix = "/api/v1/docker/containers/"
-	for _, suffix := range []string{"/logs", "/stats"} {
+	for _, suffix := range []string{"/logs", "/stats", "/run-command"} {
 		if strings.HasPrefix(publicPath, prefix) && strings.HasSuffix(publicPath, suffix) {
 			id := strings.TrimSuffix(strings.TrimPrefix(publicPath, prefix), suffix)
 			if containerIDPattern.MatchString(id) {

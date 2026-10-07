@@ -856,12 +856,13 @@ func TestAllowedDockerReadPaths(t *testing.T) {
 	t.Parallel()
 	id := strings.Repeat("a", 64)
 	for publicPath, expected := range map[string]string{
-		"/api/v1/docker/environment":                 "/v1/docker/environment",
-		"/api/v1/docker/backups":                     "/v1/docker/backups",
-		"/api/v1/docker/compose-projects":            "/v1/docker/compose-projects",
-		"/api/v1/docker/compose-projects/demo-stack": "/v1/docker/compose-projects/demo-stack",
-		"/api/v1/docker/containers/" + id + "/logs":  "/v1/docker/containers/" + id + "/logs",
-		"/api/v1/docker/containers/" + id + "/stats": "/v1/docker/containers/" + id + "/stats",
+		"/api/v1/docker/environment":                       "/v1/docker/environment",
+		"/api/v1/docker/backups":                           "/v1/docker/backups",
+		"/api/v1/docker/compose-projects":                  "/v1/docker/compose-projects",
+		"/api/v1/docker/compose-projects/demo-stack":       "/v1/docker/compose-projects/demo-stack",
+		"/api/v1/docker/containers/" + id + "/logs":        "/v1/docker/containers/" + id + "/logs",
+		"/api/v1/docker/containers/" + id + "/stats":       "/v1/docker/containers/" + id + "/stats",
+		"/api/v1/docker/containers/" + id + "/run-command": "/v1/docker/containers/" + id + "/run-command",
 	} {
 		path, ok := allowedAgentPath(publicPath)
 		if !ok || path != expected {
@@ -875,6 +876,8 @@ func TestAllowedDockerReadPaths(t *testing.T) {
 		"/api/v1/docker/compose-projects/Demo",
 		"/api/v1/docker/containers/not-an-id/stats",
 		"/api/v1/docker/containers/" + id + "/stats/extra",
+		"/api/v1/docker/containers/not-an-id/run-command",
+		"/api/v1/docker/containers/" + id + "/run-command/extra",
 	} {
 		if path, ok := allowedAgentPath(invalid); ok {
 			t.Fatalf("allowed unsafe Docker read path %q as %q", invalid, path)

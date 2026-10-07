@@ -1811,6 +1811,19 @@ describe('API client', () => {
       .mockResolvedValueOnce(
         jsonResponse({
           containerId: containerID,
+          name: 'web',
+          image: 'nginx:alpine',
+          options: [{ flag: '-d' }],
+          command: [],
+          networks: [],
+          unsupported: [],
+          imageDefaults: true,
+          collectedAt: '2026-07-27T12:00:00Z',
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          containerId: containerID,
           exitCode: 0,
           output: 'uid=0(root)',
           truncated: false,
@@ -1822,15 +1835,18 @@ describe('API client', () => {
     await api.docker.environment()
     await api.docker.backups()
     await api.docker.stats(containerID)
+    await api.docker.runCommand(containerID)
     await api.docker.exec(containerID, resourceVersion, 'id')
 
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
       '/api/v1/docker/environment',
       '/api/v1/docker/backups',
       `/api/v1/docker/containers/${containerID}/stats`,
+      `/api/v1/docker/containers/${containerID}/run-command`,
       `/api/v1/docker/containers/${containerID}/exec`,
     ])
-    const execInit = fetchMock.mock.calls[3]?.[1] as RequestInit
+    expect((fetchMock.mock.calls[3]?.[1] as RequestInit | undefined)?.method ?? 'GET').toBe('GET')
+    const execInit = fetchMock.mock.calls[4]?.[1] as RequestInit
     expect(execInit.method).toBe('POST')
     expect(JSON.parse(String(execInit.body))).toEqual({
       resourceVersion,

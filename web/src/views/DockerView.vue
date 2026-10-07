@@ -35,6 +35,7 @@ import {
   RotateCw,
   Search,
   ShieldCheck,
+  SquareTerminal,
   Trash2,
   Waypoints,
   Wrench,
@@ -46,6 +47,7 @@ import ModalDialog from '@/components/common/ModalDialog.vue'
 import PageHeader from '@/components/common/PageHeader.vue'
 import StatusBadge from '@/components/feedback/StatusBadge.vue'
 import DockerDeploymentEditor from '@/components/docker/DockerDeploymentEditor.vue'
+import DockerRunCommandDialog from '@/components/docker/DockerRunCommandDialog.vue'
 import DockerUsageMeter from '@/components/docker/DockerUsageMeter.vue'
 import ImageUpdateBadge from '@/components/docker/ImageUpdateBadge.vue'
 import { localizeError } from '@/i18n/errors'
@@ -238,6 +240,7 @@ const composeEnvironmentSource = ref('')
 const composeEnvironmentOpen = ref(false)
 const composeEnvironmentRevealed = ref(false)
 
+const runCommandContainer = ref<DockerContainer>()
 const logsOpen = ref(false)
 const logsLoading = ref(false)
 const logLines = ref<string[]>([])
@@ -396,6 +399,13 @@ const containerGroups = computed(() =>
   groupDockerContainers(filteredContainers.value, containerSort.value, visibleManagedComposeProjects.value),
 )
 const monitoring = computed(() => containerViewMode.value === 'monitor')
+// The Compose dialog this container's run command can hand over to, when the
+// project is listed here and Compose management is currently usable.
+const runCommandComposeGroup = computed(() => {
+  const project = runCommandContainer.value?.project
+  if (!project || panel.isReadOnly.value || dockerJobActive.value) return undefined
+  return containerGroups.value.find((group) => group.kind === 'compose' && group.name === project)
+})
 // Follow the on-screen order so the sampling cap trims the tail of the list, not an arbitrary row.
 const liveMetricTargets = computed(() =>
   containerGroups.value
@@ -1282,6 +1292,17 @@ function closeLogs(): void {
   selectedContainer.value = undefined
 }
 
+function showRunCommand(container: DockerContainer): void {
+  contextMenu.value = undefined
+  runCommandContainer.value = container
+}
+
+function openRunCommandCompose(project: string): void {
+  const group = runCommandComposeGroup.value
+  runCommandContainer.value = undefined
+  if (group?.name === project) void openComposeProject(group)
+}
+
 function stopStatsPolling(): void {
   statsPollGeneration += 1
   if (statsTimer) window.clearTimeout(statsTimer)
@@ -1986,6 +2007,9 @@ onBeforeUnmount(() => {
         <button v-if="permits(contextContainer, 'logs')" type="button" role="menuitem" @click="showLogs(contextContainer)">
           <FileText :size="15" />{{ phrase('查看日志') }}
         </button>
+        <button type="button" role="menuitem" @click="showRunCommand(contextContainer)">
+          <SquareTerminal :size="15" />{{ phrase('查看创建命令') }}
+        </button>
         <button v-if="permits(contextContainer, 'stats')" type="button" role="menuitem" @click="showStats(contextContainer)">
           <Waypoints :size="15" />{{ phrase('性能占用') }}
         </button>
@@ -2237,6 +2261,15 @@ onBeforeUnmount(() => {
       <p v-else-if="!logLines.length" class="log-viewer log-viewer--window log-viewer-empty">{{ phrase('当前没有日志输出。') }}</p>
       <pre v-else class="log-viewer log-viewer--window" data-i18n-ignore>{{ logLines.join('\n') }}</pre>
     </ModalDialog>
+
+    <DockerRunCommandDialog
+      :open="Boolean(runCommandContainer)"
+      :container-id="runCommandContainer?.id"
+      :container-name="runCommandContainer?.name"
+      :compose-available="Boolean(runCommandComposeGroup)"
+      @close="runCommandContainer = undefined"
+      @open-compose="openRunCommandCompose"
+    />
 
     <ModalDialog :open="statsOpen" :title="phrase(`${selectedContainer?.name || phrase('容器')} 性能占用`)" :description="phrase('Docker 单次采样，每 3 秒刷新；关闭弹窗即停止采样。')" size="large" @close="closeStats">
       <LoadingState v-if="statsLoading && !stats" :rows="3" cards />

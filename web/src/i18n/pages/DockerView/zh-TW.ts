@@ -429,4 +429,5 @@ export default [
   ["采样失败", "取樣失敗"],
   ["监控", "監控"],
   ["暂不可采样", "暫不可取樣"],
+  ["查看创建命令", "查看建立命令"],
 ] as const satisfies PhraseCatalog

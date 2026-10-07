@@ -41,6 +41,7 @@ import type {
   DockerActionResult,
   DockerBackup,
   DockerComposeProject,
+  DockerContainerRunCommand,
   DockerContainerStats,
   DockerExecResult,
   DockerEnvironment,
@@ -2484,6 +2485,8 @@ export const api = {
       }),
     stats: (id: string, signal?: AbortSignal): Promise<DockerContainerStats> =>
       request<DockerContainerStats>(`/docker/containers/${encodeURIComponent(id)}/stats`, { signal }),
+    runCommand: (id: string, signal?: AbortSignal): Promise<DockerContainerRunCommand> =>
+      request<DockerContainerRunCommand>(`/docker/containers/${encodeURIComponent(id)}/run-command`, { signal }),
     exec: (id: string, resourceVersion: string, command: string): Promise<DockerExecResult> =>
       request<DockerExecResult>(`/docker/containers/${encodeURIComponent(id)}/exec`, {
         method: 'POST',
