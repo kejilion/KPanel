@@ -794,7 +794,7 @@ func composeRemovalRecoveryEnvironment(project ComposeProject) ([]byte, bool, er
 	return []byte(source), true, nil
 }
 
-func composeRemovalSharedFiles(project ComposeProject, containers []contract.ContainerSummary, environment bool) error {
+func composeRemovalSharedFiles(project ComposeProject, containers []contract.ContainerSummary, configuration, environment bool) error {
 	for _, container := range containers {
 		if container.ComposeProject == "" || container.ComposeProject == project.Name {
 			continue
@@ -803,6 +803,9 @@ func composeRemovalSharedFiles(project ComposeProject, containers []contract.Con
 		resolvedDirectory, _ := filepath.EvalSymlinks(filepath.Clean(filepath.FromSlash(directory)))
 		if environment && resolvedDirectory == project.WorkingDirectory {
 			return fmt.Errorf("Compose environment is shared with project %s; configuration preserved: %w", container.ComposeProject, ErrResourceConflict)
+		}
+		if !configuration {
+			continue
 		}
 		for _, path := range composeConfigPaths(container.Labels["com.docker.compose.project.config_files"], directory) {
 			resolved, err := filepath.EvalSymlinks(path)
@@ -840,7 +843,7 @@ func (c *Client) removeComposeProject(ctx context.Context, input MaintenanceInpu
 		if err != nil {
 			return "", err
 		}
-		if err := composeRemovalSharedFiles(state.ComposeProject, containers, updateEnvironment); err != nil {
+		if err := composeRemovalSharedFiles(state.ComposeProject, containers, input.RemoveComposeFiles, updateEnvironment); err != nil {
 			return "", err
 		}
 	}
@@ -906,7 +909,7 @@ func (c *Client) removeComposeProject(ctx context.Context, input MaintenanceInpu
 	if !input.RemoveComposeFiles {
 		return "", guard.check()
 	}
-	if err := composeRemovalSharedFiles(state.ComposeProject, containers, false); err != nil {
+	if err := composeRemovalSharedFiles(state.ComposeProject, containers, true, false); err != nil {
 		return "", err
 	}
 	var moved []string

@@ -388,6 +388,55 @@ func TestComposeDiscoveryIgnoresVariablesInsideMultilineSecrets(t *testing.T) {
 	}
 }
 
+func TestComposeRemovalSharedConfigurationWithSeparateEnvironmentCanRetainFiles(t *testing.T) {
+	_, project, removed := composeRemovalIdentityClient(t, "kejilion-demo", false, false)
+	otherDirectory := t.TempDir()
+	otherEnvironment := filepath.Join(otherDirectory, ".env")
+	if err := os.WriteFile(otherEnvironment, []byte("OTHER=unchanged\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/containers/json" {
+			http.NotFound(w, r)
+			return
+		}
+		items := []containerListItem{{ID: strings.Repeat("b", 64), Labels: map[string]string{
+			"com.docker.compose.project": "other", "com.docker.compose.project.working_dir": otherDirectory,
+			"com.docker.compose.project.config_files": project.ConfigFiles[0].Path,
+		}}}
+		if !removed.Load() {
+			items = append(items, containerListItem{ID: strings.Repeat("a", 64), Labels: map[string]string{
+				"com.docker.compose.project": project.Name, "com.docker.compose.project.working_dir": project.WorkingDirectory,
+				"com.docker.compose.service": "web", "com.docker.compose.project.config_files": project.ConfigFiles[0].Path,
+			}})
+		}
+		_ = json.NewEncoder(w).Encode(items)
+	}))
+	t.Cleanup(server.Close)
+	client := testHTTPClient(server)
+	client.appRoot = filepath.Dir(project.WorkingDirectory)
+	client.composeCommand = func(_ context.Context, args ...string) ([]byte, error) {
+		if !containsArgumentSequence(args, "--project-name", project.Name, "down", "--remove-orphans") {
+			t.Fatalf("wrong target: %v", args)
+		}
+		removed.Store(true)
+		return nil, nil
+	}
+	if _, err := client.removeComposeProject(context.Background(), MaintenanceInput{
+		Name: project.Name, ExpectedResourceVersion: project.ResourceVersion,
+	}, ""); err != nil {
+		t.Fatal(err)
+	}
+	after, err := client.ComposeProject(context.Background(), project.Name)
+	if err != nil || len(after.ConfigFiles) != 1 || after.ConfigFiles[0] != project.ConfigFiles[0] {
+		t.Fatalf("shared file changed: %#v, %v", after, err)
+	}
+	data, err := os.ReadFile(otherEnvironment)
+	if err != nil || string(data) != "OTHER=unchanged\n" {
+		t.Fatalf("other environment changed: %q, %v", data, err)
+	}
+}
+
 func TestComposeRemovalFailuresPreserveRecoveryFiles(t *testing.T) {
 	for _, failure := range []string{"stale", "down", "remaining-container", "external-edit", "existing-backup"} {
 		t.Run(failure, func(t *testing.T) {
