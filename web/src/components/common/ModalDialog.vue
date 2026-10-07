@@ -143,7 +143,6 @@ function deactivate(): void {
 
 function close(): void {
   if (props.closeDisabled) return
-  fullscreen.value = false
   emit('close')
 }
 
@@ -198,7 +197,11 @@ watch(
   () => props.open,
   (open) => {
     if (open) activate()
-    else deactivate()
+    else {
+      // The owner may delay or reject a close request; reset only once closed.
+      fullscreen.value = false
+      deactivate()
+    }
   },
   { immediate: true },
 )

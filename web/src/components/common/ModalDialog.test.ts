@@ -286,6 +286,72 @@ describe('ModalDialog workspace variant', () => {
     expect(titlebar.querySelectorAll('.modal-panel__window-action')).toHaveLength(1)
   })
 
+  it.each(['button', 'Escape', 'backdrop'])(
+    'keeps full screen after a %s close request until its owner closes it',
+    async (source) => {
+      const wrapper = mountDialog({
+        props: { open: true, title: 'Terminal', variant: 'workspace', allowFullscreen: true },
+      })
+      const dialog = panelAt()
+      dialog.querySelector<HTMLButtonElement>('.modal-panel__window-action')!.click()
+      await nextTick()
+
+      if (source === 'button') {
+        dialog.querySelector<HTMLButtonElement>('.modal-panel__window-action--close')!.click()
+      } else if (source === 'Escape') {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+      } else {
+        document.querySelector('.modal-backdrop')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+      }
+      await settleFocus()
+      expect(wrapper.emitted('close')).toHaveLength(1)
+      expect(panelAt()).toBe(dialog)
+      expect(dialog.classList).toContain('modal-panel--fullscreen')
+      expect(document.querySelector('.modal-backdrop')?.classList).toContain('modal-backdrop--fullscreen')
+
+      await wrapper.setProps({ open: false })
+      expect(document.querySelector('.modal-panel')).toBeNull()
+      await wrapper.setProps({ open: true })
+      expect(panelAt().classList).not.toContain('modal-panel--fullscreen')
+      expect(document.querySelector('.modal-backdrop')?.classList).not.toContain('modal-backdrop--fullscreen')
+    },
+  )
+
+  it('preserves full screen when a nested close confirmation is cancelled', async () => {
+    const parent = mountDialog({
+      props: { open: true, title: 'Running task', variant: 'workspace', allowFullscreen: true },
+    })
+    const dialog = panelAt()
+    dialog.querySelector<HTMLButtonElement>('.modal-panel__window-action')!.click()
+    await nextTick()
+    const close = dialog.querySelector<HTMLButtonElement>('.modal-panel__window-action--close')!
+    close.focus()
+    close.click()
+
+    const confirmation = mountDialog({ props: { open: true, title: 'Cancel task?' } })
+    await settleFocus()
+    expect(parent.emitted('close')).toHaveLength(1)
+    expect(dialog.classList).toContain('modal-panel--fullscreen')
+    await confirmation.setProps({ open: false })
+    await settleFocus()
+    expect(panelAt()).toBe(dialog)
+    expect(dialog.classList).toContain('modal-panel--fullscreen')
+    expect(document.activeElement).toBe(close)
+  })
+
+  it('resets full screen after its owner closes it without a close request', async () => {
+    const wrapper = mountDialog({
+      props: { open: true, title: 'Logs', variant: 'workspace', allowFullscreen: true },
+    })
+    panelAt().querySelector<HTMLButtonElement>('.modal-panel__window-action')!.click()
+    await nextTick()
+    expect(panelAt().classList).toContain('modal-panel--fullscreen')
+    await wrapper.setProps({ open: false })
+    await wrapper.setProps({ open: true })
+    expect(panelAt().classList).not.toContain('modal-panel--fullscreen')
+    expect(wrapper.emitted('close')).toBeUndefined()
+  })
+
   it('hands its window buttons to content that owns the toolbar', async () => {
     const wrapper = mountDialog({
       props: { open: true, title: 'File editor', variant: 'workspace', headerless: true, allowFullscreen: true },
@@ -304,7 +370,9 @@ describe('ModalDialog workspace variant', () => {
     expect(dialog.classList).toContain('modal-panel--fullscreen')
 
     close!.click()
+    await nextTick()
     expect(wrapper.emitted('close')).toHaveLength(1)
+    expect(dialog.classList).toContain('modal-panel--fullscreen')
   })
 
   it('keeps the provided close button disabled while closing is blocked', async () => {
