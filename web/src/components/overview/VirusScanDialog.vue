@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { Bug, CheckCircle2, FileWarning, FolderSearch, LoaderCircle, RefreshCw, ScanSearch, ShieldCheck, TriangleAlert } from '@lucide/vue'
 import ModalDialog from '@/components/common/ModalDialog.vue'
 import ErrorState from '@/components/feedback/ErrorState.vue'
 import LoadingState from '@/components/feedback/LoadingState.vue'
+import { usePollingRequest } from '@/composables/usePollingRequest'
 import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
 import { ApiError, api } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
@@ -18,12 +19,8 @@ const toast = useToast()
 const snapshot = ref<VirusScanSnapshot>()
 const mode = ref<VirusScanMode>('important')
 const customPaths = ref('/home')
-const loading = ref(false)
-const refreshing = ref(false)
 const submitting = ref(false)
 const error = ref('')
-let controller: AbortController | undefined
-let timer: number | undefined
 
 function phrase(value: string): string {
   phraseCatalogVersion.value
@@ -55,30 +52,17 @@ const statusLabel = computed(() => {
   }
 })
 
-function clearTimer(): void {
-  if (timer !== undefined) window.clearTimeout(timer)
-  timer = undefined
-}
-
-async function load(silent = false): Promise<void> {
-  if (!props.open || !props.readable) return
-  controller?.abort()
-  controller = new AbortController()
-  if (silent) refreshing.value = true
-  else loading.value = true
-  error.value = ''
-  try {
-    snapshot.value = await api.system.virusScan(controller.signal)
-    clearTimer()
-    if (running.value) timer = window.setTimeout(() => void load(true), 2_000)
-  } catch (reason) {
-    if (reason instanceof DOMException && reason.name === 'AbortError') return
+const { load, stop, loading, refreshing } = usePollingRequest({
+  enabled: () => props.open && props.readable,
+  intervalMs: 2_000,
+  request: (signal) => api.system.virusScan(signal),
+  apply: (value) => { snapshot.value = value },
+  shouldPoll: () => running.value,
+  onStart: () => { error.value = '' },
+  onError: (reason) => {
     error.value = reason instanceof ApiError ? reason.message : '无法读取病毒扫描状态。'
-  } finally {
-    loading.value = false
-    refreshing.value = false
-  }
-}
+  },
+})
 
 async function startScan(): Promise<void> {
   if (!canSubmit.value) return
@@ -106,12 +90,10 @@ async function startScan(): Promise<void> {
 watch(() => [props.open, props.readable] as const, ([open, readable]) => {
   if (open && readable) void load()
   else {
-    controller?.abort()
-    clearTimer()
+    stop()
   }
 }, { immediate: true })
 
-onBeforeUnmount(() => { controller?.abort(); clearTimer() })
 </script>
 
 <template>

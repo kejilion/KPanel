@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kejilion/kejilion-panel/internal/netpolicy"
 	"github.com/kejilion/kejilion-panel/internal/tlsfallback"
 )
 
@@ -444,11 +445,10 @@ func (c *RemoteClient) dialContext(ctx context.Context, network, address string)
 
 func (c *RemoteClient) resolve(ctx context.Context, host string) ([]netip.Addr, error) {
 	if address, err := netip.ParseAddr(host); err == nil {
-		address = address.Unmap()
 		if !c.addressAllowed(address) {
 			return nil, ErrPrivateOrigin
 		}
-		return []netip.Addr{address}, nil
+		return []netip.Addr{address.Unmap()}, nil
 	}
 	resolved, err := c.resolver.LookupNetIP(ctx, "ip", host)
 	if err != nil || len(resolved) == 0 {
@@ -461,10 +461,10 @@ func (c *RemoteClient) resolve(ctx context.Context, host string) ([]netip.Addr, 
 		if !ok {
 			return nil, errors.New("cluster origin DNS returned an invalid address")
 		}
-		address = address.Unmap()
 		if !c.addressAllowed(address) {
 			return nil, ErrPrivateOrigin
 		}
+		address = address.Unmap()
 		if _, ok := seen[address]; !ok {
 			seen[address] = struct{}{}
 			result = append(result, address)
@@ -474,54 +474,18 @@ func (c *RemoteClient) resolve(ctx context.Context, host string) ([]netip.Addr, 
 }
 
 func (c *RemoteClient) addressAllowed(address netip.Addr) bool {
-	if !address.IsValid() || address.IsUnspecified() || address.IsLoopback() ||
-		address.IsMulticast() || address.IsLinkLocalUnicast() ||
-		address.IsLinkLocalMulticast() {
-		return false
-	}
-	if address.IsPrivate() || cgNATPrefix.Contains(address) {
+	switch netpolicy.Classify(address) {
+	case netpolicy.Public:
+		return true
+	case netpolicy.Private, netpolicy.Shared:
+		address = address.Unmap()
 		for _, prefix := range c.allowedPrivate {
 			if prefix.Contains(address) {
 				return true
 			}
 		}
 		return false
-	}
-	if !address.IsGlobalUnicast() || reservedAddress(address) {
+	default:
 		return false
 	}
-	return true
-}
-
-var (
-	cgNATPrefix      = netip.MustParsePrefix("100.64.0.0/10")
-	reservedPrefixes = []netip.Prefix{
-		netip.MustParsePrefix("0.0.0.0/8"),
-		netip.MustParsePrefix("192.0.0.0/24"),
-		netip.MustParsePrefix("192.0.2.0/24"),
-		netip.MustParsePrefix("198.18.0.0/15"),
-		netip.MustParsePrefix("198.51.100.0/24"),
-		netip.MustParsePrefix("203.0.113.0/24"),
-		netip.MustParsePrefix("240.0.0.0/4"),
-		netip.MustParsePrefix("::/96"),
-		netip.MustParsePrefix("64:ff9b::/96"),
-		netip.MustParsePrefix("64:ff9b:1::/48"),
-		netip.MustParsePrefix("100::/64"),
-		netip.MustParsePrefix("fec0::/10"),
-		netip.MustParsePrefix("2001::/32"),
-		netip.MustParsePrefix("2001:2::/48"),
-		netip.MustParsePrefix("2001:10::/28"),
-		netip.MustParsePrefix("2001:20::/28"),
-		netip.MustParsePrefix("2001:db8::/32"),
-		netip.MustParsePrefix("2002::/16"),
-	}
-)
-
-func reservedAddress(address netip.Addr) bool {
-	for _, prefix := range reservedPrefixes {
-		if prefix.Contains(address) {
-			return true
-		}
-	}
-	return false
 }

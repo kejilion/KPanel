@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/kejilion/kejilion-panel/internal/backup"
+	"github.com/kejilion/kejilion-panel/internal/netpolicy"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
@@ -37,13 +38,12 @@ type Client struct {
 // Administrators may connect a private NAS/MinIO. Loopback, metadata and
 // non-unicast addresses remain unavailable; DNS is checked at every dial.
 func allowedIP(ip netip.Addr) bool {
-	ip = ip.Unmap()
-	for _, prefix := range []string{"64:ff9b::/96", "64:ff9b:1::/48", "2002::/16", "2001::/32", "::/96"} {
-		if netip.MustParsePrefix(prefix).Contains(ip) {
-			return false
-		}
+	switch netpolicy.Classify(ip) {
+	case netpolicy.Public, netpolicy.Private:
+		return true
+	default:
+		return false
 	}
-	return ip.IsValid() && ip.IsGlobalUnicast() && !ip.IsLoopback() && !ip.IsLinkLocalUnicast() && !netip.MustParsePrefix("100.64.0.0/10").Contains(ip) && ip != netip.MustParseAddr("168.63.129.16") && ip != netip.MustParseAddr("fd00:ec2::254")
 }
 func secureDial(ctx context.Context, network, address string) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(address)

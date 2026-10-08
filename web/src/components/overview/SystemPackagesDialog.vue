@@ -5,6 +5,7 @@ import ModalDialog from '@/components/common/ModalDialog.vue'
 import ErrorState from '@/components/feedback/ErrorState.vue'
 import LoadingState from '@/components/feedback/LoadingState.vue'
 import HostTerminal from '@/components/terminal/HostTerminal.vue'
+import { usePollingRequest } from '@/composables/usePollingRequest'
 import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
 import { ApiError, api } from '@/lib/api'
 import { systemPackageLaunchCommand } from '@/lib/systemPackageLaunch'
@@ -20,8 +21,6 @@ const snapshot = ref<SystemPackagesSnapshot>()
 const selected = ref<SystemPackageID[]>([])
 const search = ref('')
 const statusFilter = ref<'all' | 'installed' | 'missing'>('all')
-const loading = ref(false)
-const refreshing = ref(false)
 const submitting = ref(false)
 const error = ref('')
 const terminalOpen = ref(false)
@@ -29,8 +28,6 @@ const terminalOpening = ref(false)
 const terminalError = ref('')
 const terminalPackage = ref<SystemPackageItem>()
 const terminalSession = ref<TerminalSession>()
-let controller: AbortController | undefined
-let timer: number | undefined
 let terminalGeneration = 0
 
 function phrase(value: string): string {
@@ -86,31 +83,20 @@ const filteredItems = computed(() => {
 const installable = computed(() => selected.value.filter((id) => !snapshot.value?.items.find((item) => item.id === id)?.installed))
 const removable = computed(() => selected.value.filter((id) => snapshot.value?.items.find((item) => item.id === id)?.installed))
 
-function clearTimer(): void {
-  if (timer !== undefined) window.clearTimeout(timer)
-  timer = undefined
-}
-
-async function load(silent = false): Promise<void> {
-  if (!props.open || !props.readable) return
-  controller?.abort()
-  controller = new AbortController()
-  if (silent) refreshing.value = true
-  else loading.value = true
-  error.value = ''
-  try {
-    snapshot.value = await api.system.packages(controller.signal)
+const { load, stop, loading, refreshing } = usePollingRequest({
+  enabled: () => props.open && props.readable,
+  intervalMs: 1_800,
+  request: (signal) => api.system.packages(signal),
+  apply: (value) => {
+    snapshot.value = value
     selected.value = selected.value.filter((id) => snapshot.value?.items.some((item) => item.id === id))
-    clearTimer()
-    if (running.value) timer = window.setTimeout(() => void load(true), 1_800)
-  } catch (reason) {
-    if (reason instanceof DOMException && reason.name === 'AbortError') return
+  },
+  shouldPoll: () => running.value,
+  onStart: () => { error.value = '' },
+  onError: (reason) => {
     error.value = reason instanceof ApiError ? reason.message : '无法读取软件包状态。'
-  } finally {
-    loading.value = false
-    refreshing.value = false
-  }
-}
+  },
+})
 
 function toggle(item: SystemPackageItem): void {
   if (running.value || submitting.value) return
@@ -202,13 +188,12 @@ async function launch(item: SystemPackageItem): Promise<void> {
 watch(() => [props.open, props.readable] as const, ([open, readable]) => {
   if (open && readable) void load()
   else {
-    controller?.abort()
-    clearTimer()
+    stop()
     closePackageTerminal()
   }
 }, { immediate: true })
 
-onBeforeUnmount(() => { controller?.abort(); clearTimer(); closePackageTerminal() })
+onBeforeUnmount(closePackageTerminal)
 </script>
 
 <template>

@@ -5,9 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/kejilion/kejilion-panel/internal/netpolicy"
 )
 
 type ProviderInput struct {
@@ -136,6 +139,8 @@ func ValidateProviderURL(raw string, scope EndpointScope) (string, error) {
 }
 
 func ValidateResolvedAddresses(scope EndpointScope, addresses []net.IPAddr) error {
+	// Explicit private mode authorizes local/self-hosted providers. It keeps
+	// its existing policy rather than inheriting the public address filter.
 	if scope == EndpointPrivate {
 		return nil
 	}
@@ -156,8 +161,8 @@ func isLiteralBlocked(host string) bool {
 }
 
 func isBlockedIP(ip net.IP) bool {
-	return ip == nil || ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
-		ip.IsUnspecified() || ip.IsMulticast() || !ip.IsGlobalUnicast()
+	address, ok := netip.AddrFromSlice(ip)
+	return !ok || netpolicy.Classify(address) != netpolicy.Public
 }
 
 func keyHint(value string) string {
