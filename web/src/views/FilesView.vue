@@ -1715,11 +1715,7 @@ function handleNewFlyoutKeydown(event: KeyboardEvent): void {
 
 async function selectCreatedEntry(name: string): Promise<void> {
   const path = `${currentPath.value === '/' ? '' : currentPath.value}/${name}`
-  if (!directory.value?.entries.some((entry) => entry.path === path)) return
-  selected.value = new Set([path])
-  selectionAnchor.value = path
-  await nextTick()
-  document.querySelector(`[data-entry-path="${CSS.escape(path)}"]`)?.scrollIntoView?.({ block: 'nearest' })
+  await revealRouteSelection(path)
 }
 
 function openNewDialog(id: DesktopNewItemID): void {
