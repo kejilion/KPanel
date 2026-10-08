@@ -447,6 +447,7 @@ const previewEntry = ref<FileEntry>()
 const previewContent = ref('')
 const previewLoading = ref(false)
 const shortcutPreviewError = ref('')
+const shortcutPreviewStarted = ref(false)
 let previewRequestId = 0
 const previewSaving = ref(false)
 const previewDirty = ref(false)
@@ -849,6 +850,7 @@ async function openRequestedFile(value: unknown): Promise<void> {
   try {
     const entry = await fileAPI.value.entry(filePath)
     if (unmounted || hostId !== fileHostId.value || filePath !== openedRouteFile) return
+    shortcutPreviewStarted.value = true
     if (entry.kind !== 'file') {
       shortcutPreviewError.value = phrase('该路径现在不是普通文件，请从文件管理重新添加。')
       if (!shortcutFilePreviewOnly.value) {
@@ -861,6 +863,7 @@ async function openRequestedFile(value: unknown): Promise<void> {
     await openPreview(entry)
   } catch (error) {
     if (unmounted || hostId !== fileHostId.value || filePath !== openedRouteFile) return
+    shortcutPreviewStarted.value = true
     shortcutPreviewError.value = errorMessage(error)
     if (!shortcutFilePreviewOnly.value) toast.danger('桌面目标无法打开', errorMessage(error))
   }
@@ -2528,6 +2531,12 @@ function closeContextMenuOnScroll(event: Event): void {
 
 function handleFileShortcut(event: KeyboardEvent): void {
   if (!desktopWindowActive.value) return
+  if (shortcutFilePreviewOnly.value && !shortcutPreviewStarted.value && event.key === 'Escape'
+    && !event.defaultPrevented && !event.isComposing) {
+    event.preventDefault()
+    closePreview()
+    return
+  }
   if (event.key === 'Escape' && hostSwitcher.value?.isOpen) {
     event.preventDefault()
     closeFileHostPicker(true)
@@ -3611,7 +3620,7 @@ onBeforeUnmount(() => {
     </ModalDialog>
 
     <ModalDialog
-      :open="shortcutFilePreviewOnly || Boolean(previewEntry)"
+      :open="Boolean(previewEntry) || (shortcutFilePreviewOnly && shortcutPreviewStarted)"
       :title="previewMode === 'text' ? phrase('文件编辑器') : previewEntry?.name || shortcutFileName || phrase('文件查看器')"
       :description="previewMode !== 'text' && previewEntry ? formatBytes(previewEntry.sizeBytes) : ''"
       variant="workspace"

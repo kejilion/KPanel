@@ -573,19 +573,15 @@ const handleEdges = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'] as const
     <Teleport v-if="snapTarget" to=".desktop">
       <div class="desktop-window-snap-preview" :style="snapPreviewStyle" aria-hidden="true" />
     </Teleport>
-    <!-- File shortcuts use the viewer frame, including a retryable chunk failure. -->
+    <!-- The file view opens its own preview; only a failed import needs this error dialog. -->
     <ModalDialog
-      :open="Boolean(filePreviewPath && (loading || loadError))"
+      :open="Boolean(filePreviewPath && loadError)"
       :title="filePreviewPath?.split('/').at(-1) || title"
       variant="workspace"
       :close-disabled="checkingClose"
       @close="onClose"
     >
-      <div v-if="loading" class="desktop-window__loading" role="status">
-        <LoaderCircle :size="23" aria-hidden="true" />
-        <span>{{ i18n.t('common.loading') }}</span>
-      </div>
-      <div v-else class="desktop-window__load-error" role="alert">
+      <div class="desktop-window__load-error" role="alert">
         <span><TriangleAlert :size="22" aria-hidden="true" /></span>
         <strong>{{ i18n.t('desktop.windowLoadFailed') }}</strong>
         <button class="button button--small" type="button" @click="retryLoad">

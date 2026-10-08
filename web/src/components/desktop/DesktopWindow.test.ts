@@ -85,7 +85,7 @@ describe('DesktopWindow lazy view loading', () => {
     wrapper.unmount()
   })
 
-  it('uses the preview frame while its page chunk loads, without showing the desktop shell', async () => {
+  it('waits for the file page chunk without opening a placeholder or desktop shell', async () => {
     let resolvePage!: (value: { template: string }) => void
     routeMocks.resolveWindowComponent.mockReturnValueOnce(new Promise((resolve) => { resolvePage = resolve }))
     const desktop = useDesktopMode()
@@ -96,10 +96,7 @@ describe('DesktopWindow lazy view loading', () => {
       expect(wrapper.get('.desktop-window').isVisible()).toBe(false)
       await flushPromises()
       expect(wrapper.get('.desktop-window').isVisible()).toBe(false)
-      const panel = new DOMWrapper(document.body).get('.modal-panel--workspace')
-      expect(panel.isVisible()).toBe(true)
-      expect(panel.text()).toContain('README.md')
-      expect(panel.get('[role="status"]').isVisible()).toBe(true)
+      expect(new DOMWrapper(document.body).find('.modal-panel').exists()).toBe(false)
       resolvePage({ template: '<main data-testid="file-page" />' })
       await flushPromises()
       expect(wrapper.get('.desktop-window').isVisible()).toBe(false)
