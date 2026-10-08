@@ -87,17 +87,6 @@ jobs:
             echo "release_train=$release_train"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Validate release notes
-        shell: bash
-        env:
-          VERSION: ${{ steps.release.outputs.version }}
-        run: |
-          bash scripts/render-release-notes.sh \
-            "$VERSION" \
-            "${{ steps.release.outputs.image }}" \
-            "IMAGE_PUBLICATION_PENDING" \
-            release/DRAFT_NOTES.md
-
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -110,6 +99,17 @@ jobs:
           node-version: "24.21.0"
           cache: npm
           cache-dependency-path: web/package-lock.json
+
+      - name: Validate release notes
+        shell: bash
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          bash scripts/check-release-notes.sh \
+            "$VERSION" \
+            "${{ steps.release.outputs.image }}" \
+            "IMAGE_PUBLICATION_PENDING" \
+            release/DRAFT_NOTES.md
 
       - name: Verify source
         shell: bash
@@ -344,6 +344,19 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Validate final release notes
+        shell: bash
+        env:
+          IMAGE: ${{ steps.release.outputs.image }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          bash scripts/check-release-notes.sh \
+            "$VERSION" \
+            "$IMAGE" \
+            "$IMAGE_DIGEST" \
+            release/RELEASE_NOTES.md
+
       - name: Promote image to its release channel
         shell: bash
         env:
@@ -407,11 +420,6 @@ jobs:
           VERSION: ${{ steps.release.outputs.version }}
         run: |
           set -euo pipefail
-          bash scripts/render-release-notes.sh \
-            "$VERSION" \
-            "$IMAGE" \
-            "$IMAGE_DIGEST" \
-            release/RELEASE_NOTES.md
           if [ "$STABLE" = true ]; then
             gh release edit "$GITHUB_REF_NAME" \
               --draft=false \

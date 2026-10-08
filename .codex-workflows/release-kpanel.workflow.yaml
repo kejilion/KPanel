@@ -1,12 +1,12 @@
 ---
 name: release-kpanel
 description: "按稳定版或预览版发布画像完成 KPanel 多维质量验收、CI、Release、公开镜像、通道提升及适用的生产核对"
-version: "3.5"
+version: "3.6"
 author: "Codex"
 tags: [release, deploy, docker, github, appmarket, verification]
 params: [project_dir, version, release_channel, release_train, previous_version, image, runner_image, runner_id, apps_repo, validation_environment, production_environment]
 created: "2026-07-27T13:00:00Z"
-updated: "2026-10-04T00:00:00+08:00"
+updated: "2026-10-08T00:18:57Z"
 ---
 
 # Release KPanel
@@ -149,6 +149,15 @@ git diff -- VERSION internal/version/version.go web/package.json \
 ```
 
 **Expected output:** 所有发行版本字段均为 `${{version}}`，没有空白错误或无关修改。
+
+发布说明格式与两种通道的统一门禁遵守 `PROJECT_RULES.md` 6.1。冻结前运行：
+
+```bash
+node scripts/run-repo-bash.mjs scripts/check-release-notes.sh \
+  "${{version}}" "docker.io/kjlion/kejilion-panel" "IMAGE_PUBLICATION_PENDING" release/DRAFT_NOTES.md
+```
+
+未知分类、空摘要或升级提示漏读必须停止发布，不能只检查正文存在。
 
 执行统一检查，禁止只靠人工比对：
 
@@ -375,6 +384,9 @@ KPANEL_EXPECTED_VERSION="${{version}}" \
 
 再次核对 GitHub Release 页面、Actions 结果、Docker Hub 摘要和应用市场契约；只有步骤 7
 实际产生配置差异时才核对 `kejilion/apps` 提交。
+
+按 `PROJECT_RULES.md` 6.1 同时核对公开正文与面板发布信息接口中的版本、digest、摘要和升级提示，
+在登记验收环境打开更新弹窗确认实际显示，并将结果填写到验收模板；未执行不得写成通过。
 
 **Expected output:** 输出 `image_e2e=pass`，Release、Actions、Docker Hub 和 `${{release_channel}}` 均与
 `${{version}}` 一致；应用市场为“同哈希且无需提交”或“配置已同步并提交”。

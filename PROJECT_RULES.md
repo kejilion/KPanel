@@ -610,6 +610,18 @@ Definition of Done，不充当 L2/L3 独立复核，也不替代验收记录中�
 6. 预览版 Release 必须明确风险、加入方式和退出不自动降级；稳定版与预览版的 Tag、prerelease/Latest
    属性、`latest`/`preview` 镜像标签及候选分支处置必须符合
    [`docs/release-channels.md`](docs/release-channels.md)，不允许人工覆盖既有版本产物。
+7. 稳定版与预览版共用更新摘要格式：Changelog 使用 `Added`、`Changed`、`Fixed`、`Security`、
+   `Performance`、`Compatibility`、`Upgrade Notes`，或对应的“新增、变更、修复、安全、性能、兼容性、
+   升级注意事项”分类。`Documentation`、`Deprecated`、`Removed` 归入变更；已发布的组合标题仅作为
+   兼容别名归一化。发布边界、测试范围是元数据，不能充当用户更新条目。新增分类必须先同步生成器、
+   面板解析器和真实正文回归，禁止任意标题被静默放行。
+8. 唯一发布说明门禁为 `scripts/check-release-notes.sh <version> <image> <digest> <output>`：先生成正文，
+   再通过面板实际解析代码核对更新摘要与升级注意事项。草稿在镜像构建前检查，最终正文在通道镜像提升
+   和 Release 公开前检查；两种通道均不得跳过。未知分类、无分类条目、只有元数据、空摘要或升级提示丢失必须失败；
+   8 条摘要、3 条升级提示和每条 280 字的现有展示限额继续保留，不能通过扩大限额掩盖解析问题。
+9. 发布后复核必须同时读取公开 Release 正文与面板发布信息接口，核对目标版本、镜像摘要、非空更新
+   摘要及按展示限额保留的升级提示，并在登记验收环境打开更新弹窗确认实际显示。公开正文存在或 CI
+   通过不能代替这项用户旅程证据；未执行必须写为未验证，不得补写成功。
 
 ## 7. 多语言界面
 

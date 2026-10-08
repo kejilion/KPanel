@@ -78,6 +78,7 @@
 - 候选 CI：
 - 主线 CI：
 - Release workflow：
+- 发布说明门禁：草稿 / 最终正文结果，目标版本、摘要条目数及升级提示条目数（按 `PROJECT_RULES.md` 6.1）：
 - 安全扫描、镜像契约、SBOM/provenance：
 
 ## 依赖与技术栈变化
@@ -102,6 +103,8 @@
 - 未执行场景及原因：
 
 ## 发布产物与公开仓库复核
+
+- 公开 Release 正文、面板发布信息接口与更新弹窗：版本 / digest 匹配、非空摘要、升级提示及实际显示证据；未执行写明未验证：
 
 - GitHub Release 的 draft / prerelease / Latest 状态：
 - Docker 版本与通道 OCI index：稳定版 `latest` / 预览版 `preview`

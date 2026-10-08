@@ -47,7 +47,7 @@ test -f "$changelog" || {
   exit 1
 }
 
-section="$({
+if ! section="$(
   awk -v version="$version" '
     $0 == "## [" version "]" || index($0, "## [" version "] - ") == 1 {
       found = 1
@@ -57,23 +57,35 @@ section="$({
     found && !started && /^[[:space:]]*$/ { next }
     found {
       started = 1
-      if ($0 == "### Added") print "#### 新增"
-      else if ($0 == "### Changed") print "#### 变更"
-      else if ($0 == "### Fixed") print "#### 修复"
-      else if ($0 == "### Security") print "#### 安全"
-      else if ($0 == "### Performance") print "#### 性能"
-      else if ($0 == "### Documentation") print "#### 文档"
-      else if ($0 == "### Upgrade Notes") print "#### 升级注意事项"
-      else if ($0 == "### Deprecated") print "#### 弃用"
-      else if ($0 == "### Removed") print "#### 移除"
-      else if ($0 ~ /^### /) {
-        sub(/^### /, "#### ")
-        print
+      sub(/\r$/, "")
+      if ($0 ~ /^### /) {
+        heading = substr($0, 5)
+        if (heading == "Added" || heading == "新增") print "#### 新增"
+        else if (heading == "Changed" || heading == "变更" || heading == "改进" ||
+                 heading == "新增与改进" || heading == "新增与修复" ||
+                 heading == "Documentation" || heading == "文档" ||
+                 heading == "Deprecated" || heading == "弃用" ||
+                 heading == "Removed" || heading == "移除") print "#### 变更"
+        else if (heading == "Fixed" || heading == "修复" ||
+                 heading == "修复与整理" || heading == "修复与改进") print "#### 修复"
+        else if (heading == "Security" || heading == "安全") print "#### 安全"
+        else if (heading == "Performance" || heading == "性能") print "#### 性能"
+        else if (heading == "Compatibility" || heading == "兼容性") print "#### 兼容性"
+        else if (heading == "Upgrade Notes" || heading == "升级注意事项" ||
+                 heading == "使用与升级注意") print "#### 升级注意事项"
+        else if (heading == "发布边界" || heading == "测试范围") print "#### " heading
+        else {
+          print "unsupported release notes heading: " heading > "/dev/stderr"
+          exit 4
+        }
       } else print
     }
     END { if (!found) exit 3 }
   ' "$changelog"
-} || true)"
+)"; then
+  echo "CHANGELOG.md [$version] has no valid release section; use the categories in PROJECT_RULES.md 6.1" >&2
+  exit 1
+fi
 
 test -n "${section//[[:space:]]/}" || {
   echo "CHANGELOG.md is missing the [$version] release section" >&2

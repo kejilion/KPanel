@@ -280,9 +280,10 @@ func releaseNoteKind(heading string) string {
 	switch strings.ToLower(strings.TrimSpace(heading)) {
 	case "新增", "added", "new":
 		return "added"
-	case "变更", "changed", "改进", "improved":
+	case "变更", "changed", "改进", "improved", "新增与改进", "新增与修复",
+		"文档", "documentation", "弃用", "deprecated", "移除", "removed":
 		return "changed"
-	case "修复", "fixed", "bug fixes":
+	case "修复", "fixed", "bug fixes", "修复与整理", "修复与改进":
 		return "fixed"
 	case "安全", "security":
 		return "security"
@@ -306,7 +307,7 @@ func isReleaseNotesHeading(heading string) bool {
 
 func isUpgradeNotesHeading(heading string) bool {
 	switch strings.ToLower(strings.TrimSpace(heading)) {
-	case "升级注意事项", "upgrade notes", "breaking changes":
+	case "升级注意事项", "upgrade notes", "breaking changes", "使用与升级注意":
 		return true
 	default:
 		return false

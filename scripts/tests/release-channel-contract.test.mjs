@@ -8,14 +8,14 @@ const repoRoot = resolve(import.meta.dirname, '..', '..');
 const bash = process.env.KPANEL_TEST_BASH ||
   (process.platform === 'win32' ? 'C:\\Program Files\\Git\\bin\\bash.exe' : 'bash');
 
-function render(version) {
+function render(version, section = '### Added\n\n- release channel fixture\n', check = false) {
   const temporary = mkdtempSync(join(repoRoot, '.release-channel-test-'));
   const relativeDirectory = basename(temporary);
   const changelog = join(temporary, 'CHANGELOG.md');
   const output = join(temporary, 'NOTES.md');
-  writeFileSync(changelog, `## [${version}]\n\n### Added\n\n- release channel fixture\n`);
+  writeFileSync(changelog, `## [${version}]\n\n${section}`);
   const result = spawnSync(bash, [
-    'scripts/render-release-notes.sh',
+    check ? 'scripts/check-release-notes.sh' : 'scripts/render-release-notes.sh',
     version,
     'docker.io/kjlion/kejilion-panel',
     `sha256:${'a'.repeat(64)}`,
@@ -29,6 +29,62 @@ function render(version) {
   rmSync(temporary, { recursive: true, force: true });
   return { ...result, notes };
 }
+
+test('release renderer normalizes supported and historical headings for the panel', () => {
+  const section = [
+    ['Added', '新增'], ['新增与改进', '变更'], ['新增与修复', '变更'],
+    ['修复与整理', '修复'], ['修复与改进', '修复'], ['Documentation', '变更'],
+    ['Deprecated', '变更'], ['Removed', '变更'], ['Compatibility', '兼容性'],
+    ['使用与升级注意', '升级注意事项'],
+  ];
+  for (const [heading, normalized] of section) {
+    const result = render('1.3.0-rc.2', `### ${heading}\n\n- visible item\n`);
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(result.notes.includes(`#### ${normalized}\n`), result.notes);
+  }
+});
+
+test('stable and preview publication gates accept readable updates and upgrade warnings', () => {
+  for (const version of ['1.2.3', '1.3.0-rc.2']) {
+    const result = render(version, '### Added\n- visible update\n### Upgrade Notes\n- keep existing data\n', true);
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.match(result.notes, /#### 新增\n- visible update/);
+    assert.match(result.notes, /#### 升级注意事项\n- keep existing data/);
+  }
+});
+
+test('both publication channels reject unsupported, uncategorized and metadata-only updates', () => {
+  for (const version of ['1.2.3', '1.3.0-rc.2']) {
+    for (const section of [
+      '### 未知分类\n- visible update\n',
+      '- uncategorized update\n',
+      '### 发布边界\n- preview channel only\n',
+      '### Upgrade Notes\n- warning without an update\n',
+      `### Added\n${'- supported update\n'.repeat(9)}#### 未知子分类\n- lost update\n`,
+    ]) {
+      const result = render(version, section, true);
+      assert.notEqual(result.status, 0, `unsafe ${version} release was accepted: ${section}`);
+      assert.match(`${result.stdout}\n${result.stderr}`, /unsupported|supported category|readable user-visible item/);
+    }
+  }
+});
+
+test('both release publication stages use the same runtime notes gate without a channel bypass', () => {
+  const workflow = readFileSync(join(repoRoot, '.github', 'workflows', 'release.yml'), 'utf8');
+  const gate = 'bash scripts/check-release-notes.sh';
+  assert.equal(workflow.split(gate).length - 1, 2);
+  assert.doesNotMatch(workflow, /bash scripts\/render-release-notes\.sh/);
+  const validation = workflow.slice(workflow.indexOf('- name: Validate release notes'), workflow.indexOf('- name: Verify source'));
+  assert.ok(validation.includes(gate));
+  assert.doesNotMatch(validation, /\bif:/);
+  assert.ok(workflow.indexOf('- name: Set up Go') < workflow.indexOf('- name: Validate release notes'));
+  assert.ok(workflow.indexOf('- name: Set up Node') < workflow.indexOf('- name: Validate release notes'));
+  const finalValidation = workflow.slice(workflow.indexOf('- name: Validate final release notes'), workflow.indexOf('- name: Promote image'));
+  assert.ok(finalValidation.includes(gate));
+  assert.doesNotMatch(finalValidation, /\bif:/);
+  assert.ok(workflow.lastIndexOf(gate) < workflow.indexOf('- name: Promote image'));
+  assert.ok(workflow.lastIndexOf(gate) < workflow.indexOf('- name: Publish GitHub release'));
+});
 
 test('release notes distinguish stable and preview image contracts', () => {
   const stable = render('1.2.3');
