@@ -101,6 +101,203 @@ func TestTransferJobStoreMigratesWithoutChangingRollbackJournal(t *testing.T) {
 	}
 }
 
+func TestTransferJobStorePreservesHistoricalCrossHostJournalAndMigratesDownloads(t *testing.T) {
+	for _, downloadHistory := range []bool{false, true} {
+		t.Run(fmt.Sprint(downloadHistory), func(t *testing.T) {
+			parent := t.TempDir()
+			legacyRoot, currentRoot := filepath.Join(parent, "remote-downloads"), filepath.Join(parent, "file-transfers")
+			legacy, err := OpenJobStore(legacyRoot)
+			if err != nil {
+				t.Fatal(err)
+			}
+			now := time.Now().UTC()
+			download := contract.FileRemoteDownloadJob{ID: strings.Repeat("a", 32), State: "transferring", Source: "https://downloads.example.com", TargetDirectory: "/home", CreatedAt: now, UpdatedAt: now}
+			if downloadHistory {
+				if err := legacy.Create(download); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := os.Mkdir(currentRoot, 0700); err != nil {
+				t.Fatal(err)
+			}
+			// Historical cross-host copies persisted version/items, not schemaVersion.
+			historical := []byte(`{"version":1,"jobs":[{"id":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","sourceNodeId":"cccccccccccccccccccccccccccccccc","targetHostId":"","targetDirectory":"/home","state":"complete","items":[{"path":"/source.bin","resourceVersion":"sha256:source","state":"complete","loadedBytes":7,"totalBytes":7,"entry":{"path":"/home/source.bin","name":"source.bin","kind":"file","sizeBytes":7,"resourceVersion":"sha256:target"},"retryable":false}],"createdAt":"2026-09-13T01:00:00Z","updatedAt":"2026-09-13T01:01:00Z"}]}`)
+			oldCrossPath := filepath.Join(currentRoot, "jobs.json")
+			if err := os.WriteFile(oldCrossPath, historical, 0600); err != nil {
+				t.Fatal(err)
+			}
+			oldDownloadPath := filepath.Join(legacyRoot, "jobs.json")
+			oldDownloads, _ := os.ReadFile(oldDownloadPath)
+			current, err := OpenTransferJobStore(currentRoot, legacyRoot)
+			if err != nil || !current.Available() {
+				t.Fatalf("historical cross-host index disabled downloads: %v", err)
+			}
+			jobs, err := current.List()
+			wantCount := 0
+			if downloadHistory {
+				wantCount = 1
+			}
+			if err != nil || len(jobs) != wantCount || downloadHistory && jobs[0].State != "interrupted" {
+				t.Fatalf("download recovery: %#v %v", jobs, err)
+			}
+			cross := download
+			cross.ID, cross.SourceKind, cross.Source = strings.Repeat("d", 32), "cross-host", "kpanel://"+strings.Repeat("e", 32)
+			if err := current.Create(cross); err != nil {
+				t.Fatal(err)
+			}
+			current, err = OpenTransferJobStore(currentRoot, legacyRoot)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, err := current.Get(cross.ID); err != nil || got.State != "interrupted" || got.SourceKind != "cross-host" {
+				t.Fatalf("new common history did not survive restart: %#v %v", got, err)
+			}
+			for filename, before := range map[string][]byte{oldCrossPath: historical, oldDownloadPath: oldDownloads} {
+				after, err := os.ReadFile(filename)
+				if err != nil || !bytes.Equal(before, after) {
+					t.Fatalf("rollback index changed: %s %v", filename, err)
+				}
+			}
+		})
+	}
+}
+
+func TestTransferJobStorePrefersRC13HistoryAndKeepsItForRollback(t *testing.T) {
+	parent := t.TempDir()
+	legacyRoot, currentRoot := filepath.Join(parent, "remote-downloads"), filepath.Join(parent, "file-transfers")
+	now := time.Now().UTC()
+	job := contract.FileRemoteDownloadJob{ID: strings.Repeat("a", 32), State: "queued", Source: "https://downloads.example.com", TargetDirectory: "/home", CreatedAt: now, UpdatedAt: now}
+	before := make(map[string][]byte)
+	for _, root := range []string{legacyRoot, currentRoot} {
+		store, err := OpenJobStore(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := store.Create(job); err != nil {
+			t.Fatal(err)
+		}
+		filename := filepath.Join(root, "jobs.json")
+		before[filename], err = os.ReadFile(filename)
+		if err != nil {
+			t.Fatal(err)
+		}
+		job.ID = strings.Repeat("b", 32)
+		job.SourceKind, job.Source = "cross-host", "kpanel://"+strings.Repeat("c", 32)
+	}
+	current, err := OpenTransferJobStore(currentRoot, legacyRoot)
+	if err != nil || !current.Available() {
+		t.Fatalf("rc.13 migration failed: %v", err)
+	}
+	if jobs, err := current.List(); err != nil || len(jobs) != 1 || jobs[0].ID != job.ID || jobs[0].State != "interrupted" {
+		t.Fatalf("wrong authoritative history: %#v %v", jobs, err)
+	}
+	if err := current.Delete(job.ID); err != nil {
+		t.Fatal(err)
+	}
+	current, err = OpenTransferJobStore(currentRoot, legacyRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if jobs, err := current.List(); err != nil || len(jobs) != 0 {
+		t.Fatalf("old history reimported on restart: %#v %v", jobs, err)
+	}
+	for filename, original := range before {
+		after, err := os.ReadFile(filename)
+		if err != nil || !bytes.Equal(original, after) {
+			t.Fatalf("rollback index changed: %s %v", filename, err)
+		}
+	}
+}
+
+func TestTransferJobStoreRefusesUnknownAndDamagedIndexes(t *testing.T) {
+	for _, payload := range []string{
+		`broken`, `{"schemaVersion":2,"jobs":[]}`, `{"version":2,"jobs":[]}`,
+		`{"version":1,"jobs":null}`, `{"version":1,"jobs":{}}`,
+		`{"version":1,"jobs":[],"schemaVersion":1}`, `{"version":1,"jobs":[]} {}`,
+		`{"version":1,"jobs":[` + strings.Repeat(`{},`, 32) + `{}]}`,
+		`{"version":1,"jobs":[],"extra":"` + strings.Repeat("x", 8<<20) + `"}`,
+	} {
+		t.Run(fmt.Sprintf("bytes-%d-%.30s", len(payload), payload), func(t *testing.T) {
+			parent := t.TempDir()
+			legacyRoot, currentRoot := filepath.Join(parent, "remote-downloads"), filepath.Join(parent, "file-transfers")
+			if _, err := OpenJobStore(legacyRoot); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Mkdir(currentRoot, 0700); err != nil {
+				t.Fatal(err)
+			}
+			filename := filepath.Join(currentRoot, "jobs.json")
+			if err := os.WriteFile(filename, []byte(payload), 0600); err != nil {
+				t.Fatal(err)
+			}
+			current, err := OpenTransferJobStore(currentRoot, legacyRoot)
+			if err != nil || current.Available() {
+				t.Fatalf("unknown/damaged history accepted: %v", err)
+			}
+			if _, err := os.Lstat(filepath.Join(currentRoot, "jobs-v1.json")); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("created another history: %v", err)
+			}
+			after, err := os.ReadFile(filename)
+			if err != nil || string(after) != payload {
+				t.Fatalf("abnormal history replaced: %v", err)
+			}
+		})
+	}
+}
+
+func TestTransferJobStoreNeverReplacesDamagedVersionedIndex(t *testing.T) {
+	parent := t.TempDir()
+	legacyRoot, currentRoot := filepath.Join(parent, "remote-downloads"), filepath.Join(parent, "file-transfers")
+	for _, root := range []string{legacyRoot, currentRoot} {
+		if _, err := OpenJobStore(root); err != nil {
+			t.Fatal(err)
+		}
+	}
+	filename := filepath.Join(currentRoot, "jobs-v1.json")
+	before := []byte("damaged authoritative history")
+	if err := os.WriteFile(filename, before, 0600); err != nil {
+		t.Fatal(err)
+	}
+	current, err := OpenTransferJobStore(currentRoot, legacyRoot)
+	if err != nil || current.Available() {
+		t.Fatalf("damaged current history bypassed: %v", err)
+	}
+	after, err := os.ReadFile(filename)
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatalf("damaged history replaced: %v", err)
+	}
+}
+
+func TestTransferJobStoreRecognizesBoundedHistoricalIndexesWithoutDownloadHistory(t *testing.T) {
+	for _, historical := range []string{
+		`{"version":1,"jobs":[]}`,
+		`{"version":1,"jobs":[{"sourceNodeId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","items":[{"detail":"` + strings.Repeat("x", MaxJobStateBytes) + `"}]}]}`,
+	} {
+		t.Run(fmt.Sprintf("bytes-%d", len(historical)), func(t *testing.T) {
+			parent := t.TempDir()
+			currentRoot := filepath.Join(parent, "file-transfers")
+			if err := os.Mkdir(currentRoot, 0700); err != nil {
+				t.Fatal(err)
+			}
+			filename := filepath.Join(currentRoot, "jobs.json")
+			if err := os.WriteFile(filename, []byte(historical), 0600); err != nil {
+				t.Fatal(err)
+			}
+			current, err := OpenTransferJobStore(currentRoot, filepath.Join(parent, "remote-downloads"))
+			if err != nil || !current.Available() {
+				t.Fatalf("historical bounds rejected: %v", err)
+			}
+			if jobs, err := current.List(); err != nil || len(jobs) != 0 {
+				t.Fatalf("historical content imported: %#v %v", jobs, err)
+			}
+			after, err := os.ReadFile(filename)
+			if err != nil || string(after) != historical {
+				t.Fatalf("historical content changed: %v", err)
+			}
+		})
+	}
+}
+
 func TestJobStoreBoundsHistoryAndRefusesActiveDeletion(t *testing.T) {
 	store, err := OpenJobStore(filepath.Join(t.TempDir(), "jobs"))
 	if err != nil {

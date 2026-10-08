@@ -183,7 +183,7 @@ func TestFileRemoteDownloadBackgroundDetachesListsRedactsAndDeletes(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	jobIndex, err := os.ReadFile(filepath.Join(filepath.Dir(tokenPath), "file-transfers", "jobs.json"))
+	jobIndex, err := os.ReadFile(filepath.Join(filepath.Dir(tokenPath), "file-transfers", "jobs-v1.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -556,6 +556,110 @@ func TestNewServerDegradesBrokenRemoteDownloadIndexAndKeepsSyncDownload(t *testi
 
 func newTestServerWithBrokenRemoteDownloadRoot(t *testing.T) (*Server, string, string, []byte) {
 	t.Helper()
+	original := []byte("preserve broken remote download job root")
+	server, tokenPath := newTestServerWithFileJobData(t, func(dataDir string) {
+		if err := os.WriteFile(filepath.Join(dataDir, "remote-downloads"), original, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	})
+	return server, tokenPath, filepath.Join(server.config.DataDir, "remote-downloads"), original
+}
+
+func TestNewServerUpgradesHistoricalIndexesAndCompletesCommonFileJobs(t *testing.T) {
+	for _, format := range []string{"historical-cross-host", "rc13-common"} {
+		t.Run(format, func(t *testing.T) {
+			before := make(map[string][]byte)
+			server, tokenPath := newTestServerWithFileJobData(t, func(dataDir string) {
+				legacyRoot, currentRoot := filepath.Join(dataDir, "remote-downloads"), filepath.Join(dataDir, "file-transfers")
+				if _, err := remotedownload.OpenJobStore(legacyRoot); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Mkdir(currentRoot, 0700); err != nil {
+					t.Fatal(err)
+				}
+				if format == "historical-cross-host" {
+					historical := []byte(`{"version":1,"jobs":[{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","sourceNodeId":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","targetHostId":"","targetDirectory":"/home","state":"complete","items":[{"path":"/old.bin","resourceVersion":"sha256:old-source","state":"complete","loadedBytes":7,"totalBytes":7,"entry":{"path":"/home/old.bin","name":"old.bin","kind":"file","sizeBytes":7,"resourceVersion":"sha256:old-target"},"retryable":false}],"createdAt":"2026-09-13T01:00:00Z","updatedAt":"2026-09-13T01:01:00Z"}]}`)
+					if err := os.WriteFile(filepath.Join(currentRoot, "jobs.json"), historical, 0600); err != nil {
+						t.Fatal(err)
+					}
+				} else {
+					current, err := remotedownload.OpenJobStore(currentRoot)
+					if err != nil {
+						t.Fatal(err)
+					}
+					now := time.Now().UTC()
+					if err := current.Create(contract.FileRemoteDownloadJob{ID: strings.Repeat("a", 32), State: "queued", Source: "https://downloads.example.com", TargetDirectory: "/home", CreatedAt: now, UpdatedAt: now}); err != nil {
+						t.Fatal(err)
+					}
+				}
+				for _, root := range []string{legacyRoot, currentRoot} {
+					filename := filepath.Join(root, "jobs.json")
+					content, err := os.ReadFile(filename)
+					if err != nil {
+						t.Fatal(err)
+					}
+					before[filename] = content
+				}
+			})
+			if !server.remoteDownloadJobs.Available() {
+				t.Fatal("upgrade disabled the common file job store")
+			}
+			sessionCookie, csrfCookie := bootstrapCookies(t, server, tokenPath)
+			_, manager, root := realTransferAgent(t, server)
+			listResponse := authenticatedRequest(server, http.MethodGet, "/api/v1/files/remote-downloads", nil, sessionCookie, csrfCookie, nil)
+			if listResponse.Code != http.StatusOK {
+				t.Fatalf("opening Files failed: %d %s", listResponse.Code, listResponse.Body.String())
+			}
+			payload := bytes.Repeat([]byte("migration-download"), 4096)
+			server.remoteDownloadOpen = func(context.Context, string) (*http.Response, error) {
+				return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), ContentLength: int64(len(payload)), Body: io.NopCloser(bytes.NewReader(payload))}, nil
+			}
+			download := createBackgroundRemoteDownloadForTest(t, server, sessionCookie, csrfCookie, "new-download.bin")
+			waitFileRemoteDownloadWorkers(t, server)
+			if job, err := server.remoteDownloadJobs.Get(download.ID); err != nil || job.State != "complete" || job.Entry == nil || job.Entry.Path != "/home/new-download.bin" {
+				t.Fatalf("upgraded remote download did not complete: %#v %v", job, err)
+			}
+			if content, err := os.ReadFile(filepath.Join(root, "home", "new-download.bin")); err != nil || !bytes.Equal(content, payload) {
+				t.Fatalf("remote download content mismatch: %v", err)
+			}
+			if err := os.WriteFile(filepath.Join(root, "source.bin"), payload, 0600); err != nil {
+				t.Fatal(err)
+			}
+			source, err := manager.Stat("/source.bin")
+			if err != nil {
+				t.Fatal(err)
+			}
+			input, err := json.Marshal(contract.FileTransferRequest{SourceNodeID: server.cluster.NodeID(), Path: source.Path, ResourceVersion: source.ResourceVersion, TargetDirectory: "/home", Background: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			copyResponse := authenticatedRequest(server, http.MethodPost, "/api/v1/files/transfers", input, sessionCookie, csrfCookie, map[string]string{"Content-Type": "application/json", "Origin": "http://panel.test", "X-CSRF-Token": csrfCookie.Value})
+			if copyResponse.Code != http.StatusAccepted {
+				t.Fatalf("upgraded common copy POST: %d %s", copyResponse.Code, copyResponse.Body.String())
+			}
+			var copied contract.FileRemoteDownloadJob
+			if err := json.Unmarshal(copyResponse.Body.Bytes(), &copied); err != nil {
+				t.Fatal(err)
+			}
+			waitFileRemoteDownloadWorkers(t, server)
+			if job, err := server.remoteDownloadJobs.Get(copied.ID); err != nil || job.State != "complete" || job.SourceKind != "cross-host" {
+				t.Fatalf("upgraded common copy did not complete: %#v %v", job, err)
+			}
+			if content, err := os.ReadFile(filepath.Join(root, "home", "source.bin")); err != nil || !bytes.Equal(content, payload) {
+				t.Fatalf("common copy content mismatch: %v", err)
+			}
+			for filename, original := range before {
+				content, err := os.ReadFile(filename)
+				if err != nil || !bytes.Equal(original, content) {
+					t.Fatalf("rollback journal changed: %s %v", filename, err)
+				}
+			}
+		})
+	}
+}
+
+func newTestServerWithFileJobData(t *testing.T, seed func(string)) (*Server, string) {
+	t.Helper()
 	directory := t.TempDir()
 	dataDir := filepath.Join(directory, "data")
 	webRoot := filepath.Join(directory, "web")
@@ -568,17 +672,14 @@ func newTestServerWithBrokenRemoteDownloadRoot(t *testing.T) (*Server, string, s
 	if err := os.WriteFile(filepath.Join(webRoot, "index.html"), []byte("<!doctype html><title>panel</title>"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	jobRoot := filepath.Join(dataDir, "remote-downloads")
-	original := []byte("preserve broken remote download job root")
-	if err := os.WriteFile(jobRoot, original, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	seed(dataDir)
 	config := DefaultConfig()
 	config.DataDir = dataDir
 	config.StorePath = filepath.Join(dataDir, "state.json")
 	config.BootstrapTokenPath = filepath.Join(dataDir, "bootstrap.token")
 	config.AgentSocket = filepath.Join(directory, "run", "agent.sock")
 	config.AgentTokenFile = filepath.Join(directory, "secrets", "agent.token")
+	config.UpdateFreezeFile = filepath.Join(directory, "run", "update-freeze")
 	config.WebRoot = webRoot
 	config.PublicURL = "http://panel.test"
 	config.SecureCookie = false
@@ -615,10 +716,10 @@ func newTestServerWithBrokenRemoteDownloadRoot(t *testing.T) (*Server, string, s
 		NewAgentClient(config.AgentSocket, config.AgentTokenFile, config.MaxAgentBytes),
 	)
 	if err != nil {
-		t.Fatalf("NewServer with broken remote download index: %v", err)
+		t.Fatalf("NewServer with seeded file job data: %v", err)
 	}
 	t.Cleanup(func() { _ = server.Close() })
-	return server, config.BootstrapTokenPath, jobRoot, original
+	return server, config.BootstrapTokenPath
 }
 
 func createBackgroundRemoteDownloadForTest(
