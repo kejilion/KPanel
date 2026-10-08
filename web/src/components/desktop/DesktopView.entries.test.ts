@@ -675,7 +675,7 @@ describe('DesktopView dynamic entries', () => {
 
     expect(desktop.windows.value.map((windowState) => windowState.path)).toEqual([
       '/files?file=%2Fhome%2Fnginx.conf',
-      '/files?path=%2Fhome',
+      '/files?path=%2Fhome&select=%2Fhome%2Fnginx.conf',
     ])
     wrapper.unmount()
   })

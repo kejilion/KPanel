@@ -1274,7 +1274,7 @@ function fileShortcutRoute(entry: DesktopEntry): string | undefined {
 
 function fileShortcutDirectoryRoute(entry: DesktopEntry): string | undefined {
   if (!entry.path || entry.launch !== 'file') return undefined
-  const query = new URLSearchParams({ path: parentFilePath(entry.path) })
+  const query = new URLSearchParams({ path: parentFilePath(entry.path), select: entry.path })
   return `/files?${query.toString()}`
 }
 

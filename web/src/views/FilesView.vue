@@ -884,6 +884,28 @@ function retryShortcutPreview(): void {
   void openRequestedFile(route.query.file)
 }
 
+async function revealRouteSelection(value: unknown): Promise<void> {
+  const target = requestedFilePath(value)
+  if (!target || target === '/') return
+  const hostId = fileHostId.value
+  const parent = target.slice(0, target.lastIndexOf('/')) || '/'
+  if (parent !== currentPath.value) return
+  // The directory is paginated; page forward until the target is loaded.
+  for (let page = 0; page < 20; page += 1) {
+    if (directory.value?.entries.some((entry) => entry.path === target)) break
+    if (!directory.value?.nextOffset) return
+    await loadDirectory(currentPath.value, true)
+    if (unmounted || hostId !== fileHostId.value) return
+  }
+  if (!directory.value?.entries.some((entry) => entry.path === target)) return
+  selected.value = new Set([target])
+  selectionAnchor.value = target
+  await nextTick()
+  const rows = filesPage.value?.querySelectorAll<HTMLElement>('[data-entry-path]')
+  const row = rows && [...rows].find((element) => element.dataset.entryPath === target)
+  row?.scrollIntoView({ block: 'center' })
+}
+
 async function loadRequestedRoute(): Promise<void> {
   if (shortcutFilePreviewOnly.value) {
     await openRequestedFile(route.query.file)
@@ -893,6 +915,7 @@ async function loadRequestedRoute(): Promise<void> {
   await loadDirectory(requestedFilePath(route.query.path) || '/')
   if (unmounted || hostId !== fileHostId.value) return
   await openRequestedFile(route.query.file)
+  await revealRouteSelection(route.query.select)
 }
 
 function setViewMode(mode: FileViewMode): void {
@@ -2636,8 +2659,8 @@ onMounted(() => {
 })
 
 watch(
-  () => [route.query.path, route.query.file, route.query.hostId] as const,
-  ([pathValue, fileValue, hostValue], previous) => {
+  () => [route.query.path, route.query.file, route.query.hostId, route.query.select] as const,
+  ([pathValue, fileValue, hostValue, selectValue], previous) => {
     const hostId = typeof hostValue === 'string' ? hostValue : ''
     const hostChanged = hostId !== fileHostId.value
     if (hostChanged) {
@@ -2649,7 +2672,7 @@ watch(
       remoteDownloadJobs.value = []
       void loadRemoteDownloadJobs(true)
     }
-    if (!hostChanged && pathValue === previous?.[0] && fileValue === previous?.[1]) return
+    if (!hostChanged && pathValue === previous?.[0] && fileValue === previous?.[1] && selectValue === previous?.[3]) return
     void (async () => {
       if (!shortcutFilePreviewOnly.value) {
         const directoryPath = requestedFilePath(pathValue) || '/'
@@ -2660,6 +2683,8 @@ watch(
         openedRouteFile = ''
         await openRequestedFile(fileValue)
       }
+      if (unmounted || hostId !== fileHostId.value) return
+      await revealRouteSelection(selectValue)
     })()
   },
 )
@@ -3108,6 +3133,7 @@ onBeforeUnmount(() => {
           v-for="entry in entries"
           :key="entry.path"
           class="file-row file-row--entry"
+          :data-entry-path="entry.path"
           :class="{
             'file-row--selected': selected.has(entry.path),
             'file-row--drop-target': internalDropTarget === entry.path,
@@ -3177,6 +3203,7 @@ onBeforeUnmount(() => {
           v-for="entry in entries"
           :key="entry.path"
           class="file-grid-card"
+          :data-entry-path="entry.path"
           :class="{
             'file-grid-card--selected': selected.has(entry.path),
             'file-grid-card--drop-target': internalDropTarget === entry.path,
