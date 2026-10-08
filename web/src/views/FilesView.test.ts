@@ -1239,12 +1239,12 @@ describe('FilesView route path', () => {
     const view = setupView()
     const uploaded = testEntry('notes.txt')
     view.currentPath.value = '/srv'
-    mocks.list.mockResolvedValue({ ...testDirectory('/srv'), entries: [testEntry('other.txt'), { ...uploaded, path: '/srv/notes.txt' }] })
-    mocks.upload.mockImplementation(async (path: string, file: File) => ({ ...testEntry(file.name), path: `${path}/${file.name}` }))
+    mocks.list.mockResolvedValue({ ...testDirectory('/srv'), entries: [testEntry('other.txt'), { ...uploaded, path: '/srv/normalized.txt' }] })
+    mocks.upload.mockImplementation(async (path: string) => ({ ...testEntry('normalized.txt'), path: `${path}/normalized.txt` }))
 
     await view.onDrop(externalFileDrop(externalFileEntry('notes.txt', 'hello')))
 
-    expect(view.selected.value).toEqual(new Set(['/srv/notes.txt']))
+    expect(view.selected.value).toEqual(new Set(['/srv/normalized.txt']))
   })
 
   it('selects the renamed entry at its new path', async () => {
@@ -1276,6 +1276,16 @@ describe('FilesView route path', () => {
     await (view as unknown as { revealEntries: (paths: string[]) => Promise<void> }).revealEntries(['/srv/new.txt'])
 
     expect(view.selected.value).toEqual(new Set(['/other/keep.txt']))
+
+    const reveal = (view as unknown as { revealEntries: (paths: string[], hostId?: string) => Promise<void> }).revealEntries
+    await reveal(['/other/keep.txt'], 'another-host')
+    expect(view.selected.value).toEqual(new Set(['/other/keep.txt']))
+
+    view.currentPath.value = '/srv'
+    view.directory.value = { ...testDirectory('/srv'), entries: [{ ...testEntry('first.txt'), path: '/srv/first.txt' }], nextOffset: 1 }
+    mocks.list.mockResolvedValue({ ...testDirectory('/srv'), entries: [{ ...testEntry('last.txt'), path: '/srv/last.txt' }] })
+    await reveal(['/srv/missing.txt', '/srv/last.txt', '/srv/first.txt'])
+    expect(view.selected.value).toEqual(new Set(['/srv/last.txt', '/srv/first.txt']))
   })
 
   it('ignores a route select target outside the loaded directory', async () => {

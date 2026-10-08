@@ -317,6 +317,8 @@ function resetFileHostContext(hostId: string): boolean {
   fileTransferController?.abort()
   fileTransferController = undefined
   clearInternalDropTarget()
+  queuedRemoteDownloadRefreshes.clear()
+  queuedRevealPaths.clear()
   fileHostId.value = hostId
   activeFileHostId.value = hostId || fileHosts.value.find((host) => host.isLocal)?.id || ''
   directory.value = undefined
@@ -790,6 +792,7 @@ function normalizedArchiveName(name: string, format: ArchiveFormat): string {
 
 async function loadDirectory(path = currentPath.value, append = false): Promise<string | undefined> {
   if (append && !directory.value?.nextOffset) return undefined
+  const hostId = fileHostId.value
   directoryController?.abort()
   const controller = new AbortController()
   directoryController = controller
@@ -842,9 +845,9 @@ async function loadDirectory(path = currentPath.value, append = false): Promise<
       queuedRemoteDownloadRefreshes = new Set<string>()
       queuedRevealPaths = new Set<string>()
       if (refreshTargets.has(currentPath.value) && !unmounted) {
-        void loadDirectory(currentPath.value).then(() => revealEntries(revealPaths))
+        void loadDirectory(currentPath.value).then(() => revealEntries(revealPaths, hostId))
       } else if (revealPaths.length && !unmounted) {
-        void revealEntries(revealPaths)
+        void revealEntries(revealPaths, hostId)
       }
     }
   }
@@ -927,20 +930,22 @@ async function revealEntries(paths: readonly string[], hostId = fileHostId.value
     path && path !== '/' && parentDirectory(path) === currentPath.value
   ))
   if (!targets.length || unmounted || hostId !== fileHostId.value) return
-  const target = targets[0]!
-  // The directory is paginated; page forward until the first target is loaded.
+  const parent = currentPath.value
+  // Load all results within the same bounded pagination budget.
   for (let page = 0; page < 20; page += 1) {
-    if (directory.value?.entries.some((entry) => entry.path === target)) break
-    if (!directory.value?.nextOffset) return
-    await loadDirectory(currentPath.value, true)
-    if (unmounted || hostId !== fileHostId.value || parentDirectory(target) !== currentPath.value) return
+    const loadedPaths = new Set(directory.value?.entries.map((entry) => entry.path))
+    if (targets.every((path) => loadedPaths.has(path)) || !directory.value?.nextOffset) break
+    if (!await loadDirectory(parent, true)) break
+    if (unmounted || hostId !== fileHostId.value || parent !== currentPath.value) return
   }
   const loaded = new Set(directory.value?.entries.map((entry) => entry.path))
   const present = targets.filter((path) => loaded.has(path))
   if (!present.length) return
+  const target = present[0]!
   selected.value = new Set(present)
-  selectionAnchor.value = target
+  selectionAnchor.value = present[0]
   await nextTick()
+  if (unmounted || hostId !== fileHostId.value || parent !== currentPath.value) return
   const rows = filesPage.value?.querySelectorAll<HTMLElement>('[data-entry-path]')
   const row = rows && [...rows].find((element) => element.dataset.entryPath === target)
   row?.scrollIntoView({ block: 'center' })
@@ -2292,6 +2297,7 @@ async function loadRemoteDownloadJobs(silent = false): Promise<void> {
 }
 
 function reconcileRemoteDownloadTarget(target: string, reveal: readonly string[] = []): void {
+  const hostId = fileHostId.value
   notifyFileDirectoriesChanged([target], fileWindowChangeOrigin, [], fileHostId.value)
   if (unmounted) return
   if (directoryController) {
@@ -2300,7 +2306,7 @@ function reconcileRemoteDownloadTarget(target: string, reveal: readonly string[]
     return
   }
   if (currentPath.value !== target) return
-  void loadDirectory(target).then(() => revealEntries(reveal))
+  void loadDirectory(target).then(() => revealEntries(reveal, hostId))
 }
 
 function completedRemoteDownloadPath(job: FileRemoteDownloadJob): string[] {
@@ -2482,8 +2488,9 @@ async function runFileUploadTask(id: string, source: Extract<UploadTaskSource, {
   const onProgress = (progress: number): void => updateUploadTask(id, {
     progress: Math.max(0, Math.min(100, progress)),
   })
+  let uploaded: FileEntry
   try {
-    await fileAPIForHost(source.hostId).upload(source.target, source.file, false, onProgress)
+    uploaded = await fileAPIForHost(source.hostId).upload(source.target, source.file, false, onProgress)
   } catch (error) {
     if (
       error instanceof ApiError
@@ -2491,7 +2498,7 @@ async function runFileUploadTask(id: string, source: Extract<UploadTaskSource, {
       && window.confirm(`${source.file.name} 已存在，是否覆盖？`)
     ) {
       try {
-        await fileAPIForHost(source.hostId).upload(source.target, source.file, true, onProgress)
+        uploaded = await fileAPIForHost(source.hostId).upload(source.target, source.file, true, onProgress)
       } catch (overwriteError) {
         updateUploadTask(id, { phase: 'error', detail: errorMessage(overwriteError) })
         return undefined
@@ -2503,7 +2510,7 @@ async function runFileUploadTask(id: string, source: Extract<UploadTaskSource, {
   }
   updateUploadTask(id, { phase: 'success', progress: 100, detail: undefined })
   scheduleUploadTaskClear(id)
-  return `${source.target === '/' ? '' : source.target}/${source.file.name}`
+  return uploaded.path
 }
 
 async function uploadFiles(
@@ -2886,6 +2893,7 @@ onBeforeUnmount(() => {
   fileHostController?.abort()
   unmounted = true
   queuedRemoteDownloadRefreshes.clear()
+  queuedRevealPaths.clear()
   stopRemoteDownloadPolling()
   directoryController?.abort()
   archiveController?.abort()
