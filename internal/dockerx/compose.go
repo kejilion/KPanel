@@ -222,6 +222,8 @@ func (c *Client) managedComposeDirectories() []string {
 	return directories
 }
 
+// Bounded approval classification traverses the managed tree completely or
+// fails closed. The existing inventory caller (limit zero) stays one level deep.
 func (c *Client) managedComposeDirectoriesWithLimit(ctx context.Context, limit int) ([]string, error) {
 	seen := make(map[string]bool)
 	var directories []string
@@ -240,39 +242,59 @@ func (c *Client) managedComposeDirectoriesWithLimit(ctx context.Context, limit i
 		if !seen[resolvedRoot] {
 			seen[resolvedRoot] = true
 			directories = append(directories, resolvedRoot)
-		}
-		var entries []os.DirEntry
-		if limit > 0 {
-			directory, openErr := os.Open(resolvedRoot)
-			if openErr != nil {
-				return nil, ErrActionUnsupported
-			}
-			entries, err = directory.ReadDir(limit - readEntries + 1)
-			_ = directory.Close()
-			readEntries += len(entries)
-			if readEntries > limit || err != nil && !errors.Is(err, io.EOF) {
-				return nil, ErrActionUnsupported
-			}
-			err = nil
-		} else {
-			entries, err = os.ReadDir(resolvedRoot)
-		}
-		if err != nil {
+		} else if limit > 0 {
 			continue
 		}
-		for _, entry := range entries {
-			if err := ctx.Err(); err != nil {
-				return nil, err
+		scan := []string{resolvedRoot}
+		for index := 0; index < len(scan); index++ {
+			scanRoot := scan[index]
+			var entries []os.DirEntry
+			if limit > 0 {
+				directory, openErr := os.Open(scanRoot)
+				if openErr != nil {
+					return nil, ErrActionUnsupported
+				}
+				entries, err = directory.ReadDir(limit - readEntries + 1)
+				_ = directory.Close()
+				readEntries += len(entries)
+				if readEntries > limit || err != nil && !errors.Is(err, io.EOF) {
+					return nil, ErrActionUnsupported
+				}
+				err = nil
+			} else {
+				entries, err = os.ReadDir(scanRoot)
 			}
-			if !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
+			if err != nil {
 				continue
 			}
-			candidate, err := filepath.EvalSymlinks(filepath.Join(resolvedRoot, entry.Name()))
-			if err != nil || !pathWithin(candidate, resolvedRoot) || candidate == resolvedRoot || seen[candidate] {
-				continue
+			for _, entry := range entries {
+				if err := ctx.Err(); err != nil {
+					return nil, err
+				}
+				if limit > 0 && entry.Type()&os.ModeSymlink != 0 {
+					// A link can hide another stopped project's declarations. Do
+					// not claim a complete identity scan through ambiguous paths.
+					return nil, ErrActionUnsupported
+				}
+				if !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
+					continue
+				}
+				candidate, err := filepath.EvalSymlinks(filepath.Join(scanRoot, entry.Name()))
+				if err != nil || !pathWithin(candidate, resolvedRoot) {
+					if limit > 0 {
+						return nil, ErrActionUnsupported
+					}
+					continue
+				}
+				if candidate == resolvedRoot || seen[candidate] {
+					continue
+				}
+				seen[candidate] = true
+				directories = append(directories, candidate)
+				if limit > 0 {
+					scan = append(scan, candidate)
+				}
 			}
-			seen[candidate] = true
-			directories = append(directories, candidate)
 		}
 	}
 	return directories, nil
