@@ -14,7 +14,7 @@ describe('split pane command bar', () => {
   })
 
   it('wraps the label of every secondary action and leaves the primary upload labelled', () => {
-    for (const label of ['图库', '回收站', '分享管理', '新建目录', '关闭此栏']) {
+    for (const label of ['图库', '回收站', '分享管理', "{{ i18n.t('desktop.newItem') }}", '关闭此栏']) {
       expect(files).toContain(`<span class="file-command-bar__label">${label}</span>`)
     }
     expect(files).toContain('<Upload :size="15" /> 上传文件')
