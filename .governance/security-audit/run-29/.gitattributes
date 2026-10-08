@@ -1,2 +1,2 @@
 # Preserve the exact bytes of indexed audit proof files on every platform.
-* -text
+* -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
