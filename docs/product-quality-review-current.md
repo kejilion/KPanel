@@ -1,9 +1,9 @@
 # KPanel 当前业务事实与规范适配基线
 
 - 复核日期：`2026-10-08`
-- 基线提交：`289c5d51c60fe55535829bb4862c95b05c3b469d`
+- 基线提交：`5eeecd4bac16ae4fccec5039863e476ad2054004`
 - 基线版本：`v1.24.0`
-- 当前已发布预览：`v1.25.0-rc.14`（2026-10-08T12:45:25Z）；六组文件/桌面/手机候选经完整 L3、同 SHA CI、公开镜像 E2E、17 项真实功能和实际 RC13 更新弹窗验收；Docker 批处理未纳入，公共稳定入口仍 `v1.24.0`，生产未部署
+- 当前已发布预览：`v1.25.0-rc.15`（2026-10-08T15:27:33Z）；软路由恢复和文件结果定位经完整L3、同SHA CI、公开镜像E2E、11项真实文件旅程、实际RC14更新弹窗验收；Docker批处理未纳入，稳定v1.24.0，生产未部署
 - 上一份完整复核：[`product-quality-review-2026-08-13.md`](product-quality-review-2026-08-13.md)
 - 自动刷新门槛：基线后达到 50 个提交，或同时达到 20 个提交和 8 个正式版本；产品性质、业务真源、权限边界或核心旅程发生实质变化时立即复核
 
@@ -12,11 +12,12 @@
 
 ### v1.25.0-rc.15 组合候选复核
 
-批准主线为 `b23d7992948018aec18b1e2aaebc538c1b5a2291`，本次来源为软路由节点恢复 `ff3d6876` 与文件操作结果定位 `56dac61e`；精确组合和最小集成修复为 `1542de8113c7eeda30c5136f8c46b381e4fd9872`。六个代码/测试文件完成自由及 OCR 规则评审，两个中风险和一个低风险问题已修复：有界多结果分页、原主机异步归属、服务端实际上传路径。Claude 来源由不同供应商 Codex 复核；Codex 来源采用不同实现会话的同供应商回退，其余供应商 CLI 不可用。发布 owner 的局部修正不冒充独立复核。
+批准main `b23d7992948018aec18b1e2aaebc538c1b5a2291`；ff3d6876/56dac61e保留祖先，局部修正1542de8/528f3cfb/5eeecd4b，冻结`5eeecd4bac16ae4fccec5039863e476ad2054004`于`2026-10-08T15:27:33Z`公开。完整L3、同SHA候选/main CI、Release、公开image E2E、11实际文件旅程与实际RC14更新弹窗通过，详见 [rc.15 验收](release-v1.25.0-rc.15-acceptance.md)。
 
-- 软路由修复只扩展四个准确 Linux 发行版标识，Windows 优先拒绝、身份认证、重放保护、权限和存储格式不变。原密钥重载恢复由自动回归覆盖，物理 OpenWrt/iStoreOS 及用户现场仍未验证。
-- 文件定位复用现有成功结果、目录分页和窗口 DOM，继续保留 20 页上限、导航与卸载检查。没有新增写入动作、脚本协议或 Docker 批处理。
-- 完整 L3、真实 Panel/Agent 文件操作和公开产物/更新弹窗验收尚待执行；继承的 CF 覆盖、RC13 接收性能和未验证平台限制保留。`scriptLinkageState=not-required`，生产不在预览发布范围。
+- 四个准确Linux身份openwrt/lede/immortalwrt/istoreos加入识别；Windows拒绝、签名/重放、密钥/存储不变。17签名/重载场景覆盖，实体router和用户现场未验证。
+- 文件成功服务端路径、窗口DOM和20页预算复用；多结果有界查找，迟到其他主机/目录不抢选择，不自动打开/执行。upload/rename/后台归档/paste/真实HTTPS下载与持久化字节通过。
+- OCR9/9，H0/M2/L1修正，blind=false/constrained-only=unreported；Claude由Codex不同供应商复核，Codex源独立实现会话同供应商回退，owner修正自审。
+- CF scoped-required/54提交169文件，RC13性能与未验证平台限制继承。两个源tip精确归档，作者工作树物理保留；scriptLinkageState=not-required，script/apps不变，Docker批处理排除，生产未部署。
 
 ### v1.25.0-rc.14 组合候选复核
 
