@@ -41,6 +41,8 @@ const notice = ref('')
 let timer: ReturnType<typeof setTimeout> | undefined
 let disposed = false
 const pending = computed(() => records.value.some(r => ['queued', 'running', 'restarting'].includes(r.status)))
+const healthLabel = computed(() => ({ disabled: '自动备份已关闭', idle: '自动备份等待首次执行', running: '自动备份正在执行', healthy: '自动备份最近一次已完成', warning: '自动备份已完成，旧副本清理失败', failed: '自动备份失败，请检查任务记录', missed: '自动备份错过执行窗口', unavailable: '自动备份状态暂不可用' }[settings.value?.health?.state || 'unavailable']))
+const settingsError = ref(false)
 const title = computed(() => ({ export: '导出备份', import: '导入恢复', restore: '确认恢复', delete: '删除备份记录', recover: '处理恢复中断', upload: '上传到远程存储', '': '' }[dialog.value]))
 const available = computed(() => dialog.value === 'restore' ? choices.filter(c => source.value?.modules.includes(c.id)) : choices)
 const estimate = computed(() => selected.value.reduce((total, module) => total + (module === 'panel' ? inventory.value?.panelBytes || 0 : inventory.value?.host?.modules.find(m => m.id === module)?.bytes || 0), 0))
@@ -93,6 +95,7 @@ async function refresh() {
   if (refreshing || disposed) return
   refreshing = true; clearTimeout(timer)
   try { records.value = (await backups.list()).items; listError.value = '' } catch { listError.value = '暂时无法读取备份任务，请刷新重试。' }
+  try { await loadSettings(); settingsError.value = false } catch { settingsError.value = true }
   refreshing = false
   if (!disposed) timer = setTimeout(refresh, pending.value ? 2000 : 15000)
 }
@@ -127,7 +130,7 @@ async function submit() {
   } catch (reason) { error.value = backupMessage(reason) }
   finally { busy.value = false }
 }
-onMounted(() => { void refresh(); void loadSettings().catch(() => {}) })
+onMounted(() => { void refresh() })
 onBeforeUnmount(() => { disposed = true; clearTimeout(timer) })
 </script>
 
@@ -146,6 +149,13 @@ onBeforeUnmount(() => { disposed = true; clearTimeout(timer) })
           <button type="button" class="button button--secondary" @click="openOptions('storage')"><Cloud :size="16" />{{ phrase('远程存储') }}</button>
         </div>
         <p class="backup-note">支持全部或按类别选择。备份包使用密码加密，请下载到其他设备妥善保存。</p>
+        <div class="backup-health" role="status" aria-live="polite">
+          <p class="backup-health__state" :class="{ 'backup-error': settingsError || ['failed', 'missed', 'warning'].includes(settings?.health?.state || '') }">{{ phrase(settingsError ? '自动备份状态暂不可用' : healthLabel) }}</p>
+          <template v-if="settings && !settingsError">
+            <p class="backup-note">{{ phrase('最近成功的自动备份：') }} {{ settings.health?.lastSuccessAt ? formatDateTime(settings.health.lastSuccessAt) : phrase('暂无成功记录') }}</p>
+            <p v-if="settings.schedule.enabled && settings.schedule.nextRun" class="backup-note">{{ phrase('下次自动备份：') }} {{ formatDateTime(settings.schedule.nextRun) }}</p>
+          </template>
+        </div>
       </div>
       <section class="backup-history" aria-labelledby="backup-history-title">
         <header class="backup-history__header">
@@ -266,6 +276,9 @@ onBeforeUnmount(() => { disposed = true; clearTimeout(timer) })
   min-height: 40px;
   font-size: 14px;
 }
+
+.backup-health { display: grid; gap: 6px; }
+.backup-health__state { margin: 0; font-size: 14px; font-weight: 500; }
 
 .backup-note,
 .backup-empty {

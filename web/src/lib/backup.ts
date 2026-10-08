@@ -75,5 +75,9 @@ export interface BackupSchedule {
   hour: number; minute: number; weekday: number; day: number; timezone: string; keep: number
   password?: string; hasPassword?: boolean; nextRun?: string; lastRun?: string; lastError?: string
 }
-export interface BackupSettings { revision: string; storages: BackupStorage[]; schedule: BackupSchedule }
+export interface BackupScheduleHealth {
+  state: 'disabled' | 'idle' | 'running' | 'healthy' | 'warning' | 'failed' | 'missed' | 'unavailable'
+  lastSuccessAt?: string; lastRecordId?: string; errorCode?: string
+}
+export interface BackupSettings { revision: string; storages: BackupStorage[]; schedule: BackupSchedule; health?: BackupScheduleHealth }
 export interface RemoteBackupFile { key: string; size: number; modified: string }

@@ -30,6 +30,8 @@ func ruleEnabled(r Rules, rule string) bool {
 		return r.HostExpiryEnabled != nil && *r.HostExpiryEnabled
 	case panelLoginRuleKey:
 		return r.PanelLoginEnabled
+	case backupRuleKey:
+		return r.BackupEnabled
 	}
 	return false
 }

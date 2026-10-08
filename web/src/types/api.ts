@@ -331,6 +331,7 @@ export interface ClusterNotificationRules {
   serviceChecksEnabled?: boolean
   hostExpiryEnabled?: boolean
   panelLoginEnabled?: boolean
+  backupEnabled?: boolean
 }
 
 export type ClusterNotificationStatus = 'not_configured' | 'waiting_for_chat' | 'ready' | 'error'

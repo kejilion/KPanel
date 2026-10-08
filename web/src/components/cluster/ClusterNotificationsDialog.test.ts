@@ -53,6 +53,15 @@ beforeEach(() => {
 afterEach(() => wrappers.splice(0).forEach((wrapper) => wrapper.unmount()))
 
 describe('withdrawn local resource notifications', () => {
+  it('keeps automatic backup notices off until the administrator enables them', async () => {
+    const wrapper = await open()
+    const toggle = wrapper.get('input[aria-label="启用自动备份通知"]')
+    expect((toggle.element as HTMLInputElement).checked).toBe(false)
+    await toggle.setValue(true)
+    await wrapper.findAll('button').find(button => button.text().includes('保存设置'))!.trigger('click')
+    await flushPromises()
+    expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ rules: expect.objectContaining({ backupEnabled: true }) }))
+  })
   it('keeps editable threshold values at the 14px control baseline', () => {
     const rule = dialogSource.match(/\.cluster-notifications__threshold input\s*\{([^}]+)\}/)?.[1]
     expect(rule).toMatch(/font-size:\s*14px;/)

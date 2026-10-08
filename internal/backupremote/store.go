@@ -103,9 +103,14 @@ func (s *Store) Storage(id string) (Storage, error) {
 	return Storage{}, backup.ErrNotFound
 }
 func (s *Store) Plan() Schedule {
+	plan, _ := s.PlanWithRevision()
+	return plan
+}
+
+func (s *Store) PlanWithRevision() (Schedule, string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return cloneSettings(s.state).Schedule
+	return cloneSettings(s.state).Schedule, s.state.Revision
 }
 
 func (s *Store) save(v Settings, changeRevision bool) error {
@@ -211,16 +216,22 @@ func (s *Store) PutSchedule(revision string, input Schedule, now time.Time) erro
 // Claim durably advances the scheduled slot before execution: restart never
 // duplicates a backup, and missed windows are skipped rather than replayed.
 func (s *Store) Claim(now time.Time, busy bool) (Schedule, bool, error) {
+	plan, _, run, err := s.ClaimWithRevision(now, busy)
+	return plan, run, err
+}
+
+// Return the configuration identity under the same lock as the claimed slot.
+func (s *Store) ClaimWithRevision(now time.Time, busy bool) (Schedule, string, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	v := cloneSettings(s.state)
 	p := v.Schedule
 	if !p.Enabled || (!p.NextRun.IsZero() && now.Before(p.NextRun)) {
-		return p, false, nil
+		return p, v.Revision, false, nil
 	}
 	missed := p.NextRun.IsZero() || now.Sub(p.NextRun) > 5*time.Minute
 	if busy && !missed {
-		return p, false, nil
+		return p, v.Revision, false, nil
 	}
 	v.Schedule.NextRun = p.Next(now)
 	v.Schedule.LastError = ""
@@ -230,13 +241,22 @@ func (s *Store) Claim(now time.Time, busy bool) (Schedule, bool, error) {
 		v.Schedule.LastRun = now.UTC()
 	}
 	if err := s.save(v, false); err != nil {
-		return p, false, err
+		return p, v.Revision, false, err
 	}
-	return p, !missed, nil
+	return p, v.Revision, !missed, nil
 }
 func (s *Store) SetRunError(code string) error {
+	return s.SetRunErrorForRevision("", code)
+}
+
+// A worker from an earlier configuration cannot overwrite the current
+// schedule's outcome after the administrator changes it.
+func (s *Store) SetRunErrorForRevision(revision, code string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if revision != "" && revision != s.state.Revision {
+		return ErrConflict
+	}
 	v := cloneSettings(s.state)
 	v.Schedule.LastError = code
 	return s.save(v, false)

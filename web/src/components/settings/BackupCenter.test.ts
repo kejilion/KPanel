@@ -20,6 +20,26 @@ beforeEach(() => {
 afterEach(() => wrapper?.unmount())
 
 describe('backup center user flow', () => {
+  it('shows a missed window while retaining the last successful receipt', async () => {
+    const value = await backups.settings()
+    vi.mocked(backups.settings).mockResolvedValue({ ...value, schedule: { ...value.schedule, enabled: true, nextRun: '2026-10-09T03:00:00Z' }, health: { state: 'missed', lastSuccessAt: '2026-10-07T03:02:00Z', errorCode: 'schedule_missed' } })
+    render(); await flushPromises()
+    expect(wrapper.text()).toContain('自动备份错过执行窗口')
+    expect(wrapper.text()).toContain('最近成功的自动备份：')
+    expect(wrapper.text()).toContain('下次自动备份：')
+    expect(wrapper.text()).not.toContain('暂无成功记录')
+    expect(wrapper.text()).not.toContain('自动备份最近一次已完成')
+  })
+  it('does not show a stale healthy status after a settings refresh fails', async () => {
+    const value = await backups.settings()
+    vi.mocked(backups.settings).mockResolvedValueOnce({ ...value, health: { state: 'healthy', lastSuccessAt: '2026-10-07T03:02:00Z' } }).mockRejectedValueOnce(new Error('unavailable'))
+    render(); await flushPromises()
+    expect(wrapper.text()).toContain('自动备份最近一次已完成')
+    await wrapper.get('.backup-refresh').trigger('click'); await flushPromises()
+    expect(wrapper.text()).toContain('自动备份状态暂不可用')
+    expect(wrapper.text()).not.toContain('自动备份最近一次已完成')
+    expect(wrapper.text()).not.toContain('最近成功的自动备份：')
+  })
   it('shows expiry instead of offering a missing local fallback', async () => {
     vi.mocked(backups.list).mockResolvedValue({ items: [{ ...record, action: 'export', status: 'expired', localReady: false, errorCode: 'remote_upload_failed' }], maxBytes: 1000 })
     render(); await flushPromises()

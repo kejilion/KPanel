@@ -2,6 +2,7 @@ package backupremote
 
 import (
 	"bytes"
+	"errors"
 	"github.com/kejilion/kejilion-panel/internal/backup"
 	"os"
 	"path/filepath"
@@ -9,6 +10,49 @@ import (
 	"time"
 	_ "time/tzdata"
 )
+
+func TestPriorWorkerCannotOverwriteChangedSchedule(t *testing.T) {
+	s, err := OpenStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	revision := s.Snapshot().Revision
+	p := s.Plan()
+	p.Hour = 4
+	if err := s.PutSchedule(revision, p, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetRunErrorForRevision(revision, "failed"); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale worker=%v", err)
+	}
+	if s.Plan().LastError != "" {
+		t.Fatal("stale error leaked into the new schedule")
+	}
+}
+
+func TestClaimBindsConfigurationRevision(t *testing.T) {
+	s, err := OpenStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, revision := s.PlanWithRevision()
+	plan.Enabled, plan.Password = true, "long-password"
+	if err := s.PutSchedule(revision, plan, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	plan, revision = s.PlanWithRevision()
+	claimed, claimedRevision, run, err := s.ClaimWithRevision(plan.NextRun, false)
+	if err != nil || !run || claimedRevision != revision || claimed.Password != plan.Password {
+		t.Fatalf("claim=%+v revision=%s run=%v err=%v", claimed.Public(), claimedRevision, run, err)
+	}
+	plan.Hour = (plan.Hour + 1) % 24
+	if err := s.PutSchedule(revision, plan, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetRunErrorForRevision(claimedRevision, "start_failed"); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale start failure=%v", err)
+	}
+}
 
 func testStorage() Storage {
 	return Storage{ID: backup.NewID(), Name: "NAS", Kind: "webdav", Endpoint: "https://nas.example/dav", Prefix: "kpanel", Username: "backup", Secret: "secret-never-returned"}
