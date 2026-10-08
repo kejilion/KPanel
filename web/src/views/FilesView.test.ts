@@ -181,6 +181,7 @@ interface FileBindings {
     value?: {
       path: string
       entries: TestFileEntry[]
+      nextOffset?: number
     }
   }
   selected: { value: Set<string> }
