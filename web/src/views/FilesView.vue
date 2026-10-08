@@ -948,7 +948,7 @@ async function revealEntries(paths: readonly string[], hostId = fileHostId.value
   if (unmounted || hostId !== fileHostId.value || parent !== currentPath.value) return
   const rows = filesPage.value?.querySelectorAll<HTMLElement>('[data-entry-path]')
   const row = rows && [...rows].find((element) => element.dataset.entryPath === target)
-  row?.scrollIntoView({ block: 'center' })
+  row?.scrollIntoView?.({ block: 'center' })
 }
 
 async function loadRequestedRoute(): Promise<void> {
