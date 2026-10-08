@@ -1562,10 +1562,13 @@ function closeContextMenuOnViewportChange(): void {
 
 function measureIconWorkArea(): void {
   viewportSize.value = { width: window.innerWidth, height: window.innerHeight }
+  const compact = window.innerWidth <= 760
   const rect = iconsElement.value?.getBoundingClientRect()
+  // Reserve pager space for icons without changing the widget page's viewport.
+  const height = rect?.height ? rect.height - (compact ? 28 : 0) : window.innerHeight - 88
   const bounds = {
     width: Math.max(90, rect?.width || window.innerWidth - 24),
-    height: Math.max(96, rect?.height || window.innerHeight - 88),
+    height: Math.max(96, height),
   }
   if (bounds.width !== iconBounds.value.width || bounds.height !== iconBounds.value.height) {
     if (initialLayoutReady.value && !layoutBeforeResize.value) {
@@ -1581,7 +1584,6 @@ function measureIconWorkArea(): void {
     }
     iconBounds.value = bounds
   }
-  const compact = window.innerWidth <= 760
   const widgetsVisible = window.innerWidth > 900
   if (compact && !compactIconLayout.value) {
     if (iconDrag) cancelIconDrag()
@@ -4342,7 +4344,7 @@ function onViewportResize(): void {
     <nav
       ref="iconsElement"
       class="desktop__icons"
-      :class="{ 'desktop__icons--paged': Boolean(pagerLayout), 'desktop__icons--widget-page': Boolean(widgetPageOffset) && pagerPage < widgetPageOffset, 'desktop__icons--grouped': localGroups.length > 0, 'desktop__icons--initializing': !initialLayoutReady, 'desktop__icons--restoring': !initialLayoutTransitionsReady, 'desktop__icons--resizing': viewportLayoutResizing }"
+      :class="{ 'desktop__icons--paged': Boolean(pagerLayout), 'desktop__icons--grouped': localGroups.length > 0, 'desktop__icons--initializing': !initialLayoutReady, 'desktop__icons--restoring': !initialLayoutTransitionsReady, 'desktop__icons--resizing': viewportLayoutResizing }"
       :inert="!initialLayoutReady || undefined"
       :aria-label="i18n.t('desktop.gridLabel')"
       :aria-busy="!initialLayoutReady || entriesLoading"

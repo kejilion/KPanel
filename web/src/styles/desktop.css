@@ -5513,16 +5513,12 @@ body.desktop-mode-open::-webkit-scrollbar {
    further pages continue sideways. Native scroll snapping turns one swipe
    into one page; the dots above the taskbar show and switch the page. */
 .desktop__icons.desktop__icons--paged {
-  bottom: calc(92px + max(8px, env(safe-area-inset-bottom)));
+  bottom: calc(64px + max(8px, env(safe-area-inset-bottom)));
   padding: 0;
   overflow-x: auto;
   overflow-y: hidden;
   scroll-snap-type: x mandatory;
   overscroll-behavior: contain;
-}
-
-.desktop__icons.desktop__icons--paged.desktop__icons--widget-page {
-  bottom: calc(64px + max(8px, env(safe-area-inset-bottom)));
 }
 
 /* Paged slots match the compact icon so a full row never spills into the next page. */
@@ -5617,7 +5613,6 @@ body.desktop-mode-open::-webkit-scrollbar {
   overscroll-behavior-y: contain;
   scrollbar-width: none;
   touch-action: pan-x pan-y;
-  mask-image: linear-gradient(to bottom, transparent, #000 16px, #000 calc(100% - 24px), transparent);
 }
 
 .desktop__widget-page::-webkit-scrollbar {
@@ -5806,10 +5801,6 @@ body.desktop-mode-open::-webkit-scrollbar {
 
 @media (max-height: 560px) and (orientation: landscape) {
   .desktop__icons.desktop__icons--paged {
-    bottom: calc(80px + max(6px, env(safe-area-inset-bottom)));
-  }
-
-  .desktop__icons.desktop__icons--paged.desktop__icons--widget-page {
     bottom: calc(52px + max(6px, env(safe-area-inset-bottom)));
   }
 
