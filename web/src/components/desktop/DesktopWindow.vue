@@ -23,6 +23,8 @@ import { DEFAULT_WINDOW_GRADIENT, desktopRoutePath, findDesktopApp } from '@/lib
 import { useDesktopMode } from '@/stores/desktopMode'
 import { useToast } from '@/stores/toast'
 import { useI18n } from '@/i18n'
+import ModalDialog from '@/components/common/ModalDialog.vue'
+import { requestedFilePath } from '@/lib/fileRoutePath'
 import { useWindowGesture } from '@/composables/useWindowGesture'
 import {
   detectWindowSnapTarget,
@@ -105,6 +107,13 @@ provide(desktopWindowCloseGuardKey, {
 })
 
 const title = computed(() => props.title || i18n.t(props.windowState.titleKey as Parameters<typeof i18n.t>[0]))
+const filePreviewPath = computed(() => {
+  // The initial router replacement is asynchronous; classify before the first paint.
+  const route = router.resolve(props.windowState.path)
+  if (route.path !== '/files') return undefined
+  const path = requestedFilePath(route.query.file)
+  return path && path !== '/' ? path : undefined
+})
 watch(
   () => props.iconUrl,
   () => { iconFailed.value = false },
@@ -355,7 +364,7 @@ const stopBrowserHistory = browserHistory?.subscribe((point) => {
 const stopActiveWatch = watch(
   isActive,
   (active) => {
-    if (!active) return
+    if (!active || filePreviewPath.value) return
     void nextTick(() => {
       if (!isActive.value) return
       const element = windowElement.value
@@ -459,6 +468,7 @@ const handleEdges = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'] as const
 
 <template>
   <section
+    v-show="!filePreviewPath"
     ref="windowElement"
     :id="`desktop-window-${windowState.id}`"
     class="desktop-window"
@@ -563,5 +573,25 @@ const handleEdges = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'] as const
     <Teleport v-if="snapTarget" to=".desktop">
       <div class="desktop-window-snap-preview" :style="snapPreviewStyle" aria-hidden="true" />
     </Teleport>
+    <!-- File shortcuts use the viewer frame, including a retryable chunk failure. -->
+    <ModalDialog
+      :open="Boolean(filePreviewPath && (loading || loadError))"
+      :title="filePreviewPath?.split('/').at(-1) || title"
+      variant="workspace"
+      :close-disabled="checkingClose"
+      @close="onClose"
+    >
+      <div v-if="loading" class="desktop-window__loading" role="status">
+        <LoaderCircle :size="23" aria-hidden="true" />
+        <span>{{ i18n.t('common.loading') }}</span>
+      </div>
+      <div v-else class="desktop-window__load-error" role="alert">
+        <span><TriangleAlert :size="22" aria-hidden="true" /></span>
+        <strong>{{ i18n.t('desktop.windowLoadFailed') }}</strong>
+        <button class="button button--small" type="button" @click="retryLoad">
+          <RotateCw :size="14" aria-hidden="true" />{{ i18n.t('common.retry') }}
+        </button>
+      </div>
+    </ModalDialog>
   </section>
 </template>

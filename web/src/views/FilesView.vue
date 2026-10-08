@@ -81,6 +81,7 @@ import {
 import FileEntryIcon from '@/components/files/FileEntryIcon.vue'
 import { fileEntryIconKind as entryIconKind } from '@/lib/fileEntryPresentation'
 import { fileAPIForHost } from '@/lib/fileHostContext'
+import { requestedFilePath } from '@/lib/fileRoutePath'
 import { fileHostStatus as sharedFileHostStatus, type FileHostStatus } from '@/lib/fileHostStatus'
 import { withoutUnsupportedLightNodes } from '@/lib/nodeFeatureHosts'
 import { filesSplitControlKey } from '@/lib/filesSplit'
@@ -159,26 +160,11 @@ let unsubscribeClusterHostOrder: (() => void) | undefined
 
 type DialogAction = 'mkdir' | 'rename' | 'chmod' | 'compress' | 'extract' | 'trash'
 
-function requestedFilePath(value: unknown): string | undefined {
-  const candidate = Array.isArray(value) ? value[0] : value
-  if (
-    typeof candidate !== 'string'
-    || !candidate.startsWith('/')
-    || candidate.length > 4096
-    || candidate.includes('\0')
-    || candidate.includes('\\')
-  ) {
-    return undefined
-  }
-  if (candidate !== '/' && candidate.slice(1).split('/').some((part) => !part || part === '.' || part === '..')) {
-    return undefined
-  }
-  return candidate
-}
 const shortcutFilePreviewOnly = computed(() => {
   const filePath = requestedFilePath(route.query.file)
   return Boolean(requestDesktopWindowClose && filePath && filePath !== '/')
 })
+const shortcutFileName = computed(() => requestedFilePath(route.query.file)?.split('/').at(-1))
 type PreviewMode = 'text' | 'office' | 'image' | 'audio' | 'video' | 'pdf' | 'metadata'
 type ArchiveFormat = 'tar.gz' | 'zip' | 'tar'
 type FileViewMode = 'list' | 'grid'
@@ -3623,8 +3609,8 @@ onBeforeUnmount(() => {
     </ModalDialog>
 
     <ModalDialog
-      :open="Boolean(previewEntry)"
-      :title="previewMode === 'text' ? phrase('文件编辑器') : previewEntry?.name || phrase('文件查看器')"
+      :open="shortcutFilePreviewOnly || Boolean(previewEntry)"
+      :title="previewMode === 'text' ? phrase('文件编辑器') : previewEntry?.name || shortcutFileName || phrase('文件查看器')"
       :description="previewMode !== 'text' && previewEntry ? formatBytes(previewEntry.sizeBytes) : ''"
       variant="workspace"
       :headerless="previewMode === 'text'"
@@ -3646,7 +3632,23 @@ onBeforeUnmount(() => {
           <Download :size="15" /><span>{{ phrase('下载原文件') }}</span>
         </button>
       </template>
-      <div v-if="previewLoading" class="preview-loading">
+      <div
+        v-if="shortcutFilePreviewOnly && !previewEntry"
+        class="file-empty file-shortcut-preview"
+        :role="shortcutPreviewError ? 'alert' : 'status'"
+      >
+        <template v-if="shortcutPreviewError">
+          <CircleAlert :size="34" />
+          <strong>{{ phrase('文件打开失败') }}</strong>
+          <span>{{ shortcutPreviewError }}</span>
+          <button class="button button--secondary" type="button" @click="retryShortcutPreview">{{ phrase('重试') }}</button>
+        </template>
+        <template v-else>
+          <RefreshCw :size="22" class="spinning" />
+          <span>{{ phrase('正在打开文件…') }}</span>
+        </template>
+      </div>
+      <div v-else-if="previewLoading" class="preview-loading">
         <ModalWindowControls v-if="previewMode === 'text'" class="preview-loading__controls" />
         <RefreshCw :size="22" class="spinning" />{{ phrase('正在打开文件…') }}
       </div>
@@ -3726,22 +3728,6 @@ onBeforeUnmount(() => {
       </div>
     </ModalDialog>
   </section>
-  <div
-    v-if="shortcutFilePreviewOnly && !previewEntry"
-    class="file-empty file-shortcut-preview"
-    :role="shortcutPreviewError ? 'alert' : 'status'"
-  >
-    <template v-if="shortcutPreviewError">
-      <CircleAlert :size="34" />
-      <strong>{{ phrase('文件打开失败') }}</strong>
-      <span>{{ shortcutPreviewError }}</span>
-      <button class="button button--secondary" type="button" @click="retryShortcutPreview">{{ phrase('重试') }}</button>
-    </template>
-    <template v-else>
-      <RefreshCw :size="22" class="spinning" />
-      <span>{{ phrase('正在打开文件…') }}</span>
-    </template>
-  </div>
 </template>
 
 <style scoped>
@@ -4701,6 +4687,11 @@ onBeforeUnmount(() => {
   padding: 16px;
   text-align: center;
   overflow-wrap: anywhere;
+}
+
+.file-shortcut-preview {
+  flex: 1;
+  min-height: 0;
 }
 
 .file-limit {
