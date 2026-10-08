@@ -78,6 +78,8 @@ Vue 三栏工作台 ── REST/SSE ── paneld AgentRuntime
 
 ## 运维闭环与边界
 
+自动模式下，`/home/docker` 的文件改写还会查询 Agent 的原生 Compose 发现结果，覆盖 `.env` 的 `COMPOSE_FILE` 和容器标签声明的自定义文件名。活动 Compose 来源仍需人工审批；普通应用配置保持原策略。旧 Agent、Docker 或分类查询不可用时转为人工审批，不自动放行。此查询不会执行 Compose 或重新部署服务。
+
 AI 使用同一条轻量工作链处理常见实质任务，而不是按“修 Nginx”“清磁盘”等语句复制业务逻辑：
 
 ```text

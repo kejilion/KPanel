@@ -1,6 +1,7 @@
 package panel
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"reflect"
@@ -14,7 +15,9 @@ import (
 )
 
 func TestAIToolApprovalBoundary(t *testing.T) {
-	tools := &panelAITools{}
+	server := &Server{agent: &stubAgent{response: AgentResponse{StatusCode: 200, Body: []byte(`{"composeSource":false}`)}}}
+	server.hostOps = newHostOperationService(server)
+	tools := &panelAITools{server: server}
 	tests := []struct {
 		name      string
 		arguments string
@@ -62,7 +65,7 @@ func TestAIToolApprovalBoundary(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name+test.arguments, func(t *testing.T) {
-			if got := tools.RequiresApproval(test.name, json.RawMessage(test.arguments)); got != test.approval {
+			if got := tools.RequiresApproval(context.Background(), test.name, json.RawMessage(test.arguments)); got != test.approval {
 				t.Fatalf("RequiresApproval()=%v want=%v", got, test.approval)
 			}
 		})

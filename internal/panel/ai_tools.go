@@ -63,7 +63,7 @@ var toolReasonSchema = map[string]any{
 	"description": "Optional model explanation for this tool call. KPanel removes it before validation, approval, audit, and host execution.",
 }
 
-func (t *panelAITools) RequiresApproval(name string, arguments json.RawMessage) bool {
+func (t *panelAITools) RequiresApproval(ctx context.Context, name string, arguments json.RawMessage) bool {
 	arguments, err := normalizeToolArgumentsForTool(name, arguments)
 	if err != nil {
 		return true
@@ -83,7 +83,28 @@ func (t *panelAITools) RequiresApproval(name string, arguments json.RawMessage) 
 		if json.Unmarshal(arguments, &input) != nil {
 			return true
 		}
-		return !aiFileWriteAutoApproved(input.Path)
+		if !aiFileWriteAutoApproved(input.Path) {
+			return true
+		}
+		clean, _ := normalizedAIFilePath(input.Path)
+		if !hasPathPrefix(clean, "/home/docker") {
+			return false
+		}
+		// The Agent owns Compose discovery and filesystem aliases. Basenames
+		// alone cannot identify COMPOSE_FILE or running-project label sources.
+		if t.server == nil || t.server.hostOps == nil {
+			return true
+		}
+		checkCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		defer cancel()
+		response, err := t.server.hostOps.Get(checkCtx, "/v1/files/write-policy", url.Values{"path": []string{clean}}.Encode(), newRequestID())
+		var policy struct {
+			ComposeSource *bool `json:"composeSource"`
+		}
+		if err != nil || response.StatusCode != http.StatusOK || decodeStrictToolArguments(response.Body, &policy) != nil || policy.ComposeSource == nil {
+			return true
+		}
+		return *policy.ComposeSource
 	case "host_file_trash", "host_nginx_reload":
 		return false
 	case "host_system_action":

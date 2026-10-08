@@ -36,7 +36,7 @@ type AgentRuntime interface {
 type ToolExecutor interface {
 	Definitions() []ToolDefinition
 	DryRun(string, json.RawMessage) error
-	RequiresApproval(string, json.RawMessage) bool
+	RequiresApproval(context.Context, string, json.RawMessage) bool
 	Execute(context.Context, ToolExecutionContext, string, json.RawMessage) (string, error)
 }
 
@@ -369,7 +369,7 @@ func (r *NativeRuntime) loop(ctx context.Context, runID string, decision *Decisi
 				conflicted = true
 				break
 			}
-			call.RequiresApproval = r.tools.RequiresApproval(call.Name, call.Arguments)
+			call.RequiresApproval = r.tools.RequiresApproval(ctx, call.Name, call.Arguments)
 			if run.ApprovalMode == ApprovalManual && !definition.ReadOnly {
 				call.RequiresApproval = true
 			}
@@ -851,7 +851,7 @@ func (r *NativeRuntime) generateProposal(ctx context.Context, run Run, provider 
 			if !completedTools[step.Tool] {
 				return fmt.Errorf("proposal references tool not completed by this run %q", step.Tool)
 			}
-			if !forceProcedure && r.tools.RequiresApproval(step.Tool, step.Arguments) {
+			if !forceProcedure && r.tools.RequiresApproval(ctx, step.Tool, step.Arguments) {
 				return nil
 			}
 			if err := r.tools.DryRun(step.Tool, step.Arguments); err != nil {

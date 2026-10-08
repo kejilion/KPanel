@@ -85,7 +85,7 @@ func (f *fakeTools) Definitions() []ToolDefinition {
 	return []ToolDefinition{{Name: "host_action", Description: "test", Schema: json.RawMessage(`{"type":"object"}`), ReadOnly: f.readOnly}}
 }
 func (f *fakeTools) DryRun(string, json.RawMessage) error { return f.dryRunErr }
-func (f *fakeTools) RequiresApproval(string, json.RawMessage) bool {
+func (f *fakeTools) RequiresApproval(context.Context, string, json.RawMessage) bool {
 	if f.approval != nil {
 		return *f.approval
 	}

@@ -477,6 +477,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.requireMethod(w, r, requestID, http.MethodPost, s.fileEntries)
 	case r.URL.Path == "/v1/files/trash":
 		s.requireMethod(w, r, requestID, http.MethodGet, s.fileTrashList)
+	case r.URL.Path == "/v1/files/write-policy":
+		s.requireMethod(w, r, requestID, http.MethodGet, s.fileWritePolicy)
 	case r.URL.Path == "/v1/files/content":
 		s.fileContent(w, r, requestID)
 	case r.URL.Path == "/v1/files/share-content":
