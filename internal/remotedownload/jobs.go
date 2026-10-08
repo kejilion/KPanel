@@ -23,6 +23,7 @@ import (
 
 const (
 	jobSchemaVersion = 1
+	transferJobFile  = "jobs-v1.json"
 	MaxJobs          = 100
 	MaxQueuedJobs    = 10
 	MaxJobStateBytes = 256 << 10
@@ -55,21 +56,34 @@ func OpenJobStore(root string) (*JobStore, error) {
 	return openJobStore(root, readPersistedJobs, writeAtomicPrivateFile)
 }
 
-// Keep the legacy journal intact for rollback. Migrate verified download
-// history only when the new common transfer journal does not exist yet.
+// Use a distinct filename: historical cross-host jobs already own jobs.json
+// with an incompatible version/items schema. Keep both rollback journals intact.
 func OpenTransferJobStore(root, legacyRoot string) (*JobStore, error) {
 	root = filepath.Clean(strings.TrimSpace(root))
 	legacyRoot = filepath.Clean(strings.TrimSpace(legacyRoot))
 	if !filepath.IsAbs(root) || !filepath.IsAbs(legacyRoot) {
 		return nil, errors.New("file transfer job roots must be absolute")
 	}
-	newPath := filepath.Join(root, "jobs.json")
-	if _, err := os.Lstat(newPath); !errors.Is(err, os.ErrNotExist) {
-		return OpenJobStore(root)
+	newPath := filepath.Join(root, transferJobFile)
+	openCurrent := func() (*JobStore, error) {
+		return openJobStoreFile(root, transferJobFile, readPersistedJobs, writeAtomicPrivateFile)
 	}
-	legacy, err := readPersistedJobs(filepath.Join(legacyRoot, "jobs.json"))
+	if _, err := os.Lstat(newPath); !errors.Is(err, os.ErrNotExist) {
+		return openCurrent()
+	}
+	// Prefer valid rc.13 common history over the older download-only journal.
+	previousPath := filepath.Join(root, "jobs.json")
+	legacy, err := readPersistedJobs(previousPath)
+	if errors.Is(err, ErrJobStoreUnavailable) && isHistoricalCrossHostIndex(previousPath) {
+		// This separate historical facility is retained for rollback, never
+		// imported as single-file jobs or replayed by the common job runner.
+		err = os.ErrNotExist
+	}
 	if errors.Is(err, os.ErrNotExist) {
-		return OpenJobStore(root)
+		legacy, err = readPersistedJobs(filepath.Join(legacyRoot, "jobs.json"))
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		return openCurrent()
 	}
 	if err != nil {
 		return &JobStore{root: root, path: newPath, jobs: make(map[string]contract.FileRemoteDownloadJob)}, nil
@@ -84,11 +98,47 @@ func OpenTransferJobStore(root, legacyRoot string) (*JobStore, error) {
 	if err := writeAtomicPrivateFile(root, newPath, payload); err != nil {
 		return &JobStore{root: root, path: newPath, jobs: make(map[string]contract.FileRemoteDownloadJob)}, nil
 	}
-	return OpenJobStore(root)
+	return openCurrent()
+}
+
+func isHistoricalCrossHostIndex(filename string) bool {
+	// Only recognize the old envelope; no record content becomes trusted or
+	// executable. Its original bounds were 32 jobs and 8 MiB of JSON.
+	const maxHistoricalBytes = 8 << 20
+	info, err := os.Lstat(filename)
+	if err != nil || !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > maxHistoricalBytes {
+		return false
+	}
+	file, err := os.Open(filename)
+	if err != nil {
+		return false
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, maxHistoricalBytes+1))
+	if err != nil || len(data) > maxHistoricalBytes {
+		return false
+	}
+	var state struct {
+		Version int               `json:"version"`
+		Jobs    []json.RawMessage `json:"jobs"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	var extra any
+	return decoder.Decode(&state) == nil && decoder.Decode(&extra) == io.EOF &&
+		state.Version == 1 && state.Jobs != nil && len(state.Jobs) <= 32
 }
 
 func openJobStore(
 	root string,
+	readState func(string) (persistedJobs, error),
+	writeAtomic func(string, string, []byte) error,
+) (*JobStore, error) {
+	return openJobStoreFile(root, "jobs.json", readState, writeAtomic)
+}
+
+func openJobStoreFile(
+	root, filename string,
 	readState func(string) (persistedJobs, error),
 	writeAtomic func(string, string, []byte) error,
 ) (*JobStore, error) {
@@ -97,7 +147,7 @@ func openJobStore(
 		return nil, errors.New("remote download job root must be absolute")
 	}
 	store := &JobStore{
-		root: root, path: filepath.Join(root, "jobs.json"), jobs: make(map[string]contract.FileRemoteDownloadJob),
+		root: root, path: filepath.Join(root, filename), jobs: make(map[string]contract.FileRemoteDownloadJob),
 		now: time.Now, writeAtomic: writeAtomic,
 	}
 	// The job index is an optional runtime facility. Filesystem and state

@@ -31,9 +31,12 @@
 
 同一业务只能有一个权威写入存储。缓存必须可丢弃并可从权威数据或真实产物重建。
 
-通用文件传输的任务索引位于 Panel 数据目录 `file-transfers/jobs.json`，沿用有界任务 Store（100 项、
-256 KiB、保留 7 天）；首次使用仅校验并复制旧 `remote-downloads/jobs.json`，保留旧文件供回滚，
-不进行双写。损坏索引使后台任务不可用，不能丢弃历史后伪装为空。重启将活动任务标记为中断，
+通用文件传输的任务索引位于 Panel 数据目录 `file-transfers/jobs-v1.json`，沿用有界任务 Store（100 项、
+256 KiB、保留 7 天）。首次使用优先校验并复制 rc.13 的 `file-transfers/jobs.json`（`schemaVersion: 1`），
+否则校验并复制旧 `remote-downloads/jobs.json`；原件保留供回滚，不进行双写。
+历史跨主机批量任务也使用 `file-transfers/jobs.json`，但采用 `version: 1` / `items` 格式；仅识别其有界
+JSON 外层并保留原件，不将它误读为通用任务或自动重放。未知、损坏或不可读的索引仍使后台任务不可用，
+不以空历史替换；已存在的版本化通用索引是唯一权威来源。重启将活动任务标记为中断，
 索引不保存完整下载 URL。跨主机记录只保存来源节点和目标主机标识。
 
 Agent 接收检查点位于自身文件回收站私有目录 `receive-sessions.json`（512 KiB、32 个活动会话、
