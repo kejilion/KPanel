@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { isTextEntry, isTouchPrimary } from '../../lib/touchFocus'
 import { computed, nextTick, onBeforeUnmount, provide, ref, useId, watch } from 'vue'
 import { Maximize2, Minimize2, X } from '@lucide/vue'
 import { useI18n } from '@/i18n'
@@ -108,7 +109,9 @@ async function focusInitialElement(sequence: number): Promise<void> {
     !isTopModal(modalID) ||
     !panel.value
   ) return
-  focusWithoutScroll(focusableElements()[0] || panel.value)
+  const first = focusableElements()[0]
+  // 触屏设备上首个可聚焦元素若是文本输入，聚焦会弹出软键盘打断操作，改为聚焦面板本身
+  focusWithoutScroll(first && !(isTouchPrimary() && isTextEntry(first)) ? first : panel.value)
 }
 
 async function restoreOpener(element: HTMLElement | null, sequence: number): Promise<void> {

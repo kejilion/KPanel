@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { isTouchPrimary } from '../lib/touchFocus'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch, type CSSProperties } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { phraseCatalogVersion, translatePhrase, usePhraseCatalog } from '@/i18n/phrase'
@@ -1155,7 +1156,7 @@ onBeforeUnmount(stopKPanelReleaseRequest)
         <p>启用前需要重新验证当前密码。配置完成后，所有现有会话都会失效。</p>
         <label class="field">
           <span>当前密码</span>
-          <input v-model="totpForm.currentPassword" type="password" autocomplete="current-password" required autofocus />
+          <input v-model="totpForm.currentPassword" type="password" autocomplete="current-password" required :autofocus="!isTouchPrimary()" />
         </label>
         <div v-if="totpError" class="inline-alert inline-alert--danger">{{ totpError }}</div>
         <div class="totp-actions">
@@ -1177,7 +1178,7 @@ onBeforeUnmount(stopKPanelReleaseRequest)
             </label>
             <label class="field">
               <span>输入身份验证器中的 6 位验证码</span>
-              <input v-model.trim="totpForm.code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" required autofocus />
+              <input v-model.trim="totpForm.code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" required :autofocus="!isTouchPrimary()" />
             </label>
           </div>
         </div>

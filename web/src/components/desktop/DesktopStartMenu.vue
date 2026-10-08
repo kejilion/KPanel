@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { focusTextInput } from '../../lib/touchFocus'
 import { computed, nextTick, ref, watch } from 'vue'
 import { LayoutPanelLeft, LogOut, Moon, RotateCw, Search, Sun } from '@lucide/vue'
 import LanguageSelector from '@/components/common/LanguageSelector.vue'
@@ -178,7 +179,7 @@ watch(() => props.open, async (open) => {
   query.value = ''
   active.value = 0
   await nextTick()
-  input.value?.focus({ preventScroll: true })
+  focusTextInput(input.value, { preventScroll: true })
 }, { immediate: true })
 
 watch(query, () => {

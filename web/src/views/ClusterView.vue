@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { focusTextInput } from '../lib/touchFocus'
 import ClusterShareThemes from '@/components/cluster/ClusterShareThemes.vue'
 import { computed, defineAsyncComponent, inject, nextTick, onBeforeUnmount, onMounted, reactive, ref, useId, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
@@ -538,7 +539,7 @@ async function load(silent = false, replaceInFlight = false): Promise<void> {
 function openAdd(): void {
   addMode.value = 'single'
   addOpen.value = true
-  void nextTick(() => addAccessInput.value?.focus())
+  void nextTick(() => focusTextInput(addAccessInput.value))
 }
 
 function closeAdd(): void {
@@ -584,7 +585,7 @@ async function setAddMode(mode: AddMode): Promise<void> {
       startLightEnrollmentWatch()
     }
     await nextTick()
-    addAccessInput.value?.focus()
+    focusTextInput(addAccessInput.value)
     return
   }
   stopLightEnrollmentWatch()
@@ -695,12 +696,12 @@ async function addHost(): Promise<void> {
       return
     }
     originError.value = '接入凭据格式无效，请完整粘贴目标 KPanel 生成的三行内容。'
-    void nextTick(() => addAccessInput.value?.focus())
+    void nextTick(() => focusTextInput(addAccessInput.value))
     return
   }
   if (originAssessment.value.mode === 'invalid') {
     originError.value = originAssessment.value.message
-    void nextTick(() => addAccessInput.value?.focus())
+    void nextTick(() => focusTextInput(addAccessInput.value))
     return
   }
   originError.value = ''
@@ -729,7 +730,7 @@ async function addHost(): Promise<void> {
       ['cluster_origin_invalid', 'cluster_origin_blocked'].includes(reason.code)
     ) {
       originError.value = message
-      void nextTick(() => addAccessInput.value?.focus())
+      void nextTick(() => focusTextInput(addAccessInput.value))
     }
     toast.danger('添加主机失败', message)
   } finally {

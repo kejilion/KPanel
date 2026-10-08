@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { isTouchPrimary } from '../../lib/touchFocus'
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type {
   Compartment as CompartmentType,
@@ -391,7 +392,7 @@ async function initialize(): Promise<void> {
       editor.scrollDOM.scrollTop = props.session.scrollTop
       editor.scrollDOM.scrollLeft = props.session.scrollLeft
     }
-    if (props.autoFocus) editor.focus()
+    if (props.autoFocus && !isTouchPrimary()) editor.focus()
     emitStatus(editor.state)
     emit('ready', { ...language, loadMs: performance.now() - startedAt })
   } catch (error) {

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { focusTextInput } from '../lib/touchFocus'
 import { computed, defineAsyncComponent, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from '@/i18n'
@@ -2020,7 +2021,7 @@ function openRemoteDownloadDialog(): void {
   remoteDownloadName.value = ''
   remoteDownloadFormErrorCode.value = undefined
   remoteDownloadDialogOpen.value = true
-  void nextTick().then(() => nextTick()).then(() => remoteDownloadURLInput.value?.focus({ preventScroll: true }))
+  void nextTick().then(() => nextTick()).then(() => focusTextInput(remoteDownloadURLInput.value, { preventScroll: true }))
 }
 
 function closeRemoteDownloadDialog(): void {

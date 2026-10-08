@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { focusTextInput } from '../../lib/touchFocus'
 import {
   computed,
   markRaw,
@@ -347,7 +348,7 @@ const entries = computed(() =>
 function toggleSidebar(): void {
   moreOpen.value = false
   sidebarOpen.value = !sidebarOpen.value
-  if (sidebarOpen.value && compact.value) void nextTick(() => sidebarSearch.value?.focus())
+  if (sidebarOpen.value && compact.value) void nextTick(() => focusTextInput(sidebarSearch.value))
 }
 function dismissMore(): void {
   moreOpen.value = false

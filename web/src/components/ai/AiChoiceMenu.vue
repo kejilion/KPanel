@@ -1,4 +1,5 @@
 <script lang="ts">
+import { focusTextInput } from '../../lib/touchFocus'
 export interface AiChoiceOption {
   value: string
   label: string
@@ -35,7 +36,7 @@ function availableOptions(){return Array.from(root.value?.querySelectorAll<HTMLB
 function focusOption(preferSelected=true){const options=availableOptions();if(!options.length)return;const target=preferSelected?options.find(item=>item.dataset.value===props.modelValue):options[0];(target||options[0])?.focus()}
 function updateMenuPosition(){if(!open.value||!mobileViewport.value||!trigger.value)return;const rect=trigger.value.getBoundingClientRect();menuStyle.value={'--ai-choice-menu-bottom':`${Math.max(12,window.innerHeight-rect.top+8)}px`}}
 function updateViewportMode(){mobileViewport.value=window.innerWidth<=680;if(!mobileViewport.value)menuStyle.value={};else updateMenuPosition()}
-function show(){if(open.value)return;open.value=true;query.value='';void nextTick(()=>{updateViewportMode();showSearch.value?searchInput.value?.focus():focusOption()})}
+function show(){if(open.value)return;open.value=true;query.value='';void nextTick(()=>{updateViewportMode();showSearch.value?focusTextInput(searchInput.value):focusOption()})}
 function close(restoreFocus=false){if(!open.value)return;open.value=false;query.value='';if(restoreFocus)void nextTick(()=>trigger.value?.focus())}
 function toggle(){open.value?close():show()}
 function choose(option:AiChoiceOption){if(option.disabled)return;emit('change',option.value);close(true)}

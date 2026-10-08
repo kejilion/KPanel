@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { isTouchPrimary } from '../../lib/touchFocus'
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
@@ -116,6 +117,7 @@ function writeTerminalOutput(data: string | Uint8Array): void {
 }
 
 function focusTerminal(): void {
+  if (isTouchPrimary()) return
   terminal?.focus()
 }
 
