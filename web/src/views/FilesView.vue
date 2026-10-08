@@ -160,9 +160,11 @@ const fileHostId = ref(typeof route.query.hostId === 'string' ? route.query.host
 const fileAPI = computed(() => fileAPIForHost(fileHostId.value))
 const archiveTools = ref<InstanceType<typeof FileArchiveTools>>()
 
-function archiveChanged(hostId: string, path: string): void {
+function archiveChanged(hostId: string, path: string, reveal: string[] = []): void {
   notifyFileDirectoriesChanged([path], fileWindowChangeOrigin, [], hostId)
-  if (fileHostId.value === hostId && currentPath.value === path) void loadDirectory()
+  if (fileHostId.value === hostId && currentPath.value === path) {
+    void loadDirectory().then(() => revealEntries(reveal, hostId))
+  }
 }
 function openArchiveResult(hostId: string, path: string): void {
   if (fileHostId.value === hostId) void navigateDirectory(path)
@@ -494,6 +496,7 @@ const thumbnailFailures = ref(new Set<string>())
 let directoryController: AbortController | undefined
 let fileHostController: AbortController | undefined
 let queuedRemoteDownloadRefreshes = new Set<string>()
+let queuedRevealPaths = new Set<string>()
 let archiveController: AbortController | undefined
 let externalUploadController: AbortController | undefined
 let fileTransferController: AbortController | undefined
@@ -835,9 +838,13 @@ async function loadDirectory(path = currentPath.value, append = false): Promise<
       loading.value = false
       directoryController = undefined
       const refreshTargets = queuedRemoteDownloadRefreshes
+      const revealPaths = [...queuedRevealPaths]
       queuedRemoteDownloadRefreshes = new Set<string>()
+      queuedRevealPaths = new Set<string>()
       if (refreshTargets.has(currentPath.value) && !unmounted) {
-        void loadDirectory(currentPath.value)
+        void loadDirectory(currentPath.value).then(() => revealEntries(revealPaths))
+      } else if (revealPaths.length && !unmounted) {
+        void revealEntries(revealPaths)
       }
     }
   }
@@ -898,21 +905,40 @@ function retryShortcutPreview(): void {
   void openRequestedFile(route.query.file)
 }
 
+function destinationPaths(result: Pick<FileActionResult, 'succeeded'>): string[] {
+  return result.succeeded.flatMap((item) => item.destination ? [item.destination] : [])
+}
+
+function parentDirectory(path: string): string {
+  return path.slice(0, path.lastIndexOf('/')) || '/'
+}
+
 async function revealRouteSelection(value: unknown): Promise<void> {
   const target = requestedFilePath(value)
   if (!target || target === '/') return
-  const hostId = fileHostId.value
-  const parent = target.slice(0, target.lastIndexOf('/')) || '/'
-  if (parent !== currentPath.value) return
-  // The directory is paginated; page forward until the target is loaded.
+  await revealEntries([target])
+}
+
+// Selects and scrolls to the entries a finished operation produced. Paths
+// outside the directory on screen (or on another host) are ignored so a late
+// result never steals focus from wherever the user navigated meanwhile.
+async function revealEntries(paths: readonly string[], hostId = fileHostId.value): Promise<void> {
+  const targets = [...new Set(paths)].filter((path) => (
+    path && path !== '/' && parentDirectory(path) === currentPath.value
+  ))
+  if (!targets.length || unmounted || hostId !== fileHostId.value) return
+  const target = targets[0]!
+  // The directory is paginated; page forward until the first target is loaded.
   for (let page = 0; page < 20; page += 1) {
     if (directory.value?.entries.some((entry) => entry.path === target)) break
     if (!directory.value?.nextOffset) return
     await loadDirectory(currentPath.value, true)
-    if (unmounted || hostId !== fileHostId.value) return
+    if (unmounted || hostId !== fileHostId.value || parentDirectory(target) !== currentPath.value) return
   }
-  if (!directory.value?.entries.some((entry) => entry.path === target)) return
-  selected.value = new Set([target])
+  const loaded = new Set(directory.value?.entries.map((entry) => entry.path))
+  const present = targets.filter((path) => loaded.has(path))
+  if (!present.length) return
+  selected.value = new Set(present)
   selectionAnchor.value = target
   await nextTick()
   const rows = filesPage.value?.querySelectorAll<HTMLElement>('[data-entry-path]')
@@ -1466,6 +1492,7 @@ async function transferInternalFileDrop(event: DragEvent, target: string): Promi
           : `${result.succeeded.length} 项成功，${result.failed.length} 项失败：${result.failed[0]?.detail || '请刷新后重试'}`
         : undefined,
     }
+    await revealEntries(destinationPaths(result), hostId)
   } catch (error) {
     if (!isCurrentFileTransfer(sequence)) return
     if (controller?.signal.aborted) {
@@ -1555,6 +1582,7 @@ async function transferCrossPanelFileDrop(event: DragEvent, target: string): Pro
     }
     if (result.succeeded.length) {
       if (!unmounted) await loadDirectory()
+      await revealEntries(result.succeeded.map(({ entry }) => entry.path), hostId)
     }
   } finally {
     if (isCurrentFileTransfer(sequence) && fileTransferController === controller) fileTransferController = undefined
@@ -1885,6 +1913,7 @@ async function pasteClipboard(target = currentPath.value): Promise<void> {
           : `${result.succeeded.length} 项成功，${result.failed.length} 项失败：${result.failed[0]?.detail || '请刷新后重试'}`
         : undefined,
     }
+    await revealEntries(destinationPaths(result), hostId)
   } catch (error) {
     if (!isCurrentFileTransfer(sequence)) return
     fileTransferState.value = {
@@ -2009,6 +2038,9 @@ async function submitDialog(): Promise<void> {
     dialogValue.value = ''
     dialogEntries.value = []
     if (createdFolder && !result.failed.length) await selectCreatedEntry(createdFolder)
+    else if (action === 'rename' || action === 'compress' || action === 'extract') {
+      await revealEntries(destinationPaths(result), hostId)
+    }
   } catch (error) {
     if (controller?.signal.aborted) {
       if (!unmounted) toast.success('操作已停止', '未完成的临时文件已清理。')
@@ -2206,11 +2238,14 @@ function replaceRemoteDownloadJobs(jobs: FileRemoteDownloadJob[]): void {
   const initialLoad = !remoteDownloadJobsInitialized
   remoteDownloadJobsInitialized = true
   remoteDownloadJobs.value = jobs
-  const targetsToReconcile = new Set<string>()
+  const targetsToReconcile = new Map<string, string[]>()
   for (const job of jobs) {
     const earlier = previous.get(job.id)
     if (earlier && isRemoteDownloadJobActive(earlier) && !isRemoteDownloadJobActive(job)) {
-      targetsToReconcile.add(job.targetDirectory)
+      targetsToReconcile.set(job.targetDirectory, [
+        ...(targetsToReconcile.get(job.targetDirectory) ?? []),
+        ...completedRemoteDownloadPath(job),
+      ])
       continue
     }
     if (!earlier && initialLoad && !isRemoteDownloadJobActive(job)) {
@@ -2221,10 +2256,10 @@ function replaceRemoteDownloadJobs(jobs: FileRemoteDownloadJob[]): void {
         && Number.isFinite(directoryReadAt)
         && Number.isFinite(jobFinishedAt)
         && jobFinishedAt > directoryReadAt
-      ) targetsToReconcile.add(job.targetDirectory)
+      ) targetsToReconcile.set(job.targetDirectory, targetsToReconcile.get(job.targetDirectory) ?? [])
     }
   }
-  for (const target of targetsToReconcile) reconcileRemoteDownloadTarget(target)
+  for (const [target, reveal] of targetsToReconcile) reconcileRemoteDownloadTarget(target, reveal)
 }
 
 function upsertRemoteDownloadJob(job: FileRemoteDownloadJob): void {
@@ -2256,15 +2291,20 @@ async function loadRemoteDownloadJobs(silent = false): Promise<void> {
   }
 }
 
-function reconcileRemoteDownloadTarget(target: string): void {
+function reconcileRemoteDownloadTarget(target: string, reveal: readonly string[] = []): void {
   notifyFileDirectoriesChanged([target], fileWindowChangeOrigin, [], fileHostId.value)
   if (unmounted) return
   if (directoryController) {
     queuedRemoteDownloadRefreshes.add(target)
+    reveal.forEach((path) => queuedRevealPaths.add(path))
     return
   }
   if (currentPath.value !== target) return
-  void loadDirectory(target)
+  void loadDirectory(target).then(() => revealEntries(reveal))
+}
+
+function completedRemoteDownloadPath(job: FileRemoteDownloadJob): string[] {
+  return job.state === 'complete' && job.entry?.path ? [job.entry.path] : []
 }
 
 function normalizedRemoteDownloadOrigin(value: string): string {
@@ -2337,7 +2377,7 @@ async function submitRemoteDownload(): Promise<void> {
       remoteDownloadJobsError.value = undefined
       closeRemoteDownloadDialog()
       if (isRemoteDownloadJobActive(recovered)) scheduleRemoteDownloadPoll(800)
-      else reconcileRemoteDownloadTarget(recovered.targetDirectory)
+      else reconcileRemoteDownloadTarget(recovered.targetDirectory, completedRemoteDownloadPath(recovered))
       return
     }
     setRemoteDownloadJobsError(error)
@@ -2437,7 +2477,7 @@ function uploadTaskStatus(task: UploadTask): string {
   return '上传失败'
 }
 
-async function runFileUploadTask(id: string, source: Extract<UploadTaskSource, { kind: 'file' }>): Promise<void> {
+async function runFileUploadTask(id: string, source: Extract<UploadTaskSource, { kind: 'file' }>): Promise<string | undefined> {
   updateUploadTask(id, { phase: 'running', progress: 0, detail: undefined })
   const onProgress = (progress: number): void => updateUploadTask(id, {
     progress: Math.max(0, Math.min(100, progress)),
@@ -2454,15 +2494,16 @@ async function runFileUploadTask(id: string, source: Extract<UploadTaskSource, {
         await fileAPIForHost(source.hostId).upload(source.target, source.file, true, onProgress)
       } catch (overwriteError) {
         updateUploadTask(id, { phase: 'error', detail: errorMessage(overwriteError) })
-        return
+        return undefined
       }
     } else {
       updateUploadTask(id, { phase: 'error', detail: errorMessage(error) })
-      return
+      return undefined
     }
   }
   updateUploadTask(id, { phase: 'success', progress: 100, detail: undefined })
   scheduleUploadTaskClear(id)
+  return `${source.target === '/' ? '' : source.target}/${source.file.name}`
 }
 
 async function uploadFiles(
@@ -2475,16 +2516,21 @@ async function uploadFiles(
   // A few uploads in flight hide per-file round trips (request, atomic
   // commit, audit) without competing with one another for bandwidth.
   let cursor = 0
+  const uploaded: string[] = []
   await Promise.all(Array.from({ length: Math.min(FILE_UPLOAD_CONCURRENCY, values.length) }, async () => {
     while (cursor < values.length) {
       const file = values[cursor++]!
       const source = { kind: 'file', file, target, hostId } as const
       const task = createUploadTask(source)
-      await runFileUploadTask(task.id, source)
+      const path = await runFileUploadTask(task.id, source)
+      if (path) uploaded.push(path)
     }
   }))
   if (uploadInput.value) uploadInput.value.value = ''
-  if (!unmounted && fileHostId.value === hostId && currentPath.value === target) await loadDirectory(target)
+  if (!unmounted && fileHostId.value === hostId && currentPath.value === target) {
+    await loadDirectory(target)
+    await revealEntries(uploaded, hostId)
+  }
 }
 
 function externalUploadErrorMessage(error: unknown): string {
@@ -2506,6 +2552,7 @@ async function runDirectoryUploadTask(
   hostId: string,
 ): Promise<void> {
   updateUploadTask(id, { phase: 'running', progress: 0, detail: undefined })
+  let uploaded: string[] = []
   try {
     const result = await uploadExternalDrop(manifest, fileAPIForHost(hostId), signal, (progress) => {
       const percent = progress.totalBytes > 0
@@ -2515,6 +2562,7 @@ async function runDirectoryUploadTask(
           : 100
       updateUploadTask(id, { progress: Math.max(0, Math.min(100, percent)) })
     }, target)
+    uploaded = result.entries.map((entry) => entry.path)
     if (signal.aborted || unmounted) return
     if (result.failed.length) {
       updateUploadTask(id, { phase: 'error', detail: result.failed[0]!.detail })
@@ -2527,7 +2575,10 @@ async function runDirectoryUploadTask(
     updateUploadTask(id, { phase: 'error', detail: externalUploadErrorMessage(error) })
   } finally {
     if (!unmounted) {
-      if (fileHostId.value === hostId && currentPath.value === target) await loadDirectory(target)
+      if (fileHostId.value === hostId && currentPath.value === target) {
+        await loadDirectory(target)
+        await revealEntries(uploaded, hostId)
+      }
       notifyFileDirectoriesChanged([target], fileWindowChangeOrigin, [], hostId)
     }
   }
@@ -2552,8 +2603,11 @@ async function retryUploadTask(id: string): Promise<void> {
   // Retrying after navigation must never target a different host.
   if (source.hostId !== fileHostId.value) return
   if (source.kind === 'file') {
-    await runFileUploadTask(id, source)
-    if (!unmounted && fileHostId.value === source.hostId && currentPath.value === source.target) await loadDirectory(source.target)
+    const path = await runFileUploadTask(id, source)
+    if (!unmounted && fileHostId.value === source.hostId && currentPath.value === source.target) {
+      await loadDirectory(source.target)
+      if (path) await revealEntries([path], source.hostId)
+    }
     return
   }
   if (externalUploadController) {

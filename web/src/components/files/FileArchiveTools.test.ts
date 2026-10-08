@@ -219,7 +219,7 @@ describe('archive UI host and task ownership', () => {
     mocks.archiveJobs.mockResolvedValueOnce({ items: [job] }).mockResolvedValue({ items: [{ ...job, state: 'complete', result: { action: 'extract', succeeded: [{ path: source.path, destination: '/site' }], failed: [] } }] })
     const view = await open()
     await vi.advanceTimersByTimeAsync(2500); await flushPromises()
-    expect(view.emitted('changed')).toEqual([['host-a', '/']])
+    expect(view.emitted('changed')).toEqual([['host-a', '/', ['/site']]])
     await vi.advanceTimersByTimeAsync(15000)
     expect(mocks.archiveJobs).toHaveBeenCalledTimes(2)
   })
