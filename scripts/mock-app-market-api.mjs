@@ -1988,6 +1988,9 @@ createServer(async (request, response) => {
     }
   }
   if (request.method === 'GET' && url.pathname === '/api/v1/files/entry') {
+    // Opt-in latency for preview loading journeys; normal fixtures stay immediate.
+    const delay = Math.min(10_000, Math.max(0, Number(process.env.KPANEL_MOCK_FILE_ENTRY_DELAY_MS) || 0))
+    if (delay) await new Promise((resolve) => setTimeout(resolve, delay))
     const entry = mockFiles.find((item) => item.path === url.searchParams.get('path'))
     send(response, entry ? 200 : 404, entry || { title: '文件不存在', status: 404, code: 'not_found' })
     return

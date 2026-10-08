@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import { useRouter } from 'vue-router'
 import DesktopWindow from './DesktopWindow.vue'
 import { resetDesktopModeForTest, useDesktopMode } from '@/stores/desktopMode'
@@ -84,6 +84,66 @@ describe('DesktopWindow lazy view loading', () => {
     expect(wrapper.find('.desktop-window__load-error').exists()).toBe(true)
     wrapper.unmount()
   })
+
+  it('waits for the file page chunk without opening a placeholder or desktop shell', async () => {
+    let resolvePage!: (value: { template: string }) => void
+    routeMocks.resolveWindowComponent.mockReturnValueOnce(new Promise((resolve) => { resolvePage = resolve }))
+    const desktop = useDesktopMode()
+    const id = desktop.openWindow('/files?file=%2Feditor-demo%2FREADME.md', 'route.files', true)
+    const windowState = desktop.windows.value.find((item) => item.id === id)!
+    const wrapper = mount(DesktopWindow, { attachTo: document.body, props: { windowState, icon: () => null } })
+    try {
+      expect(wrapper.get('.desktop-window').isVisible()).toBe(false)
+      await flushPromises()
+      expect(wrapper.get('.desktop-window').isVisible()).toBe(false)
+      expect(new DOMWrapper(document.body).find('.modal-panel').exists()).toBe(false)
+      resolvePage({ template: '<main data-testid="file-page" />' })
+      await flushPromises()
+      expect(wrapper.get('.desktop-window').isVisible()).toBe(false)
+      expect(new DOMWrapper(document.body).find('.modal-panel').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="file-page"]').exists()).toBe(true)
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('keeps a failed preview chunk retryable in the preview frame', async () => {
+    routeMocks.resolveWindowComponent.mockRejectedValueOnce(new Error('chunk unavailable'))
+      .mockResolvedValueOnce({ template: '<main />' })
+    const desktop = useDesktopMode()
+    const id = desktop.openWindow('/files?file=%2Fbackup.tar.gz', 'route.files', true)
+    const windowState = desktop.windows.value.find((item) => item.id === id)!
+    const wrapper = mount(DesktopWindow, { attachTo: document.body, props: { windowState, icon: () => null } })
+    try {
+      await flushPromises()
+      const panel = new DOMWrapper(document.body).get('.modal-panel--workspace')
+      expect(panel.get('[role="alert"]').isVisible()).toBe(true)
+      expect(wrapper.get('.desktop-window').isVisible()).toBe(false)
+      await panel.get('.desktop-window__load-error button').trigger('click')
+      await flushPromises()
+      expect(routeMocks.resolveWindowComponent).toHaveBeenCalledTimes(2)
+      expect(new DOMWrapper(document.body).find('.modal-panel').exists()).toBe(false)
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it.each(['/files?path=%2Feditor-demo', '/files?file=%2F', '/files?file=relative.txt', '/files?file=%2Froot%2F..%2Ffile'])(
+    'retains the normal desktop shell for %s', async (path) => {
+      routeMocks.resolveWindowComponent.mockResolvedValue({ template: '<main />' })
+      const desktop = useDesktopMode()
+      const id = desktop.openWindow(path, 'route.files', true)
+      const windowState = desktop.windows.value.find((item) => item.id === id)!
+      const wrapper = mount(DesktopWindow, { attachTo: document.body, props: { windowState, icon: () => null } })
+      try {
+        await flushPromises()
+        expect(wrapper.get('.desktop-window').isVisible()).toBe(true)
+        expect(new DOMWrapper(document.body).find('.modal-panel').exists()).toBe(false)
+      } finally {
+        wrapper.unmount()
+      }
+    },
+  )
 
   it('keeps lazily loaded page components out of Vue reactivity', async () => {
     routeMocks.resolveWindowComponent.mockResolvedValue({

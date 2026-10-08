@@ -81,6 +81,7 @@ import {
 import FileEntryIcon from '@/components/files/FileEntryIcon.vue'
 import { fileEntryIconKind as entryIconKind } from '@/lib/fileEntryPresentation'
 import { fileAPIForHost } from '@/lib/fileHostContext'
+import { requestedFilePath } from '@/lib/fileRoutePath'
 import { fileHostStatus as sharedFileHostStatus, type FileHostStatus } from '@/lib/fileHostStatus'
 import { withoutUnsupportedLightNodes } from '@/lib/nodeFeatureHosts'
 import { filesSplitControlKey } from '@/lib/filesSplit'
@@ -159,26 +160,11 @@ let unsubscribeClusterHostOrder: (() => void) | undefined
 
 type DialogAction = 'mkdir' | 'rename' | 'chmod' | 'compress' | 'extract' | 'trash'
 
-function requestedFilePath(value: unknown): string | undefined {
-  const candidate = Array.isArray(value) ? value[0] : value
-  if (
-    typeof candidate !== 'string'
-    || !candidate.startsWith('/')
-    || candidate.length > 4096
-    || candidate.includes('\0')
-    || candidate.includes('\\')
-  ) {
-    return undefined
-  }
-  if (candidate !== '/' && candidate.slice(1).split('/').some((part) => !part || part === '.' || part === '..')) {
-    return undefined
-  }
-  return candidate
-}
 const shortcutFilePreviewOnly = computed(() => {
   const filePath = requestedFilePath(route.query.file)
   return Boolean(requestDesktopWindowClose && filePath && filePath !== '/')
 })
+const shortcutFileName = computed(() => requestedFilePath(route.query.file)?.split('/').at(-1))
 type PreviewMode = 'text' | 'office' | 'image' | 'audio' | 'video' | 'pdf' | 'metadata'
 type ArchiveFormat = 'tar.gz' | 'zip' | 'tar'
 type FileViewMode = 'list' | 'grid'
@@ -461,6 +447,7 @@ const previewEntry = ref<FileEntry>()
 const previewContent = ref('')
 const previewLoading = ref(false)
 const shortcutPreviewError = ref('')
+const shortcutPreviewStarted = ref(false)
 let previewRequestId = 0
 const previewSaving = ref(false)
 const previewDirty = ref(false)
@@ -863,9 +850,12 @@ async function openRequestedFile(value: unknown): Promise<void> {
   try {
     const entry = await fileAPI.value.entry(filePath)
     if (unmounted || hostId !== fileHostId.value || filePath !== openedRouteFile) return
+    shortcutPreviewStarted.value = true
     if (entry.kind !== 'file') {
       shortcutPreviewError.value = phrase('该路径现在不是普通文件，请从文件管理重新添加。')
-      toast.show('目标类型已变化', { message: '该路径现在不是普通文件，请从文件管理重新添加。' })
+      if (!shortcutFilePreviewOnly.value) {
+        toast.show('目标类型已变化', { message: '该路径现在不是普通文件，请从文件管理重新添加。' })
+      }
       return
     }
     selected.value = new Set([entry.path])
@@ -873,8 +863,9 @@ async function openRequestedFile(value: unknown): Promise<void> {
     await openPreview(entry)
   } catch (error) {
     if (unmounted || hostId !== fileHostId.value || filePath !== openedRouteFile) return
+    shortcutPreviewStarted.value = true
     shortcutPreviewError.value = errorMessage(error)
-    toast.danger('桌面目标无法打开', errorMessage(error))
+    if (!shortcutFilePreviewOnly.value) toast.danger('桌面目标无法打开', errorMessage(error))
   }
 }
 
@@ -992,7 +983,7 @@ async function openPreview(entry: FileEntry): Promise<void> {
   } catch (error) {
     if (unmounted || hostId !== fileHostId.value || requestId !== previewRequestId) return
     shortcutPreviewError.value = errorMessage(error)
-    toast.danger('文件打开失败', errorMessage(error))
+    if (!shortcutFilePreviewOnly.value) toast.danger('文件打开失败', errorMessage(error))
     previewEntry.value = undefined
   } finally {
     if (requestId === previewRequestId) previewLoading.value = false
@@ -2540,6 +2531,12 @@ function closeContextMenuOnScroll(event: Event): void {
 
 function handleFileShortcut(event: KeyboardEvent): void {
   if (!desktopWindowActive.value) return
+  if (shortcutFilePreviewOnly.value && !shortcutPreviewStarted.value && event.key === 'Escape'
+    && !event.defaultPrevented && !event.isComposing) {
+    event.preventDefault()
+    closePreview()
+    return
+  }
   if (event.key === 'Escape' && hostSwitcher.value?.isOpen) {
     event.preventDefault()
     closeFileHostPicker(true)
@@ -3623,8 +3620,8 @@ onBeforeUnmount(() => {
     </ModalDialog>
 
     <ModalDialog
-      :open="Boolean(previewEntry)"
-      :title="previewMode === 'text' ? phrase('文件编辑器') : previewEntry?.name || phrase('文件查看器')"
+      :open="Boolean(previewEntry) || (shortcutFilePreviewOnly && shortcutPreviewStarted)"
+      :title="previewMode === 'text' ? phrase('文件编辑器') : previewEntry?.name || shortcutFileName || phrase('文件查看器')"
       :description="previewMode !== 'text' && previewEntry ? formatBytes(previewEntry.sizeBytes) : ''"
       variant="workspace"
       :headerless="previewMode === 'text'"
@@ -3646,7 +3643,23 @@ onBeforeUnmount(() => {
           <Download :size="15" /><span>{{ phrase('下载原文件') }}</span>
         </button>
       </template>
-      <div v-if="previewLoading" class="preview-loading">
+      <div
+        v-if="shortcutFilePreviewOnly && !previewEntry"
+        class="file-empty file-shortcut-preview"
+        :role="shortcutPreviewError ? 'alert' : 'status'"
+      >
+        <template v-if="shortcutPreviewError">
+          <CircleAlert :size="34" />
+          <strong>{{ phrase('文件打开失败') }}</strong>
+          <span>{{ shortcutPreviewError }}</span>
+          <button class="button button--secondary" type="button" @click="retryShortcutPreview">{{ phrase('重试') }}</button>
+        </template>
+        <template v-else>
+          <RefreshCw :size="22" class="spinning" />
+          <span>{{ phrase('正在打开文件…') }}</span>
+        </template>
+      </div>
+      <div v-else-if="previewLoading" class="preview-loading">
         <ModalWindowControls v-if="previewMode === 'text'" class="preview-loading__controls" />
         <RefreshCw :size="22" class="spinning" />{{ phrase('正在打开文件…') }}
       </div>
@@ -3726,22 +3739,6 @@ onBeforeUnmount(() => {
       </div>
     </ModalDialog>
   </section>
-  <div
-    v-if="shortcutFilePreviewOnly && !previewEntry"
-    class="file-empty file-shortcut-preview"
-    :role="shortcutPreviewError ? 'alert' : 'status'"
-  >
-    <template v-if="shortcutPreviewError">
-      <CircleAlert :size="34" />
-      <strong>{{ phrase('文件打开失败') }}</strong>
-      <span>{{ shortcutPreviewError }}</span>
-      <button class="button button--secondary" type="button" @click="retryShortcutPreview">{{ phrase('重试') }}</button>
-    </template>
-    <template v-else>
-      <RefreshCw :size="22" class="spinning" />
-      <span>{{ phrase('正在打开文件…') }}</span>
-    </template>
-  </div>
 </template>
 
 <style scoped>
@@ -4701,6 +4698,11 @@ onBeforeUnmount(() => {
   padding: 16px;
   text-align: center;
   overflow-wrap: anywhere;
+}
+
+.file-shortcut-preview {
+  flex: 1;
+  min-height: 0;
 }
 
 .file-limit {
