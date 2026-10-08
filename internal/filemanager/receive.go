@@ -44,9 +44,12 @@ type receiveRecord struct {
 	PublishVersion  string                      `json:"publishVersion,omitempty"`
 	PublishIdentity string                      `json:"publishIdentity,omitempty"`
 	ParentIdentity  string                      `json:"parentIdentity,omitempty"`
+	TempIdentity    string                      `json:"tempIdentity,omitempty"`
+	ExtractIdentity string                      `json:"extractIdentity,omitempty"`
 	hasher          hash.Hash
 	identity        os.FileInfo
 	parentInfo      os.FileInfo
+	extractInfo     os.FileInfo
 }
 
 type receiveSessions struct {
@@ -276,10 +279,8 @@ func (m *Manager) removeReceiveTemp(record *receiveRecord) error {
 		return err
 	}
 	defer parent.Close()
-	if record.Input.Kind == "directory" {
-		if err := m.removeReceiveExtract(record); err != nil {
-			return err
-		}
+	if err := m.removeReceiveExtract(record); err != nil {
+		return err
 	}
 	name := path.Base(receiveTemp(record))
 	info, err := parent.Lstat(name)
@@ -290,6 +291,9 @@ func (m *Manager) removeReceiveTemp(record *receiveRecord) error {
 		return err
 	}
 	if !info.Mode().IsRegular() {
+		return ErrConflict
+	}
+	if !sameReceiveObject(info, record.identity, record.TempIdentity) {
 		return ErrConflict
 	}
 	return parent.Remove(name)
@@ -309,10 +313,55 @@ func (m *Manager) removeReceiveExtract(record *receiveRecord) error {
 	if err != nil {
 		return err
 	}
-	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+	return removeOwnedReceiveDirectory(parent, name, info, record.extractInfo, record.ExtractIdentity)
+}
+
+func sameReceiveObject(info, expected os.FileInfo, identity string) bool {
+	if expected != nil {
+		return os.SameFile(info, expected)
+	}
+	return identity != "" && stableReceiveIdentity(info) == identity
+}
+
+// Clean through the opened owned object. A replacement sibling directory must
+// never be recursively deleted, including after a crash or a failed publish.
+func removeOwnedReceiveDirectory(parent *fileRoot, name string, visible, expected os.FileInfo, identity string) error {
+	if !visible.IsDir() || visible.Mode()&os.ModeSymlink != 0 || !sameReceiveObject(visible, expected, identity) {
 		return ErrConflict
 	}
-	return parent.RemoveAll(name)
+	stage, err := parent.OpenRoot(name)
+	if err != nil {
+		return err
+	}
+	defer stage.Close()
+	opened, err := stage.Stat(".")
+	if err != nil || !os.SameFile(visible, opened) {
+		return ErrConflict
+	}
+	contents, err := stage.Open(".")
+	if err != nil {
+		return err
+	}
+	defer contents.Close()
+	for {
+		entries, readErr := contents.ReadDir(128)
+		for _, entry := range entries {
+			if err := stage.RemoveAll(entry.Name()); err != nil {
+				return err
+			}
+		}
+		if errors.Is(readErr, io.EOF) {
+			break
+		}
+		if readErr != nil {
+			return readErr
+		}
+	}
+	current, err := parent.Lstat(name)
+	if err != nil || !os.SameFile(opened, current) {
+		return ErrConflict
+	}
+	return parent.Remove(name) // Nonrecursive: a populated replacement is retained.
 }
 
 // Pin the checked parent before any relative staging operation. os.Root's
@@ -462,10 +511,16 @@ func (m *Manager) BeginReceive(ctx context.Context, input contract.FileReceiveIn
 		return contract.FileReceiveSession{}, err
 	}
 	defer temp.Close()
+	createdInfo, err := temp.Stat()
+	if err != nil {
+		return contract.FileReceiveSession{}, err
+	}
 	keep := false
 	defer func() {
 		if !keep {
-			_ = parent.Remove(tempName)
+			if current, err := parent.Lstat(tempName); err == nil && os.SameFile(createdInfo, current) {
+				_ = parent.Remove(tempName)
+			}
 		}
 	}()
 	if source != nil {
@@ -487,6 +542,7 @@ func (m *Manager) BeginReceive(ctx context.Context, input contract.FileReceiveIn
 	if err != nil {
 		return contract.FileReceiveSession{}, err
 	}
+	record.TempIdentity = stableReceiveIdentity(record.identity)
 	m.receives.records[record.Session.ID] = record
 	if err := m.persistReceivesLocked(); err != nil {
 		delete(m.receives.records, record.Session.ID)
@@ -546,7 +602,7 @@ func (m *Manager) openReceiveFile(ctx context.Context, record *receiveRecord) (*
 		}
 	}()
 	opened, err := file.Stat()
-	if err != nil || !os.SameFile(info, opened) || record.identity != nil && !os.SameFile(record.identity, opened) {
+	if err != nil || !os.SameFile(info, opened) || record.identity != nil && !os.SameFile(record.identity, opened) || record.TempIdentity != "" && stableReceiveIdentity(opened) != record.TempIdentity {
 		return nil, ErrConflict
 	}
 	if record.hasher == nil || record.identity == nil || resourceVersion(receiveTemp(record), record.identity) != resourceVersion(receiveTemp(record), opened) {
@@ -696,7 +752,22 @@ func (m *Manager) reconcileReceiveCommit(ctx context.Context, record *receiveRec
 			return ErrConflict
 		}
 		staging := receiveTemp(record)
-		if record.Input.Kind == "directory" {
+		if record.ExtractIdentity != "" {
+			if stageInfo, err := parent.Lstat(path.Base(receiveExtract(record))); err == nil {
+				if !sameReceiveObject(stageInfo, record.extractInfo, record.ExtractIdentity) {
+					return ErrConflict
+				}
+				child := "body"
+				if record.Input.Kind == "directory" {
+					child = "result"
+				}
+				staging = joinVirtual(receiveExtract(record), child)
+			} else if errors.Is(err, os.ErrNotExist) {
+				staging = receiveExtract(record)
+			} else {
+				return err
+			}
+		} else if record.Input.Kind == "directory" {
 			staging = receiveExtract(record)
 		}
 		// A no-replace failure leaves staging intact. Metadata equality with
@@ -716,6 +787,7 @@ func (m *Manager) reconcileReceiveCommit(ctx context.Context, record *receiveRec
 		}
 		entry := m.entry(target, info)
 		record.Session.State, record.Session.Entry = "complete", &entry
+		_ = m.removeReceiveTemp(record)
 		return m.persistReceivesLocked()
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
@@ -818,7 +890,10 @@ func (m *Manager) CommitReceive(ctx context.Context, id, sourceKey string, size 
 			record.Session.State = "receiving"
 			return contract.FileReceiveSession{}, err
 		}
-		entry, err := m.importDirectory(ctx, record.Input, file, parent, receiveExtract(record), func(stage *fileRoot, info os.FileInfo) error {
+		entry, err := m.importDirectory(ctx, record.Input, file, parent, receiveExtract(record), func(info os.FileInfo) error {
+			record.extractInfo, record.ExtractIdentity = info, stableReceiveIdentity(info)
+			return m.persistReceivesLocked()
+		}, func(stage *fileRoot, info os.FileInfo) error {
 			record.PublishVersion = resourceVersion(target, info)
 			identity, err := m.receivePublishIdentity(ctx, stage, "/", info)
 			if err != nil {
@@ -872,8 +947,44 @@ func (m *Manager) CommitReceive(ctx context.Context, id, sourceKey string, size 
 		if err != nil {
 			return contract.FileReceiveSession{}, err
 		}
-		record.PublishVersion = resourceVersion(target, info)
-		record.PublishIdentity, err = m.receivePublishIdentity(ctx, parent, path.Base(receiveTemp(record)), info)
+		if err := m.removeReceiveExtract(record); err != nil {
+			return contract.FileReceiveSession{}, err
+		}
+		stageName := path.Base(receiveExtract(record))
+		if err := parent.Mkdir(stageName, 0700); err != nil {
+			return contract.FileReceiveSession{}, err
+		}
+		stageInfo, err := parent.Lstat(stageName)
+		if err != nil || !stageInfo.IsDir() || stageInfo.Mode()&os.ModeSymlink != 0 {
+			return contract.FileReceiveSession{}, ErrConflict
+		}
+		stage, err := parent.OpenRoot(stageName)
+		if err != nil {
+			return contract.FileReceiveSession{}, err
+		}
+		defer stage.Close()
+		openedStage, err := stage.Stat(".")
+		if err != nil || !os.SameFile(stageInfo, openedStage) {
+			return contract.FileReceiveSession{}, ErrConflict
+		}
+		record.extractInfo, record.ExtractIdentity = openedStage, stableReceiveIdentity(openedStage)
+		defer func() {
+			if current, err := parent.Lstat(stageName); err == nil {
+				_ = removeOwnedReceiveDirectory(parent, stageName, current, openedStage, "")
+			}
+		}()
+		if err := m.persistReceivesLocked(); err != nil {
+			return contract.FileReceiveSession{}, err
+		}
+		publishedInfo, err := stageReceiveFile(file, stage, "body")
+		if err != nil {
+			return contract.FileReceiveSession{}, err
+		}
+		if err := syncRootDirectory(stage, "."); err != nil {
+			return contract.FileReceiveSession{}, err
+		}
+		record.PublishVersion = resourceVersion(target, publishedInfo)
+		record.PublishIdentity, err = m.receivePublishIdentity(ctx, stage, "body", publishedInfo)
 		if err != nil {
 			return contract.FileReceiveSession{}, err
 		}
@@ -888,11 +999,12 @@ func (m *Manager) CommitReceive(ctx context.Context, id, sourceKey string, size 
 		if err := ctx.Err(); err != nil {
 			return contract.FileReceiveSession{}, err
 		}
-		if replace {
-			err = parent.Rename(path.Base(receiveTemp(record)), record.Input.Name)
-		} else {
-			err = renameNoReplaceRoot(parent, "/"+path.Base(receiveTemp(record)), "/"+record.Input.Name)
+		currentTemp, tempErr := parent.Lstat(path.Base(receiveTemp(record)))
+		currentStage, stageErr := parent.Lstat(stageName)
+		if tempErr != nil || stageErr != nil || !os.SameFile(info, currentTemp) || !os.SameFile(openedStage, currentStage) {
+			return contract.FileReceiveSession{}, ErrConflict
 		}
+		err = publishReceiveObject(stage, "body", parent, record.Input.Name, replace)
 		if err != nil {
 			return contract.FileReceiveSession{}, err
 		}
@@ -905,7 +1017,7 @@ func (m *Manager) CommitReceive(ctx context.Context, id, sourceKey string, size 
 		}
 		_ = currentParent.Close()
 		published, err := parent.Lstat(record.Input.Name)
-		if err != nil || !os.SameFile(info, published) {
+		if err != nil || !os.SameFile(publishedInfo, published) {
 			if err == nil {
 				err = ErrConflict
 			}
@@ -913,6 +1025,7 @@ func (m *Manager) CommitReceive(ctx context.Context, id, sourceKey string, size 
 		}
 		entry := m.entry(target, published)
 		record.Session.Entry, record.Session.State = &entry, "complete"
+		_ = m.removeReceiveTemp(record)
 	}
 	if err := m.persistReceivesLocked(); err != nil {
 		return contract.FileReceiveSession{}, err

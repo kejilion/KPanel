@@ -148,7 +148,7 @@ func (m *Manager) ImportDirectory(
 	return m.ReceiveStream(ctx, input, content, receiveLimit(input))
 }
 
-func (m *Manager) importDirectory(ctx context.Context, input contract.FileReceiveInput, content io.Reader, parent *fileRoot, tempVirtual string, beforePublish func(*fileRoot, os.FileInfo) error) (contract.FileEntry, error) {
+func (m *Manager) importDirectory(ctx context.Context, input contract.FileReceiveInput, content io.Reader, parent *fileRoot, tempVirtual string, stageCreated func(os.FileInfo) error, beforePublish func(*fileRoot, os.FileInfo) error) (contract.FileEntry, error) {
 	targetDirectory, name := input.Directory, input.Name
 	if err := validateName(name); err != nil {
 		return contract.FileEntry{}, err
@@ -179,25 +179,39 @@ func (m *Manager) importDirectory(ctx context.Context, input contract.FileReceiv
 	if err := parent.Mkdir(tempName, 0700); err != nil {
 		return contract.FileEntry{}, err
 	}
-	success := false
+	var ownedStage os.FileInfo
 	defer func() {
-		if !success {
-			_ = parent.RemoveAll(tempName)
+		if ownedStage != nil {
+			if current, err := parent.Lstat(tempName); err == nil {
+				_ = removeOwnedReceiveDirectory(parent, tempName, current, ownedStage, "")
+			}
 		}
 	}()
 	stageInfo, err := parent.Lstat(tempName)
 	if err != nil || !stageInfo.IsDir() || stageInfo.Mode()&os.ModeSymlink != 0 {
 		return contract.FileEntry{}, ErrConflict
 	}
-	stage, err := parent.OpenRoot(tempName)
+	publication, err := parent.OpenRoot(tempName)
+	if err != nil {
+		return contract.FileEntry{}, err
+	}
+	defer publication.Close()
+	opened, err := publication.Stat(".")
+	if err != nil || !os.SameFile(stageInfo, opened) {
+		return contract.FileEntry{}, ErrConflict
+	}
+	ownedStage = opened
+	if err := stageCreated(opened); err != nil {
+		return contract.FileEntry{}, err
+	}
+	if err := publication.Mkdir("result", 0700); err != nil {
+		return contract.FileEntry{}, err
+	}
+	stage, err := publication.OpenRoot("result")
 	if err != nil {
 		return contract.FileEntry{}, err
 	}
 	defer stage.Close()
-	opened, err := stage.Stat(".")
-	if err != nil || !os.SameFile(stageInfo, opened) {
-		return contract.FileEntry{}, ErrConflict
-	}
 	// Every extracted child stays under the opened staging object even if its
 	// visible sibling name is replaced. It cannot redirect privileged writes
 	// into another location within the wider Agent filesystem root.
@@ -249,10 +263,10 @@ func (m *Manager) importDirectory(ctx context.Context, input contract.FileReceiv
 		return contract.FileEntry{}, ErrConflict
 	}
 	visible, err := parent.Lstat(tempName)
-	if err != nil || !os.SameFile(info, visible) {
+	if err != nil || !os.SameFile(ownedStage, visible) {
 		return contract.FileEntry{}, ErrConflict
 	}
-	if err := renameNoReplaceRoot(parent, "/"+tempName, "/"+name); err != nil {
+	if err := publishReceiveObject(publication, "result", parent, name, false); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return contract.FileEntry{}, ErrAlreadyExists
 		}
@@ -266,7 +280,6 @@ func (m *Manager) importDirectory(ctx context.Context, input contract.FileReceiv
 	if parentErr != nil || statErr != nil || !os.SameFile(targetInfo, currentParent) {
 		return contract.FileEntry{}, ErrConflict
 	}
-	success = true
 	published, err := parent.Lstat(name)
 	if err != nil || !os.SameFile(info, published) {
 		return contract.FileEntry{}, ErrConflict
