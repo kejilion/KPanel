@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { isTouchPrimary } from '../lib/touchFocus'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Check, Copy, Eye, EyeOff, LoaderCircle } from '@lucide/vue'
@@ -190,7 +191,7 @@ onBeforeUnmount(() => passkeyController.abort())
     <form class="form-stack" @submit.prevent="submit">
       <label class="field">
         <span>{{ i18n.t('auth.username') }}</span>
-        <input v-model.trim="form.username" autocomplete="username" autofocus required />
+        <input v-model.trim="form.username" autocomplete="username" :autofocus="!isTouchPrimary()" required />
       </label>
 
       <label v-if="!passkeyMode" class="field">
@@ -222,7 +223,7 @@ onBeforeUnmount(() => passkeyController.abort())
           autocomplete="one-time-code"
           :maxlength="useRecoveryCode ? 17 : 6"
           :placeholder="i18n.t(useRecoveryCode ? 'auth.recoveryPlaceholder' : 'auth.totpPlaceholder')"
-          autofocus
+          :autofocus="!isTouchPrimary()"
           :required="totpRequired"
         />
         <button
