@@ -1698,6 +1698,15 @@ function handleNewFlyoutKeydown(event: KeyboardEvent): void {
   moveContextMenuFocus(flyout, event)
 }
 
+async function selectCreatedEntry(name: string): Promise<void> {
+  const path = `${currentPath.value === '/' ? '' : currentPath.value}/${name}`
+  if (!directory.value?.entries.some((entry) => entry.path === path)) return
+  selected.value = new Set([path])
+  selectionAnchor.value = path
+  await nextTick()
+  document.querySelector(`[data-entry-path="${CSS.escape(path)}"]`)?.scrollIntoView?.({ block: 'nearest' })
+}
+
 function openNewDialog(id: DesktopNewItemID): void {
   const type = desktopNewItemType(id)
   newMenuOpen.value = false
@@ -1902,8 +1911,10 @@ async function submitDialog(): Promise<void> {
       dialogEntries.value = []
       dialogNewType.value = undefined
       await loadDirectory()
+      await selectCreatedEntry(name)
       return
     }
+    const createdFolder = action === 'mkdir' ? dialogValue.value.trim() : ''
     let input: FileActionInput
     if (action === 'mkdir') {
       input = { action, target: currentPath.value, name: dialogValue.value.trim() }
@@ -1986,6 +1997,7 @@ async function submitDialog(): Promise<void> {
     dialogAction.value = undefined
     dialogValue.value = ''
     dialogEntries.value = []
+    if (createdFolder && !result.failed.length) await selectCreatedEntry(createdFolder)
   } catch (error) {
     if (controller?.signal.aborted) {
       if (!unmounted) toast.success('操作已停止', '未完成的临时文件已清理。')
@@ -3238,6 +3250,7 @@ onBeforeUnmount(() => {
           v-for="entry in entries"
           :key="entry.path"
           class="file-row file-row--entry"
+          :data-entry-path="entry.path"
           :class="{
             'file-row--selected': selected.has(entry.path),
             'file-row--drop-target': internalDropTarget === entry.path,
@@ -3307,6 +3320,7 @@ onBeforeUnmount(() => {
           v-for="entry in entries"
           :key="entry.path"
           class="file-grid-card"
+          :data-entry-path="entry.path"
           :class="{
             'file-grid-card--selected': selected.has(entry.path),
             'file-grid-card--drop-target': internalDropTarget === entry.path,

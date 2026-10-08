@@ -3552,8 +3552,9 @@ async function createNewItem(): Promise<void> {
     )
     if (result.failed.length) throw new Error(result.failed[0]!.detail)
     const destination = desktopPositionAt(pending.origin.x, pending.origin.y) ?? { x: 0, y: 0 }
-    await addDroppedFileEntries(result.entries, destination)
+    const created = await addDroppedFileEntries(result.entries, destination)
     newItem.value = undefined
+    if (created.added[0]) setIconSelection([`shortcut:${created.added[0].id}`])
     toast.success(i18n.t('desktop.newItemCreated'), result.entries[0]?.name ?? name)
   } catch (error) {
     if (error instanceof DesktopShortcutLimitError) {
