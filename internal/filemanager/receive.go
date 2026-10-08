@@ -1,0 +1,1152 @@
+package filemanager
+
+import (
+	"archive/tar"
+	"bytes"
+	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"hash"
+	"io"
+	"os"
+	"path"
+	"sort"
+	"strconv"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/kejilion/kejilion-panel/internal/contract"
+)
+
+const (
+	maxReceiveSessions            = 32
+	maxReceiveRecords             = 256
+	maxReceiveStateBytes          = 512 << 10
+	maxReceiveReservedBytes int64 = 40 << 30
+	receiveLifetime               = 24 * time.Hour
+)
+
+var (
+	ErrReceiveUnavailable = errors.New("传输恢复记录不可用")
+	ErrReceiveChecksum    = errors.New("传输校验失败，来源内容可能已变化")
+)
+
+// A checkpoint acknowledges only bytes fsynced before the atomic journal write.
+// The bounded private journal contains identities/hashes, never source URLs.
+type receiveRecord struct {
+	Session         contract.FileReceiveSession `json:"session"`
+	Input           contract.FileReceiveInput   `json:"input"`
+	OriginalVersion string                      `json:"originalVersion,omitempty"`
+	PublishVersion  string                      `json:"publishVersion,omitempty"`
+	PublishIdentity string                      `json:"publishIdentity,omitempty"`
+	ParentIdentity  string                      `json:"parentIdentity,omitempty"`
+	TempIdentity    string                      `json:"tempIdentity,omitempty"`
+	ExtractIdentity string                      `json:"extractIdentity,omitempty"`
+	hasher          hash.Hash
+	identity        os.FileInfo
+	parentInfo      os.FileInfo
+	extractInfo     os.FileInfo
+}
+
+type receiveSessions struct {
+	mu          cancellableMutex
+	initialized bool
+	closed      bool
+	store       *os.Root
+	records     map[string]*receiveRecord
+}
+
+func validReceiveKey(value string) bool {
+	decoded, err := hex.DecodeString(value)
+	return err == nil && len(decoded) == 32 && hex.EncodeToString(decoded) == value
+}
+
+func validateReceiveInput(input contract.FileReceiveInput) error {
+	directory, err := normalizeVirtual(input.Directory)
+	if err != nil || directory != input.Directory || validateName(input.Name) != nil ||
+		!validReceiveKey(input.SourceKey) || (input.Kind != "file" && input.Kind != "directory") ||
+		input.SizeBytes < -1 || input.Kind == "directory" && input.Overwrite {
+		return ErrInvalidPath
+	}
+	if input.SizeBytes > receiveLimit(input) {
+		return ErrTooLarge
+	}
+	if input.Mode != "" {
+		mode, err := strconv.ParseUint(input.Mode, 8, 32)
+		if err != nil || len(input.Mode) > 4 || mode > 0777 {
+			return ErrInvalidPath
+		}
+	}
+	if input.ModifiedAt != nil && (input.ModifiedAt.Year() < 1970 || input.ModifiedAt.Year() > 9999) {
+		return ErrInvalidPath
+	}
+	return nil
+}
+
+func receiveLimit(input contract.FileReceiveInput) int64 {
+	if input.Kind == "directory" {
+		// TAR headers/padding are bounded separately from the extracted byte budget.
+		return contract.MaxFileTransferBytes + (32 << 20)
+	}
+	return contract.MaxFileTransferBytes
+}
+
+func receiveReservation(input contract.FileReceiveInput) int64 {
+	size := input.SizeBytes
+	if size < 0 {
+		size = receiveLimit(input)
+	}
+	if input.Kind == "directory" {
+		size += contract.MaxFileTransferBytes
+	}
+	return size
+}
+
+func receiveTemp(record *receiveRecord) string {
+	return joinVirtual(record.Input.Directory, ".kpanel-upload-"+record.Session.ID)
+}
+
+func receiveExtract(record *receiveRecord) string {
+	return joinVirtual(record.Input.Directory, ".kpanel-extract-"+record.Session.ID)
+}
+
+func (m *Manager) initializeReceivesLocked() error {
+	s := &m.receives
+	if s.closed {
+		return ErrReceiveUnavailable
+	}
+	if s.initialized {
+		if s.store == nil {
+			return ErrReceiveUnavailable
+		}
+		return nil
+	}
+	s.initialized = true
+	s.records = make(map[string]*receiveRecord)
+	private := path.Dir(m.trashRoot)
+	store, _, err := m.openReceiveDirectory(private, true)
+	if err != nil {
+		return ErrReceiveUnavailable
+	}
+	ok := false
+	defer func() {
+		if !ok {
+			_ = store.Close()
+		}
+	}()
+	info, err := store.Lstat("receive-sessions.json")
+	if errors.Is(err, os.ErrNotExist) {
+		s.store = store
+		ok = true
+		return nil
+	}
+	if err != nil || !info.Mode().IsRegular() || info.Size() > maxReceiveStateBytes {
+		return ErrReceiveUnavailable
+	}
+	file, err := store.Open("receive-sessions.json")
+	if err != nil {
+		return ErrReceiveUnavailable
+	}
+	defer file.Close()
+	opened, err := file.Stat()
+	if err != nil || !os.SameFile(info, opened) || opened.Size() > maxReceiveStateBytes {
+		return ErrReceiveUnavailable
+	}
+	decoder := json.NewDecoder(io.LimitReader(file, maxReceiveStateBytes+1))
+	decoder.DisallowUnknownFields()
+	var state struct {
+		Version int              `json:"version"`
+		Records []*receiveRecord `json:"records"`
+	}
+	var extra any
+	if decoder.Decode(&state) != nil || decoder.Decode(&extra) != io.EOF || state.Version != 1 || len(state.Records) > maxReceiveRecords {
+		return ErrReceiveUnavailable
+	}
+	var reserved int64
+	active := 0
+	for _, record := range state.Records {
+		if record == nil || validateReceiveInput(record.Input) != nil || !validReceiveKey(record.Session.ID) ||
+			record.Session.Offset < 0 || record.Session.Offset > receiveLimit(record.Input) ||
+			!validReceiveKey(record.Session.PrefixSHA256) || record.Session.ExpiresAt.IsZero() ||
+			record.Session.SizeBytes != record.Input.SizeBytes || record.Session.ChunkBytes != contract.FileTransferChunkBytes ||
+			(record.Input.SizeBytes >= 0 && record.Session.Offset > record.Input.SizeBytes) ||
+			(record.Session.State != "receiving" && record.Session.State != "committing" && record.Session.State != "complete" && record.Session.State != "aborted") {
+			return ErrReceiveUnavailable
+		}
+		if _, exists := s.records[record.Session.ID]; exists {
+			return ErrReceiveUnavailable
+		}
+		if record.Session.State == "complete" && (record.Session.Entry == nil || record.Session.Entry.Path != joinVirtual(record.Input.Directory, record.Input.Name) || record.Session.Entry.Kind != record.Input.Kind) {
+			return ErrReceiveUnavailable
+		}
+		if record.Session.State == "receiving" || record.Session.State == "committing" {
+			reserved += receiveReservation(record.Input)
+			active++
+		}
+		s.records[record.Session.ID] = record
+	}
+	if reserved > maxReceiveReservedBytes || active > maxReceiveSessions {
+		return ErrReceiveUnavailable
+	}
+	s.store = store
+	ok = true
+	return nil
+}
+
+func (m *Manager) persistReceivesLocked() error {
+	s := &m.receives
+	records := make([]*receiveRecord, 0, len(s.records))
+	for _, record := range s.records {
+		records = append(records, record)
+	}
+	sort.Slice(records, func(i, j int) bool { return records[i].Session.ID < records[j].Session.ID })
+	payload, err := json.Marshal(struct {
+		Version int              `json:"version"`
+		Records []*receiveRecord `json:"records"`
+	}{1, records})
+	if err != nil || len(payload) > maxReceiveStateBytes {
+		return ErrReceiveUnavailable
+	}
+	var random [16]byte
+	if _, err := rand.Read(random[:]); err != nil {
+		return err
+	}
+	name := ".kpanel-edit-receives-" + hex.EncodeToString(random[:])
+	file, err := s.store.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = file.Close(); _ = s.store.Remove(name) }()
+	if _, err := file.Write(payload); err != nil {
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	if err := s.store.Rename(name, "receive-sessions.json"); err != nil {
+		return err
+	}
+	return syncRootDirectory(s.store, ".")
+}
+
+func (m *Manager) cleanupReceivesLocked() error {
+	changed := false
+	for id, record := range m.receives.records {
+		if m.now().Before(record.Session.ExpiresAt) {
+			continue
+		}
+		if err := m.removeReceiveTemp(record); err != nil && record.Session.State != "complete" && record.Session.State != "aborted" {
+			// A moved/deleted/replaced parent no longer identifies the owned
+			// staging location. Forget only its expired checkpoint; never follow
+			// the replacement or let it block unrelated receiving directories.
+			if !errors.Is(err, os.ErrNotExist) && !errors.Is(err, syscall.ENOTDIR) && !errors.Is(err, ErrNotDirectory) && !errors.Is(err, ErrConflict) && !errors.Is(err, ErrSymlink) && !errors.Is(err, ErrProtected) && !errors.Is(err, ErrReadOnly) {
+				return err
+			}
+		}
+		delete(m.receives.records, id)
+		changed = true
+	}
+	// Completed acknowledgements must not consume active transfer slots forever.
+	// Keep a bounded replay window and evict only the oldest terminal record.
+	if len(m.receives.records) >= maxReceiveRecords {
+		var oldest *receiveRecord
+		for _, record := range m.receives.records {
+			if record.Session.State == "complete" && (oldest == nil || record.Session.ExpiresAt.Before(oldest.Session.ExpiresAt)) {
+				oldest = record
+			}
+		}
+		if oldest != nil {
+			delete(m.receives.records, oldest.Session.ID)
+			changed = true
+		}
+	}
+	if changed {
+		return m.persistReceivesLocked()
+	}
+	return nil
+}
+
+func (m *Manager) removeReceiveTemp(record *receiveRecord) error {
+	parent, _, err := m.pinReceiveParent(record)
+	if err != nil {
+		return err
+	}
+	defer parent.Close()
+	if err := m.removeReceiveExtract(record); err != nil {
+		return err
+	}
+	name := path.Base(receiveTemp(record))
+	info, err := parent.Lstat(name)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return ErrConflict
+	}
+	if !sameReceiveObject(info, record.identity, record.TempIdentity) {
+		return ErrConflict
+	}
+	return parent.Remove(name)
+}
+
+func (m *Manager) removeReceiveExtract(record *receiveRecord) error {
+	parent, _, err := m.pinReceiveParent(record)
+	if err != nil {
+		return err
+	}
+	defer parent.Close()
+	name := path.Base(receiveExtract(record))
+	info, err := parent.Lstat(name)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return removeOwnedReceiveDirectory(parent, name, info, record.extractInfo, record.ExtractIdentity)
+}
+
+func sameReceiveObject(info, expected os.FileInfo, identity string) bool {
+	if expected != nil {
+		return os.SameFile(info, expected)
+	}
+	return identity != "" && stableReceiveIdentity(info) == identity
+}
+
+// Clean through the opened owned object. A replacement sibling directory must
+// never be recursively deleted, including after a crash or a failed publish.
+func removeOwnedReceiveDirectory(parent *fileRoot, name string, visible, expected os.FileInfo, identity string) error {
+	if !visible.IsDir() || visible.Mode()&os.ModeSymlink != 0 || !sameReceiveObject(visible, expected, identity) {
+		return ErrConflict
+	}
+	stage, err := parent.OpenRoot(name)
+	if err != nil {
+		return err
+	}
+	defer stage.Close()
+	opened, err := stage.Stat(".")
+	if err != nil || !os.SameFile(visible, opened) {
+		return ErrConflict
+	}
+	contents, err := stage.Open(".")
+	if err != nil {
+		return err
+	}
+	defer contents.Close()
+	for {
+		entries, readErr := contents.ReadDir(128)
+		for _, entry := range entries {
+			if err := stage.RemoveAll(entry.Name()); err != nil {
+				return err
+			}
+		}
+		if errors.Is(readErr, io.EOF) {
+			break
+		}
+		if readErr != nil {
+			return readErr
+		}
+	}
+	current, err := parent.Lstat(name)
+	if err != nil || !os.SameFile(opened, current) {
+		return ErrConflict
+	}
+	return parent.Remove(name) // Nonrecursive: a populated replacement is retained.
+}
+
+// Pin the checked parent before any relative staging operation. os.Root's
+// filesystem boundary alone is wider than the file manager's protected paths;
+// a directory swapped for a symlink must not redirect a later path operation.
+func (m *Manager) pinReceiveParent(record *receiveRecord) (*fileRoot, os.FileInfo, error) {
+	if err := m.mutationError(joinVirtual(record.Input.Directory, record.Input.Name)); err != nil {
+		return nil, nil, err
+	}
+	parent, opened, err := m.openReceiveDirectory(record.Input.Directory, false)
+	if err != nil {
+		return nil, nil, err
+	}
+	if record.parentInfo != nil && !os.SameFile(record.parentInfo, opened) ||
+		record.ParentIdentity != "" && stableReceiveIdentity(opened) != record.ParentIdentity {
+		_ = parent.Close()
+		return nil, nil, ErrConflict
+	}
+	record.parentInfo = opened
+	return parent, opened, nil
+}
+
+func (m *Manager) openReceiveDirectory(directory string, create bool) (*fileRoot, os.FileInfo, error) {
+	normalized, err := normalizeVirtual(directory)
+	if err != nil || normalized != directory {
+		return nil, nil, ErrInvalidPath
+	}
+	cursor, err := m.rootFS.OpenRoot(".")
+	if err != nil {
+		return nil, nil, err
+	}
+	info, err := cursor.Stat(".")
+	if err != nil {
+		_ = cursor.Close()
+		return nil, nil, err
+	}
+	for _, component := range strings.Split(strings.TrimPrefix(directory, "/"), "/") {
+		if component == "" {
+			continue
+		}
+		if create {
+			if err := cursor.Mkdir(component, 0700); err != nil && !errors.Is(err, os.ErrExist) {
+				_ = cursor.Close()
+				return nil, nil, err
+			}
+		}
+		before, err := cursor.Lstat(component)
+		if err != nil {
+			_ = cursor.Close()
+			return nil, nil, err
+		}
+		if before.Mode()&os.ModeSymlink != 0 {
+			_ = cursor.Close()
+			return nil, nil, ErrSymlink
+		}
+		if !before.IsDir() {
+			_ = cursor.Close()
+			return nil, nil, ErrNotDirectory
+		}
+		next, err := cursor.OpenRoot(component)
+		if err != nil {
+			_ = cursor.Close()
+			return nil, nil, err
+		}
+		opened, err := next.Stat(".")
+		_ = cursor.Close()
+		if err != nil || !os.SameFile(before, opened) {
+			_ = next.Close()
+			return nil, nil, ErrConflict
+		}
+		cursor, info = next, opened
+	}
+	return cursor, info, nil
+}
+
+func (m *Manager) BeginReceive(ctx context.Context, input contract.FileReceiveInput) (contract.FileReceiveSession, error) {
+	if err := validateReceiveInput(input); err != nil {
+		return contract.FileReceiveSession{}, err
+	}
+	if err := m.receives.mu.LockContext(ctx); err != nil {
+		return contract.FileReceiveSession{}, err
+	}
+	defer m.receives.mu.Unlock()
+	if err := m.initializeReceivesLocked(); err != nil {
+		return contract.FileReceiveSession{}, err
+	}
+	if err := m.cleanupReceivesLocked(); err != nil {
+		return contract.FileReceiveSession{}, err
+	}
+	var reserved int64
+	active := 0
+	for _, record := range m.receives.records {
+		if record.Session.State == "receiving" || record.Session.State == "committing" {
+			reserved += receiveReservation(record.Input)
+			active++
+		}
+	}
+	if active >= maxReceiveSessions || len(m.receives.records) >= maxReceiveRecords || reserved+receiveReservation(input) > maxReceiveReservedBytes {
+		return contract.FileReceiveSession{}, ErrBusy
+	}
+	parentRecord := &receiveRecord{Input: input}
+	parent, info, err := m.pinReceiveParent(parentRecord)
+	if err != nil {
+		return contract.FileReceiveSession{}, err
+	}
+	defer parent.Close()
+	target := joinVirtual(input.Directory, input.Name)
+	if err := m.mutationError(target); err != nil {
+		return contract.FileReceiveSession{}, err
+	}
+	var source *os.File
+	var original string
+	if existing, err := parent.Lstat(input.Name); err == nil {
+		if !input.Overwrite {
+			return contract.FileReceiveSession{}, ErrAlreadyExists
+		}
+		if !existing.Mode().IsRegular() {
+			return contract.FileReceiveSession{}, ErrNotRegular
+		}
+		source, err = parent.Open(input.Name)
+		if err != nil {
+			return contract.FileReceiveSession{}, err
+		}
+		defer source.Close()
+		opened, err := source.Stat()
+		if err != nil || !os.SameFile(existing, opened) {
+			return contract.FileReceiveSession{}, ErrConflict
+		}
+		original = resourceVersion(target, existing)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return contract.FileReceiveSession{}, err
+	}
+	var random [32]byte
+	if _, err := rand.Read(random[:]); err != nil {
+		return contract.FileReceiveSession{}, err
+	}
+	hasher := sha256.New()
+	record := &receiveRecord{
+		Input: input, OriginalVersion: original, hasher: hasher,
+		ParentIdentity: stableReceiveIdentity(info), parentInfo: info,
+		Session: contract.FileReceiveSession{ID: hex.EncodeToString(random[:]), State: "receiving", SizeBytes: input.SizeBytes,
+			PrefixSHA256: hex.EncodeToString(hasher.Sum(nil)), ChunkBytes: contract.FileTransferChunkBytes, ExpiresAt: m.now().UTC().Add(receiveLifetime)},
+	}
+	tempName := path.Base(receiveTemp(record))
+	temp, err := createFileWithSourceAccess(parent, tempName, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0600, source)
+	if err != nil {
+		return contract.FileReceiveSession{}, err
+	}
+	defer temp.Close()
+	createdInfo, err := temp.Stat()
+	if err != nil {
+		return contract.FileReceiveSession{}, err
+	}
+	keep := false
+	defer func() {
+		if !keep {
+			if current, err := parent.Lstat(tempName); err == nil && os.SameFile(createdInfo, current) {
+				_ = parent.Remove(tempName)
+			}
+		}
+	}()
+	if source != nil {
+		info, err := source.Stat()
+		if err != nil {
+			return contract.FileReceiveSession{}, err
+		}
+		if err := preserveFileOwnership(temp, info); err != nil {
+			return contract.FileReceiveSession{}, err
+		}
+		if err := preserveFileExtendedAttributes(temp, source); err != nil {
+			return contract.FileReceiveSession{}, err
+		}
+	}
+	if err := temp.Sync(); err != nil {
+		return contract.FileReceiveSession{}, err
+	}
+	record.identity, err = temp.Stat()
+	if err != nil {
+		return contract.FileReceiveSession{}, err
+	}
+	record.TempIdentity = stableReceiveIdentity(record.identity)
+	m.receives.records[record.Session.ID] = record
+	if err := m.persistReceivesLocked(); err != nil {
+		delete(m.receives.records, record.Session.ID)
+		return contract.FileReceiveSession{}, err
+	}
+	keep = true
+	return record.Session, nil
+}
+
+func (m *Manager) receiveLocked(id, sourceKey string) (*receiveRecord, error) {
+	if !validReceiveKey(id) || !validReceiveKey(sourceKey) {
+		return nil, ErrInvalidPath
+	}
+	if err := m.initializeReceivesLocked(); err != nil {
+		return nil, err
+	}
+	record, exists := m.receives.records[id]
+	if !exists || record.Input.SourceKey != sourceKey || record.Session.State == "aborted" {
+		return nil, os.ErrNotExist
+	}
+	if !m.now().Before(record.Session.ExpiresAt) {
+		return nil, os.ErrNotExist
+	}
+	if _, _, err := m.resolveExisting(record.Input.Directory); err != nil {
+		return nil, err
+	}
+	if err := m.mutationError(joinVirtual(record.Input.Directory, record.Input.Name)); err != nil {
+		return nil, err
+	}
+	return record, nil
+}
+
+// On recovery, verify the acknowledged prefix and discard any unacknowledged
+// tail left by a crash. An inode substituted during this process is rejected.
+func (m *Manager) openReceiveFile(ctx context.Context, record *receiveRecord) (*os.File, error) {
+	parent, _, err := m.pinReceiveParent(record)
+	if err != nil {
+		return nil, err
+	}
+	defer parent.Close()
+	name := path.Base(receiveTemp(record))
+	info, err := parent.Lstat(name)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() || info.Size() < record.Session.Offset {
+		return nil, ErrConflict
+	}
+	file, err := parent.OpenFile(name, os.O_RDWR, 0)
+	if err != nil {
+		return nil, err
+	}
+	ok := false
+	defer func() {
+		if !ok {
+			_ = file.Close()
+		}
+	}()
+	opened, err := file.Stat()
+	if err != nil || !os.SameFile(info, opened) || record.identity != nil && !os.SameFile(record.identity, opened) || record.TempIdentity != "" && stableReceiveIdentity(opened) != record.TempIdentity {
+		return nil, ErrConflict
+	}
+	if record.hasher == nil || record.identity == nil || resourceVersion(receiveTemp(record), record.identity) != resourceVersion(receiveTemp(record), opened) {
+		hasher := sha256.New()
+		if _, err := io.CopyBuffer(hasher, &contextReader{ctx, io.LimitReader(file, record.Session.Offset)}, make([]byte, 64<<10)); err != nil {
+			return nil, err
+		}
+		if hex.EncodeToString(hasher.Sum(nil)) != record.Session.PrefixSHA256 {
+			return nil, ErrReceiveChecksum
+		}
+		record.hasher = hasher
+	}
+	if opened.Size() != record.Session.Offset {
+		if err := file.Truncate(record.Session.Offset); err != nil {
+			return nil, err
+		}
+		if err := file.Sync(); err != nil {
+			return nil, err
+		}
+	}
+	if _, err := file.Seek(record.Session.Offset, io.SeekStart); err != nil {
+		return nil, err
+	}
+	record.identity, err = file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	ok = true
+	return file, nil
+}
+
+func (m *Manager) ReceiveStatus(ctx context.Context, id, sourceKey string) (contract.FileReceiveSession, error) {
+	if err := m.receives.mu.LockContext(ctx); err != nil {
+		return contract.FileReceiveSession{}, err
+	}
+	defer m.receives.mu.Unlock()
+	record, err := m.receiveLocked(id, sourceKey)
+	if err != nil {
+		return contract.FileReceiveSession{}, err
+	}
+	if record.Session.State == "committing" {
+		if err := m.reconcileReceiveCommit(ctx, record); err != nil {
+			return contract.FileReceiveSession{}, err
+		}
+	}
+	if record.Session.State == "receiving" {
+		file, err := m.openReceiveFile(ctx, record)
+		if err != nil {
+			return contract.FileReceiveSession{}, err
+		}
+		_ = file.Close()
+	}
+	return record.Session, nil
+}
+
+func (m *Manager) WriteReceiveChunk(ctx context.Context, id, sourceKey string, offset int64, content io.Reader, digest string) (contract.FileReceiveSession, error) {
+	if offset < 0 || !validReceiveKey(digest) {
+		return contract.FileReceiveSession{}, ErrInvalidPath
+	}
+	if err := acquireNow(ctx, m.uploadGate); err != nil {
+		return contract.FileReceiveSession{}, err
+	}
+	defer release(m.uploadGate)
+	// Buffer exactly one bounded chunk so failed checksums cannot alter a prefix.
+	data, err := io.ReadAll(&contextReader{ctx, io.LimitReader(content, contract.FileTransferChunkBytes+1)})
+	if err != nil {
+		return contract.FileReceiveSession{}, err
+	}
+	if len(data) == 0 || len(data) > contract.FileTransferChunkBytes {
+		return contract.FileReceiveSession{}, ErrTooLarge
+	}
+	sum := sha256.Sum256(data)
+	if hex.EncodeToString(sum[:]) != digest {
+		return contract.FileReceiveSession{}, ErrReceiveChecksum
+	}
+	if err := m.receives.mu.LockContext(ctx); err != nil {
+		return contract.FileReceiveSession{}, err
+	}
+	defer m.receives.mu.Unlock()
+	record, err := m.receiveLocked(id, sourceKey)
+	if err != nil {
+		return contract.FileReceiveSession{}, err
+	}
+	if record.Session.State != "receiving" || offset > record.Session.Offset {
+		return contract.FileReceiveSession{}, ErrConflict
+	}
+	end := offset + int64(len(data))
+	if end > receiveLimit(record.Input) || record.Input.SizeBytes >= 0 && end > record.Input.SizeBytes {
+		return contract.FileReceiveSession{}, ErrTooLarge
+	}
+	file, err := m.openReceiveFile(ctx, record)
+	if err != nil {
+		return contract.FileReceiveSession{}, err
+	}
+	defer file.Close()
+	if offset < record.Session.Offset {
+		// Retried acknowledgements are idempotent only for identical durable data.
+		if end > record.Session.Offset {
+			return contract.FileReceiveSession{}, ErrConflict
+		}
+		prior := make([]byte, len(data))
+		if _, err := file.ReadAt(prior, offset); err != nil || !bytes.Equal(prior, data) {
+			return contract.FileReceiveSession{}, ErrReceiveChecksum
+		}
+		return record.Session, nil
+	}
+	previous := record.Session
+	if _, err := file.Write(data); err != nil {
+		record.hasher = nil
+		return contract.FileReceiveSession{}, err
+	}
+	if err := file.Sync(); err != nil {
+		record.hasher = nil
+		return contract.FileReceiveSession{}, err
+	}
+	_, _ = record.hasher.Write(data)
+	record.Session.Offset = end
+	record.Session.PrefixSHA256 = hex.EncodeToString(record.hasher.Sum(nil))
+	record.Session.ExpiresAt = m.now().UTC().Add(receiveLifetime)
+	record.identity, err = file.Stat()
+	if err == nil {
+		err = m.persistReceivesLocked()
+	}
+	if err != nil {
+		record.Session = previous
+		record.hasher = nil
+		return contract.FileReceiveSession{}, err
+	}
+	return record.Session, nil
+}
+
+func (m *Manager) reconcileReceiveCommit(ctx context.Context, record *receiveRecord) error {
+	target := joinVirtual(record.Input.Directory, record.Input.Name)
+	parent, _, err := m.pinReceiveParent(record)
+	if err != nil {
+		return err
+	}
+	defer parent.Close()
+	if info, err := parent.Lstat(record.Input.Name); err == nil {
+		if record.Input.Overwrite && record.OriginalVersion != "" && resourceVersion(target, info) == record.OriginalVersion {
+			if temp, err := parent.Lstat(path.Base(receiveTemp(record))); err == nil && temp.Mode().IsRegular() {
+				record.Session.State = "receiving"
+				return m.persistReceivesLocked()
+			}
+		}
+		if record.PublishVersion == "" || resourceVersion(target, info) != record.PublishVersion {
+			return ErrConflict
+		}
+		staging := receiveTemp(record)
+		stagingRoot := parent
+		stagingName := path.Base(staging)
+		if record.ExtractIdentity != "" {
+			if stageInfo, err := parent.Lstat(path.Base(receiveExtract(record))); err == nil {
+				if !stageInfo.IsDir() || stageInfo.Mode()&os.ModeSymlink != 0 || !sameReceiveObject(stageInfo, record.extractInfo, record.ExtractIdentity) {
+					return ErrConflict
+				}
+				publication, err := parent.OpenRoot(path.Base(receiveExtract(record)))
+				if err != nil {
+					return err
+				}
+				defer publication.Close()
+				opened, err := publication.Stat(".")
+				if err != nil || !os.SameFile(stageInfo, opened) {
+					return ErrConflict
+				}
+				stagingRoot, stagingName = publication, "body"
+				if record.Input.Kind == "directory" {
+					stagingName = "result"
+				}
+			} else if errors.Is(err, os.ErrNotExist) {
+				stagingName = path.Base(receiveExtract(record))
+			} else {
+				return err
+			}
+		} else if record.Input.Kind == "directory" {
+			stagingName = path.Base(receiveExtract(record))
+		}
+		// A no-replace failure leaves staging intact. Metadata equality with
+		// an unrelated target must never be interpreted as successful publish.
+		if _, err := stagingRoot.Lstat(stagingName); !errors.Is(err, os.ErrNotExist) {
+			return ErrConflict
+		}
+		identity, err := m.receivePublishIdentity(ctx, parent, record.Input.Name, info)
+		if err != nil || record.PublishIdentity == "" || identity != record.PublishIdentity {
+			return ErrConflict
+		}
+		if record.Input.Kind == "file" {
+			digest, err := m.receivePublishedFileDigest(ctx, parent, record.Input.Name, info)
+			if err != nil || digest != record.Session.PrefixSHA256 {
+				return ErrReceiveChecksum
+			}
+		}
+		entry := m.entry(target, info)
+		record.Session.State, record.Session.Entry = "complete", &entry
+		_ = m.removeReceiveTemp(record)
+		return m.persistReceivesLocked()
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if record.Input.Overwrite && record.OriginalVersion != "" {
+		return ErrConflict
+	}
+	record.Session.State = "receiving"
+	return m.persistReceivesLocked()
+}
+
+func (m *Manager) receivePublishedFileDigest(ctx context.Context, root *fileRoot, virtual string, info os.FileInfo) (string, error) {
+	file, err := root.Open(rootName(virtual))
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	opened, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() || !os.SameFile(info, opened) {
+		return "", ErrConflict
+	}
+	hasher := sha256.New()
+	count, err := io.CopyBuffer(hasher, &contextReader{ctx, io.LimitReader(file, contract.MaxFileTransferBytes+1)}, make([]byte, 64<<10))
+	if err != nil || count != info.Size() {
+		return "", ErrReceiveChecksum
+	}
+	latest, err := file.Stat()
+	if err != nil || !os.SameFile(info, latest) || resourceVersion(virtual, latest) != resourceVersion(virtual, info) {
+		return "", ErrConflict
+	}
+	return hex.EncodeToString(hasher.Sum(nil)), nil
+}
+
+func (m *Manager) receivePublishIdentity(ctx context.Context, root *fileRoot, virtual string, info os.FileInfo) (string, error) {
+	if identity := stableReceiveIdentity(info); identity != "" {
+		return identity, nil
+	}
+	// Linux uses a rename-stable device/inode identity. Local tooling on other
+	// platforms proves the bounded content instead of trusting metadata alone.
+	if info.Mode().IsRegular() {
+		digest, err := m.receivePublishedFileDigest(ctx, root, virtual, info)
+		return "sha256:" + digest, err
+	}
+	hasher := sha256.New()
+	writer := tar.NewWriter(hasher)
+	budget := &copyBudget{maxEntries: m.maxCopyEntries, maxBytes: m.maxCopyBytes}
+	proof := &Manager{rootFS: root}
+	if err := proof.walkArchive(ctx, virtual, "", info, budget, proof.tarEntryWriter(writer)); err != nil {
+		return "", err
+	}
+	if err := writer.Close(); err != nil {
+		return "", err
+	}
+	return "sha256:" + hex.EncodeToString(hasher.Sum(nil)), nil
+}
+
+func (m *Manager) CommitReceive(ctx context.Context, id, sourceKey string, size int64, digest string) (contract.FileReceiveSession, error) {
+	if !validReceiveKey(digest) || size < 0 {
+		return contract.FileReceiveSession{}, ErrInvalidPath
+	}
+	if err := m.receives.mu.LockContext(ctx); err != nil {
+		return contract.FileReceiveSession{}, err
+	}
+	defer m.receives.mu.Unlock()
+	record, err := m.receiveLocked(id, sourceKey)
+	if err != nil {
+		return contract.FileReceiveSession{}, err
+	}
+	if size != record.Session.Offset || digest != record.Session.PrefixSHA256 || record.Input.SizeBytes >= 0 && size != record.Input.SizeBytes {
+		return contract.FileReceiveSession{}, ErrReceiveChecksum
+	}
+	if record.Session.State == "committing" {
+		if err := m.reconcileReceiveCommit(ctx, record); err != nil {
+			return contract.FileReceiveSession{}, err
+		}
+	}
+	if record.Session.State == "complete" {
+		return record.Session, nil
+	}
+	file, err := m.openReceiveFile(ctx, record)
+	if err != nil {
+		return contract.FileReceiveSession{}, err
+	}
+	defer file.Close()
+	target := joinVirtual(record.Input.Directory, record.Input.Name)
+	parent, _, err := m.pinReceiveParent(record)
+	if err != nil {
+		return contract.FileReceiveSession{}, err
+	}
+	defer parent.Close()
+	if record.Input.Kind == "directory" {
+		if err := m.removeReceiveExtract(record); err != nil {
+			return contract.FileReceiveSession{}, err
+		}
+		if _, err := file.Seek(0, io.SeekStart); err != nil {
+			return contract.FileReceiveSession{}, err
+		}
+		record.Session.State = "committing"
+		if err := m.persistReceivesLocked(); err != nil {
+			record.Session.State = "receiving"
+			return contract.FileReceiveSession{}, err
+		}
+		entry, err := m.importDirectory(ctx, record.Input, file, parent, receiveExtract(record), func(info os.FileInfo) error {
+			record.extractInfo, record.ExtractIdentity = info, stableReceiveIdentity(info)
+			return m.persistReceivesLocked()
+		}, func(stage *fileRoot, info os.FileInfo) error {
+			record.PublishVersion = resourceVersion(target, info)
+			identity, err := m.receivePublishIdentity(ctx, stage, "/", info)
+			if err != nil {
+				return err
+			}
+			record.PublishIdentity = identity
+			return m.persistReceivesLocked()
+		})
+		if err != nil {
+			return contract.FileReceiveSession{}, err
+		}
+		record.Session.Entry, record.Session.State = &entry, "complete"
+		_ = file.Close()
+		if err := m.removeReceiveTemp(record); err != nil {
+			return contract.FileReceiveSession{}, err
+		}
+	} else {
+		if err := m.writeMu.LockContext(ctx); err != nil {
+			return contract.FileReceiveSession{}, err
+		}
+		defer m.writeMu.Unlock()
+		replace := false
+		mode := os.FileMode(0644)
+		if record.Input.Mode != "" {
+			value, _ := strconv.ParseUint(record.Input.Mode, 8, 32)
+			mode = os.FileMode(value)
+		}
+		if info, err := parent.Lstat(record.Input.Name); err == nil {
+			if !record.Input.Overwrite {
+				return contract.FileReceiveSession{}, ErrAlreadyExists
+			}
+			if record.OriginalVersion == "" || !info.Mode().IsRegular() || resourceVersion(target, info) != record.OriginalVersion {
+				return contract.FileReceiveSession{}, ErrConflict
+			}
+			mode, replace = info.Mode().Perm(), true
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return contract.FileReceiveSession{}, err
+		}
+		if err := file.Chmod(mode); err != nil {
+			return contract.FileReceiveSession{}, err
+		}
+		if record.Input.ModifiedAt != nil {
+			if err := receiveFileTimes(parent, path.Base(receiveTemp(record)), file, *record.Input.ModifiedAt); err != nil {
+				return contract.FileReceiveSession{}, err
+			}
+		}
+		if err := file.Sync(); err != nil {
+			return contract.FileReceiveSession{}, err
+		}
+		info, err := file.Stat()
+		if err != nil {
+			return contract.FileReceiveSession{}, err
+		}
+		if err := m.removeReceiveExtract(record); err != nil {
+			return contract.FileReceiveSession{}, err
+		}
+		stageName := path.Base(receiveExtract(record))
+		if err := parent.Mkdir(stageName, 0700); err != nil {
+			return contract.FileReceiveSession{}, err
+		}
+		stageInfo, err := parent.Lstat(stageName)
+		if err != nil || !stageInfo.IsDir() || stageInfo.Mode()&os.ModeSymlink != 0 {
+			return contract.FileReceiveSession{}, ErrConflict
+		}
+		stage, err := parent.OpenRoot(stageName)
+		if err != nil {
+			return contract.FileReceiveSession{}, err
+		}
+		defer stage.Close()
+		openedStage, err := stage.Stat(".")
+		if err != nil || !os.SameFile(stageInfo, openedStage) {
+			return contract.FileReceiveSession{}, ErrConflict
+		}
+		record.extractInfo, record.ExtractIdentity = openedStage, stableReceiveIdentity(openedStage)
+		defer func() {
+			if current, err := parent.Lstat(stageName); err == nil {
+				_ = removeOwnedReceiveDirectory(parent, stageName, current, openedStage, "")
+			}
+		}()
+		if err := m.persistReceivesLocked(); err != nil {
+			return contract.FileReceiveSession{}, err
+		}
+		publishedInfo, err := stageReceiveFile(file, stage, "body")
+		if err != nil {
+			return contract.FileReceiveSession{}, err
+		}
+		if err := syncRootDirectory(stage, "."); err != nil {
+			return contract.FileReceiveSession{}, err
+		}
+		record.PublishVersion = resourceVersion(target, publishedInfo)
+		record.PublishIdentity, err = m.receivePublishIdentity(ctx, stage, "body", publishedInfo)
+		if err != nil {
+			return contract.FileReceiveSession{}, err
+		}
+		record.Session.State = "committing"
+		if err := m.persistReceivesLocked(); err != nil {
+			record.Session.State = "receiving"
+			return contract.FileReceiveSession{}, err
+		}
+		if err := file.Close(); err != nil {
+			return contract.FileReceiveSession{}, err
+		}
+		if err := ctx.Err(); err != nil {
+			return contract.FileReceiveSession{}, err
+		}
+		currentTemp, tempErr := parent.Lstat(path.Base(receiveTemp(record)))
+		currentStage, stageErr := parent.Lstat(stageName)
+		if tempErr != nil || stageErr != nil || !os.SameFile(info, currentTemp) || !os.SameFile(openedStage, currentStage) {
+			return contract.FileReceiveSession{}, ErrConflict
+		}
+		err = publishReceiveObject(stage, "body", parent, record.Input.Name, replace)
+		if err != nil {
+			return contract.FileReceiveSession{}, err
+		}
+		if err := syncRootDirectory(stage, "."); err != nil {
+			return contract.FileReceiveSession{}, err
+		}
+		if err := syncRootDirectory(parent, "."); err != nil {
+			return contract.FileReceiveSession{}, err
+		}
+		currentParent, _, err := m.pinReceiveParent(record)
+		if err != nil {
+			return contract.FileReceiveSession{}, err
+		}
+		_ = currentParent.Close()
+		published, err := parent.Lstat(record.Input.Name)
+		if err != nil || !os.SameFile(publishedInfo, published) {
+			if err == nil {
+				err = ErrConflict
+			}
+			return contract.FileReceiveSession{}, err
+		}
+		entry := m.entry(target, published)
+		record.Session.Entry, record.Session.State = &entry, "complete"
+		_ = m.removeReceiveTemp(record)
+	}
+	if err := m.persistReceivesLocked(); err != nil {
+		return contract.FileReceiveSession{}, err
+	}
+	return record.Session, nil
+}
+
+func (m *Manager) AbortReceive(ctx context.Context, id, sourceKey string) error {
+	if err := m.receives.mu.LockContext(ctx); err != nil {
+		return err
+	}
+	defer m.receives.mu.Unlock()
+	record, err := m.receiveLocked(id, sourceKey)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if record.Session.State == "committing" {
+		if err := m.reconcileReceiveCommit(ctx, record); err != nil {
+			return err
+		}
+	}
+	if record.Session.State == "complete" {
+		return nil
+	}
+	if err := m.removeReceiveTemp(record); err != nil {
+		return err
+	}
+	delete(m.receives.records, id)
+	return m.persistReceivesLocked()
+}
+
+func (m *Manager) closeReceiveSessions() {
+	m.receives.mu.Lock()
+	defer m.receives.mu.Unlock()
+	m.receives.closed = true
+	if m.receives.store != nil {
+		_ = m.receives.store.Close()
+	}
+}
+
+// ReceiveStream is the compatibility adapter for one-shot uploads/imports.
+// New clients retain the same receiving session across reconnects instead.
+func (m *Manager) ReceiveStream(ctx context.Context, input contract.FileReceiveInput, content io.Reader, limit int64) (contract.FileEntry, error) {
+	// Admit compatibility streams before reading or allocating a chunk. This
+	// gate is separate from chunk writes/extraction to avoid nested gate waits.
+	if err := acquireNow(ctx, m.streamGate); err != nil {
+		return contract.FileEntry{}, err
+	}
+	defer release(m.streamGate)
+	if input.SourceKey == "" {
+		var identity [32]byte
+		if _, err := rand.Read(identity[:]); err != nil {
+			return contract.FileEntry{}, err
+		}
+		input.SourceKey = hex.EncodeToString(identity[:])
+	}
+	session, err := m.BeginReceive(ctx, input)
+	if err != nil {
+		return contract.FileEntry{}, err
+	}
+	defer func() {
+		cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = m.AbortReceive(cleanup, session.ID, input.SourceKey)
+	}()
+	reader := &receiveEOFReader{Reader: &contextReader{ctx, content}}
+	buffer := make([]byte, contract.FileTransferChunkBytes)
+	for {
+		count, readErr := io.ReadFull(reader, buffer)
+		if readErr != nil && (readErr != io.EOF && readErr != io.ErrUnexpectedEOF || !reader.eof) {
+			return contract.FileEntry{}, readErr
+		}
+		if session.Offset+int64(count) > limit {
+			return contract.FileEntry{}, ErrTooLarge
+		}
+		if count > 0 {
+			digest := sha256.Sum256(buffer[:count])
+			session, err = m.WriteReceiveChunk(ctx, session.ID, input.SourceKey, session.Offset, bytes.NewReader(buffer[:count]), hex.EncodeToString(digest[:]))
+			if err != nil {
+				return contract.FileEntry{}, err
+			}
+		}
+		if readErr != nil {
+			break
+		}
+	}
+	session, err = m.CommitReceive(ctx, session.ID, input.SourceKey, session.Offset, session.PrefixSHA256)
+	if err != nil {
+		return contract.FileEntry{}, err
+	}
+	if session.Entry == nil {
+		return contract.FileEntry{}, ErrConflict
+	}
+	return *session.Entry, nil
+}
+
+type receiveEOFReader struct {
+	io.Reader
+	eof bool
+}
+
+func (r *receiveEOFReader) Read(buffer []byte) (int, error) {
+	n, err := r.Reader.Read(buffer)
+	if err == io.EOF {
+		r.eof = true
+	}
+	return n, err
+}

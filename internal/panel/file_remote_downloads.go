@@ -187,6 +187,8 @@ func fileRemoteDownloadError(err error) (string, string) {
 		return "remote_download_encoding_unsupported", "远程服务器返回了不支持的内容编码。"
 	case errors.Is(err, remotedownload.ErrPartialContent):
 		return "remote_download_partial_unsupported", "远程服务器只返回了部分内容，未保存为完整文件。"
+	case errors.Is(err, remotedownload.ErrSourceChanged):
+		return "remote_download_source_changed", "来源文件或续传范围发生变化，已停止拼接。"
 	case errors.Is(err, remotedownload.ErrIdleTimeout):
 		return "remote_download_idle_timeout", "远程服务器 45 秒内没有返回数据。"
 	case errors.As(err, &statusError):

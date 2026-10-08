@@ -1578,8 +1578,10 @@ describe('API client', () => {
       }
     }
     vi.stubGlobal('XMLHttpRequest', UploadXHR)
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ code: 'route_not_found' }, { status: 404 })))
     const controller = new AbortController()
     const operation = api.files.upload('/home', new File(['hello'], 'notes.txt'), false, undefined, controller.signal)
+	await vi.waitFor(() => expect(UploadXHR.latest).toBeDefined())
 
     controller.abort()
 

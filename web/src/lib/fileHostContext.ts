@@ -25,6 +25,6 @@ export function fileAPIForHost(hostId = '') {
     upload: (path: string, file: File, overwrite = false, onProgress?: (percent: number) => void, signal?: AbortSignal) =>
       files.upload(path, file, overwrite, onProgress, signal, hostId),
     transferFromPanel: (input: Parameters<typeof files.transferFromPanel>[0], onEvent: Parameters<typeof files.transferFromPanel>[1], signal?: AbortSignal) =>
-      files.transferFromPanel(input, onEvent, signal, hostId),
+      files.transferFromPanel({ ...input, background: true }, onEvent, signal, hostId),
   }
 }

@@ -57,6 +57,8 @@ func (s *Server) federatedFileHandler() http.Handler {
 			s.federatedFileTransferExport(w, r)
 		case "/v1/files/transfer/import":
 			s.federatedFileTransferImport(w, r)
+		case "/v1/files/transfer/sessions":
+			s.proxyFileReceives(w, r, true, "")
 		case "/v1/files/actions":
 			s.federatedFileAction(w, r)
 		default:
@@ -91,7 +93,7 @@ func (s *Server) federatedFileList(w http.ResponseWriter, r *http.Request) {
 		s.writeProblem(w, r, http.StatusServiceUnavailable, "agent_unavailable", "Agent unavailable", "")
 		return
 	}
-	s.writeAgentResponse(w, r, response)
+	s.writeAgentResponse(w, r, withPanelFileReceiveVersion(response))
 }
 
 func (s *Server) federatedFileEntry(w http.ResponseWriter, r *http.Request) {
@@ -294,7 +296,7 @@ func (s *Server) federatedFileTransferExport(w http.ResponseWriter, r *http.Requ
 		s.writeProblem(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed", "")
 		return
 	}
-	if _, ok := federatedFileQuery(r, "path", "resourceVersion"); !ok {
+	if _, ok := federatedFileQuery(r, "path", "resourceVersion", "offset", "transferVersion"); !ok {
 		s.writeProblem(w, r, http.StatusBadRequest, "file_query_invalid", "传输参数无效", "")
 		return
 	}

@@ -104,6 +104,7 @@ type Server struct {
 	downloadTicketMu        sync.Mutex
 	downloadTickets         map[[32]byte]fileDownloadTicket
 	remoteDownloadOpen      func(context.Context, string) (*http.Response, error)
+	remoteDownloadRangeOpen func(context.Context, string, remotedownload.ResumeRequest) (*http.Response, error)
 	remoteDownloadGate      chan struct{}
 	remoteDownloadJobs      *remotedownload.JobStore
 	remoteDownloadMu        sync.Mutex
@@ -197,7 +198,7 @@ func NewServer(config Config, authService *auth.Service, storage *store.Store, a
 	if err != nil {
 		return nil, fmt.Errorf("initialize terminal commands: %w", err)
 	}
-	remoteDownloadJobs, err := remotedownload.OpenJobStore(filepath.Join(config.DataDir, "remote-downloads"))
+	remoteDownloadJobs, err := remotedownload.OpenTransferJobStore(filepath.Join(config.DataDir, "file-transfers"), filepath.Join(config.DataDir, "remote-downloads"))
 	if err != nil {
 		return nil, fmt.Errorf("initialize remote download jobs: %w", err)
 	}
@@ -250,12 +251,13 @@ func NewServer(config Config, authService *auth.Service, storage *store.Store, a
 		terminalCommands:        terminalCommands,
 		fileShareStreamGate:     make(chan struct{}, maxPublicFileShareStreams),
 		fileShareMetadataGate:   make(chan struct{}, maxFileShareMetadataReads),
-		remoteDownloadOpen:      remotedownload.NewClient(remotedownload.Config{}).Open,
 		remoteDownloadGate:      make(chan struct{}, maxPanelRemoteDownloads),
 		remoteDownloadJobs:      remoteDownloadJobs,
 		remoteDownloadCancels:   make(map[string]context.CancelCauseFunc),
 	}
 	server.hostOps = newHostOperationService(server)
+	downloadClient := remotedownload.NewClient(remotedownload.Config{})
+	server.remoteDownloadOpen, server.remoteDownloadRangeOpen = downloadClient.Open, downloadClient.OpenRange
 	server.mcp = newMCPService(config.DataDir)
 	server.cluster.SetManagedOperationHandler(server.handleManagedClusterOperation, func() bool { access := server.mcp.access.Snapshot(); return access.Available && access.Enabled })
 	server.backups, err = backup.OpenManager(filepath.Join(config.DataDir, "backups"))
@@ -533,6 +535,8 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		s.handleFileUpload(w, r)
 	case r.URL.Path == "/api/v1/files/transfers":
 		s.handleFileTransfer(w, r)
+	case r.URL.Path == "/api/v1/files/transfer/sessions":
+		s.handleFileReceives(w, r)
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/files/remote-downloads":
 		s.handleFileRemoteDownloadJobs(w, r)
 	case r.URL.Path == "/api/v1/files/remote-downloads":

@@ -55,6 +55,38 @@ func OpenJobStore(root string) (*JobStore, error) {
 	return openJobStore(root, readPersistedJobs, writeAtomicPrivateFile)
 }
 
+// Keep the legacy journal intact for rollback. Migrate verified download
+// history only when the new common transfer journal does not exist yet.
+func OpenTransferJobStore(root, legacyRoot string) (*JobStore, error) {
+	root = filepath.Clean(strings.TrimSpace(root))
+	legacyRoot = filepath.Clean(strings.TrimSpace(legacyRoot))
+	if !filepath.IsAbs(root) || !filepath.IsAbs(legacyRoot) {
+		return nil, errors.New("file transfer job roots must be absolute")
+	}
+	newPath := filepath.Join(root, "jobs.json")
+	if _, err := os.Lstat(newPath); !errors.Is(err, os.ErrNotExist) {
+		return OpenJobStore(root)
+	}
+	legacy, err := readPersistedJobs(filepath.Join(legacyRoot, "jobs.json"))
+	if errors.Is(err, os.ErrNotExist) {
+		return OpenJobStore(root)
+	}
+	if err != nil {
+		return &JobStore{root: root, path: newPath, jobs: make(map[string]contract.FileRemoteDownloadJob)}, nil
+	}
+	if err := ensurePrivateDirectory(root); err != nil {
+		return &JobStore{root: root, path: newPath, jobs: make(map[string]contract.FileRemoteDownloadJob)}, nil
+	}
+	payload, err := json.Marshal(legacy)
+	if err != nil {
+		return nil, err
+	}
+	if err := writeAtomicPrivateFile(root, newPath, payload); err != nil {
+		return &JobStore{root: root, path: newPath, jobs: make(map[string]contract.FileRemoteDownloadJob)}, nil
+	}
+	return OpenJobStore(root)
+}
+
 func openJobStore(
 	root string,
 	readState func(string) (persistedJobs, error),
@@ -336,10 +368,17 @@ func readPersistedJobs(statePath string) (persistedJobs, error) {
 }
 
 func validateJob(job contract.FileRemoteDownloadJob) error {
+	validName := validJobName(job.Name)
+	if job.SourceKind == "cross-host" {
+		validName = validCrossTransferName(job.Name)
+	}
+	validSourceKind := job.SourceKind == "" && validSource(job.Source) && job.TargetHostID == "" ||
+		job.SourceKind == "cross-host" && strings.HasPrefix(job.Source, "kpanel://") && jobIDPattern.MatchString(strings.TrimPrefix(job.Source, "kpanel://")) &&
+			(job.TargetHostID == "" || jobIDPattern.MatchString(job.TargetHostID))
 	if !jobIDPattern.MatchString(job.ID) || !validJobState(job.State) || job.CreatedAt.IsZero() ||
 		job.UpdatedAt.Before(job.CreatedAt) || job.LoadedBytes < 0 || job.TotalBytes < 0 ||
-		job.LoadedBytes > 512<<20 || job.TotalBytes > 512<<20 || !validSource(job.Source) ||
-		!validTargetDirectory(job.TargetDirectory) || (job.Name != "" && !validJobName(job.Name)) {
+		job.LoadedBytes > contract.MaxFileTransferBytes+(32<<20) || job.TotalBytes > contract.MaxFileTransferBytes || !validSourceKind ||
+		!validTargetDirectory(job.TargetDirectory) || (job.Name != "" && !validName) {
 		return errors.New("invalid remote download job")
 	}
 	terminal := !activeJobState(job.State)
@@ -347,9 +386,9 @@ func validateJob(job contract.FileRemoteDownloadJob) error {
 		return errors.New("invalid remote download job timestamps")
 	}
 	if job.State == "complete" {
-		if job.Code != "" || job.Name == "" || job.Entry == nil || job.Entry.Kind != "file" ||
+		if job.Code != "" || job.Name == "" || job.Entry == nil || (job.Entry.Kind != "file" && !(job.SourceKind == "cross-host" && job.Entry.Kind == "directory")) ||
 			job.Entry.Name != job.Name || job.Entry.Path != path.Join(job.TargetDirectory, job.Name) ||
-			job.Entry.SizeBytes != job.LoadedBytes || job.Entry.ResourceVersion == "" || len(job.Entry.ResourceVersion) > 256 {
+			(job.Entry.Kind == "file" && job.Entry.SizeBytes != job.LoadedBytes) || job.Entry.ResourceVersion == "" || len(job.Entry.ResourceVersion) > 256 {
 			return errors.New("invalid completed remote download job")
 		}
 	} else if job.Entry != nil {
@@ -388,6 +427,21 @@ func validJobName(value string) bool {
 	}
 	for _, character := range value {
 		if unicode.IsControl(character) {
+			return false
+		}
+	}
+	return true
+}
+
+// Cross-host jobs retain names already accepted by the file manager. The URL
+// downloader's stricter suggested-name policy must not rename or reject them.
+func validCrossTransferName(value string) bool {
+	if value == "" || value == "." || value == ".." || len(value) > 255 ||
+		!utf8.ValidString(value) || strings.ContainsAny(value, "/\\\x00") {
+		return false
+	}
+	for _, prefix := range []string{".kpanel-edit-", ".kpanel-upload-", ".kpanel-copy-", ".kpanel-archive-", ".kpanel-extract-"} {
+		if strings.HasPrefix(value, prefix) {
 			return false
 		}
 	}

@@ -17,11 +17,12 @@ import (
 // executeFileRemoteDownload is the single transfer path shared by request-scoped
 // compatibility downloads and background jobs. Authentication, persistence and
 // audit stay with their callers; URL policy and Agent atomic upload remain here.
-func (s *Server) executeFileRemoteDownload(
+func (s *Server) executeLegacyFileRemoteDownload(
 	ctx context.Context,
 	input contract.FileRemoteDownloadRequest,
 	requestID string,
 	emit func(contract.FileTransferEvent) bool,
+	initial *http.Response,
 ) contract.FileTransferEvent {
 	fail := func(code, detail string, loaded, total int64, name string) contract.FileTransferEvent {
 		event := contract.FileTransferEvent{
@@ -40,7 +41,11 @@ func (s *Server) executeFileRemoteDownload(
 	if s.remoteDownloadOpen == nil {
 		return fail("remote_download_unavailable", "远程下载服务不可用。", 0, 0, input.Name)
 	}
-	response, err := s.remoteDownloadOpen(ctx, input.URL)
+	response := initial
+	var err error
+	if response == nil {
+		response, err = s.remoteDownloadOpen(ctx, input.URL)
+	}
 	if err != nil {
 		code, detail := fileRemoteDownloadError(err)
 		return fail(code, detail, 0, 0, input.Name)

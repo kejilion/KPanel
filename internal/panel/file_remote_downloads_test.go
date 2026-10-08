@@ -77,11 +77,14 @@ type cancelledFileRemoteDownloadAgent struct {
 
 func (agent *cancelledFileRemoteDownloadAgent) OpenStream(
 	ctx context.Context,
-	_, _, _, _ string,
+	_, requestPath, _, _ string,
 	_ io.Reader,
 	_ http.Header,
 	_ int64,
 ) (*http.Response, error) {
+	if requestPath == "/v1/files/transfer/sessions" {
+		return unsupportedFileReceiver(), nil
+	}
 	close(agent.started)
 	<-ctx.Done()
 	<-agent.release
@@ -94,11 +97,14 @@ func (agent *cancelledFileRemoteDownloadAgent) OpenStream(
 
 func (agent *earlyFileRemoteDownloadAgent) OpenStream(
 	_ context.Context,
-	_, _, _, _ string,
+	_, requestPath, _, _ string,
 	body io.Reader,
 	_ http.Header,
 	_ int64,
 ) (*http.Response, error) {
+	if requestPath == "/v1/files/transfer/sessions" {
+		return unsupportedFileReceiver(), nil
+	}
 	go func() {
 		_, err := io.Copy(io.Discard, body)
 		agent.readDone <- err
@@ -154,6 +160,9 @@ func (agent *fileRemoteDownloadAgent) OpenStream(
 	headers http.Header,
 	contentLength int64,
 ) (*http.Response, error) {
+	if requestPath == "/v1/files/transfer/sessions" {
+		return unsupportedFileReceiver(), nil
+	}
 	content, err := io.ReadAll(body)
 	if err != nil {
 		return nil, err
@@ -173,6 +182,10 @@ func (agent *fileRemoteDownloadAgent) OpenStream(
 		ContentLength: int64(len(agent.streamResponse)),
 		Body:          io.NopCloser(bytes.NewReader(agent.streamResponse)),
 	}, nil
+}
+
+func unsupportedFileReceiver() *http.Response {
+	return &http.Response{StatusCode: http.StatusNotFound, Header: http.Header{"Content-Type": {"application/problem+json"}}, Body: io.NopCloser(strings.NewReader(`{"code":"route_not_found"}`))}
 }
 
 func (agent *fileRemoteDownloadAgent) calls() []streamAgentCall {

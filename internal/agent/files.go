@@ -104,6 +104,7 @@ func (s *Server) fileList(w http.ResponseWriter, r *http.Request) {
 		writeFileProblem(w, requestID, err)
 		return
 	}
+	result.FileReceiveVersion = 1
 	writeJSON(w, http.StatusOK, result)
 }
 
@@ -772,7 +773,7 @@ func (s *Server) fileUpload(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) fileTransferExport(w http.ResponseWriter, r *http.Request) {
 	requestID := requestIDFrom(w)
-	if r.URL.RawPath != "" || !strictQuery(r.URL.Query(), "path", "resourceVersion") {
+	if r.URL.RawPath != "" || !strictQuery(r.URL.Query(), "path", "resourceVersion", "offset", "transferVersion") {
 		writeProblem(w, requestID, http.StatusBadRequest, "invalid_query", "传输参数无效", "")
 		return
 	}
@@ -789,10 +790,29 @@ func (s *Server) fileTransferExport(w http.ResponseWriter, r *http.Request) {
 		writeFileProblem(w, requestID, filemanager.ErrConflict)
 		return
 	}
-	metadata, err := json.Marshal(contract.FileTransferMetadata{
+	offset := int64(0)
+	version := r.URL.Query().Get("transferVersion")
+	if raw := r.URL.Query().Get("offset"); raw != "" {
+		var parseErr error
+		offset, parseErr = strconv.ParseInt(raw, 10, 64)
+		if parseErr != nil || offset < 0 || offset > entry.SizeBytes || entry.Kind != "file" || version != "1" {
+			writeFileProblem(w, requestID, filemanager.ErrInvalidPath)
+			return
+		}
+	}
+	if version != "" && version != "1" {
+		writeFileProblem(w, requestID, filemanager.ErrInvalidPath)
+		return
+	}
+	transferMetadata := contract.FileTransferMetadata{
 		Name: entry.Name, Kind: entry.Kind, SizeBytes: entry.SizeBytes,
 		ResourceVersion: entry.ResourceVersion,
-	})
+	}
+	if version == "1" {
+		transferMetadata.Offset, transferMetadata.TransferVersion = offset, 1
+		transferMetadata.Mode, transferMetadata.ModifiedAt = fileTransferMode(entry.Mode), &entry.ModifiedAt
+	}
+	metadata, err := json.Marshal(transferMetadata)
 	if err != nil {
 		writeProblem(w, requestID, http.StatusInternalServerError, "transfer_metadata_failed", "无法准备文件传输", "")
 		return
@@ -813,6 +833,9 @@ func (s *Server) fileTransferExport(w http.ResponseWriter, r *http.Request) {
 		}
 		if file != nil {
 			defer file.Close()
+		}
+		if transferErr == nil {
+			_, transferErr = file.Seek(offset, io.SeekStart)
 		}
 		if transferErr == nil {
 			_, transferErr = io.CopyBuffer(output, file, make([]byte, 64<<10))
@@ -1009,6 +1032,10 @@ func writeFileProblem(w http.ResponseWriter, requestID string, err error) {
 	case errors.Is(err, filemanager.ErrConflict),
 		errors.Is(err, filemanager.ErrAlreadyExists):
 		status, code, title = http.StatusConflict, "file_conflict", "文件状态冲突"
+	case errors.Is(err, filemanager.ErrReceiveChecksum):
+		status, code, title = http.StatusConflict, "file_transfer_checksum", "传输内容校验失败"
+	case errors.Is(err, filemanager.ErrReceiveUnavailable):
+		status, code, title = http.StatusServiceUnavailable, "file_transfer_state_unavailable", "传输恢复记录不可用"
 	case errors.Is(err, filemanager.ErrTooLarge):
 		status, code, title = http.StatusRequestEntityTooLarge, "file_too_large", "文件超过允许的大小"
 	case errors.Is(err, filemanager.ErrBusy):
