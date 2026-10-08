@@ -361,7 +361,7 @@ func TestReceiveCommitRecoveryRejectsMetadataCollision(t *testing.T) {
 	_ = file.Close()
 	target := joinVirtual(input.Directory, input.Name)
 	record.PublishVersion = resourceVersion(target, info)
-	record.PublishIdentity, err = m.receivePublishIdentity(ctx, receiveTemp(record), info)
+	record.PublishIdentity, err = m.receivePublishIdentity(ctx, m.rootFS, receiveTemp(record), info)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -409,3 +409,49 @@ func TestReceiveStreamAdmitsBeforeReadingSource(t *testing.T) {
 type receiveCountingReader struct{ reads int }
 
 func (r *receiveCountingReader) Read([]byte) (int, error) { r.reads++; return 0, io.EOF }
+
+func TestReceiveExpiredParentReplacedByFileDoesNotBlockAfterRestart(t *testing.T) {
+	for _, directory := range []string{"/original", "/original/nested"} {
+		t.Run(directory, func(t *testing.T) {
+			clock := time.Now().UTC()
+			root := t.TempDir()
+			config := Config{Root: root, Now: func() time.Time { return clock }}
+			m, err := New(config)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(filepath.Join(root, filepath.FromSlash(strings.TrimPrefix(directory, "/"))), 0700); err != nil {
+				t.Fatal(err)
+			}
+			input := testReceiveInput(7)
+			input.Directory = directory
+			session, err := m.BeginReceive(context.Background(), input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Rename(filepath.Join(root, "original"), filepath.Join(root, "moved")); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, "original"), []byte("replacement"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			_ = m.Close()
+			clock = clock.Add(receiveLifetime + time.Second)
+			m, err = New(config)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = m.Close() })
+			if _, err := m.BeginReceive(context.Background(), testReceiveInput(7)); err != nil {
+				t.Fatalf("ENOTDIR disabled unrelated receiving: %v", err)
+			}
+			if _, exists := m.receives.records[session.ID]; exists {
+				t.Fatal("expired unreachable checkpoint retained")
+			}
+			moved := filepath.Join(root, "moved", filepath.FromSlash(strings.TrimPrefix(directory, "/original")), ".kpanel-upload-"+session.ID)
+			if _, err := os.Stat(moved); err != nil {
+				t.Fatal("cleanup followed moved parent", err)
+			}
+		})
+	}
+}

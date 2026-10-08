@@ -73,9 +73,24 @@ func (s *Server) fileReceiveSupport(ctx context.Context, hostID string, kind clu
 		}
 		payload = response.Body
 	} else {
-		response, err := s.openFileHostRequest(ctx, hostID, kind, cluster.LightFileRequest{
+		input := cluster.LightFileRequest{
 			Method: http.MethodGet, Path: "/v1/files", RawQuery: query, Body: http.NoBody,
-		})
+		}
+		var response *http.Response
+		var err error
+		if kind == cluster.HostKindPanel {
+			host, hostErr := s.cluster.Host(ctx, hostID)
+			if hostErr != nil {
+				return hostErr
+			}
+			if host.FederationProtocol == cluster.FederationProtocol {
+				response, err = s.cluster.OpenRemotePanelFileV1(ctx, hostID, input)
+			} else {
+				response, err = s.openFileHostRequest(ctx, hostID, kind, input)
+			}
+		} else {
+			response, err = s.openFileHostRequest(ctx, hostID, kind, input)
+		}
 		if err != nil {
 			return err
 		}

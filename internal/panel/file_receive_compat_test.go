@@ -3,6 +3,7 @@ package panel
 import (
 	"bytes"
 	"context"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -133,5 +135,143 @@ func TestPairedReceiveNegotiatesBeforeSendingUnsupportedRoutes(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestBrowserReceiveCapabilityUsesGrantedV1Relay(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("V1 credential permission validation requires Linux; covered by the Linux gate")
+	}
+	for _, capability := range []string{"current", "legacy", "denied"} {
+		t.Run(capability, func(t *testing.T) {
+			target, _ := newTestServerWithPublicURL(t, "https://example.com")
+			_, _, root := realTransferAgent(t, target)
+			_ = target.cluster.Close()
+			var err error
+			target.cluster, err = cluster.NewService(cluster.ServiceConfig{DataDir: t.TempDir(), Telemetry: historyTestTelemetry{}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			handler := target.federatedFileHandler()
+			var sessions, uploads atomic.Int32
+			target.cluster.SetFileRelayHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/v1/files" {
+					if capability == "denied" {
+						http.Error(w, "denied", 403)
+						return
+					}
+					if capability == "legacy" {
+						w.Header().Set("Content-Type", "application/json")
+						_ = json.NewEncoder(w).Encode(contract.FileDirectory{Path: "/home", Entries: []contract.FileEntry{}})
+						return
+					}
+				}
+				if r.URL.Path == "/v1/files/transfer/sessions" {
+					sessions.Add(1)
+				}
+				if r.URL.Path == "/v1/files/upload" {
+					uploads.Add(1)
+				}
+				handler.ServeHTTP(w, r)
+			}))
+			network := httptest.NewTLSServer(target)
+			t.Cleanup(network.Close)
+			roots := x509.NewCertPool()
+			roots.AddCert(network.Certificate())
+			remote, err := cluster.NewRemoteClient(cluster.RemoteClientConfig{RootCAs: roots, Resolver: historyTestResolver{}, Dialer: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				return (&net.Dialer{}).DialContext(ctx, "tcp", network.Listener.Addr().String())
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			center, tokenPath := newTestServer(t)
+			cookie, csrf := bootstrapCookies(t, center, tokenPath)
+			_ = center.cluster.Close()
+			center.cluster, err = cluster.NewService(cluster.ServiceConfig{DataDir: t.TempDir(), Telemetry: historyTestTelemetry{}, Remote: remote})
+			if err != nil {
+				t.Fatal(err)
+			}
+			code, err := target.cluster.CreatePairingCode()
+			if err != nil {
+				t.Fatal(err)
+			}
+			host, err := center.cluster.AddHost(context.Background(), cluster.AddHostInput{Origin: "https://example.com", PairingCode: code.Code})
+			if err != nil {
+				t.Fatal(err)
+			}
+			controllers := target.cluster.Controllers()
+			if len(controllers) != 1 {
+				t.Fatal("controller missing")
+			}
+			if _, err := target.cluster.SetControllerFileRelay(controllers[0].ID, true); err != nil {
+				t.Fatal(err)
+			}
+			center.cluster.Start(context.Background())
+			_, err = center.cluster.Refresh(context.Background(), host.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			deadline := time.Now().Add(3 * time.Second)
+			for time.Now().Before(deadline) {
+				host, err = center.cluster.Host(context.Background(), host.ID)
+				if err != nil || host.FileManagementAvailable {
+					break
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+			if err != nil || !host.FileManagementAvailable {
+				t.Fatalf("grant not available: %#v %v", host, err)
+			}
+			request := func(method, route string, payload []byte, media string) *httptest.ResponseRecorder {
+				r := httptest.NewRequest(method, "http://panel.test"+route, bytes.NewReader(payload))
+				r.Host = "panel.test"
+				r.Header.Set("Origin", "http://panel.test")
+				r.Header.Set("X-CSRF-Token", csrf.Value)
+				r.Header.Set("Content-Type", media)
+				r.AddCookie(cookie)
+				r.AddCookie(csrf)
+				w := httptest.NewRecorder()
+				center.ServeHTTP(w, r)
+				return w
+			}
+			input := contract.FileReceiveInput{Directory: "/home", Name: "v1.txt", Kind: "file", SizeBytes: 7, SourceKey: strings.Repeat("a", 64)}
+			payload, _ := json.Marshal(contract.FileReceiveRequest{Operation: "create", Input: &input})
+			created := request("POST", "/api/v1/files/transfer/sessions?hostId="+host.ID, payload, "application/json")
+			if capability == "denied" {
+				if created.Code != 503 || sessions.Load() != 0 || uploads.Load() != 0 {
+					t.Fatalf("denial downgraded: %d", created.Code)
+				}
+				return
+			}
+			if capability == "legacy" {
+				if created.Code != 404 || sessions.Load() != 0 {
+					t.Fatalf("legacy capability=%d %s", created.Code, created.Body.String())
+				}
+				uploaded := request("POST", "/api/v1/files/upload?hostId="+host.ID+"&path=%2Fhome&name=v1.txt&overwrite=false", []byte("payload"), "application/octet-stream")
+				if uploaded.Code != 201 || uploads.Load() != 1 {
+					t.Fatalf("legacy upload=%d %s", uploaded.Code, uploaded.Body.String())
+				}
+			} else {
+				if created.Code != 201 {
+					t.Fatalf("v1 create=%d %s", created.Code, created.Body.String())
+				}
+				var session contract.FileReceiveSession
+				_ = json.Unmarshal(created.Body.Bytes(), &session)
+				digest := transferSourceKey("payload")
+				chunk := request("PUT", "/api/v1/files/transfer/sessions?hostId="+host.ID+"&id="+session.ID+"&sourceKey="+input.SourceKey+"&offset=0&sha256="+digest, []byte("payload"), "application/octet-stream")
+				if chunk.Code != 200 {
+					t.Fatalf("v1 chunk=%d %s", chunk.Code, chunk.Body.String())
+				}
+				payload, _ = json.Marshal(contract.FileReceiveRequest{Operation: "commit", ID: session.ID, SourceKey: input.SourceKey, SizeBytes: 7, SHA256: digest})
+				committed := request("POST", "/api/v1/files/transfer/sessions?hostId="+host.ID, payload, "application/json")
+				if committed.Code != 200 {
+					t.Fatalf("v1 commit=%d %s", committed.Code, committed.Body.String())
+				}
+			}
+			got, err := os.ReadFile(filepath.Join(root, "home", "v1.txt"))
+			if err != nil || string(got) != "payload" {
+				t.Fatalf("upload result=%q %v", got, err)
+			}
+		})
 	}
 }

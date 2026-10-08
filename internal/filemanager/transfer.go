@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path"
 	"strconv"
 
 	"github.com/kejilion/kejilion-panel/internal/contract"
@@ -147,7 +148,7 @@ func (m *Manager) ImportDirectory(
 	return m.ReceiveStream(ctx, input, content, receiveLimit(input))
 }
 
-func (m *Manager) importDirectory(ctx context.Context, input contract.FileReceiveInput, content io.Reader, tempVirtual string, beforePublish func(os.FileInfo) error) (contract.FileEntry, error) {
+func (m *Manager) importDirectory(ctx context.Context, input contract.FileReceiveInput, content io.Reader, parent *fileRoot, tempVirtual string, beforePublish func(*fileRoot, os.FileInfo) error) (contract.FileEntry, error) {
 	targetDirectory, name := input.Directory, input.Name
 	if err := validateName(name); err != nil {
 		return contract.FileEntry{}, err
@@ -156,11 +157,8 @@ func (m *Manager) importDirectory(ctx context.Context, input contract.FileReceiv
 		return contract.FileEntry{}, err
 	}
 	defer release(m.uploadGate)
-	_, normalizedTarget, err := m.resolveExisting(targetDirectory)
-	if err != nil {
-		return contract.FileEntry{}, err
-	}
-	targetInfo, err := m.rootFS.Lstat(rootName(normalizedTarget))
+	normalizedTarget := targetDirectory
+	targetInfo, err := parent.Stat(".")
 	if err != nil {
 		return contract.FileEntry{}, err
 	}
@@ -171,26 +169,44 @@ func (m *Manager) importDirectory(ctx context.Context, input contract.FileReceiv
 	if err := m.mutationError(outputVirtual); err != nil {
 		return contract.FileEntry{}, err
 	}
-	if _, err := m.rootFS.Lstat(rootName(outputVirtual)); err == nil {
+	if _, err := parent.Lstat(name); err == nil {
 		return contract.FileEntry{}, ErrAlreadyExists
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return contract.FileEntry{}, err
 	}
 
-	if err := m.rootFS.Mkdir(rootName(tempVirtual), 0700); err != nil {
+	tempName := path.Base(tempVirtual)
+	if err := parent.Mkdir(tempName, 0700); err != nil {
 		return contract.FileEntry{}, err
 	}
 	success := false
 	defer func() {
 		if !success {
-			_ = m.rootFS.RemoveAll(rootName(tempVirtual))
+			_ = parent.RemoveAll(tempName)
 		}
 	}()
+	stageInfo, err := parent.Lstat(tempName)
+	if err != nil || !stageInfo.IsDir() || stageInfo.Mode()&os.ModeSymlink != 0 {
+		return contract.FileEntry{}, ErrConflict
+	}
+	stage, err := parent.OpenRoot(tempName)
+	if err != nil {
+		return contract.FileEntry{}, err
+	}
+	defer stage.Close()
+	opened, err := stage.Stat(".")
+	if err != nil || !os.SameFile(stageInfo, opened) {
+		return contract.FileEntry{}, ErrConflict
+	}
+	// Every extracted child stays under the opened staging object even if its
+	// visible sibling name is replaced. It cannot redirect privileged writes
+	// into another location within the wider Agent filesystem root.
+	extractor := &Manager{rootFS: stage}
 	budget := &copyBudget{maxEntries: m.maxCopyEntries, maxBytes: m.maxCopyBytes}
 	seen := make(map[string]struct{})
 	directoryTimes := make([]archiveDirectoryTime, 0)
 	reader := tar.NewReader(&contextReader{ctx: ctx, reader: content})
-	if err := m.extractTAR(ctx, reader, tempVirtual, budget, seen, &directoryTimes); err != nil {
+	if err := extractor.extractTAR(ctx, reader, "/", budget, seen, &directoryTimes); err != nil {
 		return contract.FileEntry{}, err
 	}
 	// TAR end blocks are not the transport end marker. Drain the underlying
@@ -198,7 +214,7 @@ func (m *Manager) importDirectory(ctx context.Context, input contract.FileReceiv
 	if _, err := io.Copy(io.Discard, &contextReader{ctx: ctx, reader: content}); err != nil {
 		return contract.FileEntry{}, err
 	}
-	if err := m.applyArchiveDirectoryTimes(directoryTimes); err != nil {
+	if err := extractor.applyArchiveDirectoryTimes(directoryTimes); err != nil {
 		return contract.FileEntry{}, err
 	}
 	mode := os.FileMode(0755)
@@ -206,36 +222,54 @@ func (m *Manager) importDirectory(ctx context.Context, input contract.FileReceiv
 		value, _ := strconv.ParseUint(input.Mode, 8, 32)
 		mode = os.FileMode(value)
 	}
-	if err := m.rootFS.Chmod(rootName(tempVirtual), mode); err != nil {
+	if err := stage.Chmod(".", mode); err != nil {
 		return contract.FileEntry{}, err
 	}
 	if input.ModifiedAt != nil {
-		if err := m.rootFS.Chtimes(rootName(tempVirtual), *input.ModifiedAt, *input.ModifiedAt); err != nil {
+		if err := stage.Chtimes(".", *input.ModifiedAt, *input.ModifiedAt); err != nil {
 			return contract.FileEntry{}, err
 		}
 	}
-	if err := syncRootDirectory(m.rootFS, rootName(tempVirtual)); err != nil {
+	if err := syncRootDirectory(stage, "."); err != nil {
 		return contract.FileEntry{}, err
 	}
-	info, err := m.rootFS.Lstat(rootName(tempVirtual))
+	info, err := stage.Lstat(".")
 	if err != nil {
 		return contract.FileEntry{}, err
 	}
-	if err := beforePublish(info); err != nil {
+	if err := beforePublish(stage, info); err != nil {
 		return contract.FileEntry{}, err
 	}
 	if err := ctx.Err(); err != nil {
 		return contract.FileEntry{}, err
 	}
-	if err := renameNoReplaceRoot(m.rootFS, tempVirtual, outputVirtual); err != nil {
+	_, _, parentErr := m.resolveExisting(normalizedTarget)
+	currentParent, statErr := m.rootFS.Lstat(rootName(normalizedTarget))
+	if parentErr != nil || statErr != nil || !os.SameFile(targetInfo, currentParent) {
+		return contract.FileEntry{}, ErrConflict
+	}
+	visible, err := parent.Lstat(tempName)
+	if err != nil || !os.SameFile(info, visible) {
+		return contract.FileEntry{}, ErrConflict
+	}
+	if err := renameNoReplaceRoot(parent, "/"+tempName, "/"+name); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return contract.FileEntry{}, ErrAlreadyExists
 		}
 		return contract.FileEntry{}, err
 	}
-	if err := syncRootDirectory(m.rootFS, rootName(normalizedTarget)); err != nil {
+	if err := syncRootDirectory(parent, "."); err != nil {
 		return contract.FileEntry{}, err
 	}
+	_, _, parentErr = m.resolveExisting(normalizedTarget)
+	currentParent, statErr = m.rootFS.Lstat(rootName(normalizedTarget))
+	if parentErr != nil || statErr != nil || !os.SameFile(targetInfo, currentParent) {
+		return contract.FileEntry{}, ErrConflict
+	}
 	success = true
-	return m.Stat(outputVirtual)
+	published, err := parent.Lstat(name)
+	if err != nil || !os.SameFile(info, published) {
+		return contract.FileEntry{}, ErrConflict
+	}
+	return m.entry(outputVirtual, published), nil
 }
