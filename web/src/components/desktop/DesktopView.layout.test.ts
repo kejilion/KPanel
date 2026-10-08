@@ -794,13 +794,13 @@ describe('DesktopView icon layout interaction', () => {
     expect(items.slice(0, 3).map((item) => item.text())).toEqual([
       '刷新桌面',
       '添加快捷方式',
-      '桌面布局管理',
+      '新建分组',
     ])
     expect(items.some((item) => item.text().includes('自动整理'))).toBe(false)
     expect(items.some((item) => item.text().includes('恢复默认位置'))).toBe(false)
     expect(items.some((item) => item.text().includes('整理模式'))).toBe(false)
 
-    await items[2]?.trigger('click')
+    await items.find((item) => item.text().includes('桌面布局管理'))?.trigger('click')
     await flushPromises()
     const autoArrange = document.body.querySelector<HTMLButtonElement>('.desktop-icon-manager__layout-action')
     expect(autoArrange?.disabled).toBe(true)

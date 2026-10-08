@@ -478,6 +478,22 @@ describe('DesktopView', () => {
     wrapper.unmount()
   })
 
+
+  it('offers new folder, txt and md from the blank desktop menu and opens a name dialog', async () => {
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await flushPromises()
+    await wrapper.trigger('contextmenu', { clientX: 200, clientY: 150 })
+    await nextTick()
+    expect(wrapper.findAll('[data-new-item]')).toHaveLength(0)
+    await wrapper.find('[data-context-action="new-item"]').trigger('click')
+    const items = wrapper.findAll('[data-new-item]')
+    expect(items.map((item) => item.attributes('data-new-item'))).toEqual(['folder', 'txt', 'md'])
+    await items[1]!.trigger('click')
+    await flushPromises()
+    const input = document.body.querySelector<HTMLInputElement>('[data-new-item-name]')
+    expect(input?.value).toBe('新建文本文档')
+    wrapper.unmount()
+  })
   it('waits for the context menu leave transition before changing theme', async () => {
     const theme = useTheme()
     theme.setTheme('light')

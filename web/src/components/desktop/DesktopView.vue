@@ -20,7 +20,12 @@ import {
   Trash2,
   EyeOff,
   File,
+  FilePlus,
+  FileText,
   FolderOpen,
+  FolderPlus,
+  ChevronDown,
+  ChevronRight,
   HardDriveUpload,
   LoaderCircle,
   Check,
@@ -100,6 +105,14 @@ import {
   type DesktopExternalTransferAPI,
   type DesktopExternalTransferProgress,
 } from '@/lib/desktopExternalDrop'
+import {
+  DESKTOP_NEW_ITEM_TYPES,
+  desktopNewItemManifest,
+  desktopNewItemName,
+  desktopNewItemType,
+  type DesktopNewItemID,
+  type DesktopNewItemType,
+} from '@/lib/desktopNewItems'
 import { shortcutFileGradient, shortcutFileIcon } from '@/lib/fileEntryPresentation'
 import { kpanelUpdateSettingsPath } from '@/lib/kpanelUpdate'
 import type { DesktopStartMenuItem } from '@/lib/desktopStartMenu'
@@ -1047,6 +1060,15 @@ const contextMenuTarget = ref<'desktop' | 'taskbar' | 'taskbar-window'>('desktop
 const contextMenuElement = ref<HTMLElement>()
 const menuEntry = ref<DesktopEntry>()
 const menuNavPath = ref('')
+const newItemMenuOpen = ref(false)
+const newItem = ref<{ type: DesktopNewItemType; name: string; origin: { x: number; y: number } }>()
+const newItemBusy = ref(false)
+let menuOrigin = { x: 0, y: 0 }
+const NEW_ITEM_LABELS: Record<DesktopNewItemID, { label: string; fallback: string }> = {
+  folder: { label: 'desktop.newFolder', fallback: 'desktop.newItemDefaultFolder' },
+  txt: { label: 'desktop.newTxt', fallback: 'desktop.newItemDefaultTxt' },
+  md: { label: 'desktop.newMd', fallback: 'desktop.newItemDefaultMd' },
+}
 const menuSelectionKeys = ref<string[]>([])
 const menuRemovableCount = computed(() => {
   const selected = new Set(menuSelectionKeys.value)
@@ -1483,6 +1505,7 @@ async function showContextMenu(
       ? document.activeElement
       : undefined
   contextMenu.value = { x: event.clientX, y: event.clientY, open: true }
+  menuOrigin = { x: event.clientX, y: event.clientY }
   contextMenuTarget.value = target
   menuEntry.value = entry
   menuNavPath.value = navPath
@@ -1538,6 +1561,7 @@ function onEntryOpen(_event: MouseEvent | KeyboardEvent, entry: DesktopEntry): v
 
 function closeContextMenu(restoreFocus = true): void {
   contextMenu.value.open = false
+  newItemMenuOpen.value = false
   menuEntry.value = undefined
   menuNavPath.value = ''
   menuSelectionKeys.value = []
@@ -2977,14 +3001,18 @@ function onDesktopFileDragLeave(event: DragEvent): void {
   }
 }
 
-function desktopDropPosition(event: DragEvent): DesktopIconPosition | undefined {
+function desktopPositionAt(clientX: number, clientY: number): DesktopIconPosition | undefined {
   const element = iconsElement.value
   if (!element) return undefined
   const rect = element.getBoundingClientRect()
   return desktopIconPixelsToPosition({
-    left: event.clientX - rect.left,
-    top: event.clientY - rect.top + element.scrollTop,
+    left: clientX - rect.left,
+    top: clientY - rect.top + element.scrollTop,
   }, iconBounds.value)
+}
+
+function desktopDropPosition(event: DragEvent): DesktopIconPosition | undefined {
+  return desktopPositionAt(event.clientX, event.clientY)
 }
 
 async function addDroppedFileEntries(
@@ -3441,6 +3469,60 @@ function onContextMenuAction(
       }
       break
     }
+  }
+}
+
+function openNewItemDialog(id: DesktopNewItemID): void {
+  const origin = menuOrigin
+  closeContextMenu()
+  newItem.value = {
+    type: desktopNewItemType(id),
+    name: i18n.t(NEW_ITEM_LABELS[id].fallback as Parameters<typeof i18n.t>[0]),
+    origin,
+  }
+}
+
+function closeNewItemDialog(): void {
+  if (newItemBusy.value) return
+  newItem.value = undefined
+}
+
+async function createNewItem(): Promise<void> {
+  const pending = newItem.value
+  if (!pending || newItemBusy.value) return
+  const name = desktopNewItemName(pending.type, pending.name)
+  if (!name) {
+    toast.danger(i18n.t('desktop.newItemInvalid'), '')
+    return
+  }
+  newItemBusy.value = true
+  try {
+    const result = await uploadExternalDrop(
+      desktopNewItemManifest(pending.type, name),
+      localDesktopFileAPI(),
+      new AbortController().signal,
+      () => {},
+      desktopUploadDirectory.value,
+    )
+    if (result.failed.length) throw new Error(result.failed[0]!.detail)
+    const destination = desktopPositionAt(pending.origin.x, pending.origin.y) ?? { x: 0, y: 0 }
+    await addDroppedFileEntries(result.entries, destination)
+    newItem.value = undefined
+    toast.success(i18n.t('desktop.newItemCreated'), result.entries[0]?.name ?? name)
+  } catch (error) {
+    if (error instanceof DesktopShortcutLimitError) {
+      toast.danger(i18n.t('desktop.shortcutLimitTitle'), i18n.t('desktop.shortcutLimitMessage', {
+        available: error.available,
+        requested: error.requested,
+      }))
+    } else {
+      toast.danger(
+        i18n.t('desktop.workspaceSaveErrorTitle'),
+        error instanceof Error ? error.message : workspaceErrorMessage(error),
+      )
+    }
+  } finally {
+    newItemBusy.value = false
   }
 }
 
@@ -4810,18 +4892,37 @@ function onViewportResize(): void {
             <Plus :size="15" aria-hidden="true" />
             {{ i18n.t('desktop.shortcutAdd') }}
           </button>
-          <button
-            type="button"
-            role="menuitem"
-            :disabled="!workspace.available"
-            @click="onContextMenuAction('manage-icons')"
-          >
-            <MonitorCog :size="15" aria-hidden="true" />
-            {{ i18n.t('desktop.iconManagerTitle') }}
-          </button>
           <button type="button" role="menuitem" :disabled="groupSaving || !workspace.available" @click="createGroup()">
             <Plus :size="15" />{{ i18n.t('desktop.groupCreate') }}
           </button>
+          <button
+            type="button"
+            role="menuitem"
+            data-context-action="new-item"
+            :aria-expanded="newItemMenuOpen"
+            :disabled="!workspace.available"
+            @click.stop="newItemMenuOpen = !newItemMenuOpen"
+          >
+            <FilePlus :size="15" aria-hidden="true" />
+            {{ i18n.t('desktop.newItem') }}
+            <ChevronDown v-if="newItemMenuOpen" class="desktop__context-chevron" :size="14" aria-hidden="true" />
+            <ChevronRight v-else class="desktop__context-chevron" :size="14" aria-hidden="true" />
+          </button>
+          <template v-if="newItemMenuOpen">
+            <button
+              v-for="type in DESKTOP_NEW_ITEM_TYPES"
+              :key="type.id"
+              type="button"
+              role="menuitem"
+              class="desktop__context-sub"
+              :data-new-item="type.id"
+              @click="openNewItemDialog(type.id)"
+            >
+              <FolderPlus v-if="type.kind === 'directory'" :size="15" aria-hidden="true" />
+              <FileText v-else :size="15" aria-hidden="true" />
+              {{ i18n.t(NEW_ITEM_LABELS[type.id].label as Parameters<typeof i18n.t>[0]) }}
+            </button>
+          </template>
           <div class="desktop__context-separator" role="separator" />
           <button type="button" role="menuitem" data-context-action="theme" @click="onContextMenuAction('theme')">
             <Sun v-if="theme.resolved.value === 'dark'" :size="15" aria-hidden="true" />
@@ -4848,6 +4949,15 @@ function onViewportResize(): void {
             {{ documentFullscreen.active.value
               ? i18n.t('desktop.exitFullscreen')
               : i18n.t('desktop.enterFullscreen') }}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            :disabled="!workspace.available"
+            @click="onContextMenuAction('manage-icons')"
+          >
+            <MonitorCog :size="15" aria-hidden="true" />
+            {{ i18n.t('desktop.iconManagerTitle') }}
           </button>
           <button
             v-if="activeScenePack && scenePackCameras.length > 1"
@@ -5151,6 +5261,40 @@ function onViewportResize(): void {
         </button>
         <button class="button button--ghost" type="button" @click="detailEntry = undefined">
           {{ i18n.t('common.closeDialog') }}
+        </button>
+      </template>
+    </ModalDialog>
+
+    <ModalDialog
+      :open="Boolean(newItem)"
+      :title="i18n.t('desktop.newItemTitle')"
+      size="small"
+      @close="closeNewItemDialog"
+    >
+      <form class="desktop__rename-form" @submit.prevent="createNewItem">
+        <label>
+          <span>{{ i18n.t('desktop.newItemLabel') }}</span>
+          <input
+            v-if="newItem"
+            v-model="newItem.name"
+            maxlength="200"
+            autocomplete="off"
+            data-new-item-name
+          />
+        </label>
+        <small v-if="newItem?.type.extension">{{ newItem.type.extension }}</small>
+      </form>
+      <template #footer>
+        <button class="button button--ghost" type="button" :disabled="newItemBusy" @click="closeNewItemDialog">
+          {{ i18n.t('common.cancel') }}
+        </button>
+        <button
+          class="button button--primary"
+          type="button"
+          :disabled="newItemBusy || !newItem?.name.trim()"
+          @click="createNewItem"
+        >
+          {{ i18n.t('desktop.newItemCreate') }}
         </button>
       </template>
     </ModalDialog>
