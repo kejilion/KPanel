@@ -612,7 +612,8 @@ Definition of Done，不充当 L2/L3 独立复核，也不替代验收记录中�
    [`docs/release-channels.md`](docs/release-channels.md)，不允许人工覆盖既有版本产物。
 7. 稳定版与预览版共用更新摘要格式：Changelog 使用 `Added`、`Changed`、`Fixed`、`Security`、
    `Performance`、`Compatibility`、`Upgrade Notes`，或对应的“新增、变更、修复、安全、性能、兼容性、
-   升级注意事项”分类。`Documentation`、`Deprecated`、`Removed` 归入变更；已发布的组合标题仅作为
+   升级注意事项”分类；Changelog 分类使用三级标题，生成正文使用四级分类标题，不能用其他标题层级
+   跳出校验范围。`Documentation`、`Deprecated`、`Removed` 归入变更；已发布的组合标题仅作为
    兼容别名归一化。发布边界、测试范围是元数据，不能充当用户更新条目。新增分类必须先同步生成器、
    面板解析器和真实正文回归，禁止任意标题被静默放行。
 8. 唯一发布说明门禁为 `scripts/check-release-notes.sh <version> <image> <digest> <output>`：先生成正文，

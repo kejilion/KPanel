@@ -58,8 +58,16 @@ if ! section="$(
     found {
       started = 1
       sub(/\r$/, "")
-      if ($0 ~ /^### /) {
-        heading = substr($0, 5)
+      heading_line = $0
+      sub(/^[[:space:]]+/, "", heading_line)
+      if (heading_line ~ /^#+[[:space:]]/) {
+        if (heading_line !~ /^### /) {
+          print "unsupported release notes heading level: " heading_line > "/dev/stderr"
+          exit 4
+        }
+        heading = substr(heading_line, 5)
+        sub(/[[:space:]]+#+[[:space:]]*$/, "", heading)
+        sub(/[[:space:]]+$/, "", heading)
         if (heading == "Added" || heading == "新增") print "#### 新增"
         else if (heading == "Changed" || heading == "变更" || heading == "改进" ||
                  heading == "新增与改进" || heading == "新增与修复" ||

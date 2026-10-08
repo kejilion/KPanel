@@ -42,6 +42,9 @@ test('release renderer normalizes supported and historical headings for the pane
     assert.equal(result.status, 0, result.stderr);
     assert.ok(result.notes.includes(`#### ${normalized}\n`), result.notes);
   }
+  const indented = render('1.3.0-rc.2', ' ### Added ###\n- visible item\n');
+  assert.equal(indented.status, 0, indented.stderr);
+  assert.match(indented.notes, /#### 新增\n- visible item/);
 });
 
 test('stable and preview publication gates accept readable updates and upgrade warnings', () => {
@@ -60,11 +63,32 @@ test('both publication channels reject unsupported, uncategorized and metadata-o
       '- uncategorized update\n',
       '### 发布边界\n- preview channel only\n',
       '### Upgrade Notes\n- warning without an update\n',
+      '### Added\n- retained update\n ### 未知分类\n- silently lost update\n',
+      '### Added\n- retained update\n## 未知分类\n- silently lost update\n',
       `### Added\n${'- supported update\n'.repeat(9)}#### 未知子分类\n- lost update\n`,
     ]) {
       const result = render(version, section, true);
       assert.notEqual(result.status, 0, `unsafe ${version} release was accepted: ${section}`);
       assert.match(`${result.stdout}\n${result.stderr}`, /unsupported|supported category|readable user-visible item/);
+    }
+  }
+});
+
+test('the runtime artifact gate rejects unexpected outer headings in either channel', () => {
+  for (const version of ['1.2.3', '1.3.0-rc.2']) {
+    for (const heading of [' ### 未知分类', '## 未知分类']) {
+      const temporary = mkdtempSync(join(repoRoot, '.release-channel-test-'));
+      const output = join(temporary, 'NOTES.md');
+      writeFileSync(output, `## KPanel ${version}\n### 版本更新内容\n#### 新增\n- retained update\n${heading}\n- silently lost update\n### 发布产物与完整性\n`);
+      const result = spawnSync('go', ['test', './internal/selfupdate', '-run', '^TestRenderedReleaseNotesForPublication$', '-count=1'], {
+        cwd: repoRoot,
+        encoding: 'utf8',
+        env: { ...process.env, KPANEL_RELEASE_NOTES_FILE: output, KPANEL_RELEASE_NOTES_VERSION: version },
+      });
+      rmSync(temporary, { recursive: true, force: true });
+      assert.ifError(result.error);
+      assert.notEqual(result.status, 0, `${heading} was silently accepted for ${version}`);
+      assert.match(`${result.stdout}\n${result.stderr}`, /unsupported rendered release/);
     }
   }
 });

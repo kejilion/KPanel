@@ -73,12 +73,23 @@ func TestRenderedReleaseNotesForPublication(t *testing.T) {
 	for _, rawLine := range strings.Split(body, "\n") {
 		line := strings.TrimSpace(strings.TrimSuffix(rawLine, "\r"))
 		if heading, ok := markdownHeading(line); ok {
-			if strings.HasPrefix(line, "### ") || strings.HasPrefix(line, "## ") {
-				inUpdates = isReleaseNotesHeading(heading)
-				kind, metadata = "", false
-				if inUpdates {
-					sections++
+			if strings.HasPrefix(line, "## ") {
+				if inUpdates || heading != "KPanel "+version {
+					t.Fatalf("unsupported rendered release heading: %s", heading)
 				}
+				continue
+			}
+			if strings.HasPrefix(line, "### ") {
+				switch {
+				case isReleaseNotesHeading(heading):
+					inUpdates = true
+					sections++
+				case heading == "升级说明" || heading == "发布产物与完整性":
+					inUpdates = false
+				default:
+					t.Fatalf("unsupported rendered release section: %s", heading)
+				}
+				kind, metadata = "", false
 				continue
 			}
 			if !inUpdates {
