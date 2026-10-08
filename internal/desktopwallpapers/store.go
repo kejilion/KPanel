@@ -18,6 +18,7 @@ import (
 	"image"
 	"image/jpeg"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -29,6 +30,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/kejilion/kejilion-panel/internal/atomicfile"
 	"golang.org/x/image/webp"
 )
 
@@ -121,10 +123,16 @@ type Store struct {
 	root       string
 	filesDir   string
 	wallpapers []Wallpaper
+	writer     atomicfile.Writer
+	logger     *slog.Logger
 }
 
 // Open loads the index, drops entries whose files are missing or invalid, and removes stray files.
 func Open(root string) (*Store, error) {
+	return open(root, atomicfile.Writer{SyncDirectory: syncDirectory})
+}
+
+func open(root string, writer atomicfile.Writer) (*Store, error) {
 	filesDir := filepath.Join(root, "files")
 	if err := ensurePrivateDirectory(root); err != nil {
 		return nil, fmt.Errorf("initialize desktop wallpaper directory: %w", err)
@@ -132,7 +140,7 @@ func Open(root string) (*Store, error) {
 	if err := ensurePrivateDirectory(filesDir); err != nil {
 		return nil, fmt.Errorf("initialize desktop wallpaper files: %w", err)
 	}
-	store := &Store{root: root, filesDir: filesDir}
+	store := &Store{root: root, filesDir: filesDir, writer: writer, logger: slog.Default()}
 	index, err := store.readIndex()
 	if err != nil {
 		return nil, err
@@ -237,10 +245,10 @@ func (s *Store) Add(prepared *Prepared) (Wallpaper, error) {
 		CreatedAt: time.Now().UTC().Truncate(time.Second), ImageDigest: digest,
 	}
 	imagePath, thumbPath := s.paths(id)
-	if err := writeAtomicPrivateFile(s.filesDir, imagePath, prepared.image); err != nil {
+	if err := s.writeAtomicPrivateFile(s.filesDir, imagePath, prepared.image); err != nil {
 		return Wallpaper{}, fmt.Errorf("persist desktop wallpaper: %w", err)
 	}
-	if err := writeAtomicPrivateFile(s.filesDir, thumbPath, prepared.thumb); err != nil {
+	if err := s.writeAtomicPrivateFile(s.filesDir, thumbPath, prepared.thumb); err != nil {
 		_ = os.Remove(imagePath)
 		return Wallpaper{}, fmt.Errorf("persist desktop wallpaper thumbnail: %w", err)
 	}
@@ -273,7 +281,14 @@ func (s *Store) Delete(id string) error {
 	imagePath, thumbPath := s.paths(id)
 	_ = os.Remove(imagePath)
 	_ = os.Remove(thumbPath)
-	_ = syncDirectory(s.filesDir)
+	syncFiles := s.writer.SyncDirectory
+	if syncFiles == nil {
+		syncFiles = syncDirectory
+	}
+	if err := syncFiles(s.filesDir); err != nil {
+		s.logger.Warn("desktop wallpaper removal committed with file cleanup durability unconfirmed", "path", s.filesDir,
+			"committed", true, "error", err)
+	}
 	return nil
 }
 
@@ -361,7 +376,7 @@ func (s *Store) writeIndexLocked(wallpapers []Wallpaper) error {
 	if err != nil {
 		return err
 	}
-	return writeAtomicPrivateFile(s.root, s.indexPath(), append(data, '\n'))
+	return s.writeAtomicPrivateFile(s.root, s.indexPath(), append(data, '\n'))
 }
 
 func (s *Store) filesPresent(wallpaper Wallpaper) bool {
@@ -627,39 +642,20 @@ func ensurePrivateDirectory(path string) error {
 	return os.Chmod(path, 0o700)
 }
 
-func writeAtomicPrivateFile(directory, target string, data []byte) error {
-	file, err := os.CreateTemp(directory, ".desktop-wallpaper-*")
-	if err != nil {
-		return err
+func (s *Store) writeAtomicPrivateFile(directory, target string, data []byte) error {
+	result, err := s.writer.WritePrivate(directory, target, ".desktop-wallpaper-*", data)
+	// Post-commit diagnostics cannot trigger Add's pre-commit cleanup or keep
+	// Delete's memory at the old index. The HTTP caller receives the committed
+	// result through the existing success response; diagnostics remain in logs.
+	if result.DurabilityErr != nil {
+		s.logger.Warn("desktop wallpaper file committed with durability unconfirmed", "path", target,
+			"committed", result.Committed, "error", result.DurabilityErr)
 	}
-	temporary := file.Name()
-	defer func() { _ = os.Remove(temporary) }()
-	if err := file.Chmod(0o600); err != nil {
-		_ = file.Close()
-		return err
+	if result.CleanupErr != nil {
+		s.logger.Warn("desktop wallpaper file committed with backup cleanup pending", "path", target,
+			"committed", result.Committed, "error", result.CleanupErr)
 	}
-	if _, err := file.Write(data); err != nil {
-		_ = file.Close()
-		return err
-	}
-	if err := file.Sync(); err != nil {
-		_ = file.Close()
-		return err
-	}
-	if err := file.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(temporary, target); err != nil {
-		if runtime.GOOS != "windows" {
-			return err
-		}
-		// Local Windows development cannot rename over an existing file.
-		_ = os.Remove(target)
-		if err := os.Rename(temporary, target); err != nil {
-			return err
-		}
-	}
-	return syncDirectory(directory)
+	return err
 }
 
 func syncDirectory(path string) error {

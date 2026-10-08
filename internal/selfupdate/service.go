@@ -8,11 +8,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/kejilion/kejilion-panel/internal/atomicfile"
 )
 
 const (
@@ -89,6 +92,8 @@ type Service struct {
 	hold     time.Duration
 	schedule string
 	mu       sync.Mutex
+	writer   atomicfile.Writer
+	logger   *slog.Logger
 }
 
 type persistedState struct {
@@ -175,6 +180,7 @@ func New(config Config) (*Service, error) {
 			ChannelPreview: config.PreviewSource,
 		},
 		now: config.Now, hold: config.Hold, schedule: config.Schedule,
+		writer: atomicfile.Writer{SyncDirectory: syncDirectory}, logger: slog.Default(),
 	}
 	if _, err := service.load(); err != nil {
 		return nil, fmt.Errorf("load automatic update state: %w", err)
@@ -370,7 +376,9 @@ func (s *Service) Run(ctx context.Context, executor Executor) (Status, error) {
 			state.LastAttemptAt = &now
 			state.LastErrorCode = "recovery_failed"
 			state.LastError = boundedError(err)
-			_ = s.save(&state)
+			if saveErr := s.save(&state); saveErr != nil {
+				return errors.Join(fmt.Errorf("recover interrupted automatic update: %w", err), saveErr)
+			}
 			result = s.snapshot(state)
 			return fmt.Errorf("recover interrupted automatic update: %w", err)
 		}
@@ -432,8 +440,16 @@ func (s *Service) Run(ctx context.Context, executor Executor) (Status, error) {
 		state.LastAttemptAt = &now
 		state.LastErrorCode = ""
 		state.LastError = ""
-		if err := s.save(&state); err != nil {
+		commit, err := s.saveWithResult(&state)
+		if err != nil {
 			return err
+		}
+		// Preserve the executor's pre-existing durable-intent prerequisite. The
+		// visible checkpoint is still authoritative; do not pretend it was never
+		// written or launch a privileged update after its directory sync failed.
+		if commit.DurabilityErr != nil {
+			result = s.snapshot(state)
+			return fmt.Errorf("automatic update intent was committed but its durability is unconfirmed: %w", commit.DurabilityErr)
 		}
 		if err := executor.Update(ctx, target, digest); err != nil {
 			state.State = "failed"
@@ -657,41 +673,39 @@ func (s *Service) load() (persistedState, error) {
 }
 
 func (s *Service) save(state *persistedState) error {
-	state.SchemaVersion = stateSchemaVersion
-	state.Revision++
-	data, err := json.MarshalIndent(state, "", "  ")
+	_, err := s.saveWithResult(state)
+	return err
+}
+
+func (s *Service) saveWithResult(state *persistedState) (atomicfile.Result, error) {
+	next := *state
+	next.SchemaVersion = stateSchemaVersion
+	next.Revision++
+	data, err := json.MarshalIndent(next, "", "  ")
 	if err != nil {
-		return err
+		return atomicfile.Result{}, err
 	}
 	data = append(data, '\n')
 	if len(data) > maxStateBytes {
-		return errors.New("automatic update state exceeds the size limit")
+		return atomicfile.Result{}, errors.New("automatic update state exceeds the size limit")
 	}
-	temporary, err := os.CreateTemp(s.stateDir, ".state-*.tmp")
-	if err != nil {
-		return err
+	path := filepath.Join(s.stateDir, stateFileName)
+	result, err := s.writer.WritePrivate(s.stateDir, path, ".state-*.tmp", data)
+	if result.Committed {
+		*state = next
 	}
-	temporaryName := temporary.Name()
-	defer os.Remove(temporaryName)
-	if err := temporary.Chmod(0600); err != nil {
-		temporary.Close()
-		return err
+	// The state file is an index of the executor's independent transaction and
+	// the actual installed version. A visible commit must not be reported as an
+	// unsaved policy/queue or a failed update because directory sync failed.
+	if result.DurabilityErr != nil {
+		s.logger.Warn("automatic update state committed with durability unconfirmed", "path", path,
+			"revision", next.Revision, "state", next.State, "committed", result.Committed, "error", result.DurabilityErr)
 	}
-	if _, err := temporary.Write(data); err != nil {
-		temporary.Close()
-		return err
+	if result.CleanupErr != nil {
+		s.logger.Warn("automatic update state committed with backup cleanup pending", "path", path,
+			"revision", next.Revision, "state", next.State, "committed", result.Committed, "error", result.CleanupErr)
 	}
-	if err := temporary.Sync(); err != nil {
-		temporary.Close()
-		return err
-	}
-	if err := temporary.Close(); err != nil {
-		return err
-	}
-	if err := replaceFile(temporaryName, filepath.Join(s.stateDir, stateFileName)); err != nil {
-		return err
-	}
-	return syncDirectory(s.stateDir)
+	return result, err
 }
 
 func ensurePrivateDirectory(path string) error {
@@ -712,22 +726,6 @@ func ensurePrivateDirectory(path string) error {
 		return errors.New("state path is not private")
 	}
 	return nil
-}
-
-func replaceFile(source, target string) error {
-	if err := os.Rename(source, target); err == nil {
-		return nil
-	}
-	backup := target + ".previous"
-	_ = os.Remove(backup)
-	if err := os.Rename(target, backup); err != nil {
-		return err
-	}
-	if err := os.Rename(source, target); err != nil {
-		_ = os.Rename(backup, target)
-		return err
-	}
-	return os.Remove(backup)
 }
 
 func validPersistedState(state persistedState) bool {
