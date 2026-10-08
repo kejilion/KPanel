@@ -1,0 +1,65 @@
+{
+  "source_ref": "14dac0f7a3d9f48e38331cc3770bc5cd9a36e23a",
+  "source_tree": "a2f2285f682d014b65b35f83dac6e4d3996da45b",
+  "source_dirty": false,
+  "scope_mode": "scoped",
+  "profile": "quick",
+  "comparison_base": "4c0694aa8e02e46145a775707b8d5a0355f7ce10",
+  "reviewed_commits": [
+    "3507b50826f1e49b1ff5079c9557a93fb5bb02e5",
+    "14dac0f7a3d9f48e38331cc3770bc5cd9a36e23a"
+  ],
+  "scope_complete": false,
+  "started_at_utc": "2026-10-08 04:24:31 UTC",
+  "ended_at_utc": null,
+  "run_status": "incomplete",
+  "actual_cost": {
+    "started_at_utc": "2026-10-08 04:24:31 UTC",
+    "ended_at_utc": null,
+    "wall_seconds": null,
+    "subagent_invocations": 8,
+    "top_level_invocations": 1,
+    "models": "gpt-6-luna/max for all audit subagents",
+    "tokens": null,
+    "tokens_unavailable_reason": "No agent token telemetry.",
+    "original_pre_cleanup_cost": {
+      "started_at_utc": "2026-10-08 04:24:31 UTC",
+      "ended_at_utc": "2026-10-08 04:49:23.217 UTC",
+      "wall_seconds": 1492,
+      "subagent_invocations": 8,
+      "top_level_invocations": 1,
+      "models": "gpt-6-luna/max for all audit subagents",
+      "tokens": null,
+      "tokens_unavailable_reason": "No agent token telemetry."
+    },
+    "inclusive_wall_seconds_lower_bound": 1503.137,
+    "cleanup_stop_requested_at_utc": "2026-10-08T04:49:34.136886+00:00",
+    "budget_exceeded": true,
+    "budget_overrun_seconds_lower_bound": 3.137,
+    "measurement_limit": "The original 1492-second result was saved before final baseline and keeper cleanup. The cleanup stop marker gives a lower bound; exact process termination time was not captured. No exact final wall time is invented."
+  },
+  "run_id": "run-21",
+  "original_run_id": "run-20",
+  "coverage_counted": false,
+  "target_execution_performed": false,
+  "execution_plan": {
+    "model": "gpt-6-luna",
+    "reasoning_effort": "max",
+    "validation_mode": "source-only-no-target-execution",
+    "max_wall_seconds": 1500,
+    "max_agent_invocations": 20,
+    "max_concurrency": 3,
+    "reviewed_commits": [
+      "3507b50826f1e49b1ff5079c9557a93fb5bb02e5",
+      "14dac0f7a3d9f48e38331cc3770bc5cd9a36e23a"
+    ]
+  },
+  "interruption_reason": "Original bounded audit did not finish independent validation and/or complete scope; retained as incomplete, no completed audit coverage.",
+  "integration_provenance": {
+    "source_candidate": "a6ea5347a07c8e18602f08cda9d553936c9fca2f",
+    "original_metadata_git_blob": "b05651bcae418e152f9e58c5e39eb8adbe94e495",
+    "saved_original_sha256": "fba85f2d4066b501d3abf595e25d38f272d1da444b377a8b8273798825e03c87",
+    "normalization": "Three independent source tasks used run-20; integration assigns unique directories without changing original source, dates, verdict or costs."
+  },
+  "disclosure_policy": "Metadata only. Original reports, ledgers, scratch and unverified attack details are retained outside the published repository. No security clearance is claimed."
+}

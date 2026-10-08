@@ -1,0 +1,57 @@
+{
+  "source_ref": "44bc592a3d6f8c3088536087bf965923f65ec46a",
+  "source_tree": "c0dbb27b49ca3f8dcbf2de8e91304e768500b53c",
+  "source_dirty": false,
+  "scope_mode": "scoped",
+  "profile": "scoped",
+  "comparison_base": "4c0694aa8e02e46145a775707b8d5a0355f7ce10",
+  "reviewed_commits": [
+    "285475f12f2f3c1ec56211a3865b9e2ba8f97eb2",
+    "77e09185044cbf1c45b1badade761b447db5b0a8",
+    "8669efddf6fa7889e3308d0d2539a66ee17279c7",
+    "44bc592a3d6f8c3088536087bf965923f65ec46a"
+  ],
+  "scope_complete": false,
+  "started_at_utc": "2026-10-08T04:03:03Z",
+  "ended_at_utc": "2026-10-08T04:29:38Z",
+  "run_status": "incomplete",
+  "actual_cost": {
+    "model": "gpt-6-luna",
+    "max_concurrency_observed": 3,
+    "notes": "Parent auditor plus recon, hunter, critic, candidate verifier; verifier active at close, no record-verifier completed.",
+    "wall_seconds": 1595,
+    "tokens": null,
+    "agent_invocations": 5,
+    "child_agent_invocations": 4,
+    "reasoning_effort": "max",
+    "max_agent_invocations": 6,
+    "amount": null,
+    "unavailable_reason": "Platform token and monetary telemetry are unavailable; no estimate or zero is substituted."
+  },
+  "run_id": "run-20",
+  "original_run_id": "run-20",
+  "coverage_counted": false,
+  "target_execution_performed": false,
+  "execution_plan": {
+    "model": "gpt-6-luna",
+    "reasoning_effort": "max",
+    "validation_mode": "source-only",
+    "max_wall_seconds": 1500,
+    "max_agent_invocations": 6,
+    "max_concurrency": 3,
+    "reviewed_commits": [
+      "285475f12f2f3c1ec56211a3865b9e2ba8f97eb2",
+      "77e09185044cbf1c45b1badade761b447db5b0a8",
+      "8669efddf6fa7889e3308d0d2539a66ee17279c7",
+      "44bc592a3d6f8c3088536087bf965923f65ec46a"
+    ]
+  },
+  "interruption_reason": "Original bounded audit did not finish independent validation and/or complete scope; retained as incomplete, no completed audit coverage.",
+  "integration_provenance": {
+    "source_candidate": "587993a206ccaeecba9625fb7d492dce9d0c6d4d",
+    "original_metadata_git_blob": "7c3099172cc1b19b3c8134e1c606286f03443375",
+    "saved_original_sha256": "3cd79823ab01130e92a187baf9c1bf28fb29cfb84505afce824c9d56f5525bb9",
+    "normalization": "Three independent source tasks used run-20; integration assigns unique directories without changing original source, dates, verdict or costs."
+  },
+  "disclosure_policy": "Metadata only. Original reports, ledgers, scratch and unverified attack details are retained outside the published repository. No security clearance is claimed."
+}

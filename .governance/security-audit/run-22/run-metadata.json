@@ -1,0 +1,62 @@
+{
+  "source_ref": "9af89e6aee0c949bdebe891b615d421c54d0c877",
+  "source_tree": "c3d2fdf35d5b16fba242de84d580121f82cde1e8",
+  "source_dirty": false,
+  "scope_mode": "scoped",
+  "profile": "standard",
+  "comparison_base": "4c0694aa8e02e46145a775707b8d5a0355f7ce10",
+  "reviewed_commits": [
+    "9af89e6aee0c949bdebe891b615d421c54d0c877"
+  ],
+  "scope_complete": false,
+  "skill_source": "https://github.com/cloudflare/security-audit-skill",
+  "skill_commit": "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8",
+  "started_at": "2026-10-08T03:45:36Z",
+  "ended_at": "2026-10-08T04:15:22Z",
+  "metadata_closed_at": "2026-10-08T04:43:26.1285218Z",
+  "run_status": "partial",
+  "actual_cost": {
+    "started_at": "2026-10-08T03:45:36Z",
+    "ended_at": "2026-10-08T04:15:22Z",
+    "wall_seconds": 1786,
+    "agent_invocations": 6,
+    "model": "gpt-6-luna",
+    "reasoning_effort": "max",
+    "platform_wait_seconds": null,
+    "validation_and_record_rework_seconds": null,
+    "tokens": null,
+    "cost_usd": null,
+    "unavailable_reason": "Platform does not expose reliable token, cost or phase-specific duration accounting."
+  },
+  "run_id": "run-22",
+  "original_run_id": "run-20",
+  "coverage_counted": false,
+  "target_execution_performed": false,
+  "execution_plan": {
+    "model": "gpt-6-luna",
+    "reasoning_effort": "max",
+    "validation_mode": "source-only",
+    "max_wall_seconds": 1800,
+    "max_agent_invocations": 8,
+    "max_concurrency": 2,
+    "reviewed_commits": [
+      "9af89e6aee0c949bdebe891b615d421c54d0c877"
+    ],
+    "unit_scope": [
+      "browser receive and durable filesystem publication",
+      "directory TAR extraction and rooted publish",
+      "expired receive cleanup and shared admission",
+      "cross-panel peer identity, authorization and protocol fallback",
+      "URL download source identity, resume and background-job lifecycle",
+      "browser session storage, detach and explicit cancellation"
+    ]
+  },
+  "interruption_reason": "Original bounded audit did not finish independent validation and/or complete scope; retained as incomplete, no completed audit coverage.",
+  "integration_provenance": {
+    "source_candidate": "8c17b17a94f53cf72a9ed879b4c99d849d6e9134",
+    "original_metadata_git_blob": "13d016d0ed2086d87c8cfcc05a4b42705c5c0bc4",
+    "saved_original_sha256": "8185609f2e1b572998ddc59f34881ac56220017ef05faa85a5d022d7f845f66a",
+    "normalization": "Three independent source tasks used run-20; integration assigns unique directories without changing original source, dates, verdict or costs."
+  },
+  "disclosure_policy": "Metadata only. Original reports, ledgers, scratch and unverified attack details are retained outside the published repository. No security clearance is claimed."
+}
