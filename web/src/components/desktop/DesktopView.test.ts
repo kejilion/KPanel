@@ -459,7 +459,8 @@ describe('DesktopView', () => {
     const wallpaperIndex = actions.findIndex((action) => action.attributes('data-context-action') === 'wallpaper')
     const fullscreenIndex = actions.findIndex((action) => action.attributes('data-context-action') === 'fullscreen')
     expect(wallpaperIndex).toBe(themeIndex + 1)
-    expect(fullscreenIndex).toBe(wallpaperIndex + 1)
+    expect(actions[wallpaperIndex + 1]?.text()).toContain('桌面布局管理')
+    expect(fullscreenIndex).toBe(wallpaperIndex + 2)
     expect(actions[fullscreenIndex]?.text()).toContain('进入全屏')
 
     await actions[fullscreenIndex]!.trigger('click')
@@ -487,7 +488,7 @@ describe('DesktopView', () => {
     expect(wrapper.findAll('[data-new-item]')).toHaveLength(0)
     await wrapper.find('[data-context-action="new-item"]').trigger('click')
     const items = wrapper.findAll('[data-new-item]')
-    expect(items.map((item) => item.attributes('data-new-item'))).toEqual(['folder', 'txt', 'md'])
+    expect(items.map((item) => item.attributes('data-new-item'))).toEqual(['folder', 'txt', 'md', 'sh', 'json', 'yaml', 'conf', 'py'])
     await items[1]!.trigger('click')
     await flushPromises()
     const input = document.body.querySelector<HTMLInputElement>('[data-new-item-name]')

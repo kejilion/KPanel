@@ -1063,11 +1063,19 @@ const menuNavPath = ref('')
 const newItemMenuOpen = ref(false)
 const newItem = ref<{ type: DesktopNewItemType; name: string; origin: { x: number; y: number } }>()
 const newItemBusy = ref(false)
+const newItemFlyoutMode = ref(false)
+const newItemFlyoutStyle = ref<Record<string, string>>({})
+const newItemFlyoutElement = ref<HTMLElement>()
 let menuOrigin = { x: 0, y: 0 }
 const NEW_ITEM_LABELS: Record<DesktopNewItemID, { label: string; fallback: string }> = {
   folder: { label: 'desktop.newFolder', fallback: 'desktop.newItemDefaultFolder' },
   txt: { label: 'desktop.newTxt', fallback: 'desktop.newItemDefaultTxt' },
   md: { label: 'desktop.newMd', fallback: 'desktop.newItemDefaultMd' },
+  sh: { label: 'desktop.newSh', fallback: 'desktop.newItemDefaultFile' },
+  json: { label: 'desktop.newJson', fallback: 'desktop.newItemDefaultFile' },
+  yaml: { label: 'desktop.newYaml', fallback: 'desktop.newItemDefaultFile' },
+  conf: { label: 'desktop.newConf', fallback: 'desktop.newItemDefaultFile' },
+  py: { label: 'desktop.newPy', fallback: 'desktop.newItemDefaultFile' },
 }
 const menuSelectionKeys = ref<string[]>([])
 const menuRemovableCount = computed(() => {
@@ -1576,6 +1584,7 @@ function closeContextMenu(restoreFocus = true): void {
 function closeContextMenuOnScroll(event: Event): void {
   cancelDesktopLongPress()
   if (contextMenuElement.value?.contains(event.target as Node)) return
+  if (newItemFlyoutElement.value?.contains(event.target as Node)) return
   closeContextMenu(false)
 }
 
@@ -2742,6 +2751,7 @@ function onGlobalPointerDown(event: PointerEvent): void {
   if (event.button === 2) return
   const target = event.target
   if (target instanceof Node && contextMenuElement.value?.contains(target)) return
+  if (target instanceof Node && newItemFlyoutElement.value?.contains(target)) return
   closeContextMenu(false)
 }
 
@@ -2842,9 +2852,57 @@ function onGlobalKeyDown(event: KeyboardEvent): void {
   else clearIconSelection()
 }
 
+// Pointer-and-wide screens get a side flyout; touch and narrow screens expand inline.
+function newItemUsesFlyout(): boolean {
+  return window.matchMedia?.('(hover: hover) and (pointer: fine) and (min-width: 700px)').matches ?? false
+}
+
+async function openNewItemMenu(event: Event, options: { hover?: boolean; keyboard?: boolean } = {}): Promise<void> {
+  const flyout = newItemUsesFlyout()
+  if (options.hover && !flyout) return
+  newItemFlyoutMode.value = flyout
+  newItemMenuOpen.value = options.hover || options.keyboard ? true : !newItemMenuOpen.value
+  if (!flyout || !newItemMenuOpen.value) return
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  newItemFlyoutStyle.value = { left: `${rect.right + 4}px`, top: `${rect.top - 6}px` }
+  await nextTick()
+  const flyoutElement = newItemFlyoutElement.value
+  if (!flyoutElement) return
+  const width = flyoutElement.offsetWidth
+  const height = flyoutElement.offsetHeight
+  const left = rect.right + 4 + width + 10 > window.innerWidth ? Math.max(10, rect.left - width - 4) : rect.right + 4
+  const top = Math.max(10, Math.min(rect.top - 6, window.innerHeight - height - 10))
+  newItemFlyoutStyle.value = { left: `${left}px`, top: `${top}px` }
+  if (options.keyboard) focusFirstContextMenuItem(flyoutElement, 'keyboard')
+}
+
+function onContextMenuPointerOver(event: PointerEvent): void {
+  if (!newItemMenuOpen.value || !newItemFlyoutMode.value) return
+  const item = (event.target as HTMLElement | null)?.closest('[role="menuitem"]')
+  if (item && item.getAttribute('data-context-action') !== 'new-item') newItemMenuOpen.value = false
+}
+
+function onNewItemFlyoutKeyDown(event: KeyboardEvent): void {
+  const flyout = newItemFlyoutElement.value
+  if (!flyout) return
+  if (event.key === 'ArrowLeft') {
+    event.preventDefault()
+    newItemMenuOpen.value = false
+    contextMenuElement.value?.querySelector<HTMLElement>('[data-context-action="new-item"]')?.focus()
+    return
+  }
+  showContextMenuKeyboardFocus(flyout)
+  moveContextMenuFocus(flyout, event)
+}
+
 function onContextMenuKeyDown(event: KeyboardEvent): void {
   const menu = contextMenuElement.value
   if (!menu) return
+  if (event.key === 'ArrowRight' && (event.target as HTMLElement | null)?.dataset?.contextAction === 'new-item') {
+    event.preventDefault()
+    void openNewItemMenu({ currentTarget: event.target } as unknown as Event, { keyboard: true })
+    return
+  }
   showContextMenuKeyboardFocus(menu)
   moveContextMenuFocus(menu, event)
 }
@@ -4742,6 +4800,7 @@ function onViewportResize(): void {
         @contextmenu.prevent.stop
         @pointerdown.stop
         @pointermove="showContextMenuPointerFocus"
+        @pointerover="onContextMenuPointerOver"
         @keydown="onContextMenuKeyDown"
       >
         <template v-if="menuSelectionKeys.length > 1">
@@ -4901,14 +4960,16 @@ function onViewportResize(): void {
             data-context-action="new-item"
             :aria-expanded="newItemMenuOpen"
             :disabled="!workspace.available"
-            @click.stop="newItemMenuOpen = !newItemMenuOpen"
+            aria-haspopup="menu"
+            @pointerenter="openNewItemMenu($event, { hover: true })"
+            @click.stop="openNewItemMenu($event, { keyboard: $event.detail === 0 && newItemUsesFlyout() })"
           >
             <FilePlus :size="15" aria-hidden="true" />
             {{ i18n.t('desktop.newItem') }}
-            <ChevronDown v-if="newItemMenuOpen" class="desktop__context-chevron" :size="14" aria-hidden="true" />
+            <ChevronDown v-if="newItemMenuOpen && !newItemFlyoutMode" class="desktop__context-chevron" :size="14" aria-hidden="true" />
             <ChevronRight v-else class="desktop__context-chevron" :size="14" aria-hidden="true" />
           </button>
-          <template v-if="newItemMenuOpen">
+          <template v-if="newItemMenuOpen && !newItemFlyoutMode">
             <button
               v-for="type in DESKTOP_NEW_ITEM_TYPES"
               :key="type.id"
@@ -4941,6 +5002,15 @@ function onViewportResize(): void {
           <button
             type="button"
             role="menuitem"
+            :disabled="!workspace.available"
+            @click="onContextMenuAction('manage-icons')"
+          >
+            <MonitorCog :size="15" aria-hidden="true" />
+            {{ i18n.t('desktop.iconManagerTitle') }}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
             data-context-action="fullscreen"
             @click="onContextMenuAction('fullscreen')"
           >
@@ -4949,15 +5019,6 @@ function onViewportResize(): void {
             {{ documentFullscreen.active.value
               ? i18n.t('desktop.exitFullscreen')
               : i18n.t('desktop.enterFullscreen') }}
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            :disabled="!workspace.available"
-            @click="onContextMenuAction('manage-icons')"
-          >
-            <MonitorCog :size="15" aria-hidden="true" />
-            {{ i18n.t('desktop.iconManagerTitle') }}
           </button>
           <button
             v-if="activeScenePack && scenePackCameras.length > 1"
@@ -4993,6 +5054,31 @@ function onViewportResize(): void {
         </template>
       </div>
     </Transition>
+    <div
+      v-if="contextMenu.open && newItemMenuOpen && newItemFlyoutMode"
+      ref="newItemFlyoutElement"
+      class="desktop__context-menu desktop__context-flyout k-context-menu"
+      :style="newItemFlyoutStyle"
+      role="menu"
+      :aria-label="i18n.t('desktop.newItem')"
+      @contextmenu.prevent.stop
+      @pointerdown.stop
+      @pointermove="showContextMenuPointerFocus"
+      @keydown="onNewItemFlyoutKeyDown"
+    >
+      <button
+        v-for="type in DESKTOP_NEW_ITEM_TYPES"
+        :key="type.id"
+        type="button"
+        role="menuitem"
+        :data-new-item="type.id"
+        @click="openNewItemDialog(type.id)"
+      >
+        <FolderPlus v-if="type.kind === 'directory'" :size="15" aria-hidden="true" />
+        <FileText v-else :size="15" aria-hidden="true" />
+        {{ i18n.t(NEW_ITEM_LABELS[type.id].label as Parameters<typeof i18n.t>[0]) }}
+      </button>
+    </div>
 
     <Transition name="desktop-menu">
       <div
@@ -5271,18 +5357,22 @@ function onViewportResize(): void {
       size="small"
       @close="closeNewItemDialog"
     >
-      <form class="desktop__rename-form" @submit.prevent="createNewItem">
+      <form class="desktop__new-item-form" @submit.prevent="createNewItem">
         <label>
           <span>{{ i18n.t('desktop.newItemLabel') }}</span>
-          <input
-            v-if="newItem"
-            v-model="newItem.name"
-            maxlength="200"
-            autocomplete="off"
-            data-new-item-name
-          />
+          <span class="desktop__new-item-field">
+            <input
+              v-if="newItem"
+              v-model="newItem.name"
+              maxlength="200"
+              autocomplete="off"
+              spellcheck="false"
+              data-new-item-name
+              :class="{ 'desktop__new-item-input--ext': newItem.type.extension }"
+            />
+            <em v-if="newItem?.type.extension" aria-hidden="true">{{ newItem.type.extension }}</em>
+          </span>
         </label>
-        <small v-if="newItem?.type.extension">{{ newItem.type.extension }}</small>
       </form>
       <template #footer>
         <button class="button button--ghost" type="button" :disabled="newItemBusy" @click="closeNewItemDialog">

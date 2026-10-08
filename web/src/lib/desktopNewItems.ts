@@ -1,6 +1,6 @@
 import type { ExternalDropManifest } from '@/lib/desktopExternalDrop'
 
-export type DesktopNewItemID = 'folder' | 'txt' | 'md'
+export type DesktopNewItemID = 'folder' | 'txt' | 'md' | 'sh' | 'json' | 'yaml' | 'conf' | 'py'
 
 export interface DesktopNewItemType {
   id: DesktopNewItemID
@@ -16,6 +16,23 @@ export const DESKTOP_NEW_ITEM_TYPES: readonly DesktopNewItemType[] = [
   { id: 'folder', kind: 'directory', extension: '', mime: '', template: '' },
   { id: 'txt', kind: 'file', extension: '.txt', mime: 'text/plain', template: '' },
   { id: 'md', kind: 'file', extension: '.md', mime: 'text/markdown', template: '' },
+  {
+    id: 'sh',
+    kind: 'file',
+    extension: '.sh',
+    mime: 'text/x-shellscript',
+    template: '#!/usr/bin/env bash\nset -euo pipefail\n\n',
+  },
+  { id: 'json', kind: 'file', extension: '.json', mime: 'application/json', template: '{}\n' },
+  { id: 'yaml', kind: 'file', extension: '.yml', mime: 'text/yaml', template: '' },
+  { id: 'conf', kind: 'file', extension: '.conf', mime: 'text/plain', template: '' },
+  {
+    id: 'py',
+    kind: 'file',
+    extension: '.py',
+    mime: 'text/x-python',
+    template: '#!/usr/bin/env python3\n\n',
+  },
 ]
 
 export function desktopNewItemType(id: DesktopNewItemID): DesktopNewItemType {
