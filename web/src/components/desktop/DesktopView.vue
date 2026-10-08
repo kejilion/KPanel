@@ -1562,10 +1562,13 @@ function closeContextMenuOnViewportChange(): void {
 
 function measureIconWorkArea(): void {
   viewportSize.value = { width: window.innerWidth, height: window.innerHeight }
+  const compact = window.innerWidth <= 760
   const rect = iconsElement.value?.getBoundingClientRect()
+  // Reserve pager space for icons without changing the widget page's viewport.
+  const height = rect?.height ? rect.height - (compact ? 28 : 0) : window.innerHeight - 88
   const bounds = {
     width: Math.max(90, rect?.width || window.innerWidth - 24),
-    height: Math.max(96, rect?.height || window.innerHeight - 88),
+    height: Math.max(96, height),
   }
   if (bounds.width !== iconBounds.value.width || bounds.height !== iconBounds.value.height) {
     if (initialLayoutReady.value && !layoutBeforeResize.value) {
@@ -1581,7 +1584,6 @@ function measureIconWorkArea(): void {
     }
     iconBounds.value = bounds
   }
-  const compact = window.innerWidth <= 760
   const widgetsVisible = window.innerWidth > 900
   if (compact && !compactIconLayout.value) {
     if (iconDrag) cancelIconDrag()

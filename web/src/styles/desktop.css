@@ -5513,7 +5513,7 @@ body.desktop-mode-open::-webkit-scrollbar {
    further pages continue sideways. Native scroll snapping turns one swipe
    into one page; the dots above the taskbar show and switch the page. */
 .desktop__icons.desktop__icons--paged {
-  bottom: calc(92px + max(8px, env(safe-area-inset-bottom)));
+  bottom: calc(64px + max(8px, env(safe-area-inset-bottom)));
   padding: 0;
   overflow-x: auto;
   overflow-y: hidden;
@@ -5801,7 +5801,7 @@ body.desktop-mode-open::-webkit-scrollbar {
 
 @media (max-height: 560px) and (orientation: landscape) {
   .desktop__icons.desktop__icons--paged {
-    bottom: calc(80px + max(6px, env(safe-area-inset-bottom)));
+    bottom: calc(52px + max(6px, env(safe-area-inset-bottom)));
   }
 
   .desktop__pager {
