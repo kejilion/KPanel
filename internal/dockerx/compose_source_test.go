@@ -30,21 +30,34 @@ func TestComposeSourceDiscoveryBound(t *testing.T) {
 }
 
 func TestComposeSourceNativeIdentity(t *testing.T) {
-	for _, mode := range []string{"env", "label_relative", "label_absolute", "ordinary_yaml", "docker_unavailable", "bad_env"} {
+	for _, mode := range []string{"env", "nested_env", "nested_ancestor_env", "nested_bad_env", "label_relative", "label_absolute", "ordinary_yaml", "docker_unavailable", "bad_env"} {
 		t.Run(mode, func(t *testing.T) {
 			root := t.TempDir()
 			directory := filepath.Join(root, "demo")
-			if err := os.Mkdir(directory, 0o700); err != nil {
+			if mode == "nested_env" || mode == "nested_ancestor_env" || mode == "nested_bad_env" {
+				directory = filepath.Join(directory, "group", "project")
+			}
+			if err := os.MkdirAll(directory, 0o700); err != nil {
 				t.Fatal(err)
 			}
 			file := filepath.Join(directory, "prod-stack.conf")
+			if mode == "nested_ancestor_env" {
+				if err := os.Mkdir(filepath.Join(directory, "config"), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				file = filepath.Join(directory, "config", "prod-stack.conf")
+			}
 			if err := os.WriteFile(file, []byte("services: {}\n"), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			var labels map[string]string
 			switch mode {
-			case "env":
-				if err := os.WriteFile(filepath.Join(directory, ".env"), []byte("COMPOSE_FILE=prod-stack.conf\n"), 0o600); err != nil {
+			case "env", "nested_env", "nested_ancestor_env":
+				source, err := filepath.Rel(directory, file)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(directory, ".env"), []byte("COMPOSE_FILE="+filepath.ToSlash(source)+"\n"), 0o600); err != nil {
 					t.Fatal(err)
 				}
 			case "label_relative", "label_absolute":
@@ -53,7 +66,7 @@ func TestComposeSourceNativeIdentity(t *testing.T) {
 					source = "sub/../prod-stack.conf"
 				}
 				labels = map[string]string{"com.docker.compose.project": "demo", "com.docker.compose.project.working_dir": directory, "com.docker.compose.project.config_files": source}
-			case "bad_env":
+			case "bad_env", "nested_bad_env":
 				if err := os.WriteFile(filepath.Join(directory, ".env"), []byte("COMPOSE_FILE=${UNKNOWN}\n"), 0o600); err != nil {
 					t.Fatal(err)
 				}
@@ -81,7 +94,7 @@ func TestComposeSourceNativeIdentity(t *testing.T) {
 			client := testHTTPClient(server)
 			client.appRoot, client.webRoot = root, t.TempDir()
 			got, err := client.IsComposeSource(context.Background(), file)
-			if mode == "docker_unavailable" || mode == "bad_env" {
+			if mode == "docker_unavailable" || mode == "bad_env" || mode == "nested_bad_env" {
 				if err == nil {
 					t.Fatal("uncertain source identity did not fail closed")
 				}

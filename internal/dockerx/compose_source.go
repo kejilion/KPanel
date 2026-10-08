@@ -51,6 +51,30 @@ func (c *Client) IsComposeSource(ctx context.Context, raw string) (bool, error) 
 	if err != nil {
 		return false, err
 	}
+	// A stopped project may be nested below the inventory's immediate-child
+	// scan. Inspect the target's own ancestors as well, including its original
+	// path when a project references a symlinked source. Keep discovery bounded.
+	seen := make(map[string]bool, len(directories))
+	for _, directory := range directories {
+		seen[directory] = true
+	}
+	for _, path := range []string{filepath.Clean(raw), target} {
+		for directory := filepath.Dir(path); c.composePathAllowed(directory); directory = filepath.Dir(directory) {
+			if err := ctx.Err(); err != nil {
+				return false, err
+			}
+			if !seen[directory] {
+				if len(directories) >= 1024 {
+					return false, ErrActionUnsupported
+				}
+				seen[directory] = true
+				directories = append(directories, directory)
+			}
+			if filepath.Dir(directory) == directory {
+				break
+			}
+		}
+	}
 	for _, directory := range directories {
 		if err := ctx.Err(); err != nil {
 			return false, err

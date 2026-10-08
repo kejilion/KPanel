@@ -795,9 +795,9 @@ func aiFileMutable(raw string) bool {
 
 // aiFileWriteAutoApproved limits unattended writes in the automatic approval
 // mode to site and application files. Other writable files, such as cron,
-// shell profiles, service hooks, Compose definitions or certificates, can run
-// code as root or change what a service trusts, so the administrator confirms
-// them even though they remain writable. Symbolic links are rejected by the
+// shell profiles or service hooks, can run code as root. The per-root policy
+// intentionally differs: web excludes certificates; docker also excludes
+// Compose definitions and .env files. Symbolic links are rejected by the
 // Agent file manager, so this lexical check matches the file actually written.
 func aiFileWriteAutoApproved(raw string) bool {
 	clean, ok := normalizedAIFilePath(raw)
