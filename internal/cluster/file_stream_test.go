@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/flynn/noise"
+	"github.com/kejilion/kejilion-panel/internal/contract"
 )
 
 type streamFixture struct {
@@ -159,10 +160,11 @@ func TestFileStreamLightUsesIndependentOutboundSockets(t *testing.T) {
 	if !f.service.fileStreamHub.available(enrolled.NodeID) {
 		t.Fatal("light control did not register")
 	}
-	content := bytes.Repeat([]byte("light-file"), 100000)
+	content := bytes.Repeat([]byte("x"), contract.FileTransferChunkBytes)
 	for _, input := range []LightFileRequest{
 		{Method: http.MethodGet, Path: "/v1/files"},
 		{Method: http.MethodPost, Path: "/v1/files/upload", Body: bytes.NewReader(content), BodyLength: -1},
+		{Method: http.MethodPut, Path: "/v1/files/transfer/sessions", Body: bytes.NewReader(content), BodyLength: int64(len(content))},
 	} {
 		requestCtx, stop := context.WithTimeout(ctx, 10*time.Second)
 		response, err := f.service.OpenLightFile(requestCtx, enrolled.NodeID, input)
@@ -176,14 +178,14 @@ func TestFileStreamLightUsesIndependentOutboundSockets(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if input.Method == http.MethodPost && !bytes.Equal(got, content) {
+		if input.Method != http.MethodGet && !bytes.Equal(got, content) {
 			t.Fatal("light upload content mismatch")
 		}
 		if input.Method == http.MethodGet && string(got) != "light-directory" {
 			t.Fatal("light directory mismatch")
 		}
 	}
-	if f.streamCalls.Load() != 3 || f.legacyCalls.Load() != 0 {
+	if f.streamCalls.Load() != 4 || f.legacyCalls.Load() != 0 {
 		t.Fatalf("stream=%d legacy=%d", f.streamCalls.Load(), f.legacyCalls.Load())
 	}
 	cancel()

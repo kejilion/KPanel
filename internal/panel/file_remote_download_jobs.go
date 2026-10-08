@@ -25,6 +25,7 @@ type fileRemoteDownloadTask struct {
 	actorID   string
 	sourceIP  string
 	requestID string
+	execute   func(context.Context, func(contract.FileTransferEvent) bool) contract.FileTransferEvent
 }
 
 func (s *Server) handleFileRemoteDownloadJobs(w http.ResponseWriter, r *http.Request) {
@@ -220,6 +221,9 @@ func (s *Server) runFileRemoteDownloadJob(ctx context.Context, cancel context.Ca
 	lastPersistedBytes := int64(0)
 	persistFailed := false
 	update := func(event contract.FileTransferEvent) bool {
+		if event.State == "committing" {
+			event.State = "confirming"
+		}
 		event = remoteDownloadJobCancellationResult(ctx, event)
 		now := time.Now().UTC()
 		job.State = event.State
@@ -261,7 +265,12 @@ func (s *Server) runFileRemoteDownloadJob(ctx context.Context, cancel context.Ca
 		}
 		return true
 	}
-	result := s.executeFileRemoteDownload(transferContext, task.input, task.requestID, update)
+	var result contract.FileTransferEvent
+	if task.execute != nil {
+		result = task.execute(transferContext, update)
+	} else {
+		result = s.executeFileRemoteDownload(transferContext, task.input, task.requestID, update)
+	}
 	result = remoteDownloadJobCancellationResult(ctx, result)
 	if result.State != "complete" && result.State != "error" {
 		result = contract.FileTransferEvent{State: "error", LoadedBytes: job.LoadedBytes, TotalBytes: job.TotalBytes, Name: job.Name, Code: "remote_download_interrupted"}
@@ -317,10 +326,17 @@ func (s *Server) appendRemoteDownloadJobAudit(task fileRemoteDownloadTask, resul
 	}
 	_ = s.store.AppendAudit(store.AuditEvent{
 		ID: newRequestID(), OccurredAt: time.Now().UTC(), ActorType: actorType(task.actorID),
-		ActorID: task.actorID, SourceIP: task.sourceIP, Action: "file.remote_download",
+		ActorID: task.actorID, SourceIP: task.sourceIP, Action: fileTransferJobAuditAction(task.job),
 		TargetKind: targetKind, TargetID: targetID, Result: resultName,
 		RequestID: task.requestID, Change: change,
 	}, store.MaxAuditEntries)
+}
+
+func fileTransferJobAuditAction(job contract.FileRemoteDownloadJob) string {
+	if job.SourceKind == "cross-host" {
+		return "file.transfer.copy"
+	}
+	return "file.remote_download"
 }
 
 func (s *Server) cancelRemoteDownloadJob(id string) bool {

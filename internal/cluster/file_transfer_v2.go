@@ -9,7 +9,9 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
 	"path"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -35,6 +37,8 @@ const FileTransferMetadataHeader = fileTransferMetadataHeader
 type FederationFileOpenRequest struct {
 	Path            string `json:"path"`
 	ResourceVersion string `json:"resourceVersion"`
+	Offset          int64  `json:"offset,omitempty"`
+	TransferVersion int    `json:"transferVersion,omitempty"`
 }
 
 type FederationFileAuthorization struct {
@@ -123,7 +127,7 @@ func (s *Service) AuthorizeFederationFileV2(
 	}
 	var input FederationFileOpenRequest
 	if err := decodeV2Payload(payload, &input); err != nil ||
-		!validTransferPath(input.Path) || len(input.ResourceVersion) < 8 || len(input.ResourceVersion) > 256 {
+		!validTransferPath(input.Path) || len(input.ResourceVersion) < 8 || len(input.ResourceVersion) > 256 || !validTransferOptions(input) {
 		return FederationFileOpenRequest{}, nil, ErrAuthentication
 	}
 	release, ok := s.fileStreams.acquire(controller.ID)
@@ -192,7 +196,7 @@ func (s *Service) AuthorizeLinkedFederationFileV2(
 	var input FederationFileOpenRequest
 	if err := decodeV2Payload(payload, &input); err != nil ||
 		!validTransferPath(input.Path) ||
-		len(input.ResourceVersion) < 8 || len(input.ResourceVersion) > 256 {
+		len(input.ResourceVersion) < 8 || len(input.ResourceVersion) > 256 || !validTransferOptions(input) {
 		return FederationFileOpenRequest{}, nil, ErrAuthentication
 	}
 	release, ok := s.fileStreams.acquire(grant.LinkID)
@@ -249,7 +253,8 @@ func validTransferMetadata(value contract.FileTransferMetadata) bool {
 		value.Name == "" || value.Name == "." || value.Name == ".." ||
 		len(value.Name) > 255 || strings.ContainsAny(value.Name, "/\\") ||
 		value.SizeBytes < 0 || value.SizeBytes > 10<<30 ||
-		(value.Kind == "file" && value.SizeBytes > 512<<20) ||
+		value.Offset < 0 || value.Offset > value.SizeBytes || (value.Kind == "directory" && value.Offset != 0) ||
+		(value.TransferVersion != 0 && value.TransferVersion != 1) || (value.Offset != 0 && value.TransferVersion != 1) ||
 		len(value.ResourceVersion) < 8 || len(value.ResourceVersion) > 256 {
 		return false
 	}
@@ -264,6 +269,22 @@ func validTransferMetadata(value contract.FileTransferMetadata) bool {
 		}
 	}
 	return true
+}
+
+func validTransferOptions(input FederationFileOpenRequest) bool {
+	return input.Offset >= 0 && input.Offset <= contract.MaxFileTransferBytes &&
+		(input.TransferVersion == 0 || input.TransferVersion == 1) && (input.Offset == 0 || input.TransferVersion == 1)
+}
+
+func FileTransferQuery(input FederationFileOpenRequest) url.Values {
+	query := url.Values{"path": {input.Path}, "resourceVersion": {input.ResourceVersion}}
+	if input.TransferVersion != 0 {
+		query.Set("transferVersion", strconv.Itoa(input.TransferVersion))
+	}
+	if input.Offset != 0 {
+		query.Set("offset", strconv.FormatInt(input.Offset, 10))
+	}
+	return query
 }
 
 // WriteFederationFileHeader starts the authenticated binary stream. The first

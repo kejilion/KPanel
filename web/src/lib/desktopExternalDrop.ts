@@ -4,8 +4,8 @@ export const DESKTOP_UPLOAD_DIRECTORY = '/home/KPanel Desktop'
 export const MAX_EXTERNAL_DROP_FILES = 500
 export const MAX_EXTERNAL_DROP_DIRECTORIES = 256
 export const MAX_EXTERNAL_DROP_DEPTH = 32
-export const MAX_EXTERNAL_DROP_BYTES = 2 * 1024 * 1024 * 1024
-export const MAX_EXTERNAL_DROP_FILE_BYTES = 512 * 1024 * 1024
+export const MAX_EXTERNAL_DROP_BYTES = 10 * 1024 * 1024 * 1024
+export const MAX_EXTERNAL_DROP_FILE_BYTES = MAX_EXTERNAL_DROP_BYTES
 
 export type ExternalDropRootKind = 'file' | 'directory'
 
@@ -117,7 +117,7 @@ function assertManifestLimits(manifest: ExternalDropManifest, depth: number): vo
     )
   }
   if (manifest.totalBytes > MAX_EXTERNAL_DROP_BYTES) {
-    throw new DesktopExternalDropError('too_large', '单次拖入的文件总量不能超过 2 GiB。')
+    throw new DesktopExternalDropError('too_large', '单次拖入的文件总量不能超过 10 GiB。')
   }
 }
 
@@ -171,7 +171,7 @@ async function walkEntry(
     const file = await readEntryFile(entry as LegacyFileSystemFileEntry)
     signal?.throwIfAborted()
     if (file.size > MAX_EXTERNAL_DROP_FILE_BYTES) {
-      throw new DesktopExternalDropError('too_large', `${file.name} 超过 512 MiB。`)
+      throw new DesktopExternalDropError('too_large', `${file.name} 超过 10 GiB。`)
     }
     manifest.files.push({ file, segments })
     manifest.totalBytes += file.size
@@ -200,7 +200,7 @@ function addFallbackFile(file: File, manifest: ExternalDropManifest): void {
     }
   }
   if (file.size > MAX_EXTERNAL_DROP_FILE_BYTES) {
-    throw new DesktopExternalDropError('too_large', `${file.name} 超过 512 MiB。`)
+    throw new DesktopExternalDropError('too_large', `${file.name} 超过 10 GiB。`)
   }
   manifest.files.push({ file, segments })
   manifest.totalBytes += file.size

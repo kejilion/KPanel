@@ -27,12 +27,13 @@ import (
 )
 
 const (
-	panelFileTransferIdleTimeout  = 45 * time.Second
-	panelFileTransferMaxDuration  = 2 * time.Hour
-	fileDownloadTicketTTL         = 5 * time.Minute
-	maxFileDownloadTickets        = 128
-	panelFileArchiveQueryMaxBytes = 256 << 10
-	desktopFileTransferDirectory  = "/home/KPanel Desktop"
+	panelFileTransferIdleTimeout   = 45 * time.Second
+	panelFileTransferMaxDuration   = 2 * time.Hour
+	fileDownloadTicketTTL          = 5 * time.Minute
+	maxFileDownloadTickets         = 128
+	panelFileArchiveQueryMaxBytes  = 256 << 10
+	fileTransferAgentResultTrailer = "X-KPanel-Transfer-Result"
+	desktopFileTransferDirectory   = "/home/KPanel Desktop"
 )
 
 type fileDownloadTicket struct {
@@ -767,151 +768,34 @@ func (s *Server) handleFileTransfer(w http.ResponseWriter, r *http.Request) {
 		s.writeProblem(w, r, http.StatusServiceUnavailable, "audit_unavailable", "Audit storage unavailable", "")
 		return
 	}
+	if input.Background {
+		s.startCrossFileTransferJob(w, r, input, targetHostID, targetHostKind, session.User.ID)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/x-ndjson; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
 	encoder := json.NewEncoder(w)
 	flusher, _ := w.(http.Flusher)
-	writeEvent := func(event contract.FileTransferEvent) {
-		_ = encoder.Encode(event)
+	emit := func(event contract.FileTransferEvent) bool {
+		if encoder.Encode(event) != nil {
+			return false
+		}
 		if flusher != nil {
 			flusher.Flush()
 		}
+		return true
 	}
-	writeEvent(contract.FileTransferEvent{State: "connecting"})
-
-	transferContext, cancel := context.WithTimeout(r.Context(), panelFileTransferMaxDuration)
+	ctx, cancel := context.WithTimeout(r.Context(), panelFileTransferMaxDuration)
 	defer cancel()
-	var ensureErr error
-	if targetHostID == "" {
-		ensureErr = s.ensureFileTransferDirectory(transferContext, input.TargetDirectory, requestID(r))
-	} else {
-		ensureErr = s.ensureFileHostTransferDirectory(
-			transferContext, targetHostID, targetHostKind, input.TargetDirectory,
-		)
+	result := s.executeCrossFileTransfer(ctx, input, targetHostID, targetHostKind, requestID(r), emit)
+	outcome := "failure"
+	if result.State == "complete" && result.Entry != nil {
+		outcome = "success"
+		change["kind"], change["bytes"], change["targetName"] = result.Entry.Kind, result.LoadedBytes, result.Entry.Name
 	}
-	if ensureErr != nil {
-		_ = s.audit(r, session.User.ID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
-		writeEvent(contract.FileTransferEvent{State: "error", Detail: "目标目录不存在或不可写。"})
-		return
-	}
-	var content io.ReadCloser
-	var metadata contract.FileTransferMetadata
-	var err error
-	if input.SourceNodeID == s.cluster.NodeID() {
-		content, metadata, err = s.openLocalFileTransfer(
-			transferContext,
-			cluster.FederationFileOpenRequest{Path: input.Path, ResourceVersion: input.ResourceVersion},
-			requestID(r),
-		)
-	} else {
-		sourceHost, sourceHostErr := s.cluster.Host(transferContext, input.SourceNodeID)
-		if sourceHostErr == nil && sourceHost.Kind == cluster.HostKindLightNode {
-			content, metadata, err = s.cluster.OpenLightFileTransfer(
-				transferContext, input.SourceNodeID,
-				cluster.FederationFileOpenRequest{Path: input.Path, ResourceVersion: input.ResourceVersion},
-			)
-		} else {
-			content, metadata, err = s.cluster.OpenRemoteFileV2(
-				transferContext, input.SourceNodeID,
-				cluster.FederationFileOpenRequest{Path: input.Path, ResourceVersion: input.ResourceVersion},
-			)
-		}
-	}
-	if err != nil {
-		_ = s.audit(r, session.User.ID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
-		writeEvent(contract.FileTransferEvent{State: "error", Detail: "无法连接来源主机，或配对未授权文件复制。"})
-		return
-	}
-	defer content.Close()
-	if metadata.Name != path.Base(input.Path) || metadata.ResourceVersion != input.ResourceVersion {
-		_ = s.audit(r, session.User.ID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
-		writeEvent(contract.FileTransferEvent{State: "error", Detail: "来源文件在拖拽后已发生变化。"})
-		return
-	}
-	var name string
-	if targetHostID == "" {
-		name, err = s.uniqueFileTransferName(transferContext, input.TargetDirectory, metadata.Name, requestID(r))
-	} else {
-		name, err = s.uniqueFileHostTransferName(
-			transferContext, targetHostID, targetHostKind, input.TargetDirectory, metadata.Name, requestID(r),
-		)
-	}
-	if err != nil {
-		_ = s.audit(r, session.User.ID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
-		writeEvent(contract.FileTransferEvent{State: "error", Detail: "无法确定目标文件名。"})
-		return
-	}
-	change["kind"] = metadata.Kind
-	change["bytes"] = metadata.SizeBytes
-	change["targetName"] = name
-	writeEvent(contract.FileTransferEvent{State: "transferring", TotalBytes: metadata.SizeBytes})
-
-	loaded := int64(0)
-	lastReported := time.Now()
-	tracked := &fileTransferProgressReader{source: content, report: func(count int64) {
-		loaded += count
-		if time.Since(lastReported) >= 180*time.Millisecond {
-			writeEvent(contract.FileTransferEvent{
-				State: "transferring", LoadedBytes: loaded, TotalBytes: metadata.SizeBytes,
-			})
-			lastReported = time.Now()
-		}
-	}}
-	query := url.Values{
-		"path": []string{input.TargetDirectory}, "name": []string{name},
-		"kind": []string{metadata.Kind}, "size": []string{strconv.FormatInt(metadata.SizeBytes, 10)},
-	}
-	headers := make(http.Header)
-	headers.Set("Content-Type", "application/octet-stream")
-	var response *http.Response
-	if targetHostID == "" {
-		streamer, ok := s.agent.(agentStreamAPI)
-		if !ok {
-			_ = s.audit(r, session.User.ID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
-			writeEvent(contract.FileTransferEvent{State: "error", Detail: "Agent 文件流不可用。"})
-			return
-		}
-		response, err = streamer.OpenStream(
-			transferContext, http.MethodPost, "/v1/files/transfer/import", query.Encode(),
-			// Keep the local request chunked even for regular files. The Agent's
-			// exact-length reader must consume the Noise end record before Upload
-			// can atomically publish the destination.
-			requestID(r), tracked, headers, -1,
-		)
-	} else {
-		response, err = s.openFileHostRequest(transferContext, targetHostID, targetHostKind, cluster.LightFileRequest{
-			Method: http.MethodPost, Path: "/v1/files/transfer/import", RawQuery: query.Encode(),
-			Headers: map[string]string{"Content-Type": "application/octet-stream"},
-			Body:    tracked, BodyLength: -1,
-		})
-	}
-	if err != nil {
-		_ = s.audit(r, session.User.ID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
-		writeEvent(contract.FileTransferEvent{State: "error", LoadedBytes: loaded, TotalBytes: metadata.SizeBytes, Detail: "目标 Agent 写入中断。"})
-		return
-	}
-	defer response.Body.Close()
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1<<20))
-		_ = s.audit(r, session.User.ID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
-		writeEvent(contract.FileTransferEvent{State: "error", LoadedBytes: loaded, TotalBytes: metadata.SizeBytes, Detail: "目标文件写入失败，未保留半成品。"})
-		return
-	}
-	writeEvent(contract.FileTransferEvent{State: "committing", LoadedBytes: loaded, TotalBytes: metadata.SizeBytes})
-	var entry contract.FileEntry
-	responseDecoder := json.NewDecoder(io.LimitReader(response.Body, 1<<20))
-	responseDecoder.DisallowUnknownFields()
-	if err := responseDecoder.Decode(&entry); err != nil {
-		_ = s.audit(r, session.User.ID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
-		writeEvent(contract.FileTransferEvent{State: "error", LoadedBytes: loaded, TotalBytes: metadata.SizeBytes, Detail: "目标 Agent 返回无效结果。"})
-		return
-	}
-	_ = s.audit(r, session.User.ID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "success", change)
-	writeEvent(contract.FileTransferEvent{
-		State: "complete", LoadedBytes: loaded, TotalBytes: metadata.SizeBytes, Entry: &entry,
-	})
+	_ = s.audit(r, session.User.ID, "file.transfer.copy", "file-transfer", input.SourceNodeID, outcome, change)
 }
 
 type fileTransferProgressReader struct {
@@ -960,9 +844,7 @@ func (s *Server) openLocalFileTransfer(
 	if !ok {
 		return nil, contract.FileTransferMetadata{}, errors.New("local Agent file stream unavailable")
 	}
-	query := url.Values{
-		"path": []string{input.Path}, "resourceVersion": []string{input.ResourceVersion},
-	}
+	query := cluster.FileTransferQuery(input)
 	response, err := streamer.OpenStream(
 		ctx, http.MethodGet, "/v1/files/transfer/export", query.Encode(), requestID,
 		http.NoBody, nil, 0,
@@ -984,7 +866,23 @@ func (s *Server) openLocalFileTransfer(
 		_ = response.Body.Close()
 		return nil, contract.FileTransferMetadata{}, errors.New("local file transfer metadata is invalid")
 	}
+	if metadata.TransferVersion == 1 || len(response.Trailer) > 0 {
+		return &localFileTransferBody{ReadCloser: response.Body, response: response}, metadata, nil
+	}
 	return response.Body, metadata, nil
+}
+
+type localFileTransferBody struct {
+	io.ReadCloser
+	response *http.Response
+}
+
+func (body *localFileTransferBody) Read(buffer []byte) (int, error) {
+	count, err := body.ReadCloser.Read(buffer)
+	if err == io.EOF && body.response.Trailer.Get(fileTransferAgentResultTrailer) != "ok" {
+		return count, filemanager.ErrReceiveChecksum
+	}
+	return count, err
 }
 
 func (s *Server) openFileHostRequest(

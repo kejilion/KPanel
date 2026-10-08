@@ -51,6 +51,8 @@ func NewFileHandler(files *filemanager.Manager) http.Handler {
 			server.requireMethod(w, r, requestID, http.MethodGet, server.fileTransferExport)
 		case "/v1/files/transfer/import":
 			server.requireMethod(w, r, requestID, http.MethodPost, server.fileTransferImport)
+		case "/v1/files/transfer/sessions":
+			server.fileReceives(w, r)
 		case "/v1/files/actions":
 			server.requireMethod(w, r, requestID, http.MethodPost, server.fileAction)
 		default:

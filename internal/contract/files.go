@@ -4,9 +4,44 @@ import "time"
 
 const MaxFileEntryBatch = 64
 
-// MaxFileShareBytes bounds the O(file size) content proof required before an
-// anonymous file response. It matches the existing managed upload ceiling.
+// MaxFileShareBytes bounds the O(file size) proof for anonymous file responses.
 const MaxFileShareBytes int64 = 512 << 20
+
+// Managed transfers have independent limits; increasing them must not expand
+// the cost of proving a public share. Directory extraction keeps its own budget.
+const MaxFileTransferBytes int64 = 10 << 30
+const FileTransferChunkBytes = 8 << 20
+
+type FileReceiveInput struct {
+	Directory  string     `json:"directory"`
+	Name       string     `json:"name"`
+	Kind       string     `json:"kind"`
+	SizeBytes  int64      `json:"sizeBytes"`
+	SourceKey  string     `json:"sourceKey"`
+	Overwrite  bool       `json:"overwrite,omitempty"`
+	Mode       string     `json:"mode,omitempty"`
+	ModifiedAt *time.Time `json:"modifiedAt,omitempty"`
+}
+
+type FileReceiveRequest struct {
+	Operation string            `json:"operation"`
+	ID        string            `json:"id,omitempty"`
+	SourceKey string            `json:"sourceKey,omitempty"`
+	Input     *FileReceiveInput `json:"input,omitempty"`
+	SizeBytes int64             `json:"sizeBytes,omitempty"`
+	SHA256    string            `json:"sha256,omitempty"`
+}
+
+type FileReceiveSession struct {
+	ID           string     `json:"id"`
+	State        string     `json:"state"`
+	Offset       int64      `json:"offset"`
+	SizeBytes    int64      `json:"sizeBytes"`
+	PrefixSHA256 string     `json:"prefixSha256"`
+	ChunkBytes   int        `json:"chunkBytes"`
+	ExpiresAt    time.Time  `json:"expiresAt"`
+	Entry        *FileEntry `json:"entry,omitempty"`
+}
 
 type FileEntry struct {
 	Name            string    `json:"name"`
@@ -217,10 +252,14 @@ type FileWriteResult struct {
 }
 
 type FileTransferMetadata struct {
-	Name            string `json:"name"`
-	Kind            string `json:"kind"`
-	SizeBytes       int64  `json:"sizeBytes"`
-	ResourceVersion string `json:"resourceVersion"`
+	Name            string     `json:"name"`
+	Kind            string     `json:"kind"`
+	SizeBytes       int64      `json:"sizeBytes"`
+	ResourceVersion string     `json:"resourceVersion"`
+	Offset          int64      `json:"offset,omitempty"`
+	TransferVersion int        `json:"transferVersion,omitempty"`
+	Mode            string     `json:"mode,omitempty"`
+	ModifiedAt      *time.Time `json:"modifiedAt,omitempty"`
 }
 
 type FileTransferRequest struct {
@@ -228,6 +267,7 @@ type FileTransferRequest struct {
 	Path            string `json:"path"`
 	ResourceVersion string `json:"resourceVersion"`
 	TargetDirectory string `json:"targetDirectory"`
+	Background      bool   `json:"background,omitempty"`
 }
 
 type FileRemoteDownloadRequest struct {
@@ -241,6 +281,8 @@ type FileRemoteDownloadJob struct {
 	ID              string     `json:"id"`
 	State           string     `json:"state"`
 	Source          string     `json:"source"`
+	SourceKind      string     `json:"sourceKind,omitempty"`
+	TargetHostID    string     `json:"targetHostId,omitempty"`
 	TargetDirectory string     `json:"targetDirectory"`
 	Name            string     `json:"name,omitempty"`
 	LoadedBytes     int64      `json:"loadedBytes,omitempty"`

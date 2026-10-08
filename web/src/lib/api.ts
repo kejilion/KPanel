@@ -1,5 +1,7 @@
 import type { DockerImageUpdateResult } from '@/lib/dockerImageUpdate'
 import { TerminalStreamClient } from '@/lib/terminalStream'
+import { uploadFileInSession, type FileReceiveSession } from '@/lib/fileReceiveUpload'
+import { watchFileTransferJob } from '@/lib/fileTransferJob'
 import type { PasskeyList } from '@/types/api'
 import type { ShareThemeList } from '@/lib/shareThemes'
 import type { ScenePack, ScenePackList, ScenePackSource } from '@/lib/scenePacks'
@@ -598,7 +600,7 @@ function buildUrl(path: string, query?: Record<string, QueryValue>): string {
 
 const lightFileRelayPaths = new Set([
   '/files', '/files/entry', '/files/entries', '/files/trash', '/files/content',
-  '/files/archive', '/files/archive-contents', '/files/archive-jobs', '/files/text', '/files/tail', '/files/upload', '/files/actions',
+  '/files/archive', '/files/archive-contents', '/files/archive-jobs', '/files/text', '/files/tail', '/files/upload', '/files/actions', '/files/transfer/sessions',
 ])
 const fileTargetQueryPaths = new Set([...lightFileRelayPaths, '/files/transfers'])
 
@@ -609,6 +611,42 @@ function fileRequestQuery(
 ): Record<string, QueryValue> | undefined {
   if (!fileTargetQueryPaths.has(path) || !targetHostId) return query
   return { ...query, hostId: targetHostId }
+}
+
+function fileUploadBody<T>(path: string, method: 'POST' | 'PUT', query: Record<string, QueryValue>, body: Blob,
+  onProgress?: (percent: number) => void, signal?: AbortSignal, fileHostId?: string | null): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    let settled = false
+    const finish = (callback: () => void): void => {
+      if (settled) return
+      settled = true
+      signal?.removeEventListener('abort', abort)
+      callback()
+    }
+    const abort = (): void => xhr.abort()
+    xhr.open(method, buildUrl(path, fileRequestQuery(path, query, fileHostId)))
+    xhr.withCredentials = true
+    xhr.responseType = 'json'
+    xhr.timeout = method === 'PUT' ? 300_000 : 0
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream')
+    if (csrfToken) xhr.setRequestHeader('X-CSRF-Token', csrfToken)
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress?.(Math.round(event.loaded / event.total * 100))
+    }
+    xhr.onerror = xhr.ontimeout = () => finish(() => reject(new ApiError('文件上传连接中断。', 0, 'network_error')))
+    xhr.onabort = () => finish(() => reject(new DOMException('文件上传已取消。', 'AbortError')))
+    xhr.onload = () => {
+      const payload = xhr.response
+      if (xhr.status >= 200 && xhr.status < 300) { finish(() => resolve(payload as T)); return }
+      const problem = payload && typeof payload === 'object' ? payload as ProblemPayload : undefined
+      finish(() => reject(new ApiError(problem?.detail || problem?.title || '文件上传失败。', xhr.status,
+        problem?.code || 'file_upload_failed', payload, problem?.requestId)))
+    }
+    if (signal?.aborted) { finish(() => reject(new DOMException('文件上传已取消。', 'AbortError'))); return }
+    signal?.addEventListener('abort', abort, { once: true })
+    xhr.send(body)
+  })
 }
 
 async function rawFileResponse(
@@ -2237,8 +2275,17 @@ export const api = {
       onEvent: (event: CrossPanelFileTransferEvent) => void,
       signal?: AbortSignal,
       fileHostId?: string | null,
-    ): Promise<FileEntry> => streamFileEntry(
-      '/files/transfers', input, onEvent, signal,
+    ): Promise<FileEntry> => {
+      if (input.background) {
+        // Observe creation even if the caller detaches, so an explicit cancel
+        // can always address an accepted job rather than lose its response ID.
+        const job = await request<FileRemoteDownloadJob>('/files/transfers', { method: 'POST', body: input, fileHostId })
+        return watchFileTransferJob(job, {
+          get: (id) => request<FileRemoteDownloadJob>(`/files/remote-downloads/${encodeURIComponent(id)}`),
+          cancel: (id) => request<FileRemoteDownloadJob>(`/files/remote-downloads/${encodeURIComponent(id)}/cancel`, { method: 'POST' }),
+        }, onEvent, signal)
+      }
+      return streamFileEntry('/files/transfers', input, onEvent, signal,
       {
         failed: '跨主机复制失败。', failedCode: 'file_transfer_failed',
         invalid: '面板返回了无效的传输状态。', invalidCode: 'file_transfer_response_invalid',
@@ -2246,7 +2293,8 @@ export const api = {
       },
       crossPanelFileEntryStreamStates,
       fileHostId,
-    ),
+      )
+    },
     remoteDownload: async (
       input: FileRemoteDownloadInput,
       onEvent: (event: FileRemoteDownloadEvent) => void,
@@ -2310,59 +2358,16 @@ export const api = {
         fileHostId,
       }),
     upload: async (
-      path: string,
-      file: File,
-      overwrite = false,
-      onProgress?: (percent: number) => void,
-      signal?: AbortSignal,
-      fileHostId?: string | null,
-    ): Promise<FileEntry> =>
-      new Promise<FileEntry>((resolve, reject) => {
-        const xhr = new XMLHttpRequest()
-        let settled = false
-        const finish = (callback: () => void): void => {
-          if (settled) return
-          settled = true
-          signal?.removeEventListener('abort', abort)
-          callback()
-        }
-        const abort = (): void => xhr.abort()
-        xhr.open('POST', buildUrl('/files/upload', fileRequestQuery('/files/upload', {
-          path, name: file.name, overwrite,
-        }, fileHostId)))
-        xhr.withCredentials = true
-        xhr.responseType = 'json'
-        xhr.setRequestHeader('Content-Type', 'application/octet-stream')
-        if (csrfToken) xhr.setRequestHeader('X-CSRF-Token', csrfToken)
-        xhr.upload.onprogress = (event) => {
-          if (event.lengthComputable) onProgress?.(Math.round((event.loaded / event.total) * 100))
-        }
-        xhr.onerror = () => finish(() => reject(new ApiError('文件上传连接中断。', 0, 'network_error')))
-        xhr.onabort = () => finish(() => reject(new DOMException('文件上传已取消。', 'AbortError')))
-        xhr.onload = () => {
-          const payload = xhr.response
-          if (xhr.status >= 200 && xhr.status < 300) {
-            finish(() => resolve(payload as FileEntry))
-            return
-          }
-          const problem = payload && typeof payload === 'object' ? (payload as ProblemPayload) : undefined
-          finish(() => reject(
-            new ApiError(
-              problem?.detail || problem?.title || '文件上传失败。',
-              xhr.status,
-              problem?.code || 'file_upload_failed',
-              payload,
-              problem?.requestId,
-            ),
-          ))
-        }
-        if (signal?.aborted) {
-          finish(() => reject(new DOMException('文件上传已取消。', 'AbortError')))
-          return
-        }
-        signal?.addEventListener('abort', abort, { once: true })
-        xhr.send(file)
-      }),
+      path: string, file: File, overwrite = false, onProgress?: (percent: number) => void,
+      signal?: AbortSignal, fileHostId?: string | null,
+    ): Promise<FileEntry> => uploadFileInSession(path, file, overwrite, fileHostId || '', {
+      command: (body, signal) => request<FileReceiveSession>('/files/transfer/sessions', { method: 'POST', body, signal, fileHostId }),
+      status: (id, sourceKey, signal) => request<FileReceiveSession>('/files/transfer/sessions', { query: { id, sourceKey }, signal, fileHostId }),
+      chunk: (id, sourceKey, offset, sha256, blob, progress, signal) => fileUploadBody<FileReceiveSession>(
+        '/files/transfer/sessions', 'PUT', { id, sourceKey, offset, sha256 }, blob, progress, signal, fileHostId,
+      ),
+      legacy: () => fileUploadBody<FileEntry>('/files/upload', 'POST', { path, name: file.name, overwrite }, file, onProgress, signal, fileHostId),
+    }, onProgress, signal),
     action: (
       input: FileActionInput,
       signal?: AbortSignal,

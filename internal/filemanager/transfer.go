@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"strconv"
 
 	"github.com/kejilion/kejilion-panel/internal/contract"
 )
@@ -142,6 +143,12 @@ func (m *Manager) ImportDirectory(
 	name string,
 	content io.Reader,
 ) (contract.FileEntry, error) {
+	input := contract.FileReceiveInput{Directory: targetDirectory, Name: name, Kind: "directory", SizeBytes: -1}
+	return m.ReceiveStream(ctx, input, content, receiveLimit(input))
+}
+
+func (m *Manager) importDirectory(ctx context.Context, input contract.FileReceiveInput, content io.Reader, tempVirtual string, beforePublish func(os.FileInfo) error) (contract.FileEntry, error) {
+	targetDirectory, name := input.Directory, input.Name
 	if err := validateName(name); err != nil {
 		return contract.FileEntry{}, err
 	}
@@ -170,7 +177,6 @@ func (m *Manager) ImportDirectory(
 		return contract.FileEntry{}, err
 	}
 
-	tempVirtual := joinVirtual(normalizedTarget, ".kpanel-extract-"+randomID())
 	if err := m.rootFS.Mkdir(rootName(tempVirtual), 0700); err != nil {
 		return contract.FileEntry{}, err
 	}
@@ -195,7 +201,30 @@ func (m *Manager) ImportDirectory(
 	if err := m.applyArchiveDirectoryTimes(directoryTimes); err != nil {
 		return contract.FileEntry{}, err
 	}
-	if err := m.rootFS.Chmod(rootName(tempVirtual), 0755); err != nil {
+	mode := os.FileMode(0755)
+	if input.Mode != "" {
+		value, _ := strconv.ParseUint(input.Mode, 8, 32)
+		mode = os.FileMode(value)
+	}
+	if err := m.rootFS.Chmod(rootName(tempVirtual), mode); err != nil {
+		return contract.FileEntry{}, err
+	}
+	if input.ModifiedAt != nil {
+		if err := m.rootFS.Chtimes(rootName(tempVirtual), *input.ModifiedAt, *input.ModifiedAt); err != nil {
+			return contract.FileEntry{}, err
+		}
+	}
+	if err := syncRootDirectory(m.rootFS, rootName(tempVirtual)); err != nil {
+		return contract.FileEntry{}, err
+	}
+	info, err := m.rootFS.Lstat(rootName(tempVirtual))
+	if err != nil {
+		return contract.FileEntry{}, err
+	}
+	if err := beforePublish(info); err != nil {
+		return contract.FileEntry{}, err
+	}
+	if err := ctx.Err(); err != nil {
 		return contract.FileEntry{}, err
 	}
 	if err := renameNoReplaceRoot(m.rootFS, tempVirtual, outputVirtual); err != nil {

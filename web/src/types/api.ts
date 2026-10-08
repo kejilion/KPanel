@@ -2471,6 +2471,7 @@ export interface CrossPanelFileTransferInput {
   path: string
   resourceVersion: string
   targetDirectory: string
+  background?: boolean
 }
 
 export type CrossPanelFileTransferState =
@@ -2527,6 +2528,8 @@ export interface FileRemoteDownloadJob {
   id: string
   state: FileRemoteDownloadJobState
   source: string
+  sourceKind?: 'cross-host'
+  targetHostId?: string
   targetDirectory: string
   name?: string
   loadedBytes?: number

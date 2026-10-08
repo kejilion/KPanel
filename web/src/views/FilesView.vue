@@ -362,13 +362,10 @@ function handleFileHostSelection(host: ClusterHost): void {
     }
     resetFileHostContext(host.isLocal ? '' : host.id)
     void router.push({ name: 'files', query: { path: currentPath.value, ...(fileHostId.value ? { hostId: fileHostId.value } : {}) } })
-    if (!host.isLocal) {
-      stopRemoteDownloadPolling()
-      remoteDownloadJobs.value = []
-      remoteDownloadJobsError.value = undefined
-    } else {
-      void loadRemoteDownloadJobs(true)
-    }
+    stopRemoteDownloadPolling()
+    remoteDownloadJobs.value = []
+    remoteDownloadJobsError.value = undefined
+    void loadRemoteDownloadJobs(true)
     closeFileHostPicker(true)
     void navigateDirectory(host.isLocal ? '/home' : '/')
   } else if (status.action === 'open') {
@@ -423,7 +420,7 @@ const remoteDownloadJobsErrorMessage = computed(() => {
   return error ? remoteDownloadErrorDetail(error.code, error.detail) : ''
 })
 const remoteDownloadTasksVisible = computed(() => (
-  !isRemoteFileHost.value && (remoteDownloadJobs.value.length > 0 || Boolean(remoteDownloadJobsErrorMessage.value))
+  remoteDownloadJobs.value.length > 0 || Boolean(remoteDownloadJobsErrorMessage.value)
 ))
 const dialogAction = ref<DialogAction>()
 const dialogValue = ref('')
@@ -1493,6 +1490,7 @@ async function transferCrossPanelFileDrop(event: DragEvent, target: string): Pro
       fileAPI.value.transferFromPanel,
       ({ source, completed }) => {
         if (!isCurrentFileTransfer(sequence) || fileTransferController !== controller || controller.signal.aborted) return
+        if (completed === 0 && remoteDownloadPollTimer === undefined && !remoteDownloadJobsController) scheduleRemoteDownloadPoll(100)
         fileTransferState.value = {
           mode: 'copy', target, count: total, phase: 'running', remote: true,
           completed, currentName: source.name,
@@ -2097,12 +2095,6 @@ function upsertRemoteDownloadJob(job: FileRemoteDownloadJob): void {
 }
 
 async function loadRemoteDownloadJobs(silent = false): Promise<void> {
-  if (isRemoteFileHost.value) {
-    stopRemoteDownloadPolling()
-    remoteDownloadJobs.value = []
-    remoteDownloadJobsError.value = undefined
-    return
-  }
   if (remoteDownloadPollTimer !== undefined) window.clearTimeout(remoteDownloadPollTimer)
   remoteDownloadPollTimer = undefined
   remoteDownloadJobsController?.abort()
@@ -2112,7 +2104,7 @@ async function loadRemoteDownloadJobs(silent = false): Promise<void> {
   try {
     const result = await api.files.remoteDownloadJobs(controller.signal)
     if (unmounted || controller.signal.aborted || remoteDownloadJobsController !== controller) return
-    replaceRemoteDownloadJobs(result.items)
+    replaceRemoteDownloadJobs(result.items.filter((job) => (job.targetHostId || '') === fileHostId.value))
     remoteDownloadJobsError.value = undefined
   } catch (error) {
     if (unmounted || controller.signal.aborted || remoteDownloadJobsController !== controller) return
@@ -2128,7 +2120,7 @@ async function loadRemoteDownloadJobs(silent = false): Promise<void> {
 }
 
 function reconcileRemoteDownloadTarget(target: string): void {
-  notifyFileDirectoriesChanged([target], fileWindowChangeOrigin)
+  notifyFileDirectoriesChanged([target], fileWindowChangeOrigin, [], fileHostId.value)
   if (unmounted) return
   if (directoryController) {
     queuedRemoteDownloadRefreshes.add(target)
@@ -2170,7 +2162,7 @@ async function reconcileFailedRemoteDownloadSubmission(
         && createdAt >= submittedAt - remoteDownloadSubmissionClockSkew
         && createdAt <= reconciledAt + remoteDownloadSubmissionClockSkew
     })
-    replaceRemoteDownloadJobs(result.items)
+    replaceRemoteDownloadJobs(result.items.filter((job) => (job.targetHostId || '') === fileHostId.value))
     return recovered
   } catch {
     return undefined
@@ -2655,6 +2647,7 @@ watch(
       }
       stopRemoteDownloadPolling()
       remoteDownloadJobs.value = []
+      void loadRemoteDownloadJobs(true)
     }
     if (!hostChanged && pathValue === previous?.[0] && fileValue === previous?.[1]) return
     void (async () => {
@@ -2690,8 +2683,8 @@ onBeforeUnmount(() => {
   stopRemoteDownloadPolling()
   directoryController?.abort()
   archiveController?.abort()
-  externalUploadController?.abort()
-  fileTransferController?.abort()
+  externalUploadController?.abort('file-transfer-detach')
+  fileTransferController?.abort('file-transfer-detach')
   if (fileTransferClearTimer !== undefined) window.clearTimeout(fileTransferClearTimer)
   uploadTaskClearTimers.forEach((timer) => window.clearTimeout(timer))
   uploadTaskClearTimers.clear()
@@ -2916,7 +2909,7 @@ onBeforeUnmount(() => {
         >
           <header class="remote-download-tasks__header">
             <div>
-              <strong id="remote-download-tasks-title">{{ i18n.t('files.remoteDownload.tasksTitle') }}</strong>
+              <strong id="remote-download-tasks-title">{{ i18n.t('files.transfer.tasksTitle') }}</strong>
               <span>{{ i18n.t('files.remoteDownload.tasksDescription') }}</span>
             </div>
             <button

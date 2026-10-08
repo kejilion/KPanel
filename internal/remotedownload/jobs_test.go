@@ -49,6 +49,58 @@ func TestJobStorePersistsOnlyRedactedSourceAndInterruptsActiveJobs(t *testing.T)
 	}
 }
 
+func TestTransferJobStoreMigratesWithoutChangingRollbackJournal(t *testing.T) {
+	root := t.TempDir()
+	legacyRoot, newRoot := filepath.Join(root, "remote-downloads"), filepath.Join(root, "file-transfers")
+	legacy, err := OpenJobStore(legacyRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	job := contract.FileRemoteDownloadJob{ID: strings.Repeat("a", 32), State: "transferring", Source: "https://downloads.example.com", TargetDirectory: "/home", CreatedAt: now, UpdatedAt: now}
+	if err := legacy.Create(job); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(filepath.Join(legacyRoot, "jobs.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := OpenTransferJobStore(newRoot, legacyRoot)
+	if err != nil || !current.Available() {
+		t.Fatalf("migration=%v", err)
+	}
+	recovered, err := current.Get(job.ID)
+	if err != nil || recovered.State != "interrupted" {
+		t.Fatalf("recovery=%#v %v", recovered, err)
+	}
+	after, _ := os.ReadFile(filepath.Join(legacyRoot, "jobs.json"))
+	if !bytes.Equal(before, after) {
+		t.Fatal("rollback journal changed")
+	}
+	job.ID = strings.Repeat("b", 32)
+	job.SourceKind = "cross-host"
+	job.Source = "kpanel://" + strings.Repeat("c", 32)
+	job.TargetHostID = strings.Repeat("d", 32)
+	if err := current.Create(job); err != nil {
+		t.Fatal(err)
+	}
+	current, err = OpenTransferJobStore(newRoot, legacyRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restarted, err := current.Get(job.ID); err != nil || restarted.State != "interrupted" || restarted.TargetHostID != job.TargetHostID {
+		t.Fatalf("cross-host restart=%#v %v", restarted, err)
+	}
+	// A corrupt legacy index must be preserved and never silently discarded.
+	brokenRoot := filepath.Join(root, "broken")
+	_ = os.Mkdir(brokenRoot, 0700)
+	_ = os.WriteFile(filepath.Join(brokenRoot, "jobs.json"), []byte("broken"), 0600)
+	disabled, err := OpenTransferJobStore(filepath.Join(root, "disabled"), brokenRoot)
+	if err != nil || disabled.Available() {
+		t.Fatalf("corrupt migration enabled: %v", err)
+	}
+}
+
 func TestJobStoreBoundsHistoryAndRefusesActiveDeletion(t *testing.T) {
 	store, err := OpenJobStore(filepath.Join(t.TempDir(), "jobs"))
 	if err != nil {

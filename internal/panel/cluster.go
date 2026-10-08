@@ -785,10 +785,7 @@ func (s *Server) handleFederationFileOpenV2(
 		s.writeProblem(w, r, http.StatusServiceUnavailable, "agent_stream_unavailable", "Agent 文件流不可用", "")
 		return
 	}
-	query := url.Values{
-		"path":            []string{input.Path},
-		"resourceVersion": []string{input.ResourceVersion},
-	}
+	query := cluster.FileTransferQuery(input)
 	response, err := streamer.OpenStream(
 		r.Context(), http.MethodGet, "/v1/files/transfer/export", query.Encode(),
 		requestID(r), http.NoBody, nil, 0,

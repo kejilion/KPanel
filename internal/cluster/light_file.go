@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -53,9 +52,7 @@ func (s *Service) OpenLightFileTransfer(
 	if !validID(nodeID) || !validTransferPath(input.Path) || input.ResourceVersion == "" {
 		return nil, contract.FileTransferMetadata{}, ErrNotFound
 	}
-	query := url.Values{
-		"path": []string{input.Path}, "resourceVersion": []string{input.ResourceVersion},
-	}
+	query := FileTransferQuery(input)
 	response, err := s.OpenLightFile(ctx, nodeID, LightFileRequest{
 		Method: http.MethodGet, Path: "/v1/files/transfer/export", RawQuery: query.Encode(),
 		Body: http.NoBody, BodyLength: 0,

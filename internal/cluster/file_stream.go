@@ -580,6 +580,9 @@ func newFileStreamLimits() *fileStreamLimits {
 	return &fileStreamLimits{newFileStreamLimiter(16, 4), newFileStreamLimiter(16, 4)}
 }
 func (l *fileStreamLimits) acquire(peer string, input LightFileRequest) (func(), bool) {
+	if input.Path == "/v1/files/transfer/sessions" && input.Method == http.MethodPut {
+		return l.bulk.acquire(peer)
+	}
 	switch input.Path {
 	case "/v1/files/content", "/v1/files/upload", "/v1/files/archive", "/v1/files/transfer/export", "/v1/files/transfer/import":
 		return l.bulk.acquire(peer)

@@ -55,6 +55,9 @@ func (agent *confirmingFileRemoteDownloadAgent) OpenStream(
 	if err != nil {
 		return nil, err
 	}
+	if requestPath == "/v1/files/transfer/sessions" {
+		return response, nil
+	}
 	_ = response.Body.Close()
 	response.Body = agent.resultBody
 	response.ContentLength = -1
@@ -180,7 +183,7 @@ func TestFileRemoteDownloadBackgroundDetachesListsRedactsAndDeletes(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	jobIndex, err := os.ReadFile(filepath.Join(filepath.Dir(tokenPath), "remote-downloads", "jobs.json"))
+	jobIndex, err := os.ReadFile(filepath.Join(filepath.Dir(tokenPath), "file-transfers", "jobs.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

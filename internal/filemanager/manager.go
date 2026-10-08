@@ -73,6 +73,7 @@ type Manager struct {
 	writeMu        cancellableMutex
 	archiveIndex   archiveIndex
 	archiveJobs    archiveJobs
+	receives       receiveSessions
 }
 
 type Config struct {
@@ -177,6 +178,7 @@ func (m *Manager) Available() error {
 
 func (m *Manager) Close() error {
 	m.closeArchiveJobs()
+	m.closeReceiveSessions()
 	return m.rootFS.Close()
 }
 
@@ -492,137 +494,10 @@ func (m *Manager) Upload(
 	if contentLength > MaxUploadBytes {
 		return contract.FileEntry{}, ErrTooLarge
 	}
-	if err := validateName(name); err != nil {
-		return contract.FileEntry{}, err
-	}
-	if err := acquireNow(ctx, m.uploadGate); err != nil {
-		return contract.FileEntry{}, err
-	}
-	defer release(m.uploadGate)
-	_, normalizedDirectory, err := m.resolveExisting(directoryVirtual)
-	if err != nil {
-		return contract.FileEntry{}, err
-	}
-	info, err := m.rootFS.Lstat(rootName(normalizedDirectory))
-	if err != nil {
-		return contract.FileEntry{}, err
-	}
-	if !info.IsDir() {
-		return contract.FileEntry{}, ErrNotDirectory
-	}
-	targetVirtual := joinVirtual(normalizedDirectory, name)
-	if err := m.mutationError(targetVirtual); err != nil {
-		return contract.FileEntry{}, err
-	}
-	var existing os.FileInfo
-	if value, statErr := m.rootFS.Lstat(rootName(targetVirtual)); statErr == nil {
-		if !overwrite {
-			return contract.FileEntry{}, ErrAlreadyExists
-		}
-		if !value.Mode().IsRegular() {
-			return contract.FileEntry{}, ErrNotRegular
-		}
-		existing = value
-	} else if !errors.Is(statErr, os.ErrNotExist) {
-		return contract.FileEntry{}, statErr
-	}
-	var source *os.File
-	if existing != nil {
-		source, err = m.rootFS.Open(rootName(targetVirtual))
-		if err != nil {
-			return contract.FileEntry{}, err
-		}
-		defer source.Close()
-		opened, statErr := source.Stat()
-		if statErr != nil || !os.SameFile(existing, opened) {
-			return contract.FileEntry{}, ErrConflict
-		}
-	}
-	temp, tempVirtual, err := m.createTempWithSourceAccess(normalizedDirectory, ".kpanel-upload-", source)
-	if err != nil {
-		return contract.FileEntry{}, err
-	}
-	if existing != nil {
-		if err := temp.Chmod(existing.Mode().Perm()); err != nil {
-			temp.Close()
-			_ = m.rootFS.Remove(rootName(tempVirtual))
-			return contract.FileEntry{}, err
-		}
-		if err := preserveFileOwnership(temp, existing); err != nil {
-			temp.Close()
-			_ = m.rootFS.Remove(rootName(tempVirtual))
-			return contract.FileEntry{}, err
-		}
-		if err := preserveFileExtendedAttributes(temp, source); err != nil {
-			temp.Close()
-			_ = m.rootFS.Remove(rootName(tempVirtual))
-			return contract.FileEntry{}, err
-		}
-	} else if err := temp.Chmod(0644); err != nil {
-		temp.Close()
-		_ = m.rootFS.Remove(rootName(tempVirtual))
-		return contract.FileEntry{}, err
-	}
-	success := false
-	defer func() {
-		temp.Close()
-		if !success {
-			_ = m.rootFS.Remove(rootName(tempVirtual))
-		}
-	}()
-	reader := &contextReader{ctx: ctx, reader: io.LimitReader(content, MaxUploadBytes+1)}
-	written, err := io.CopyBuffer(temp, reader, make([]byte, 64<<10))
-	if err != nil {
-		return contract.FileEntry{}, err
-	}
-	if written > MaxUploadBytes {
-		return contract.FileEntry{}, ErrTooLarge
-	}
-	if err := temp.Sync(); err != nil {
-		return contract.FileEntry{}, err
-	}
-	if err := temp.Close(); err != nil {
-		return contract.FileEntry{}, err
-	}
-	m.writeMu.Lock()
-	defer m.writeMu.Unlock()
-	replace := false
-	if !overwrite {
-		if _, err := m.rootFS.Lstat(rootName(targetVirtual)); err == nil {
-			return contract.FileEntry{}, ErrAlreadyExists
-		}
-	} else if current, err := m.rootFS.Lstat(rootName(targetVirtual)); err == nil {
-		if existing == nil ||
-			resourceVersion(targetVirtual, current) != resourceVersion(targetVirtual, existing) {
-			return contract.FileEntry{}, ErrConflict
-		}
-		replace = true
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return contract.FileEntry{}, err
-	}
-	// Only a target verified just above may be replaced. When the overwrite
-	// target is absent at publish time, a file created externally since then
-	// must not be silently clobbered, so publish without replacement.
-	if replace {
-		if err := m.rootFS.Rename(rootName(tempVirtual), rootName(targetVirtual)); err != nil {
-			return contract.FileEntry{}, err
-		}
-	} else if err := renameNoReplaceRoot(m.rootFS, tempVirtual, targetVirtual); err != nil {
-		if errors.Is(err, os.ErrExist) {
-			if overwrite {
-				return contract.FileEntry{}, ErrConflict
-			}
-			return contract.FileEntry{}, ErrAlreadyExists
-		}
-		return contract.FileEntry{}, err
-	}
-	if err := syncRootDirectory(m.rootFS, rootName(normalizedDirectory)); err != nil {
-		return contract.FileEntry{}, err
-	}
-	success = true
-	return m.Stat(targetVirtual)
+	return m.ReceiveStream(ctx, contract.FileReceiveInput{
+		Directory: directoryVirtual, Name: name, Kind: "file", SizeBytes: contentLength, Overwrite: overwrite,
+	}, content, MaxUploadBytes)
 }
-
 func (m *Manager) Action(
 	ctx context.Context,
 	input contract.FileActionRequest,

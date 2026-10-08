@@ -156,6 +156,40 @@ func SourceDisplay(parsed *url.URL) string {
 }
 
 func (c *Client) Open(ctx context.Context, raw string) (*http.Response, error) {
+	return c.open(ctx, raw, nil)
+}
+
+type ResumeRequest struct {
+	Offset    int64
+	SizeBytes int64
+	ETag      string
+	FinalURL  string
+}
+
+var ErrSourceChanged = errors.New("remote download source changed")
+
+func StrongETag(value string) bool {
+	if len(value) < 2 || len(value) > 1024 || value[0] != '"' || value[len(value)-1] != '"' {
+		return false
+	}
+	for _, character := range []byte(value[1 : len(value)-1]) {
+		if character < 0x21 || character == '"' || character == 0x7f {
+			return false
+		}
+	}
+	return true
+}
+
+// Range uses the same URL/DNS/redirect policy as a fresh download. A server
+// ignoring Range may return 200; the caller must verify the discarded prefix.
+func (c *Client) OpenRange(ctx context.Context, raw string, resume ResumeRequest) (*http.Response, error) {
+	if resume.Offset <= 0 || resume.SizeBytes < resume.Offset || !StrongETag(resume.ETag) {
+		return nil, ErrSourceChanged
+	}
+	return c.open(ctx, raw, &resume)
+}
+
+func (c *Client) open(ctx context.Context, raw string, resume *ResumeRequest) (*http.Response, error) {
 	parsed, err := ValidateURL(raw)
 	if err != nil {
 		return nil, err
@@ -167,19 +201,33 @@ func (c *Client) Open(ctx context.Context, raw string) (*http.Response, error) {
 	request.Header.Set("Accept", "application/octet-stream, */*")
 	request.Header.Set("Accept-Encoding", "identity")
 	request.Header.Set("User-Agent", "KPanel-Remote-Download/1")
+	if resume != nil {
+		request.Header.Set("Range", fmt.Sprintf("bytes=%d-", resume.Offset))
+		request.Header.Set("If-Range", resume.ETag)
+	}
 	response, err := c.httpClient.Do(request)
 	if err != nil {
 		return nil, classifyError(ctx, err)
 	}
-	if response.StatusCode == http.StatusPartialContent {
+	if resume != nil && (response.Header.Get("ETag") != resume.ETag || resume.FinalURL != "" && (response.Request == nil || response.Request.URL == nil || response.Request.URL.String() != resume.FinalURL)) {
+		response.Body.Close()
+		return nil, ErrSourceChanged
+	}
+	if response.StatusCode == http.StatusPartialContent && resume == nil {
 		response.Body.Close()
 		return nil, ErrPartialContent
 	}
-	if response.StatusCode != http.StatusOK {
+	if response.StatusCode != http.StatusOK && (resume == nil || response.StatusCode != http.StatusPartialContent) {
 		response.Body.Close()
 		return nil, &StatusError{StatusCode: response.StatusCode}
 	}
-	if response.Header.Get("Content-Range") != "" {
+	if response.StatusCode == http.StatusPartialContent {
+		expected := fmt.Sprintf("bytes %d-%d/%d", resume.Offset, resume.SizeBytes-1, resume.SizeBytes)
+		if response.Header.Get("Content-Range") != expected || response.ContentLength >= 0 && response.ContentLength != resume.SizeBytes-resume.Offset {
+			response.Body.Close()
+			return nil, ErrSourceChanged
+		}
+	} else if response.Header.Get("Content-Range") != "" {
 		response.Body.Close()
 		return nil, ErrPartialContent
 	}
