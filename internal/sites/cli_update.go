@@ -54,7 +54,18 @@ func (m *Manager) updateCLIConfig(
 	if err != nil {
 		return contract.SiteSummary{}, fmt.Errorf("%w: stage kejilion.sh configuration: %v", ErrUnavailable, err)
 	}
-	defer os.Remove(candidatePath)
+	keepBackup := false
+	defer func() {
+		if !keepBackup {
+			_ = os.Remove(candidatePath)
+		}
+	}()
+	// Capture the staged inode before publication. Inspecting the live path
+	// afterwards could accidentally identify an external writer's replacement.
+	candidateInfo, err := os.Lstat(candidatePath)
+	if err != nil {
+		return contract.SiteSummary{}, fmt.Errorf("%w: inspect staged configuration: %v", ErrUnavailable, err)
+	}
 
 	latest, err := m.findManagedByID(current.ID)
 	if err != nil || latest.ResourceVersion != expectedVersion {
@@ -63,29 +74,47 @@ func (m *Manager) updateCLIConfig(
 	if !fileMatches(configPath, oldInfo, oldConfig) {
 		return contract.SiteSummary{}, fmt.Errorf("%w: discovered configuration changed before commit", ErrConflict)
 	}
+	m.callHook("before_exchange", configPath)
 	if err := atomicExchange(candidatePath, configPath); err != nil {
 		return contract.SiteSummary{}, fmt.Errorf("%w: replace kejilion.sh configuration: %v", ErrUnavailable, err)
 	}
 	rollback := func(cause error) (contract.SiteSummary, error) {
-		if exchangeErr := atomicExchange(candidatePath, configPath); exchangeErr != nil {
-			return contract.SiteSummary{}, fmt.Errorf(
-				"%w: candidate failed and previous kejilion.sh configuration could not be restored: %v",
-				ErrNeedsAttention,
-				exchangeErr,
-			)
+		if restoreErr := restoreExchange(configPath, candidateInfo, newConfig, candidatePath); restoreErr != nil {
+			keepBackup = true
+			return contract.SiteSummary{}, restoreErr
 		}
 		if reloadErr := m.validateAndReloadPrevious(ctx); reloadErr != nil {
 			return contract.SiteSummary{}, reloadErr
 		}
 		return contract.SiteSummary{}, cause
 	}
+	if err := syncDirectory(filepath.Dir(configPath)); err != nil {
+		return rollback(fmt.Errorf("%w: sync candidate publication: %v", ErrUnavailable, err))
+	}
+	if !fileMatches(candidatePath, oldInfo, oldConfig) {
+		return rollback(fmt.Errorf("%w: external change won the update race", ErrConflict))
+	}
+	m.callHook("candidate_published", configPath)
+	if !fileMatches(configPath, candidateInfo, newConfig) {
+		keepBackup = true
+		return contract.SiteSummary{}, fmt.Errorf("%w: candidate changed before validation; backup retained at %s", ErrNeedsAttention, candidatePath)
+	}
 	if err := m.nginx.NginxTest(ctx); err != nil {
 		return rollback(fmt.Errorf("%w: candidate failed nginx -t: %v", ErrUnprocessable, err))
+	}
+	if !fileMatches(configPath, candidateInfo, newConfig) {
+		keepBackup = true
+		return contract.SiteSummary{}, fmt.Errorf("%w: candidate changed during validation; backup retained at %s", ErrNeedsAttention, candidatePath)
 	}
 	if err := m.nginx.NginxReload(ctx); err != nil {
 		return rollback(fmt.Errorf("%w: Nginx reload failed: %v", ErrUnavailable, err))
 	}
+	if !fileMatches(configPath, candidateInfo, newConfig) {
+		keepBackup = true
+		return contract.SiteSummary{}, fmt.Errorf("%w: candidate changed while reloading; backup retained at %s", ErrNeedsAttention, candidatePath)
+	}
 	if err := os.Remove(candidatePath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		keepBackup = true
 		return contract.SiteSummary{}, fmt.Errorf(
 			"%w: site is active but old configuration cleanup failed: %v",
 			ErrNeedsAttention,

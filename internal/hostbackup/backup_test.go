@@ -40,6 +40,7 @@ type fixtureDocker struct {
 	calls      []string
 	failCreate bool
 	failDelete bool
+	volumes    map[string]Volume
 }
 
 func (f *fixtureDocker) request(r *http.Request) (*http.Response, error) {
@@ -50,6 +51,28 @@ func (f *fixtureDocker) request(r *http.Request) (*http.Response, error) {
 	status := 200
 	var value any = map[string]any{}
 	switch {
+	case key == "POST /volumes/create":
+		var v Volume
+		if err := json.NewDecoder(r.Body).Decode(&v); err != nil {
+			return nil, err
+		}
+		if f.volumes == nil {
+			f.volumes = map[string]Volume{}
+		}
+		if existing, ok := f.volumes[v.Name]; ok {
+			v = existing
+		} else {
+			v.Mountpoint = "/var/lib/docker/volumes/" + v.Name + "/_data"
+			f.volumes[v.Name] = v
+		}
+		value = v
+	case strings.HasPrefix(key, "GET /volumes/"):
+		v, ok := f.volumes[strings.TrimPrefix(r.URL.Path, "/volumes/")]
+		if !ok {
+			status = 404
+		} else {
+			value = v
+		}
 	case key == "GET /info":
 		value = map[string]any{"SecurityOptions": []string{}}
 	case key == "GET /containers/json":

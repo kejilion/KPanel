@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -217,22 +218,52 @@ func (c *Client) ComposeProjects() []ComposeProjectSummary {
 
 // Include the roots themselves: the shared web stack commonly lives in /home/web.
 func (c *Client) managedComposeDirectories() []string {
+	directories, _ := c.managedComposeDirectoriesWithLimit(context.Background(), 0)
+	return directories
+}
+
+func (c *Client) managedComposeDirectoriesWithLimit(ctx context.Context, limit int) ([]string, error) {
 	seen := make(map[string]bool)
 	var directories []string
+	readEntries := 0
 	for _, root := range []string{c.appRoot, c.webRoot} {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		resolvedRoot, err := filepath.EvalSymlinks(filepath.Clean(root))
 		if err != nil || !filepath.IsAbs(resolvedRoot) {
+			if limit > 0 {
+				return nil, ErrActionUnsupported
+			}
 			continue
 		}
 		if !seen[resolvedRoot] {
 			seen[resolvedRoot] = true
 			directories = append(directories, resolvedRoot)
 		}
-		entries, err := os.ReadDir(resolvedRoot)
+		var entries []os.DirEntry
+		if limit > 0 {
+			directory, openErr := os.Open(resolvedRoot)
+			if openErr != nil {
+				return nil, ErrActionUnsupported
+			}
+			entries, err = directory.ReadDir(limit - readEntries + 1)
+			_ = directory.Close()
+			readEntries += len(entries)
+			if readEntries > limit || err != nil && !errors.Is(err, io.EOF) {
+				return nil, ErrActionUnsupported
+			}
+			err = nil
+		} else {
+			entries, err = os.ReadDir(resolvedRoot)
+		}
 		if err != nil {
 			continue
 		}
 		for _, entry := range entries {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			if !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
 				continue
 			}
@@ -244,7 +275,7 @@ func (c *Client) managedComposeDirectories() []string {
 			directories = append(directories, candidate)
 		}
 	}
-	return directories
+	return directories, nil
 }
 
 func (c *Client) resolveComposeProject(ctx context.Context, name string) (composeProjectState, error) {

@@ -74,7 +74,7 @@ func (s *Server) serveRemoteBackups(w http.ResponseWriter, r *http.Request, p []
 	var err error
 	switch {
 	case len(p) == 2 && p[1] == "settings" && r.Method == "GET":
-		s.writeJSON(w, 200, s.backupRemote.Snapshot())
+		s.writeJSON(w, 200, s.backupSettingsSnapshot())
 		return true
 	case len(p) == 2 && p[1] == "storage" && r.Method == "PUT":
 		var v struct {
@@ -104,7 +104,8 @@ func (s *Server) serveRemoteBackups(w http.ResponseWriter, r *http.Request, p []
 		}
 	case len(p) == 3 && p[1] == "schedule" && p[2] == "run" && r.Method == "POST":
 		var record backup.Record
-		record, err = s.startScheduledBackup(s.backupRemote.Plan())
+		plan, revision := s.backupRemote.PlanWithRevision()
+		record, err = s.startScheduledBackup(plan, revision)
 		if err == nil {
 			s.writeJSON(w, 202, record)
 			return true
@@ -121,7 +122,7 @@ func (s *Server) serveRemoteBackups(w http.ResponseWriter, r *http.Request, p []
 	if err != nil {
 		s.remoteBackupError(w, r, err)
 	} else {
-		s.writeJSON(w, 200, s.backupRemote.Snapshot())
+		s.writeJSON(w, 200, s.backupSettingsSnapshot())
 	}
 	return true
 }
@@ -194,6 +195,13 @@ func (s *Server) startBackupExport(input backupRequest, keep int) (backup.Record
 		return record, err
 	}
 	record.Automatic = automatic
+	planSettings := backupremote.Settings{}
+	currentPlan := false
+	if automatic && s.backupRemote != nil {
+		planSettings = s.backupRemote.Snapshot()
+		currentPlan = (input.scheduleRevision == "" || input.scheduleRevision == planSettings.Revision) &&
+			sameBackupModules(planSettings.Schedule.Modules, input.Modules) && planSettings.Schedule.StorageID == input.StorageID
+	}
 	if storage.ID != "" {
 		record.Remote = remoteReceipt(storage, record)
 	}
@@ -201,14 +209,22 @@ func (s *Server) startBackupExport(input backupRequest, keep int) (backup.Record
 		_ = s.backups.Abort(record.ID, "start_failed")
 		return record, err
 	}
+	if automatic && currentPlan {
+		if err = s.backupRemote.MarkRunForRevision(planSettings.Revision, record.CreatedAt); errors.Is(err, backupremote.ErrConflict) {
+			currentPlan = false
+		} else if err != nil {
+			_ = s.backups.Abort(record.ID, "start_failed")
+			return record, err
+		}
+	}
 	err = s.backups.Run(record.ID, func(ctx context.Context, id string) (result error) {
 		defer func() {
-			if automatic {
+			if automatic && currentPlan {
 				code := ""
 				if result != nil {
 					code = backup.FailureCode(result)
 				}
-				_ = s.backupRemote.SetRunError(code)
+				_ = s.backupRemote.SetRunErrorForRevision(planSettings.Revision, code)
 			}
 		}()
 		if automatic && len(hostBackupModules(input.Modules)) > 0 {
@@ -290,16 +306,33 @@ func (s *Server) retryBackupUpload(w http.ResponseWriter, r *http.Request, id st
 		s.remoteBackupError(w, r, err)
 		return
 	}
+	previous, err := s.backups.Get(id)
+	if err != nil {
+		s.backupError(w, r, err)
+		return
+	}
 	record, err := s.backups.ReserveUpload(id)
 	if err != nil {
 		s.backupError(w, r, err)
 		return
 	}
 	receipt := remoteReceipt(storage, record)
-	// A manual copy does not enrol older backups in automatic retention.
-	err = s.backups.Update(id, func(r *backup.Record) { r.Remote = receipt; r.Automatic = false })
+	// Retrying an automatic copy to its original destination preserves its
+	// identity. Manual exports and copies to another target are not enrolled.
+	automatic := record.Automatic && record.Remote != nil && record.Remote.StorageID == storage.ID && record.Remote.Destination == storage.Fingerprint()
+	err = s.backups.Update(id, func(r *backup.Record) { r.Remote = receipt; r.Automatic = automatic })
 	if err == nil {
-		err = s.backups.Run(id, func(ctx context.Context, id string) error { return s.uploadBackup(ctx, id, storage, receipt) })
+		err = s.backups.Run(id, func(ctx context.Context, id string) error {
+			if err := s.uploadBackup(ctx, id, storage, receipt); err != nil {
+				return err
+			}
+			// Uploading an existing package does not retry retention. Preserve
+			// that warning until a later automatic export actually prunes.
+			if automatic && previous.ErrorCode == "retention_failed" {
+				return s.backups.Update(id, func(r *backup.Record) { r.ErrorCode = "retention_failed" })
+			}
+			return nil
+		})
 	}
 	if err != nil {
 		_ = s.backups.Abort(id, "start_failed")
@@ -395,11 +428,11 @@ func (s *Server) pruneAutomaticBackups(ctx context.Context, owner string, storag
 	return nil
 }
 
-func (s *Server) startScheduledBackup(plan backupremote.Schedule) (backup.Record, error) {
+func (s *Server) startScheduledBackup(plan backupremote.Schedule, revision string) (backup.Record, error) {
 	if plan.Validate() != nil || backup.ValidatePassword(plan.Password) != nil {
 		return backup.Record{}, backupremote.ErrInvalid
 	}
-	return s.startBackupExport(backupRequest{Modules: plan.Modules, StorageID: plan.StorageID, Password: plan.Password}, plan.Keep)
+	return s.startBackupExport(backupRequest{Modules: plan.Modules, StorageID: plan.StorageID, Password: plan.Password, scheduleRevision: revision}, plan.Keep)
 }
 func (s *Server) startBackupSchedule(parent context.Context) {
 	s.backupScheduleMu.Lock()
@@ -419,10 +452,10 @@ func (s *Server) startBackupSchedule(parent context.Context) {
 			case <-ctx.Done():
 				return
 			case now := <-ticker.C:
-				plan, run, err := s.backupRemote.Claim(now, s.backups.Busy())
+				plan, revision, run, err := s.backupRemote.ClaimWithRevision(now, s.backups.Busy())
 				if err == nil && run {
-					if _, err = s.startScheduledBackup(plan); err != nil {
-						_ = s.backupRemote.SetRunError(backup.FailureCode(err))
+					if _, err = s.startScheduledBackup(plan, revision); err != nil {
+						_ = s.backupRemote.SetRunErrorForRevision(revision, backup.FailureCode(err))
 					}
 				}
 			}

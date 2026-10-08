@@ -130,9 +130,11 @@ func (e *Engine) Restore(ctx context.Context, id, directory string, modules []st
 		}
 	}
 	// Re-verify payload roots against the destination inventory: an imported
-	// manifest may only replace data the destination actually owns.
+	// manifest may only replace data the destination actually owns. Local
+	// volume roots are resolved by prepareVolumes against this Docker daemon,
+	// including newly created volumes without a destination container yet.
 	for _, root := range all.Roots {
-		covered := false
+		covered := declaredLocalVolumeRoot(all, root)
 		for _, existing := range current.Roots {
 			if existing.Path == root.Path {
 				covered = true

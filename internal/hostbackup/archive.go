@@ -123,6 +123,9 @@ func (e *Engine) Create(ctx context.Context, directory string, modules []string,
 				}
 			}
 		}
+		if err := e.validatePayload(payload); err != nil {
+			return err
+		}
 		if err := e.writePayload(ctx, filepath.Join(directory, module+".payload"), payload); err != nil {
 			return err
 		}

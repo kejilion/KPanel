@@ -54,6 +54,7 @@ const form = reactive({
   serviceChecksEnabled: false,
   hostExpiryEnabled: false,
   panelLoginEnabled: false,
+  backupEnabled: false,
   channelCredential: '',
 })
 
@@ -143,6 +144,7 @@ function applySnapshot(value: ClusterNotificationSnapshot): void {
   form.serviceChecksEnabled = value.rules.serviceChecksEnabled ?? false
   form.hostExpiryEnabled = value.rules.hostExpiryEnabled ?? false
   form.panelLoginEnabled = value.rules.panelLoginEnabled ?? false
+  form.backupEnabled = value.rules.backupEnabled ?? false
   form.channelCredential = ''
   if (modalControl) {
     void nextTick(() => {
@@ -181,6 +183,7 @@ function rulesFromForm(): ClusterNotificationRules {
     serviceChecksEnabled: form.serviceChecksEnabled,
     hostExpiryEnabled: form.hostExpiryEnabled,
     panelLoginEnabled: form.panelLoginEnabled,
+    backupEnabled: form.backupEnabled,
   }
 }
 
@@ -530,6 +533,10 @@ onBeforeUnmount(() => {
             <label class="cluster-notifications__event-rule">
               <span><strong>{{ phrase('面板登录') }}</strong><small>{{ phrase('有人登录本 KPanel 时提醒，包含用户、来源、登录方式和时间，不传递密码或验证码。') }}</small></span>
               <input v-model="form.panelLoginEnabled" type="checkbox" :aria-label="phrase('启用面板登录通知')" />
+            </label>
+            <label class="cluster-notifications__event-rule">
+              <span><strong>{{ phrase('自动备份通知') }}</strong><small>{{ phrase('当前面板的自动备份失败、漏跑或旧副本清理失败时提醒，成功恢复后通知。') }}</small></span>
+              <input v-model="form.backupEnabled" type="checkbox" :aria-label="phrase('启用自动备份通知')" />
             </label>
           </div>
         </section>

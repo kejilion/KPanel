@@ -5,18 +5,33 @@ let sequence = 10
 const records = new Map()
 const storageId = 'f'.repeat(32)
 let settings = { revision: 'mock-settings-1', storages: [{ id: storageId, name: 'Demo WebDAV', kind: 'webdav', endpoint: 'https://nas.example/dav', prefix: 'kpanel', username: 'backup', hasSecret: true }], schedule: { enabled: false, modules: ['panel'], storageId: '', frequency: 'daily', hour: 3, minute: 0, weekday: 0, day: 1, timezone: 'Asia/Shanghai', keep: 7, hasPassword: false } }
-function updated() { settings.revision = `mock-settings-${++sequence}`; return settings }
+function publicSettings() {
+  const automatic = [...records.values()].filter(r => r.automatic && r.action === 'export' && r.modules.join() === settings.schedule.modules.join() && (r.remote?.storageId || '') === settings.schedule.storageId)
+  const latest = automatic.at(-1)
+  const success = automatic.filter(r => r.status === 'completed' && r.size > 0 && (!r.remote || r.remote.status === 'completed')).at(-1)
+  const state = !settings.schedule.enabled ? 'disabled' : settings.schedule.lastError === 'schedule_missed' ? 'missed' : !latest ? 'idle' : ['queued', 'running'].includes(latest.status) ? 'running' : latest.status === 'failed' ? 'failed' : latest.errorCode ? 'warning' : 'healthy'
+  return { ...settings, health: { state, lastSuccessAt: success?.createdAt, lastRecordId: latest?.id, errorCode: settings.schedule.lastError || latest?.errorCode } }
+}
+function updated() { settings.revision = `mock-settings-${++sequence}`; return publicSettings() }
 function remote(record, id) { if (id) record.remote = { storageId: id, storageName: settings.storages.find(s => s.id === id)?.name || 'Remote', key: `kpanel-${record.id}.kpb`, status: 'completed' }; return record }
 function create(action, selected, status = 'queued') {
-  const record = { id: (++sequence).toString(16).padStart(32, '0'), action, modules: selected, status, stage: status, createdAt: new Date().toISOString(), size: 0, targetRevision: 'mock-revision' }
+  const record = { id: (++sequence).toString(16).padStart(32, '0'), action, modules: selected, status, stage: status, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), size: 0, targetRevision: 'mock-revision' }
   records.set(record.id, record)
   return record
 }
 create('import', ['panel', 'web'], 'ready')
 records.get([...records.keys()][0]).roots = [{ path: '/home/web', module: 'web' }]
 Object.assign(create('restore', ['docker'], 'failed'), { errorCode: 'cleanup_pending', completedModules: ['docker'] })
+if (process.env.KPANEL_MOCK_BACKUP_HEALTH === '1') {
+  const previous = new Date(Date.now() - 86400000).toISOString()
+  Object.assign(create('export', ['panel'], 'completed'), { automatic: true, localReady: true, size: 24576, createdAt: previous, updatedAt: previous })
+  settings.schedule = { ...settings.schedule, enabled: true, hasPassword: true, lastError: 'schedule_missed', nextRun: new Date(Date.now() + 86400000).toISOString() }
+}
 function advance(record, status) {
-  setTimeout(() => Object.assign(record, { status, stage: status, localReady: record.action === 'export', size: record.action === 'export' ? 24576 : 0, ...(record.action === 'restore' ? { completedModules: record.modules } : {}) }), 800).unref()
+  setTimeout(() => {
+    Object.assign(record, { status, stage: status, updatedAt: new Date().toISOString(), localReady: record.action === 'export', size: record.action === 'export' ? 24576 : 0, ...(record.action === 'restore' ? { completedModules: record.modules } : {}) })
+    if (record.automatic) settings.schedule.lastError = ''
+  }, 800).unref()
   return record
 }
 export async function mockBackups(request, response, url, send, readJSON) {
@@ -26,7 +41,7 @@ export async function mockBackups(request, response, url, send, readJSON) {
   const fail = (status, title) => send(response, status, { code: 'mock_backup_error', title })
   try {
     if (path === '' && request.method === 'GET') send(response, 200, { items: [...records.values()].reverse(), maxBytes })
-    else if (path === '/settings' && request.method === 'GET') send(response, 200, settings)
+    else if (path === '/settings' && request.method === 'GET') send(response, 200, publicSettings())
     else if (path === '/storage' && request.method === 'PUT') {
       const input = await readJSON(request)
       if (input.revision !== settings.revision) fail(409, '备份设置已变更，请刷新后重试')
@@ -43,7 +58,7 @@ export async function mockBackups(request, response, url, send, readJSON) {
     } else if (path === '/schedule' && request.method === 'PUT') {
       const input = await readJSON(request)
       if (input.revision !== settings.revision) fail(409, '备份设置已变更，请刷新后重试')
-      else { settings.schedule = { ...input.schedule, hasPassword: !!input.schedule.password || settings.schedule.hasPassword, nextRun: new Date(Date.now() + 86400000).toISOString() }; delete settings.schedule.password; send(response, 200, updated()) }
+      else { settings.schedule = { ...input.schedule, hasPassword: !!input.schedule.password || settings.schedule.hasPassword, lastError: '', nextRun: new Date(Date.now() + 86400000).toISOString() }; delete settings.schedule.password; send(response, 200, updated()) }
     } else if (path === '/schedule/run' && request.method === 'POST') {
       const record = remote(create('export', settings.schedule.modules), settings.schedule.storageId); record.automatic = true; send(response, 202, advance(record, 'completed'))
     } else if (path === '/remote-import' && request.method === 'POST') {

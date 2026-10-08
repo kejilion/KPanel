@@ -1,4 +1,7 @@
 export default [
+  ['自动备份通知', 'Automatic backup notifications'],
+  ['启用自动备份通知', 'Enable automatic backup notifications'],
+  ['当前面板的自动备份失败、漏跑或旧副本清理失败时提醒，成功恢复后通知。', 'Notify when this panel’s automatic backup fails, misses its window, or cannot prune old copies; notify again after recovery.'],
   ["服务器到期提醒","Server expiry reminders"],
   ["启用服务器到期提醒","Enable server expiry reminders"],
   ["统一提醒所有已填写到期日期的主机，按当前 KPanel 时区，在提前 7、3、1 天及到期当天各提醒一次。","Notify for all hosts with an expiry date, once 7, 3 and 1 days before expiry and on the expiry date, using this KPanel's timezone."],

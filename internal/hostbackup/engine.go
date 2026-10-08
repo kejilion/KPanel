@@ -205,9 +205,9 @@ func owner(path string) string {
 }
 
 // rootMatchesModule confines an imported payload root to the positive data
-// model the exporter produces. web restores only /home/web, apps restores
-// only /home paths owned by apps, and docker roots must be the bind source or
-// volume mountpoint of a container declared by the same payload. Mirrors
+// model the exporter produces. web and apps include their business paths
+// and local volumes attached to containers of the same module. Docker roots
+// must be a declared mount source. Mirrors
 // engine-side Root.ID derivation so an attacker cannot re-label a root.
 func rootMatchesModule(p Payload, r Root) bool {
 	hash := sha256.Sum256([]byte(r.Path))
@@ -216,9 +216,9 @@ func rootMatchesModule(p Payload, r Root) bool {
 	}
 	switch p.Module {
 	case "web":
-		return r.Path == "/home/web"
+		return r.Path == "/home/web" || declaredLocalVolumeRoot(p, r)
 	case "apps":
-		return owner(r.Path) == "apps"
+		return owner(r.Path) == "apps" || declaredLocalVolumeRoot(p, r)
 	case "docker":
 		for _, c := range p.Containers {
 			for _, mount := range c.Mounts {
@@ -236,6 +236,30 @@ func rootMatchesModule(p Payload, r Root) bool {
 			}
 		}
 		return false
+	}
+	return false
+}
+
+// A volume root needs the exact native volume identity and a container in
+// its module. During restore prepareVolumes replaces these descriptors with
+// the destination daemon's inspected descriptors; an archive path alone is
+// never authority to write outside the destination's known business roots.
+func declaredLocalVolumeRoot(p Payload, r Root) bool {
+	if !r.Directory {
+		return false
+	}
+	for _, c := range p.Containers {
+		if c.Module != r.Module {
+			continue
+		}
+		for _, mount := range c.Mounts {
+			v, ok := p.Volumes[mount.Name]
+			if mount.Type == "volume" && mount.Source == r.Path && ok &&
+				validContainerName(mount.Name) && v.Name == mount.Name &&
+				v.Driver == "local" && len(v.Options) == 0 && v.Mountpoint == r.Path {
+				return true
+			}
+		}
 	}
 	return false
 }

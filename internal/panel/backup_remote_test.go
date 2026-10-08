@@ -51,6 +51,22 @@ func (m *memoryBackupRemote) List(context.Context) ([]backupremote.Object, error
 func (m *memoryBackupRemote) Test(context.Context) error { return nil }
 func (m *memoryBackupRemote) Close()                     {}
 
+type gatedBackupRemote struct {
+	*memoryBackupRemote
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (m *gatedBackupRemote) Upload(ctx context.Context, key string, f *os.File, size int64) error {
+	close(m.entered)
+	select {
+	case <-m.release:
+		return m.memoryBackupRemote.Upload(ctx, key, f, size)
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 func waitBackupRecord(t *testing.T, s *Server, id string) backup.Record {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
@@ -116,7 +132,7 @@ func TestBackupRemoteAPIAndExistingRestoreFlow(t *testing.T) {
 		t.Fatal(w.Code, w.Body.String())
 	}
 	record = waitBackupRecord(t, s, record.ID)
-	if record.Status != "completed" || record.Remote.Status != "completed" {
+	if record.Status != "completed" || record.Remote.Status != "completed" || record.Automatic {
 		t.Fatal(record)
 	}
 	w = request("POST", "remote-import", map[string]string{"storageId": storage.ID, "key": record.Remote.Key, "password": "backup-password"}, true)
@@ -145,6 +161,112 @@ func TestBackupRemoteAPIAndExistingRestoreFlow(t *testing.T) {
 	if got := waitBackupRecord(t, s, imported.ID); got.Status != "failed" || PanelRestorePending(s.config) {
 		t.Fatal(got)
 	}
+}
+
+func TestAutomaticBackupUploadRetryPreservesHealthAndIdentity(t *testing.T) {
+	s, token := newTestServer(t)
+	session, csrf := bootstrapCookies(t, s, token)
+	s.config.TOTPKeyPath = filepath.Join(s.config.DataDir, "totp.key")
+	remote := &memoryBackupRemote{objects: map[string][]byte{}}
+	s.backupRemoteClient = func(backupremote.Storage) (backupRemoteTransport, error) { return remote, nil }
+	if err := s.backupRemote.PutStorage(s.backupRemote.Snapshot().Revision, backupremote.Storage{Name: "NAS", Kind: "webdav", Endpoint: "https://nas.example/dav", Username: "backup", Secret: "secret"}); err != nil {
+		t.Fatal(err)
+	}
+	storage := s.backupRemote.Snapshot().Storages[0]
+	plan, revision := s.backupRemote.PlanWithRevision()
+	plan.Enabled, plan.Password, plan.Modules, plan.StorageID = true, "backup-password", []string{"panel"}, storage.ID
+	if err := s.backupRemote.PutSchedule(revision, plan, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	start := func() backup.Record {
+		t.Helper()
+		plan, revision := s.backupRemote.PlanWithRevision()
+		record, err := s.startScheduledBackup(plan, revision)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !s.backupRemote.Plan().LastRun.Equal(record.CreatedAt) {
+			t.Fatal("immediate run is not bound to its receipt's exact start time")
+		}
+		return waitBackupRecord(t, s, record.ID)
+	}
+	first := start()
+	if first.Status != "completed" || s.backupHealth().State != "healthy" {
+		t.Fatal(first, s.backupHealth())
+	}
+	remote.mu.Lock()
+	remote.fail = true
+	remote.mu.Unlock()
+	second := start()
+	if second.Status != "failed" || s.backupHealth().State != "failed" {
+		t.Fatal(second, s.backupHealth())
+	}
+	failedID := s.backupNotificationStatus().ID
+	retry := func(target string, fail bool, automatic bool, expected string) {
+		t.Helper()
+		remote.mu.Lock()
+		remote.fail = fail
+		remote.mu.Unlock()
+		gate := &gatedBackupRemote{memoryBackupRemote: remote, entered: make(chan struct{}), release: make(chan struct{})}
+		s.backupRemoteClient = func(backupremote.Storage) (backupRemoteTransport, error) { return gate, nil }
+		body, _ := json.Marshal(map[string]string{"storageId": target})
+		r := httptest.NewRequest("POST", "/api/v1/backups/"+second.ID+"/upload", bytes.NewReader(body))
+		r.Host = "panel.test"
+		r.Header.Set("Content-Type", "application/json")
+		r.Header.Set("Origin", "http://panel.test")
+		r.Header.Set("X-CSRF-Token", csrf.Value)
+		r.AddCookie(session)
+		r.AddCookie(csrf)
+		w := httptest.NewRecorder()
+		s.ServeHTTP(w, r)
+		if w.Code != 202 {
+			close(gate.release)
+			t.Fatalf("retry status=%d body=%s", w.Code, w.Body.String())
+		}
+		select {
+		case <-gate.entered:
+		case <-time.After(5 * time.Second):
+			close(gate.release)
+			t.Fatal("retry did not reach the fixture")
+		}
+		if automatic && s.backupHealth().State != "running" {
+			close(gate.release)
+			t.Fatal("in-flight retry reported a final outcome", s.backupHealth())
+		}
+		close(gate.release)
+		got := waitBackupRecord(t, s, second.ID)
+		if got.Automatic != automatic || got.Remote == nil || got.Remote.StorageID != target {
+			t.Fatal("retry changed task identity", got)
+		}
+		if automatic && (s.backupHealth().State != expected || s.backupHealth().LastRecordID != second.ID) {
+			t.Fatal("retry fell back to an older successful task", s.backupHealth())
+		}
+	}
+	retry(storage.ID, true, true, "failed")
+	if s.backupNotificationStatus().ID != failedID || s.backupNotificationStatus().Completed {
+		t.Fatal("unchanged failure generated a new event or false recovery")
+	}
+	retry(storage.ID, false, true, "healthy")
+	if !s.backupNotificationStatus().Completed || s.backupNotificationStatus().ID == failedID || !s.backupHealth().LastSuccessAt.Equal(second.CreatedAt) {
+		t.Fatal("successful retry did not recover with the original backup data age")
+	}
+	if err := s.backups.Update(second.ID, func(r *backup.Record) { r.ErrorCode = "retention_failed" }); err != nil {
+		t.Fatal(err)
+	}
+	retry(storage.ID, false, true, "warning")
+	if s.backupNotificationStatus().Completed {
+		t.Fatal("upload-only retry claimed to recover retention")
+	}
+	if err := s.backupRemote.PutStorage(s.backupRemote.Snapshot().Revision, backupremote.Storage{Name: "Other", Kind: "webdav", Endpoint: "https://other.example/dav", Username: "backup", Secret: "secret"}); err != nil {
+		t.Fatal(err)
+	}
+	var otherID string
+	for _, target := range s.backupRemote.Snapshot().Storages {
+		if target.ID != storage.ID {
+			otherID = target.ID
+		}
+	}
+	retry(otherID, false, false, "")
 }
 
 func TestBackupAutomaticRetentionNeverDeletesManualOrForeignObjects(t *testing.T) {

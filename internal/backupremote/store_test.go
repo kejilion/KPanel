@@ -2,6 +2,7 @@ package backupremote
 
 import (
 	"bytes"
+	"errors"
 	"github.com/kejilion/kejilion-panel/internal/backup"
 	"os"
 	"path/filepath"
@@ -9,6 +10,86 @@ import (
 	"time"
 	_ "time/tzdata"
 )
+
+func TestPriorWorkerCannotOverwriteChangedSchedule(t *testing.T) {
+	s, err := OpenStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	revision := s.Snapshot().Revision
+	p := s.Plan()
+	p.Hour = 4
+	if err := s.PutSchedule(revision, p, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetRunErrorForRevision(revision, "failed"); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale worker=%v", err)
+	}
+	if s.Plan().LastError != "" {
+		t.Fatal("stale error leaked into the new schedule")
+	}
+}
+
+func TestClaimBindsConfigurationRevision(t *testing.T) {
+	s, err := OpenStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, revision := s.PlanWithRevision()
+	plan.Enabled, plan.Password = true, "long-password"
+	if err := s.PutSchedule(revision, plan, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	plan, revision = s.PlanWithRevision()
+	claimed, claimedRevision, run, err := s.ClaimWithRevision(plan.NextRun, false)
+	if err != nil || !run || claimedRevision != revision || claimed.Password != plan.Password {
+		t.Fatalf("claim=%+v revision=%s run=%v err=%v", claimed.Public(), claimedRevision, run, err)
+	}
+	plan.Hour = (plan.Hour + 1) % 24
+	if err := s.PutSchedule(revision, plan, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetRunErrorForRevision(claimedRevision, "start_failed"); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale start failure=%v", err)
+	}
+}
+
+func TestMarkRunUsesReceiptTimeAndFencesConfiguration(t *testing.T) {
+	s, err := OpenStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, revision := s.PlanWithRevision()
+	plan.Enabled, plan.Password = true, "long-password"
+	if err := s.PutSchedule(revision, plan, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	plan, revision = s.PlanWithRevision()
+	if err := s.SetRunErrorForRevision(revision, "schedule_missed"); err != nil {
+		t.Fatal(err)
+	}
+	started := time.Date(2026, 10, 8, 12, 0, 0, 123, time.FixedZone("receipt", 8*3600))
+	if err := s.MarkRunForRevision(revision, started); err != nil {
+		t.Fatal(err)
+	}
+	got, gotRevision := s.PlanWithRevision()
+	if !got.LastRun.Equal(started) || got.LastRun.Location() != time.UTC || got.LastError != "" || !got.NextRun.Equal(plan.NextRun) || gotRevision != revision {
+		t.Fatalf("receipt identity was changed: %+v revision=%s", got.Public(), gotRevision)
+	}
+	if err := s.MarkRunForRevision(revision, time.Time{}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("zero start time accepted: %v", err)
+	}
+	got.Hour = (got.Hour + 1) % 24
+	if err := s.PutSchedule(revision, got, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.MarkRunForRevision(revision, started.Add(time.Hour)); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale run accepted: %v", err)
+	}
+	if !s.Plan().LastRun.Equal(started) {
+		t.Fatal("stale worker replaced the receipt time")
+	}
+}
 
 func testStorage() Storage {
 	return Storage{ID: backup.NewID(), Name: "NAS", Kind: "webdav", Endpoint: "https://nas.example/dav", Prefix: "kpanel", Username: "backup", Secret: "secret-never-returned"}

@@ -80,7 +80,8 @@ type Service struct {
 	alerts  map[string]alertState
 	traffic map[string]trafficSample
 
-	panelLogins chan PanelLogin
+	panelLogins  chan PanelLogin
+	backupSource func() BackupStatus
 
 	started bool
 	cancel  context.CancelFunc
@@ -597,6 +598,9 @@ func (s *Service) evaluate(parent context.Context) error {
 		return true, true
 	}
 	for _, host := range hosts.Items {
+		if host.ID == cluster.LocalHostID && state.Settings.Rules.BackupEnabled {
+			stateChanged = s.handleBackup(host, now, locale, trySend) || stateChanged
+		}
 		if ruleEnabled(state.Settings.Rules, serverExpiryRuleKey) {
 			stateChanged = s.handleHostExpiry(host, expiries[host.ID], now, locale, trySend) || stateChanged
 		}

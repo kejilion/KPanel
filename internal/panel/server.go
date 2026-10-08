@@ -268,6 +268,7 @@ func NewServer(config Config, authService *auth.Service, storage *store.Store, a
 		server.backups.Close()
 		return nil, fmt.Errorf("initialize backup settings: %w", err)
 	}
+	server.notifications.SetBackupSource(server.backupNotificationStatus)
 	server.backupRemoteGate = make(chan struct{}, 2)
 	if !PanelRestorePending(config) {
 		for _, r := range server.backups.List() {

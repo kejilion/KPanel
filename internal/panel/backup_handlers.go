@@ -21,11 +21,12 @@ import (
 )
 
 type backupRequest struct {
-	StorageID     string   `json:"storageId,omitempty"`
-	Password      string   `json:"password"`
-	Modules       []string `json:"modules"`
-	Revision      string   `json:"revision"`
-	AgentRevision string   `json:"agentRevision"`
+	StorageID        string   `json:"storageId,omitempty"`
+	Password         string   `json:"password"`
+	Modules          []string `json:"modules"`
+	Revision         string   `json:"revision"`
+	AgentRevision    string   `json:"agentRevision"`
+	scheduleRevision string
 }
 type backupStreamer interface {
 	OpenStream(context.Context, string, string, string, string, io.Reader, http.Header, int64) (*http.Response, error)
