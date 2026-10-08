@@ -116,6 +116,8 @@ func telemetryIdentifiesLinux(telemetry contract.HostTelemetry) bool {
 			"gentoo", "kali", "linuxmint", "manjaro", "nixos", "ol", "opensuse", "oracle",
 			"rhel", "rocky", "sles", "slackware", "suse", "ubuntu", "void":
 			return true
+		case "openwrt", "lede", "immortalwrt", "istoreos":
+			return true
 		}
 	}
 	return false
