@@ -244,6 +244,8 @@ export default [
   ['默认使用适合 Linux 服务器的 tar.gz；也可选择 ZIP 或 TAR。', 'tar.gz is the default for Linux servers; ZIP or TAR can also be selected.'],
   ['内容将解压到全新的文件夹，不覆盖已有文件。', 'Contents are extracted into a new folder without overwriting existing files.'],
   ['文件夹名称', 'Folder name'],
+  ['文件名称', 'File name'],
+  ['名称不可用，请更换。', 'This name is unavailable. Choose another name.'],
   ['新名称', 'New name'],
   ['权限（八进制）', 'Permissions (octal)'],
   ['压缩包名称', 'Archive name'],
