@@ -1,0 +1,11 @@
+{
+  "source_ref": "5eeecd4bac16ae4fccec5039863e476ad2054004",
+  "source_tree": "02faf8fcad8d79172bfe24bc25fa4761cad295f1",
+  "source_dirty": false,
+  "validation_mode": "source-only",
+  "target_execution": "none",
+  "governance_head": "8b825c70ee0b97c4abc908f0a3404ff50eaf6b2d",
+  "pinned_skill_commit": "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8",
+  "raw_source_path": "C:/GitHub/_release-evidence/v1.25.0/cf-audit/run-29/merge-window-start.json",
+  "raw_source_sha256": "2feb4d316cbdd8e0ea72e8d3774a2f54d4188082beac0c30c60300d390035887"
+}

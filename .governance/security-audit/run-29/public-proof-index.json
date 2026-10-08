@@ -1,0 +1,112 @@
+{
+  "record_type": "safe registry intake actual file hash index; excludes own hash",
+  "run_id": "run-29",
+  "file_count": 21,
+  "files": [
+    {
+      "path": "coverage-ledger.json",
+      "bytes": 19556,
+      "sha256": "3c1f4c2d75121f7daf26b5143da1a34b38e9ac15f7ad5726e63adca2eeda798f"
+    },
+    {
+      "path": "coverage-provenance.json",
+      "bytes": 4250,
+      "sha256": "d71bb1133cdd07011f259bfe296e91798835c3578795b9d6da7b59ae99c6fd62"
+    },
+    {
+      "path": "final-clean-summary.json",
+      "bytes": 865,
+      "sha256": "cfd11ac5bf06a84783d296bf7d91efa6637c7c97f581b75d92791a237dd02564"
+    },
+    {
+      "path": "process-history.json",
+      "bytes": 1598,
+      "sha256": "42987c5132dd0946ea3e8ad67e60374af53e2177d4146edd846f09ef473d591b"
+    },
+    {
+      "path": "process/closure-approval-addendum-r1.json",
+      "bytes": 3950,
+      "sha256": "c9fcf672142e291ede2ff52b84023485c93466a933a1a6de35ff7af65c979573"
+    },
+    {
+      "path": "process/closure-approval-addendum-r2.json",
+      "bytes": 1104,
+      "sha256": "75d8a41f1398045576219d775deaae884faa963946567499ab7152d9b767723a"
+    },
+    {
+      "path": "process/closure-timing-clarification.json",
+      "bytes": 954,
+      "sha256": "5f153ae05cc08c17fcd1d0f7b84e805cca40773155cdeac406522665e55b541b"
+    },
+    {
+      "path": "registry-admission.json",
+      "bytes": 870,
+      "sha256": "76bcb81734b25eeec099c96a5d02c970caaeb58151d2138a895f33d53cf53de9"
+    },
+    {
+      "path": "run-metadata.json",
+      "bytes": 4013,
+      "sha256": "2f92750997f9f9b954492463127a2e700ffd0b7fcb49ea73d62cc59b1886efde"
+    },
+    {
+      "path": "source-identity/source-end-receipt.json",
+      "bytes": 422,
+      "sha256": "0a538eb2969ad621d7503e7774a22bc694248abf76fce58050a9962a04e5787d"
+    },
+    {
+      "path": "source-identity/source-end.json",
+      "bytes": 149,
+      "sha256": "29676ed28c51421b13bfd17c0468c97a9ab0a762c898ac691ae79dd4a0f8f26a"
+    },
+    {
+      "path": "source-identity/source-start.json",
+      "bytes": 540,
+      "sha256": "ee424f799d01d5a3a1e0b1c1f9303f4f08ae5ae11cf0f06332adbcd00819049c"
+    },
+    {
+      "path": "SUMMARY.md",
+      "bytes": 989,
+      "sha256": "28a56efcef424d710f162c50c8ee5b2ec3ba98bea6571b596302cc24a03c21ee"
+    },
+    {
+      "path": "validator-inputs.json",
+      "bytes": 768,
+      "sha256": "5c904ff9a663939740511e92d3f756cc257384c5128661b7650e6c068efa9276"
+    },
+    {
+      "path": "validators/linux-r6/receipt.json",
+      "bytes": 789,
+      "sha256": "93eb048ff5c0c2af5d2df305087b3b0ddac2b96053f6dfc3693116792dcee644"
+    },
+    {
+      "path": "validators/linux-r6/result.json",
+      "bytes": 2620,
+      "sha256": "b411e033453199d17ac42a2aadf658fd54db84e5a1445e3e48a2ad2cecee463f"
+    },
+    {
+      "path": "validators/linux-r6/SHA256.json",
+      "bytes": 510,
+      "sha256": "b80632c8550ea793cbd0c1a023e2c0858dbe000834a7fc6ab2fe25913ed4ddf7"
+    },
+    {
+      "path": "validators/linux-r6/validate-coverage-ledger.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "validators/linux-r6/validate-coverage-ledger.stdout.txt",
+      "bytes": 29,
+      "sha256": "8861e8814c8b9a6aa2d0d152632a7be342868331af39304c203931e1850ed645"
+    },
+    {
+      "path": "validators/linux-r6/validate-findings.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "validators/linux-r6/validate-findings.stdout.txt",
+      "bytes": 23,
+      "sha256": "c9cb15409db89b7b7a16188f9689bf9a15d2595eba6c4f069ee9b8b9649340f7"
+    }
+  ]
+}

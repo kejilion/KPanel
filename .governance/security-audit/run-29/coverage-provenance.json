@@ -1,0 +1,77 @@
+{
+  "record_type": "scoped coverage provenance and exclusions",
+  "run_id": "run-29",
+  "reviewed_commits": [
+    "3507b50826f1e49b1ff5079c9557a93fb5bb02e5"
+  ],
+  "scope_complete": false,
+  "commit_credit_paths": [
+    "internal/atomicfile/write.go",
+    "internal/atomicfile/write_test.go",
+    "internal/desktopwallpapers/persistence_test.go",
+    "internal/desktopwallpapers/store.go",
+    "internal/selfupdate/persistence_test.go",
+    "internal/selfupdate/service.go"
+  ],
+  "auxiliary_reviews": [
+    {
+      "path": "internal/panel/desktop_wallpapers.go",
+      "purpose": "supporting trace context for wallpaper rejected record",
+      "commit_credit": false,
+      "not_in_approved_commit_scope": true
+    },
+    {
+      "path": "internal/panel/server.go",
+      "purpose": "supporting context for service initialization and separate auth/terminal retrace",
+      "commit_credit": false,
+      "commit_scope_credit_from_this_path": false
+    }
+  ],
+  "basis": "The B1 fresh hunter coverage unit contains all six exact 3507 paths. Supplemental wallpaper/auth/terminal source review paths are recorded for context but do not expand reviewed_commits coverage. The wallpaper record remains rejected and is not a security finding.",
+  "source_head": "5eeecd4bac16ae4fccec5039863e476ad2054004",
+  "source_tree": "02faf8fcad8d79172bfe24bc25fa4761cad295f1",
+  "amendment_history": [
+    {
+      "event": "run29 r5 ledger structural correction",
+      "recorded_at_utc": "2026-10-08T19:12:26Z",
+      "reason": "Official r5 findings validator passed; ledger validator failed because four active local_checks lacked the required agent_id. Removed the single unsigned historical/superseded check; bound the three current fresh P5 local checks to their actual agent identities. No actor IDs were fabricated and no finding, verdict, reviewed commit, or credit path changed. Canonical ledger agent_id values use the actual task names; exact collaboration task paths are recorded separately below.",
+      "superseded_ledger": {
+        "path": "C:\\GitHub\\_release-evidence\\v1.25.0\\cf-audit\\run-29\\validators\\linux-r5-inputs\\coverage-ledger.json",
+        "sha256": "075e647397e9bb4921b423302c09bffb7124e14e9d9c3e6074f3d8df244e9493"
+      },
+      "failed_validator": {
+        "result_path": "C:\\GitHub\\_release-evidence\\v1.25.0\\cf-audit\\run-29\\validators\\linux-r5\\result.json",
+        "receipt_path": "C:\\GitHub\\_release-evidence\\v1.25.0\\cf-audit\\run-29\\validators\\linux-r5-receipt.json",
+        "input_ledger_path": "C:\\GitHub\\_release-evidence\\v1.25.0\\cf-audit\\run-29\\validators\\linux-r5-inputs\\coverage-ledger.json",
+        "input_ledger_sha256": "075e647397e9bb4921b423302c09bffb7124e14e9d9c3e6074f3d8df244e9493",
+        "retained_raw_outputs": [
+          "validators/linux-r5/validate-coverage-ledger.stderr.txt",
+          "validators/linux-r5/validate-findings.stdout.txt"
+        ]
+      },
+      "removed_unsigned_check": {
+        "unit_index": 0,
+        "check_index_before_removal": 2,
+        "old_agent_id": "b6_credentials_material_p5_recheck_run30",
+        "note": "This alias pointed to a wallpaper P5 result and had no reliable embedded actor identity; it is excluded from current proof. Original bytes remain in superseded ledger snapshot and original P5 JSON remains external."
+      },
+      "current_p5_agent_ids": {
+        "wallpaper": "b1_consumers_recheck",
+        "terminal": "b1_consumers",
+        "auth": "b1_atomicfile",
+        "wallpaper_material_verifier": "b1_auth_revocation"
+      },
+      "agent_identity_mapping": {
+        "wallpaper": "/root/stable_v125_cf_audit/b1_consumers_recheck",
+        "terminal": "/root/stable_v125_cf_audit/b1_consumers",
+        "auth": "/root/stable_v125_cf_audit/b1_atomicfile",
+        "wallpaper_material_verifier": "/root/stable_v125_cf_audit/b1_auth_revocation"
+      },
+      "pre_r5_snapshot": {
+        "path": "C:\\GitHub\\_release-evidence\\v1.25.0\\cf-audit\\run-29\\pre-r5-phase5-amendment-20261008T190145Z\\coverage-ledger.json",
+        "sha256": "607e045310a2f9d344d862c07bf975649d1913ca33c823988f3ff6d1d68a153b",
+        "note": "Earlier pre-r5 snapshot; distinct from the later failing r5 validator input."
+      }
+    }
+  ]
+}

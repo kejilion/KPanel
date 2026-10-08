@@ -1,0 +1,768 @@
+[
+  {
+    "coverage_id": "AI%20provider%20outbound%20requests::Configured%20URL%20through%20DNS%2C%20redirect%2C%20and%20dial%20policy::internal%2Fai%2Binternal%2Fnetpolicy::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+    "canonical_refs": {
+      "subsystem": "internal/ai+internal/netpolicy",
+      "boundary": "Configured URL through DNS, redirect, and dial policy",
+      "surface": "AI provider outbound requests",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "surface": "AI provider outbound requests",
+    "boundary": "Configured URL through DNS, redirect, and dial policy",
+    "subsystem": "internal/ai+internal/netpolicy",
+    "attack_class": "ATTACK-CLASSES.md#Resource and file handling",
+    "starting_paths": [
+      "internal/ai/backup_test.go",
+      "internal/ai/backup.go",
+      "internal/ai/client_test.go",
+      "internal/ai/client.go",
+      "internal/ai/network_policy_test.go",
+      "internal/ai/providers.go",
+      "internal/netpolicy/address_test.go",
+      "internal/netpolicy/address.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#API-key and mTLS attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "ATTACK-CLASSES.md#Injection",
+        "reason": "No database, command, template, or parser injection sink is in the assigned outbound policy boundary."
+      },
+      {
+        "block": "ATTACK-CLASSES.md#Business logic",
+        "reason": "No workflow state transition is in the assigned network policy boundary."
+      },
+      {
+        "block": "ATTACK-CLASSES.md#Feature abuse and data leakage",
+        "reason": "Backup object authorization and restore lifecycle are outside this 8-path scope; credential transport is separately assigned."
+      },
+      {
+        "block": "ATTACK-CLASSES.md#Wildcard",
+        "reason": "The scoped assignment is limited to the new classifier and direct outbound consumers; wildcard exploration would exceed the approved boundary."
+      },
+      {
+        "block": "ATTACK-CLASSES.md#Obvious things",
+        "reason": "No global secret/config inventory is included in the exact reviewed paths."
+      },
+      {
+        "block": "WEB-PROTOCOL-AND-AUTH.md#HTTP framing and cache attack classes",
+        "reason": "These Go clients do not parse inbound HTTP or implement a shared cache."
+      },
+      {
+        "block": "WEB-PROTOCOL-AND-AUTH.md#Browser-session attack classes",
+        "reason": "The assigned code is outbound service transport, not browser session handling."
+      },
+      {
+        "block": "WEB-PROTOCOL-AND-AUTH.md#Federated-identity attack classes",
+        "reason": "No IdP or identity token validation code is in scope."
+      },
+      {
+        "block": "WEB-PROTOCOL-AND-AUTH.md#MFA, passkey, and account-transition attack classes",
+        "reason": "No user authentication lifecycle code is in scope."
+      },
+      {
+        "block": "WEB-PROTOCOL-AND-AUTH.md#mTLS peer and application-identity confusion",
+        "reason": "No client certificate or inbound mTLS identity mapping is in scope."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [
+      {
+        "status": "blocked",
+        "wave": 1,
+        "reviewed_paths": [
+          "internal/ai/network_policy_test.go",
+          "internal/ai/providers.go",
+          "internal/netpolicy/address.go"
+        ],
+        "result_fingerprints": [],
+        "local_checks": [
+          {
+            "agent_id": "b6_netpolicy_whole_boundary_hunter",
+            "reviewed_paths": [
+              "internal/ai/network_policy_test.go",
+              "internal/ai/providers.go",
+              "internal/netpolicy/address.go"
+            ],
+            "invariant": "Public provider URLs and DNS results must reject addresses outside the Public class; explicit private scope retains its separate authorization.",
+            "method": "source",
+            "result": "ValidateProviderURL validates scope and HTTP(S) scheme, rejects blocked literal IPs for public scope, and ValidateResolvedAddresses rejects empty, invalid, or mixed blocked answers for public scope. Private scope intentionally bypasses this public-address filter. These assigned sources do not show the provider HTTP client, redirect handling, or final dial path, so the complete stated boundary cannot be established.",
+            "artifact": null
+          }
+        ],
+        "unresolved": [
+          "The assigned source paths do not include the provider request construction, redirect policy, or final dialer. Those source paths are needed to verify that URL/DNS validation gates every request and remains effective through redirects and connection establishment."
+        ],
+        "reassignment_reason": "Fresh coverage critic found that the assigned unit omitted the AI request, redirect, resolver, and final dial path plus the access-backup provider URL ingress; a fresh wave-2 source hunter reviewed these direct paths.",
+        "agent_id": "b6_netpolicy_whole_boundary_hunter"
+      }
+    ],
+    "wave": 2,
+    "status": "covered",
+    "agent_id": "b6_ai_network_chain_hunter_wave2",
+    "reviewed_paths": [
+      "internal/ai/backup_test.go",
+      "internal/ai/backup.go",
+      "internal/ai/client_test.go",
+      "internal/ai/client.go",
+      "internal/ai/network_policy_test.go",
+      "internal/ai/providers.go",
+      "internal/netpolicy/address_test.go",
+      "internal/netpolicy/address.go"
+    ],
+    "local_checks": [
+      {
+        "result": "Public provider configuration requires HTTPS and rejects blocked literal addresses; the dial path resolves at connection time, rejects the entire answer set if any address is not Public, then dials a validated IP literal. Redirects are capped, scope-validated again, and API-key headers are removed cross-origin. Explicit EndpointPrivate intentionally bypasses the public-address filter and permits HTTP; ProviderService.Save requires PrivateConfirmed for that setting. The access-backup path validates imported URLs before restore. No public-scope SSRF bypass was established.",
+        "method": "source",
+        "invariant": "Provider or composed endpoint validation must remain effective through the actual request, redirect, resolver, and pinned dial path.",
+        "reviewed_paths": [
+          "internal/ai/backup_test.go",
+          "internal/ai/backup.go",
+          "internal/ai/client_test.go",
+          "internal/ai/client.go",
+          "internal/ai/network_policy_test.go",
+          "internal/ai/providers.go",
+          "internal/netpolicy/address_test.go",
+          "internal/netpolicy/address.go"
+        ],
+        "artifact": null,
+        "agent_id": "b6_ai_network_chain_hunter_wave2"
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "Cluster%20federation%20outbound%20requests::Remote%20origin%20and%20allowlist%20through%20DNS%20and%20pinned%20dial::internal%2Fcluster%2Binternal%2Fnetpolicy::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "subsystem": "internal/cluster+internal/netpolicy",
+      "boundary": "Remote origin and allowlist through DNS and pinned dial",
+      "surface": "Cluster federation outbound requests",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "Cluster federation outbound requests",
+    "boundary": "Remote origin and allowlist through DNS and pinned dial",
+    "subsystem": "internal/cluster+internal/netpolicy",
+    "attack_class": "ATTACK-CLASSES.md#Access control",
+    "starting_paths": [
+      "internal/cluster/client.go",
+      "internal/cluster/network_policy_test.go",
+      "internal/netpolicy/address.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#API-key and mTLS attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "ATTACK-CLASSES.md#Injection",
+        "reason": "No database, command, template, or parser injection sink is in the assigned outbound policy boundary."
+      },
+      {
+        "block": "ATTACK-CLASSES.md#Business logic",
+        "reason": "No workflow state transition is in the assigned network policy boundary."
+      },
+      {
+        "block": "ATTACK-CLASSES.md#Feature abuse and data leakage",
+        "reason": "Backup object authorization and restore lifecycle are outside this 8-path scope; credential transport is separately assigned."
+      },
+      {
+        "block": "ATTACK-CLASSES.md#Wildcard",
+        "reason": "The scoped assignment is limited to the new classifier and direct outbound consumers; wildcard exploration would exceed the approved boundary."
+      },
+      {
+        "block": "ATTACK-CLASSES.md#Obvious things",
+        "reason": "No global secret/config inventory is included in the exact reviewed paths."
+      },
+      {
+        "block": "WEB-PROTOCOL-AND-AUTH.md#HTTP framing and cache attack classes",
+        "reason": "These Go clients do not parse inbound HTTP or implement a shared cache."
+      },
+      {
+        "block": "WEB-PROTOCOL-AND-AUTH.md#Browser-session attack classes",
+        "reason": "The assigned code is outbound service transport, not browser session handling."
+      },
+      {
+        "block": "WEB-PROTOCOL-AND-AUTH.md#Federated-identity attack classes",
+        "reason": "No IdP or identity token validation code is in scope."
+      },
+      {
+        "block": "WEB-PROTOCOL-AND-AUTH.md#MFA, passkey, and account-transition attack classes",
+        "reason": "No user authentication lifecycle code is in scope."
+      },
+      {
+        "block": "WEB-PROTOCOL-AND-AUTH.md#mTLS peer and application-identity confusion",
+        "reason": "No client certificate or inbound mTLS identity mapping is in scope."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "b6_netpolicy_whole_boundary_hunter",
+    "reviewed_paths": [
+      "internal/cluster/client.go",
+      "internal/cluster/network_policy_test.go",
+      "internal/netpolicy/address.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "b6_netpolicy_whole_boundary_hunter",
+        "reviewed_paths": [
+          "internal/cluster/client.go",
+          "internal/cluster/network_policy_test.go",
+          "internal/netpolicy/address.go"
+        ],
+        "invariant": "A remote origin must be normalized, every resolved address must pass the public/private allowlist policy, and the dial must use only those validated addresses; redirects must not bypass that policy.",
+        "method": "source",
+        "result": "NormalizeOrigin and newRequest require a canonical HTTPS origin. Every configured HTTP client rejects redirects. resolve checks the complete DNS answer set through addressAllowed before returning deduplicated, unmapped addresses, and dialContext connects to those returned IP literals. addressAllowed permits private/shared ranges only when within configured CIDRs; the shared classifier rejects metadata, transition, reserved, and other non-public classes before those allowlists apply. Assigned tests contain source vectors for mixed metadata answers and allowlist boundaries.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "Outbound%20HTTP%20network%20policy::Canonical%20IP%20classification%20shared%20by%20outbound%20clients::internal%2Fnetpolicy::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+    "canonical_refs": {
+      "subsystem": "internal/netpolicy",
+      "boundary": "Canonical IP classification shared by outbound clients",
+      "surface": "Outbound HTTP network policy",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "surface": "Outbound HTTP network policy",
+    "boundary": "Canonical IP classification shared by outbound clients",
+    "subsystem": "internal/netpolicy",
+    "attack_class": "ATTACK-CLASSES.md#Resource and file handling",
+    "starting_paths": [
+      "internal/netpolicy/address_test.go",
+      "internal/netpolicy/address.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#API-key and mTLS attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "ATTACK-CLASSES.md#Injection",
+        "reason": "No database, command, template, or parser injection sink is in the assigned outbound policy boundary."
+      },
+      {
+        "block": "ATTACK-CLASSES.md#Business logic",
+        "reason": "No workflow state transition is in the assigned network policy boundary."
+      },
+      {
+        "block": "ATTACK-CLASSES.md#Feature abuse and data leakage",
+        "reason": "Backup object authorization and restore lifecycle are outside this 8-path scope; credential transport is separately assigned."
+      },
+      {
+        "block": "ATTACK-CLASSES.md#Wildcard",
+        "reason": "The scoped assignment is limited to the new classifier and direct outbound consumers; wildcard exploration would exceed the approved boundary."
+      },
+      {
+        "block": "ATTACK-CLASSES.md#Obvious things",
+        "reason": "No global secret/config inventory is included in the exact reviewed paths."
+      },
+      {
+        "block": "WEB-PROTOCOL-AND-AUTH.md#HTTP framing and cache attack classes",
+        "reason": "These Go clients do not parse inbound HTTP or implement a shared cache."
+      },
+      {
+        "block": "WEB-PROTOCOL-AND-AUTH.md#Browser-session attack classes",
+        "reason": "The assigned code is outbound service transport, not browser session handling."
+      },
+      {
+        "block": "WEB-PROTOCOL-AND-AUTH.md#Federated-identity attack classes",
+        "reason": "No IdP or identity token validation code is in scope."
+      },
+      {
+        "block": "WEB-PROTOCOL-AND-AUTH.md#MFA, passkey, and account-transition attack classes",
+        "reason": "No user authentication lifecycle code is in scope."
+      },
+      {
+        "block": "WEB-PROTOCOL-AND-AUTH.md#mTLS peer and application-identity confusion",
+        "reason": "No client certificate or inbound mTLS identity mapping is in scope."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 2,
+    "status": "covered",
+    "agent_id": "b6_ai_network_chain_hunter_wave2",
+    "reviewed_paths": [
+      "internal/ai/providers.go",
+      "internal/backupremote/client.go",
+      "internal/cluster/client.go",
+      "internal/netpolicy/address_test.go",
+      "internal/netpolicy/address.go"
+    ],
+    "local_checks": [
+      {
+        "result": "Classify rejects invalid and zoned addresses, unmaps IPv4-mapped addresses, and checks loopback, metadata, link-local, transition, and reserved classes before private/shared classification. The consumers retain distinct policies: AI public mode requires Public; backupremote permits Public or Private; cluster permits Public or configured Private/Shared CIDRs. Source tests cover representative mapped, metadata, transition, reserved, and allowlist cases.",
+        "method": "source",
+        "invariant": "Canonical address normalization and shared classification must be consistent across each direct outbound consumer policy.",
+        "reviewed_paths": [
+          "internal/ai/providers.go",
+          "internal/backupremote/client.go",
+          "internal/cluster/client.go",
+          "internal/netpolicy/address_test.go",
+          "internal/netpolicy/address.go"
+        ],
+        "artifact": null,
+        "agent_id": "b6_ai_network_chain_hunter_wave2"
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "Outbound%20network%20policy%20composition::User-controlled%20endpoint%20through%20normalization%2C%20resolver%2C%20redirect%2C%20and%20pinned%20dial::internal%2Fai%2Binternal%2Fbackupremote%2Binternal%2Fcluster%2Binternal%2Fnetpolicy::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
+    "canonical_refs": {
+      "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+      "surface": "Outbound network policy composition",
+      "boundary": "User-controlled endpoint through normalization, resolver, redirect, and pinned dial",
+      "subsystem": "internal/ai+internal/backupremote+internal/cluster+internal/netpolicy"
+    },
+    "surface": "Outbound network policy composition",
+    "boundary": "User-controlled endpoint through normalization, resolver, redirect, and pinned dial",
+    "subsystem": "internal/ai+internal/backupremote+internal/cluster+internal/netpolicy",
+    "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+    "starting_paths": [
+      "internal/ai/backup_test.go",
+      "internal/ai/backup.go",
+      "internal/ai/client_test.go",
+      "internal/ai/client.go",
+      "internal/ai/network_policy_test.go",
+      "internal/ai/providers.go",
+      "internal/backupremote/client.go",
+      "internal/backupremote/network_policy_test.go",
+      "internal/cluster/client.go",
+      "internal/cluster/network_policy_test.go",
+      "internal/netpolicy/address_test.go",
+      "internal/netpolicy/address.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#API-key and mTLS attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "new",
+    "attempts": [
+      {
+        "status": "blocked",
+        "wave": 1,
+        "reviewed_paths": [
+          "internal/ai/network_policy_test.go",
+          "internal/ai/providers.go",
+          "internal/backupremote/client.go",
+          "internal/backupremote/network_policy_test.go",
+          "internal/cluster/client.go",
+          "internal/cluster/network_policy_test.go",
+          "internal/netpolicy/address_test.go",
+          "internal/netpolicy/address.go"
+        ],
+        "result_fingerprints": [],
+        "local_checks": [
+          {
+            "agent_id": "b6_netpolicy_whole_boundary_hunter",
+            "reviewed_paths": [
+              "internal/netpolicy/address.go",
+              "internal/netpolicy/address_test.go"
+            ],
+            "invariant": "The shared classifier must give the same canonical address the same policy class across direct clients.",
+            "method": "source",
+            "result": "Classify unmaps IPv4-mapped addresses before classifying and prioritizes metadata, transition, and reserved classes over private/shared exceptions; assigned tests provide corresponding source vectors.",
+            "artifact": null
+          },
+          {
+            "agent_id": "b6_netpolicy_whole_boundary_hunter",
+            "reviewed_paths": [
+              "internal/ai/network_policy_test.go",
+              "internal/ai/providers.go"
+            ],
+            "invariant": "AI provider URL and DNS validation must remain effective through the eventual request, redirect, and dial.",
+            "method": "source",
+            "result": "The assigned AI sources establish URL and resolved-address validation but do not include the HTTP client, redirect policy, or final dial path.",
+            "artifact": null
+          },
+          {
+            "agent_id": "b6_netpolicy_whole_boundary_hunter",
+            "reviewed_paths": [
+              "internal/backupremote/client.go",
+              "internal/backupremote/network_policy_test.go"
+            ],
+            "invariant": "Backup endpoint DNS answers must be checked as a whole, dialing must use validated IPs, and redirects or SDK host changes must not escape the configured endpoint policy.",
+            "method": "source",
+            "result": "secureDial validates every resolved address before dialing its IP literal. boundedTransport restricts scheme, effective port, and host to the configured endpoint, bucket host, or deterministic AWS alias, and rejects 3xx responses; the HTTP client also rejects redirects.",
+            "artifact": null
+          },
+          {
+            "agent_id": "b6_netpolicy_whole_boundary_hunter",
+            "reviewed_paths": [
+              "internal/cluster/client.go",
+              "internal/cluster/network_policy_test.go"
+            ],
+            "invariant": "Cluster origins must stay within normalized origin, DNS allowlist, redirect, and pinned-dial controls.",
+            "method": "source",
+            "result": "The cluster client normalizes origins, rejects redirects, checks all DNS results against the address policy, and dials only the validated IP literals.",
+            "artifact": null
+          }
+        ],
+        "unresolved": [
+          "The frozen assigned paths omit the AI provider HTTP request, redirect, and dial implementation, so the full composed chain cannot be established for AI providers."
+        ],
+        "reassignment_reason": "Fresh coverage critic found that the assigned unit omitted the AI request, redirect, resolver, and final dial path plus the access-backup provider URL ingress; a fresh wave-2 source hunter reviewed these direct paths.",
+        "agent_id": "b6_netpolicy_whole_boundary_hunter"
+      }
+    ],
+    "wave": 2,
+    "status": "covered",
+    "agent_id": "b6_ai_network_chain_hunter_wave2",
+    "reviewed_paths": [
+      "internal/ai/backup_test.go",
+      "internal/ai/backup.go",
+      "internal/ai/client_test.go",
+      "internal/ai/client.go",
+      "internal/ai/network_policy_test.go",
+      "internal/ai/providers.go",
+      "internal/backupremote/client.go",
+      "internal/backupremote/network_policy_test.go",
+      "internal/cluster/client.go",
+      "internal/cluster/network_policy_test.go",
+      "internal/netpolicy/address_test.go",
+      "internal/netpolicy/address.go"
+    ],
+    "local_checks": [
+      {
+        "result": "The added AI request path applies URL and DNS policy through redirect and pinned dial. In the reviewed consumers, backupremote checks every DNS answer before dialing its IP literal and restricts transport scheme, port, and host while rejecting redirects; cluster normalizes origins, checks the complete DNS answer set against its address/allowlist policy, dials validated IPs, and rejects redirects. No cross-consumer address-policy bypass was established.",
+        "method": "source",
+        "invariant": "Provider or composed endpoint validation must remain effective through the actual request, redirect, resolver, and pinned dial path.",
+        "reviewed_paths": [
+          "internal/ai/backup_test.go",
+          "internal/ai/backup.go",
+          "internal/ai/client_test.go",
+          "internal/ai/client.go",
+          "internal/ai/network_policy_test.go",
+          "internal/ai/providers.go",
+          "internal/backupremote/client.go",
+          "internal/backupremote/network_policy_test.go",
+          "internal/cluster/client.go",
+          "internal/cluster/network_policy_test.go",
+          "internal/netpolicy/address_test.go",
+          "internal/netpolicy/address.go"
+        ],
+        "artifact": null,
+        "agent_id": "b6_ai_network_chain_hunter_wave2"
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "Remote%20backup%20credential%20transport::Secret%20credential%20disclosure%20across%20configured%20transport%20schemes::internal%2Fbackupremote::ATTACK-CLASSES.md%23Cryptography%20and%20secrets",
+    "canonical_refs": {
+      "subsystem": "internal/backupremote",
+      "boundary": "Secret credential disclosure across configured transport schemes",
+      "surface": "Remote backup credential transport",
+      "attack_class": "ATTACK-CLASSES.md#Cryptography and secrets"
+    },
+    "surface": "Remote backup credential transport",
+    "boundary": "Secret credential disclosure across configured transport schemes",
+    "subsystem": "internal/backupremote",
+    "attack_class": "ATTACK-CLASSES.md#Cryptography and secrets",
+    "starting_paths": [
+      "internal/backupremote/client.go",
+      "internal/backupremote/network_policy_test.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Cryptography and secrets",
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#API-key and mTLS attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "ATTACK-CLASSES.md#Injection",
+        "reason": "No database, command, template, or parser injection sink is in the assigned outbound policy boundary."
+      },
+      {
+        "block": "ATTACK-CLASSES.md#Business logic",
+        "reason": "No workflow state transition is in the assigned network policy boundary."
+      },
+      {
+        "block": "ATTACK-CLASSES.md#Feature abuse and data leakage",
+        "reason": "Backup object authorization and restore lifecycle are outside this 8-path scope; credential transport is separately assigned."
+      },
+      {
+        "block": "ATTACK-CLASSES.md#Wildcard",
+        "reason": "The scoped assignment is limited to the new classifier and direct outbound consumers; wildcard exploration would exceed the approved boundary."
+      },
+      {
+        "block": "ATTACK-CLASSES.md#Obvious things",
+        "reason": "No global secret/config inventory is included in the exact reviewed paths."
+      },
+      {
+        "block": "WEB-PROTOCOL-AND-AUTH.md#HTTP framing and cache attack classes",
+        "reason": "These Go clients do not parse inbound HTTP or implement a shared cache."
+      },
+      {
+        "block": "WEB-PROTOCOL-AND-AUTH.md#Browser-session attack classes",
+        "reason": "The assigned code is outbound service transport, not browser session handling."
+      },
+      {
+        "block": "WEB-PROTOCOL-AND-AUTH.md#Federated-identity attack classes",
+        "reason": "No IdP or identity token validation code is in scope."
+      },
+      {
+        "block": "WEB-PROTOCOL-AND-AUTH.md#MFA, passkey, and account-transition attack classes",
+        "reason": "No user authentication lifecycle code is in scope."
+      },
+      {
+        "block": "WEB-PROTOCOL-AND-AUTH.md#mTLS peer and application-identity confusion",
+        "reason": "No client certificate or inbound mTLS identity mapping is in scope."
+      }
+    ],
+    "prior_status": "prior_needs_validation",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "b6_netpolicy_whole_boundary_hunter",
+    "reviewed_paths": [
+      "internal/backupremote/client.go",
+      "internal/backupremote/config.go",
+      "internal/backupremote/network_policy_test.go",
+      "internal/backupremote/store.go",
+      "internal/backupremote/webdav.go",
+      "internal/panel/backup_handlers.go",
+      "internal/panel/backup_remote.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "b6_netpolicy_whole_boundary_hunter",
+        "reviewed_paths": [
+          "internal/backupremote/client.go",
+          "internal/backupremote/network_policy_test.go"
+        ],
+        "invariant": "Credentials must remain bound to the configured endpoint and must not be forwarded through an untrusted redirect or SDK host change.",
+        "method": "source",
+        "result": "boundedTransport enforces the configured scheme and effective port, restricts the hostname to the configured endpoint, bucket host, or deterministic AWS alias, and rejects 3xx responses. NewClient configures S3 transport security from the endpoint scheme. The configured-HTTP credential-confidentiality question is not decided in this result because its exact fingerprint is assigned to a separate fresh Phase 3 validator.",
+        "artifact": null
+      },
+      {
+        "result": "Fresh source-only Phase 3 retained backupremote.credentials.allow-http as needs_validation: source traces authenticated settings through HTTP Basic Auth, but no request bytes or deployment observer capability was measured.",
+        "method": "source",
+        "invariant": "A configured HTTP WebDAV endpoint must not expose reusable Basic credentials to a lower-trust network observer.",
+        "reviewed_paths": [
+          "internal/backupremote/client.go",
+          "internal/backupremote/config.go",
+          "internal/backupremote/store.go",
+          "internal/backupremote/webdav.go",
+          "internal/panel/backup_handlers.go",
+          "internal/panel/backup_remote.go"
+        ],
+        "artifact": null,
+        "agent_id": "p3_backupremote_http_credentials"
+      },
+      {
+        "agent_id": "b6_credentials_material_p5_recheck_run30",
+        "reviewed_paths": [
+          "internal/backupremote/client.go",
+          "internal/backupremote/config.go",
+          "internal/backupremote/store.go",
+          "internal/backupremote/webdav.go",
+          "internal/panel/backup_handlers.go",
+          "internal/panel/backup_remote.go"
+        ],
+        "invariant": "A configured HTTP WebDAV endpoint must not expose reusable Basic credentials to a lower-trust network observer.",
+        "method": "source",
+        "result": "Historical bookkeeping only; not counted as current Phase 5 proof. Original note: Fresh independent Phase 5 review returned replace solely to correct a nonexistent trace path: internal/backupremote/ client.go → internal/backupremote/client.go (Client.List at line 277). It confirmed the same fingerprint, trace meaning, evidence, blockers, and needs_validation verdict. No request bytes or deployment observer capability were established.",
+        "artifact": null
+      },
+      {
+        "agent_id": "b1_auth_revocation",
+        "reviewed_paths": [
+          "internal/backupremote/client.go",
+          "internal/backupremote/config.go",
+          "internal/backupremote/store.go",
+          "internal/backupremote/webdav.go",
+          "internal/panel/backup_handlers.go",
+          "internal/panel/backup_remote.go"
+        ],
+        "invariant": "A configured HTTP WebDAV endpoint must not expose reusable Basic credentials to a lower-trust network observer.",
+        "method": "source",
+        "result": "Independent material-record verification returned replace; the complete replacement record is adopted in findings.json without changing fingerprint backupremote.credentials.allow-http or verdict needs_validation. 33 trace entries and 34 evidence citations were checked. Exact external proof: C:/GitHub/_release-evidence/v1.25.0/cf-audit/run-30/agents/p5_backupremote_http_record_material_verifier_run30/result.json SHA-256 a26083068e561bbd52b69b2ba2fbe670685a10c0a3363dc84638f81655aacd11. Model gpt-6-luna/max; source_execution=false.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [
+      "backupremote.credentials.allow-http"
+    ],
+    "unresolved": [
+      "本批限定 source-only 且禁止执行目标、测试、harness 或动态检查，因此没有独立观察实际发出的 HTTP 请求及 Authorization 头；不能满足 confirmed 分支要求的独立演示或观察结果。",
+      "冻结源码不包含部署当前有效的 WebDAV endpoint scheme、低信任主体能否观察该网络路径、或服务商对凭据的范围与限制；无法据此证明某个部署已暴露或量化凭据影响。"
+    ]
+  },
+  {
+    "coverage_id": "Remote%20backup%20outbound%20requests::Configured%20endpoint%20through%20DNS%2C%20transport%2C%20redirect%2C%20and%20credential%20handling::internal%2Fbackupremote%2Binternal%2Fnetpolicy::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+    "canonical_refs": {
+      "subsystem": "internal/backupremote+internal/netpolicy",
+      "boundary": "Configured endpoint through DNS, transport, redirect, and credential handling",
+      "surface": "Remote backup outbound requests",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "surface": "Remote backup outbound requests",
+    "boundary": "Configured endpoint through DNS, transport, redirect, and credential handling",
+    "subsystem": "internal/backupremote+internal/netpolicy",
+    "attack_class": "ATTACK-CLASSES.md#Resource and file handling",
+    "starting_paths": [
+      "internal/backupremote/client.go",
+      "internal/backupremote/network_policy_test.go",
+      "internal/netpolicy/address.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#API-key and mTLS attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "ATTACK-CLASSES.md#Injection",
+        "reason": "No database, command, template, or parser injection sink is in the assigned outbound policy boundary."
+      },
+      {
+        "block": "ATTACK-CLASSES.md#Business logic",
+        "reason": "No workflow state transition is in the assigned network policy boundary."
+      },
+      {
+        "block": "ATTACK-CLASSES.md#Feature abuse and data leakage",
+        "reason": "Backup object authorization and restore lifecycle are outside this 8-path scope; credential transport is separately assigned."
+      },
+      {
+        "block": "ATTACK-CLASSES.md#Wildcard",
+        "reason": "The scoped assignment is limited to the new classifier and direct outbound consumers; wildcard exploration would exceed the approved boundary."
+      },
+      {
+        "block": "ATTACK-CLASSES.md#Obvious things",
+        "reason": "No global secret/config inventory is included in the exact reviewed paths."
+      },
+      {
+        "block": "WEB-PROTOCOL-AND-AUTH.md#HTTP framing and cache attack classes",
+        "reason": "These Go clients do not parse inbound HTTP or implement a shared cache."
+      },
+      {
+        "block": "WEB-PROTOCOL-AND-AUTH.md#Browser-session attack classes",
+        "reason": "The assigned code is outbound service transport, not browser session handling."
+      },
+      {
+        "block": "WEB-PROTOCOL-AND-AUTH.md#Federated-identity attack classes",
+        "reason": "No IdP or identity token validation code is in scope."
+      },
+      {
+        "block": "WEB-PROTOCOL-AND-AUTH.md#MFA, passkey, and account-transition attack classes",
+        "reason": "No user authentication lifecycle code is in scope."
+      },
+      {
+        "block": "WEB-PROTOCOL-AND-AUTH.md#mTLS peer and application-identity confusion",
+        "reason": "No client certificate or inbound mTLS identity mapping is in scope."
+      }
+    ],
+    "prior_status": "prior_needs_validation",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "b6_netpolicy_whole_boundary_hunter",
+    "reviewed_paths": [
+      "internal/backupremote/client.go",
+      "internal/backupremote/config.go",
+      "internal/backupremote/network_policy_test.go",
+      "internal/backupremote/store.go",
+      "internal/backupremote/webdav.go",
+      "internal/netpolicy/address.go",
+      "internal/panel/backup_handlers.go",
+      "internal/panel/backup_remote.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "b6_netpolicy_whole_boundary_hunter",
+        "reviewed_paths": [
+          "internal/backupremote/client.go",
+          "internal/backupremote/network_policy_test.go",
+          "internal/netpolicy/address.go"
+        ],
+        "invariant": "Every backup endpoint DNS answer must be allowed before any dial, the dial must use the checked IP, and transport retries or redirects must not change the authorized destination.",
+        "method": "source",
+        "result": "secureDial rejects empty, oversized, or any disallowed DNS answer set and dials resolved IP literals. boundedTransport restricts scheme, effective port, and hostname and rejects 3xx responses. allowedIP permits only Public or Private classes, so shared, metadata, transition, reserved, and other classes fail closed. The assigned test source covers representative address classes and private NAS configuration. The configured-HTTP credential-confidentiality question is assigned to a separate fresh Phase 3 validator.",
+        "artifact": null
+      },
+      {
+        "result": "Fresh source-only Phase 3 retained backupremote.credentials.allow-http as needs_validation: source traces authenticated settings through HTTP Basic Auth, but no request bytes or deployment observer capability was measured.",
+        "method": "source",
+        "invariant": "A configured HTTP WebDAV endpoint must not expose reusable Basic credentials to a lower-trust network observer.",
+        "reviewed_paths": [
+          "internal/backupremote/client.go",
+          "internal/backupremote/config.go",
+          "internal/backupremote/store.go",
+          "internal/backupremote/webdav.go",
+          "internal/panel/backup_handlers.go",
+          "internal/panel/backup_remote.go"
+        ],
+        "artifact": null,
+        "agent_id": "p3_backupremote_http_credentials"
+      },
+      {
+        "agent_id": "b6_credentials_material_p5_recheck_run30",
+        "reviewed_paths": [
+          "internal/backupremote/client.go",
+          "internal/backupremote/config.go",
+          "internal/backupremote/store.go",
+          "internal/backupremote/webdav.go",
+          "internal/panel/backup_handlers.go",
+          "internal/panel/backup_remote.go"
+        ],
+        "invariant": "A configured HTTP WebDAV endpoint must not expose reusable Basic credentials to a lower-trust network observer.",
+        "method": "source",
+        "result": "Historical bookkeeping only; not counted as current Phase 5 proof. Original note: Fresh independent Phase 5 review returned replace solely to correct a nonexistent trace path: internal/backupremote/ client.go → internal/backupremote/client.go (Client.List at line 277). It confirmed the same fingerprint, trace meaning, evidence, blockers, and needs_validation verdict. No request bytes or deployment observer capability were established.",
+        "artifact": null
+      },
+      {
+        "agent_id": "b1_auth_revocation",
+        "reviewed_paths": [
+          "internal/backupremote/client.go",
+          "internal/backupremote/config.go",
+          "internal/backupremote/store.go",
+          "internal/backupremote/webdav.go",
+          "internal/panel/backup_handlers.go",
+          "internal/panel/backup_remote.go"
+        ],
+        "invariant": "A configured HTTP WebDAV endpoint must not expose reusable Basic credentials to a lower-trust network observer.",
+        "method": "source",
+        "result": "Independent material-record verification returned replace; the complete replacement record is adopted in findings.json without changing fingerprint backupremote.credentials.allow-http or verdict needs_validation. 33 trace entries and 34 evidence citations were checked. Exact external proof: C:/GitHub/_release-evidence/v1.25.0/cf-audit/run-30/agents/p5_backupremote_http_record_material_verifier_run30/result.json SHA-256 a26083068e561bbd52b69b2ba2fbe670685a10c0a3363dc84638f81655aacd11. Model gpt-6-luna/max; source_execution=false.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [
+      "backupremote.credentials.allow-http"
+    ],
+    "unresolved": [
+      "本批限定 source-only 且禁止执行目标、测试、harness 或动态检查，因此没有独立观察实际发出的 HTTP 请求及 Authorization 头；不能满足 confirmed 分支要求的独立演示或观察结果。",
+      "冻结源码不包含部署当前有效的 WebDAV endpoint scheme、低信任主体能否观察该网络路径、或服务商对凭据的范围与限制；无法据此证明某个部署已暴露或量化凭据影响。"
+    ]
+  }
+]

@@ -1,0 +1,18 @@
+{
+  "state": "canonical-registry-metadata-valid",
+  "recordedAt": "2026-10-08T19:25:41.849Z",
+  "sourcePackage": "C:\\GitHub\\_release-evidence\\v1.25.0/cf-audit/run-29/public-intake",
+  "sourceMetadataSHA256": "8dc395e32b53ae256d16fb05a531a9c577cdfb8842da2bb873703dd9d5ee6992",
+  "sourceProofIndexSHA256": "22babaa1d19053c3471c92406d7dc0f96575820289db7a31da133bf352397c15",
+  "reviewProofPreserved": true,
+  "findingsAndLedgerBytesUnchanged": true,
+  "nonmaterialCorrections": [
+    "Required scope_mode and comparison_base copied from actual historical canonical metadata",
+    "Readable Markdown newlines",
+    "Initial budget copied from preserved approval history",
+    "Shared window costs not double-counted"
+  ],
+  "validator": "scripts/check-security-audit-coverage.mjs exports normalizeRun and validateRun",
+  "sourceExecution": false,
+  "production": false
+}

@@ -1,0 +1,18 @@
+{
+  "runId": "run-30",
+  "attempt": "r5",
+  "startedAt": "2026-10-08T19:08:24.052Z",
+  "finishedAt": "2026-10-08T19:08:27.854Z",
+  "exitCode": 0,
+  "recoveryError": null,
+  "inputSHA256": {
+    "validate-findings.cjs": "e85f232e36bfac0f866f244da50376692d6b45c690beadcb00608b0e6c8b5283",
+    "validate-coverage-ledger.cjs": "2eb280bd2e33c002916f86db9b29f9edfedb6454e5db973c766290465b868ac8",
+    "report-schema.json": "6575c9de4a62255699ea052ebf9a49ebfb373a32891bcd89af6f55cc84b35519",
+    "findings.json": "963672a23d535e242050bf227e5ef1580ed7c89456d74dd4ed19496b648dd338",
+    "coverage-ledger.json": "aea8393672a022ebeb2a5d22951568bef83f0ac8120fc74fab8fe33b82e31dfc"
+  },
+  "remote": "/var/tmp/kpanel-v125-cf-validator-run-30-r5",
+  "production": false,
+  "targetCodeExecution": false
+}

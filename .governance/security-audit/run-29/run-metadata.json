@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "run_id": "run-29",
+  "run_status": "complete",
+  "completion_scope": "approved scoped source-only record/package review only",
+  "profile": "scoped",
+  "scope_complete": false,
+  "global_coverage_complete": false,
+  "risk_acceptance": null,
+  "risk_closed": false,
+  "repo": "kejilion-panel",
+  "governance_head": "8b825c70ee0b97c4abc908f0a3404ff50eaf6b2d",
+  "pinned_skill_commit": "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8",
+  "source_path": "C:/GitHub/_codex-tasks/kpanel-v125-stable-cf-source",
+  "source_ref": "5eeecd4bac16ae4fccec5039863e476ad2054004",
+  "source_tree": "02faf8fcad8d79172bfe24bc25fa4761cad295f1",
+  "source_dirty": false,
+  "source_identity_evidence": {
+    "start": "source-identity/source-start.json",
+    "end": "source-identity/source-end.json",
+    "end_sha256": "29676ed28c51421b13bfd17c0468c97a9ab0a762c898ac691ae79dd4a0f8f26a",
+    "end_receipt": "source-identity/source-end-receipt.json",
+    "end_receipt_sha256": "0a538eb2969ad621d7503e7774a22bc694248abf76fce58050a9962a04e5787d"
+  },
+  "reviewed_commits": [
+    "3507b50826f1e49b1ff5079c9557a93fb5bb02e5"
+  ],
+  "scope_paths": [
+    "internal/atomicfile/write.go",
+    "internal/atomicfile/write_test.go",
+    "internal/desktopwallpapers/persistence_test.go",
+    "internal/desktopwallpapers/store.go",
+    "internal/selfupdate/persistence_test.go",
+    "internal/selfupdate/service.go"
+  ],
+  "execution": {
+    "mode": "source-only",
+    "model": "gpt-6-luna",
+    "reasoning_effort": "max",
+    "target_code_execution": false,
+    "production": false
+  },
+  "findings_summary": {
+    "total": 3,
+    "needs_validation": 2,
+    "rejected": 1,
+    "accepted_risk": 0
+  },
+  "findings_external_only": {
+    "path": "C:/GitHub/_release-evidence/v1.25.0/cf-audit/run-29/findings.json",
+    "sha256": "e6ba6f2d380fcdc0c3dc7131ec35ea679dc986fb568ed3cce908bbb9d660d962",
+    "public": false
+  },
+  "coverage_ledger": {
+    "path": "coverage-ledger.json",
+    "sha256": "3c1f4c2d75121f7daf26b5143da1a34b38e9ac15f7ad5726e63adca2eeda798f"
+  },
+  "coverage_provenance": {
+    "path": "coverage-provenance.json",
+    "sha256": "d71bb1133cdd07011f259bfe296e91798835c3578795b9d6da7b59ae99c6fd62"
+  },
+  "latest_official_validation": {
+    "attempt": "r6",
+    "state": "passed",
+    "result": "validators/linux-r6/result.json",
+    "result_sha256": "b411e033453199d17ac42a2aadf658fd54db84e5a1445e3e48a2ad2cecee463f",
+    "receipt": "validators/linux-r6/receipt.json",
+    "receipt_sha256": "93eb048ff5c0c2af5d2df305087b3b0ddac2b96053f6dfc3693116792dcee644",
+    "findings_input_sha256": "e6ba6f2d380fcdc0c3dc7131ec35ea679dc986fb568ed3cce908bbb9d660d962",
+    "ledger_input_sha256": "3c1f4c2d75121f7daf26b5143da1a34b38e9ac15f7ad5726e63adca2eeda798f",
+    "source_execution": false,
+    "production": false
+  },
+  "final_clean": {
+    "decision": "pass",
+    "scope": "scoped record/package review only",
+    "external_path": "C:/GitHub/_release-evidence/v1.25.0/cf-audit/final-clean-run29-r6-run30-r5.json",
+    "sha256": "89406dae669a7abe2ce91ad6054434a9bc43cb082cea90a03815ee265f01b4cf"
+  },
+  "window_clarification": "process/closure-timing-clarification.json",
+  "costs": {
+    "model_invocations_actual": 8,
+    "tokens": null,
+    "usd": null,
+    "unknown_reason": "Platform token and monetary usage unavailable.",
+    "shared_window_id": "v125-cf-record-closeout-20261008T182308Z",
+    "counting_scope": "8 role invocations shared across run29 and run30 closeout; not per run and not the complete historical audit cost",
+    "earlier_model_invocations_actual": null,
+    "earlier_cost_reason": "Historical partial windows are preserved; complete historical costs are unavailable and are not inferred from planned calls."
+  },
+  "scope_mode": "scoped",
+  "comparison_base": "4c0694aa8e02e46145a775707b8d5a0355f7ce10",
+  "coverage_kind": "reviewed-commits",
+  "skill_commit": "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8",
+  "validation_mode": "source-only",
+  "registry_admission": "registry-admission.json"
+}

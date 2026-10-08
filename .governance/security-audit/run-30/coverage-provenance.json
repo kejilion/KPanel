@@ -1,0 +1,28 @@
+{
+  "record_type": "scoped coverage provenance and linked exact unit evidence",
+  "run_id": "run-30",
+  "reviewed_commits": [
+    "14dac0f7a3d9f48e38331cc3770bc5cd9a36e23a"
+  ],
+  "scope_complete": false,
+  "source_head": "5eeecd4bac16ae4fccec5039863e476ad2054004",
+  "source_tree": "02faf8fcad8d79172bfe24bc25fa4761cad295f1",
+  "linked_units": [
+    {
+      "coverage_id": "Cluster%20federation%20outbound%20requests::Remote%20origin%20and%20allowlist%20through%20DNS%20and%20pinned%20dial::internal%2Fcluster%2Binternal%2Fnetpolicy::ATTACK-CLASSES.md%23Access%20control",
+      "owner_agent_id": "b6_netpolicy_whole_boundary_hunter",
+      "reviewed_paths": [
+        "internal/cluster/client.go",
+        "internal/cluster/network_policy_test.go",
+        "internal/netpolicy/address.go"
+      ],
+      "original_evidence_path": "C:\\GitHub\\_release-evidence\\v1.25.0\\cf-audit\\run-28\\agents\\b6_netpolicy_whole_boundary_hunter\\result.json",
+      "original_evidence_sha256": "3C26C475409DCD9F04E8DA51B0A89F69476CC6CF23EE9847EE2738B72B7383FE",
+      "original_start_path": "C:\\GitHub\\_release-evidence\\v1.25.0\\cf-audit\\run-28\\B6-close-start.json",
+      "original_start_sha256": "3376D574E7D4863AFE3E863389A10238D60D72C3B36EF43A03ECCD91CCC9F37B",
+      "run28_status": "incomplete partial; zero whole-run coverage credit",
+      "unit_match": "Exact coverage_id, owner agent_id, reviewed_paths, invariant, source result, method=source, artifact=null; source HEAD/tree and reviewed commit match current run30.",
+      "credit_boundary": "Only this independently identified exact Cluster unit evidence is linked into run30 after post-wave/final-clean review. No run28 whole-run status or other run28 units are imported."
+    }
+  ]
+}

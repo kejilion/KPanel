@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-08T19:18:14Z",
+  "authority": "Current KPanel release controller, within the user-authorized stable preparation task",
+  "amends": "closure-approval-addendum-r1.json",
+  "priorAddendumSha256": "c9fcf672142e291ede2ff52b84023485c93466a933a1a6de35ff7af65c979573",
+  "rootClockObservedBeforeDispatch": "2026-10-08T19:17:15Z",
+  "issuedAt": null,
+  "receivedAt": "2026-10-08T19:18:14Z",
+  "receivedTimeEvidence": "Dedicated audit parent explicitly reported its actual receipt clock in the current runtime collaboration message.",
+  "priorMaxWallClockSeconds": 3300,
+  "newMaxWallClockSeconds": 3600,
+  "deadline": "2026-10-08T19:23:08Z",
+  "maxModelInvocations": 8,
+  "scope": "Only finish the already running final-clean JSON sealing and generate the approved safe public-intake groups; no new source review, candidate, hunt, model call, or validator run.",
+  "actualModelInvocationCount": 8,
+  "tokens": null,
+  "usd": null,
+  "unknownCostReason": "Platform token and monetary usage are unavailable.",
+  "targetCodeExecution": false,
+  "production": false
+}

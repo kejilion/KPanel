@@ -1,0 +1,14 @@
+{
+  "startedAt": "2026-10-08T19:01:14.907Z",
+  "finishedAt": "2026-10-08T19:01:15.103Z",
+  "argv": [
+    "node",
+    "scripts/security-audit-baseline.mjs",
+    "C:/GitHub/_codex-tasks/kpanel-v125-stable-cf-source",
+    "5eeecd4bac16ae4fccec5039863e476ad2054004"
+  ],
+  "exitCode": 0,
+  "stdoutSHA256": "29676ed28c51421b13bfd17c0468c97a9ab0a762c898ac691ae79dd4a0f8f26a",
+  "sourceExecution": false,
+  "production": false
+}

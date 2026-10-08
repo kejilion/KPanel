@@ -1,0 +1,21 @@
+{
+  "run_id": "run-30",
+  "official_attempt": "r5",
+  "inputs": [
+    {
+      "name": "findings.json",
+      "external_path": "C:/GitHub/_release-evidence/v1.25.0/cf-audit/run-30/findings.json",
+      "sha256": "963672a23d535e242050bf227e5ef1580ed7c89456d74dd4ed19496b648dd338",
+      "public_copy": false
+    },
+    {
+      "name": "coverage-ledger.json",
+      "public_path": "coverage-ledger.json",
+      "sha256": "aea8393672a022ebeb2a5d22951568bef83f0ac8120fc74fab8fe33b82e31dfc"
+    }
+  ],
+  "result": "validators/linux-r5/result.json",
+  "result_sha256": "b1eb8c39d10c306994ae3dbe14d2acdcc944d9bf43023f5e4b94fad0b7286e31",
+  "receipt": "validators/linux-r5/receipt.json",
+  "receipt_sha256": "7efc82453abf47b3757b29f4cbf4cd1c851576cdf1e436d9900615c1bc27722f"
+}

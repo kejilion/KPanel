@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-08T19:09:23.157Z",
+  "authority": "Current KPanel release controller, within the user-authorized stable preparation task",
+  "windowStart": "2026-10-08T18:23:08Z",
+  "windowKind": "Distinct evidence closeout; original 17:22:17 merge window remains partial at 18:22:17",
+  "targetCodeExecution": false,
+  "production": false,
+  "scope": "Existing independent P5 and final-clean roles, trusted official validators, safe public intake; no new hunting or candidate scope",
+  "historicalEarlierApprovals": {
+    "status": "Trusted session continuity summary retains the explicit prior approvals; their precise issue/receipt UTC was not preserved and is unavailable.",
+    "issuedAt": null,
+    "receivedAt": null,
+    "amendments": [
+      {
+        "maxWallClockSeconds": 600,
+        "maxModelInvocations": 2,
+        "deadline": "2026-10-08T18:33:08Z"
+      },
+      {
+        "maxWallClockSeconds": 600,
+        "maxModelInvocations": 3,
+        "deadline": "2026-10-08T18:33:08Z"
+      },
+      {
+        "maxWallClockSeconds": 1200,
+        "maxModelInvocations": 4,
+        "deadline": "2026-10-08T18:43:08Z"
+      },
+      {
+        "maxWallClockSeconds": 1800,
+        "maxModelInvocations": 8,
+        "deadline": "2026-10-08T18:53:08Z"
+      },
+      {
+        "maxWallClockSeconds": 2100,
+        "maxModelInvocations": 8,
+        "deadline": "2026-10-08T18:58:08Z"
+      }
+    ],
+    "limitation": "No exact earlier approval timestamp or zero-overrun result is reconstructed from this summary."
+  },
+  "preservedCurrentApprovals": [
+    {
+      "rootClockObservedBeforeDispatch": "2026-10-08T18:57:48Z",
+      "issuedAt": null,
+      "receivedAt": "2026-10-08T18:58:04Z",
+      "receivedTimeEvidence": "Dedicated audit parent explicitly reported its actual receipt clock in the current runtime collaboration message.",
+      "priorDeadline": "2026-10-08T18:58:08Z",
+      "maxWallClockSeconds": 2700,
+      "maxModelInvocations": 8,
+      "deadline": "2026-10-08T19:08:08Z",
+      "text": "Explicitly approved extension 2100 to 2700 seconds, at most 8 actual model calls; existing wallpaper verifier, final validators, distinct final-clean and safe public intake only."
+    },
+    {
+      "rootClockObservedBeforeDispatch": "2026-10-08T19:06:08Z",
+      "issuedAt": null,
+      "receivedAt": "2026-10-08T19:06:34Z",
+      "receivedTimeEvidence": "Dedicated audit parent explicitly reported its actual receipt clock in the current runtime collaboration message.",
+      "priorDeadline": "2026-10-08T19:08:08Z",
+      "maxWallClockSeconds": 3300,
+      "maxModelInvocations": 8,
+      "deadline": "2026-10-08T19:18:08Z",
+      "text": "Explicitly approved extension 2700 to 3300 seconds before the previous deadline, still at most 8 actual calls; existing final-clean turn and safe intake only."
+    }
+  ],
+  "latestOfficialValidationBindings": [
+    {
+      "run": "run-29",
+      "attempt": "r6",
+      "startedAt": "2026-10-08T19:04:21.204Z",
+      "finishedAt": "2026-10-08T19:04:24.990Z",
+      "receipt": "run-29/validators/linux-r6-receipt.json",
+      "authorizationReceipt": "2026-10-08T18:58:04Z",
+      "deadlineAtExecution": "2026-10-08T19:08:08Z"
+    },
+    {
+      "run": "run-30",
+      "attempt": "r5",
+      "startedAt": "2026-10-08T19:08:24.052Z",
+      "finishedAt": "2026-10-08T19:08:27.854Z",
+      "receipt": "run-30/validators/linux-r5-receipt.json",
+      "authorizationReceipt": "2026-10-08T19:06:34Z",
+      "deadlineAtExecution": "2026-10-08T19:18:08Z"
+    }
+  ],
+  "modelInvocationCount": {
+    "actual": 8,
+    "evidence": "Dedicated audit parent current runtime message explicitly identifies the final-clean fresh turn as actual call 8.",
+    "trustedValidatorToolsAreNotModelInvocations": true
+  },
+  "tokens": null,
+  "usd": null,
+  "unknownCostReason": "Platform token and monetary usage unavailable; overlapping run29/run30 windows must not be summed twice."
+}

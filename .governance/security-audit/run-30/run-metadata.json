@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 1,
+  "run_id": "run-30",
+  "run_status": "complete",
+  "completion_scope": "approved scoped source-only record/package review only",
+  "profile": "scoped",
+  "scope_complete": false,
+  "global_coverage_complete": false,
+  "risk_acceptance": null,
+  "risk_closed": false,
+  "repo": "kejilion-panel",
+  "governance_head": "8b825c70ee0b97c4abc908f0a3404ff50eaf6b2d",
+  "pinned_skill_commit": "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8",
+  "source_path": "C:/GitHub/_codex-tasks/kpanel-v125-stable-cf-source",
+  "source_ref": "5eeecd4bac16ae4fccec5039863e476ad2054004",
+  "source_tree": "02faf8fcad8d79172bfe24bc25fa4761cad295f1",
+  "source_dirty": false,
+  "source_identity_evidence": {
+    "start": "source-identity/source-start.json",
+    "end": "source-identity/source-end.json",
+    "end_sha256": "29676ed28c51421b13bfd17c0468c97a9ab0a762c898ac691ae79dd4a0f8f26a",
+    "end_receipt": "source-identity/source-end-receipt.json",
+    "end_receipt_sha256": "0a538eb2969ad621d7503e7774a22bc694248abf76fce58050a9962a04e5787d"
+  },
+  "reviewed_commits": [
+    "14dac0f7a3d9f48e38331cc3770bc5cd9a36e23a"
+  ],
+  "scope_paths": [
+    "internal/ai/network_policy_test.go",
+    "internal/ai/providers.go",
+    "internal/backupremote/client.go",
+    "internal/backupremote/network_policy_test.go",
+    "internal/cluster/client.go",
+    "internal/cluster/network_policy_test.go",
+    "internal/netpolicy/address.go",
+    "internal/netpolicy/address_test.go"
+  ],
+  "execution": {
+    "mode": "source-only",
+    "model": "gpt-6-luna",
+    "reasoning_effort": "max",
+    "target_code_execution": false,
+    "production": false
+  },
+  "findings_summary": {
+    "total": 1,
+    "needs_validation": 1,
+    "rejected": 0,
+    "accepted_risk": 0
+  },
+  "findings_external_only": {
+    "path": "C:/GitHub/_release-evidence/v1.25.0/cf-audit/run-30/findings.json",
+    "sha256": "963672a23d535e242050bf227e5ef1580ed7c89456d74dd4ed19496b648dd338",
+    "public": false
+  },
+  "coverage_ledger": {
+    "path": "coverage-ledger.json",
+    "sha256": "aea8393672a022ebeb2a5d22951568bef83f0ac8120fc74fab8fe33b82e31dfc"
+  },
+  "coverage_provenance": {
+    "path": "coverage-provenance.json",
+    "sha256": "6461d095f5e621d256604d03d1554f3d4462036dfced70e217c0932ed14d4220"
+  },
+  "latest_official_validation": {
+    "attempt": "r5",
+    "state": "passed",
+    "result": "validators/linux-r5/result.json",
+    "result_sha256": "b1eb8c39d10c306994ae3dbe14d2acdcc944d9bf43023f5e4b94fad0b7286e31",
+    "receipt": "validators/linux-r5/receipt.json",
+    "receipt_sha256": "7efc82453abf47b3757b29f4cbf4cd1c851576cdf1e436d9900615c1bc27722f",
+    "findings_input_sha256": "963672a23d535e242050bf227e5ef1580ed7c89456d74dd4ed19496b648dd338",
+    "ledger_input_sha256": "aea8393672a022ebeb2a5d22951568bef83f0ac8120fc74fab8fe33b82e31dfc",
+    "source_execution": false,
+    "production": false
+  },
+  "final_clean": {
+    "decision": "pass",
+    "scope": "scoped record/package review only",
+    "external_path": "C:/GitHub/_release-evidence/v1.25.0/cf-audit/final-clean-run29-r6-run30-r5.json",
+    "sha256": "89406dae669a7abe2ce91ad6054434a9bc43cb082cea90a03815ee265f01b4cf"
+  },
+  "window_clarification": "process/closure-timing-clarification.json",
+  "costs": {
+    "model_invocations_actual": 8,
+    "tokens": null,
+    "usd": null,
+    "unknown_reason": "Platform token and monetary usage unavailable.",
+    "shared_window_id": "v125-cf-record-closeout-20261008T182308Z",
+    "counting_scope": "8 role invocations shared across run29 and run30 closeout; not per run and not the complete historical audit cost",
+    "earlier_model_invocations_actual": null,
+    "earlier_cost_reason": "Historical partial windows are preserved; complete historical costs are unavailable and are not inferred from planned calls."
+  },
+  "scope_mode": "scoped",
+  "comparison_base": "4c0694aa8e02e46145a775707b8d5a0355f7ce10",
+  "coverage_kind": "reviewed-commits",
+  "skill_commit": "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8",
+  "validation_mode": "source-only",
+  "registry_admission": "registry-admission.json"
+}

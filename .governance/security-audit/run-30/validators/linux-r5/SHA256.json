@@ -1,0 +1,7 @@
+{
+  "result.json": "b1eb8c39d10c306994ae3dbe14d2acdcc944d9bf43023f5e4b94fad0b7286e31",
+  "validate-coverage-ledger.stderr.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "validate-coverage-ledger.stdout.txt": "fafc6878f69b3b65495a51ec85349b09d73166c7286a46cdf6b815ab20e2e370",
+  "validate-findings.stderr.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "validate-findings.stdout.txt": "58716642dd79242e12bf4c2160e1c7b213d5c6fea2f2d59989230dbb2ac37508"
+}

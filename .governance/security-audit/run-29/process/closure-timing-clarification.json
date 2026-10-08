@@ -1,0 +1,15 @@
+{
+  "recordType": "closeout timing clarification for safe intake derivative",
+  "recordedAt": "2026-10-08T19:22:22.791Z",
+  "finalCleanSealedAtUTC": "2026-10-08T19:17:52Z",
+  "finalCleanEvidence": "Parent-side filesystem stat of final-clean-run29-r6-run30-r5.json; SHA-256 89406dae669a7abe2ce91ad6054434a9bc43cb082cea90a03815ee265f01b4cf.",
+  "priorDeadlineUTC": "2026-10-08T19:18:08Z",
+  "approvalReceivedAtUTC": "2026-10-08T19:18:14Z",
+  "approvalIssuedAtUTC": null,
+  "approvalReceivedAfterPriorDeadlineSeconds": 6,
+  "effectiveScope": "Only safe public-intake export from approval receipt at 19:18:14Z until 19:23:08Z.",
+  "retroactiveAuthorization": false,
+  "zeroOverrunClaimForEarlierWork": false,
+  "earlierMergeWindowStatus": "Original 17:22:17–18:22:17 merge window remains partial and is not rewritten as complete.",
+  "amends": "closure-approval-addendum-r2.json timing interpretation only; prior addenda remain byte-for-byte unchanged."
+}

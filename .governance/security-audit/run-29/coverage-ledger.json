@@ -1,0 +1,293 @@
+[
+  {
+    "reviewed_paths": [
+      "internal/atomicfile/write_test.go",
+      "internal/atomicfile/write.go",
+      "internal/desktopwallpapers/persistence_test.go",
+      "internal/desktopwallpapers/store.go",
+      "internal/panel/desktop_wallpapers.go",
+      "internal/panel/server.go",
+      "internal/selfupdate/persistence_test.go",
+      "internal/selfupdate/service.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "prior_status": "new",
+    "canonical_refs": {
+      "boundary": "WritePrivate replacement and wallpaper/selfupdate state commit ordering",
+      "surface": "Atomic private-file persistence",
+      "subsystem": "internal/atomicfile+internal/desktopwallpapers+internal/selfupdate",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "agent_id": "b1_hunter_fresh_run29",
+    "local_checks": [
+      {
+        "invariant": "Private atomic writes preserve directory confinement, serialized transactions, truthful commit durability, and the privileged selfupdate gate.",
+        "method": "source",
+        "result": "WritePrivate 在同目录创建临时文件、设为 0600、写入并同步和关闭后替换目标；替换后的目录同步错误通过 DurabilityErr 单独返回，提交后的清理错误通过 CleanupErr 表示。Windows 的替换失败回退使用 .previous 并尝试恢复旧文件。调用方负责目录验证、锁和事务边界。desktopwallpapers 使用私有 root/files 目录、生成并校验 ID 和互斥锁；Add 写入图片与缩略图后提交索引，Delete 先提交索引再删除媒体，目录持久性错误被记录而不会冒充提交前写入错误。Open 会过滤缺失或无效文件对应的索引并清理游离文件。selfupdate 的状态目录为私有目录且写入被串行化；可见提交后更新内存状态，Run 在意图提交的 DurabilityErr 存在时返回而不调用 executor.Update。相关测试文件仅作静态阅读，未运行。当前证据支持崩溃持久性或壁纸可用性问题的条件性讨论，不支持路径逃逸、授权绕过、权限边界绕过、秘密暴露或竞态绕过；没有提出 security finding。",
+        "reviewed_paths": [
+          "internal/atomicfile/write_test.go",
+          "internal/atomicfile/write.go",
+          "internal/desktopwallpapers/persistence_test.go",
+          "internal/desktopwallpapers/store.go",
+          "internal/selfupdate/persistence_test.go",
+          "internal/selfupdate/service.go"
+        ],
+        "artifact": null,
+        "agent_id": "b1_hunter_fresh_run29"
+      },
+      {
+        "agent_id": "b1_wallpaper_phase3_retry2_run29",
+        "reviewed_paths": [
+          "internal/atomicfile/write.go",
+          "internal/desktopwallpapers/store.go",
+          "internal/panel/desktop_wallpapers.go",
+          "internal/panel/server.go"
+        ],
+        "invariant": "An HTTP-reachable wallpaper write path with post-commit directory-sync uncertainty must demonstrate a lower-trust principal and security-boundary impact to qualify as a security finding.",
+        "method": "source",
+        "result": "Fresh source-only Phase 3 independently traced the authenticated/Origin/CSRF-checked Add path through atomicfile DurabilityErr to the index commit. It rejected the stable wallpaper.add-delete-durability-divergence candidate because source supports conditional durability/availability loss limited to panel-managed wallpaper data, with startup reconciliation, and does not establish a lower-trust actor or security-boundary violation.",
+        "artifact": null
+      },
+      {
+        "reviewed_paths": [
+          "internal/atomicfile/write.go",
+          "internal/desktopwallpapers/store.go",
+          "internal/panel/desktop_wallpapers.go",
+          "internal/panel/server.go"
+        ],
+        "invariant": "Atomic replacement durability diagnostics must be represented accurately and separated from a demonstrated security-boundary violation.",
+        "method": "source",
+        "result": "Fresh independent Phase 5 P5 decision=replace; the exact replacement is adopted, independently verified as nonmaterial source line-anchor/evidence corrections, retaining rejected verdict. fingerprint=wallpaper.add-delete-durability-divergence. Exact P5 JSON C:/GitHub/_release-evidence/v1.25.0/cf-audit/run-29/agents/p5_wallpaper_fresh_verify_run29/result.json SHA-256 9c0f80c1421be2b091bd536827bba49ed87400ecb587d7c842ffe8ba670e5c61. Independent material verifier verified the complete replacement without changing semantics; verifier JSON C:/GitHub/_release-evidence/v1.25.0/cf-audit/run-29/agents/p5_wallpaper_material_verifier_run29/result.json SHA-256 d6925fbc86fc37ed57b19c7a6424f667aed9fc52d1959ced9cc6942dcf340f9b. P5 output identifies gpt-6-luna/max; target source execution and tests were not run. Actual independent material verifier canonical agent_id=b1_auth_revocation; verified as nonmaterial line-anchor/evidence corrections.",
+        "artifact": null,
+        "agent_id": "b1_consumers_recheck"
+      }
+    ],
+    "status": "covered",
+    "result_fingerprints": [],
+    "boundary": "WritePrivate replacement and wallpaper/selfupdate state commit ordering",
+    "excluded_blocks": [],
+    "wave": 1,
+    "selected_companion_blocks": [
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Deletion, revocation, and lifecycle attack classes",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules"
+    ],
+    "surface": "Atomic private-file persistence",
+    "attack_class": "ATTACK-CLASSES.md#Resource and file handling",
+    "attempts": [],
+    "subsystem": "internal/atomicfile+internal/desktopwallpapers+internal/selfupdate",
+    "unresolved": [],
+    "starting_paths": [
+      "internal/atomicfile/write.go",
+      "internal/atomicfile/write_test.go",
+      "internal/desktopwallpapers/persistence_test.go",
+      "internal/desktopwallpapers/store.go",
+      "internal/selfupdate/persistence_test.go",
+      "internal/selfupdate/service.go"
+    ],
+    "coverage_id": "Atomic%20private-file%20persistence::WritePrivate%20replacement%20and%20wallpaper%2Fselfupdate%20state%20commit%20ordering::internal%2Fatomicfile%2Binternal%2Fdesktopwallpapers%2Binternal%2Fselfupdate::ATTACK-CLASSES.md%23Resource%20and%20file%20handling"
+  },
+  {
+    "reviewed_paths": [
+      "docs/multi-host-terminal.md",
+      "docs/terminal-file-transport-v3.md",
+      "internal/auth/service.go",
+      "internal/panel/server.go",
+      "internal/panel/terminal_stream_test.go",
+      "internal/panel/terminal_stream.go",
+      "internal/store/store.go",
+      "web/src/lib/terminalStream.ts",
+      "web/src/stores/session.ts"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "prior_status": "prior_needs_validation",
+    "canonical_refs": {
+      "surface": "GET /api/v1/terminal-stream session-bound output",
+      "boundary": "internal/panel/terminal_stream.go#checkSession before output write",
+      "subsystem": "internal/panel",
+      "attack_class": "WEB-PROTOCOL-AND-AUTH.md#Session fixation and invalidation"
+    },
+    "agent_id": "p3_terminal_revoke_fresh",
+    "local_checks": [
+      {
+        "invariant": "After Logout deletes a token session, the project must define whether an active SSE stream may issue a new application-level output write before reauthentication.",
+        "method": "source",
+        "result": "Fresh source-only Phase 3 retained the fingerprint as needs_validation: current timing follows the detailed active-output recheck protocol, but the overview says immediate termination and application Write/Flush does not establish client receipt.",
+        "reviewed_paths": [
+          "docs/multi-host-terminal.md",
+          "docs/terminal-file-transport-v3.md",
+          "internal/auth/service.go",
+          "internal/panel/server.go",
+          "internal/panel/terminal_stream_test.go",
+          "internal/panel/terminal_stream.go",
+          "internal/store/store.go",
+          "web/src/lib/terminalStream.ts",
+          "web/src/stores/session.ts"
+        ],
+        "artifact": null,
+        "agent_id": "p3_terminal_revoke_fresh"
+      },
+      {
+        "agent_id": "p5_terminal_record_run29",
+        "reviewed_paths": [
+          "docs/multi-host-terminal.md",
+          "docs/terminal-file-transport-v3.md",
+          "internal/auth/service.go",
+          "internal/panel/server.go",
+          "internal/panel/terminal_stream.go",
+          "internal/store/store.go"
+        ],
+        "invariant": "Retained security record must accurately ground its trace, preconditions, contract, impact, blockers, mitigations, and validation plan in frozen source and applicable protocol.",
+        "method": "source",
+        "result": "Historical malformed or superseded P5 output; not counted as current Phase 5 proof. Original note: Fresh independent Phase 5 source review decision=replace; fingerprint=terminal-sse-output-after-session-revocation, verdict remains needs_validation. 原记录的 local 验证计划假设存在“可控时钟”，但冻结源码直接调用 time.Now，认证间隔是一秒常量，未见时钟注入点；该计划不能按当前源码接口复现。原记录也未明确区分详细协议中的 15 秒空闲心跳、20 秒 Write deadline 和已写入传输层的字节不可撤回，容易把活动输出的一秒复核窗口、空闲流下一次心跳、应用写调用时限和客户端实际收帧混为一谈。replacement 补足这些边界并修正计划；仍保留 needs_validation，因为 overview 的“立即结束”与详细协议时序冲突，且源码不能证明传输层或客户端/浏览器实际收帧。 Evidence file: agents/p5_terminal_record_run29/result.json SHA256=458E410EFF4718DBB055194B4293E7F75B8E6D5DEFB9C107DDD61BF109201740. Proposed replacement is not applied pending distinct independent review of the material record correction.",
+        "artifact": null
+      },
+      {
+        "agent_id": "p5_terminal_replacement_verifier_run29",
+        "reviewed_paths": [
+          "docs/multi-host-terminal.md",
+          "docs/terminal-file-transport-v3.md",
+          "internal/auth/service.go",
+          "internal/panel/server.go",
+          "internal/panel/terminal_stream.go",
+          "internal/store/store.go"
+        ],
+        "invariant": "Retained terminal revocation record must distinguish protocol timing, application-layer writes, and client-observable delivery while preserving actual blockers.",
+        "method": "source",
+        "result": "Historical malformed or superseded P5 output; not counted as current Phase 5 proof. Original note: Fresh independent Phase 5 verifier confirmed the material replacement without further changes; needs_validation and fingerprint remain. Evidence: agents/p5_terminal_replacement_verifier_run29/result.json SHA256=A24AAA7A43026778618716CD218F0D259DFC74D969AF644F80D097DC2AD5E857.",
+        "artifact": null
+      },
+      {
+        "reviewed_paths": [
+          "docs/multi-host-terminal.md",
+          "docs/terminal-file-transport-v3.md",
+          "internal/auth/service.go",
+          "internal/panel/server.go",
+          "internal/panel/terminal_stream.go",
+          "internal/store/store.go"
+        ],
+        "invariant": "Retained terminal revocation record must distinguish protocol timing, application-layer writes, and client-observable delivery while preserving actual blockers.",
+        "method": "source",
+        "result": "Fresh independent Phase 5 P5 decision=verified; retained finding record matches the verified record exactly. fingerprint=terminal-sse-output-after-session-revocation. Exact P5 JSON C:/GitHub/_release-evidence/v1.25.0/cf-audit/run-29/agents/p5_terminal_fresh_verify_run29/result.json SHA-256 f9db369597f6e1b915e71052ea267ed741d59a77390e6c267c8af70d5e11e040. P5 output identifies gpt-6-luna/max; target source execution and tests were not run.",
+        "artifact": null,
+        "agent_id": "b1_consumers"
+      }
+    ],
+    "status": "candidate",
+    "result_fingerprints": [
+      "terminal-sse-output-after-session-revocation"
+    ],
+    "boundary": "internal/panel/terminal_stream.go#checkSession before output write",
+    "excluded_blocks": [
+      {
+        "reason": "The GET stream is read-only; its main boundary is session revocation and output authorization.",
+        "block": "WEB-PROTOCOL-AND-AUTH.md#Ordinary CSRF"
+      }
+    ],
+    "wave": 1,
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#Session fixation and invalidation",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules"
+    ],
+    "surface": "GET /api/v1/terminal-stream session-bound output",
+    "attack_class": "WEB-PROTOCOL-AND-AUTH.md#Session fixation and invalidation",
+    "attempts": [],
+    "subsystem": "internal/panel",
+    "unresolved": [
+      "注销生效边界的权威契约未明确：multi-host-terminal.md 称注销后立即结束，terminal-file-transport-v3.md 及其安全表则规定活动输出按间隔复核、空闲流在下一次心跳清理。需产品或安全负责人明确 DeleteSession 成功返回后是否必须同步禁止同 token 流发起任何新的 output Write，或允许按详细协议等待下一次复核；不能仅凭概览与详细文档自行裁定优先级。",
+      "本轮 source-only 只能确认代码路径可能调用应用层 Write/Flush；未观察传输层或客户端/浏览器收到帧的情况，也不能据此确认部署行为。该路径检查用户与 token 绑定，主机终端订阅检查会话属主，源码没有显示跨用户访问。"
+    ],
+    "starting_paths": [
+      "internal/auth/service.go",
+      "internal/panel/server.go",
+      "internal/panel/terminal_stream_test.go",
+      "internal/panel/terminal_stream.go",
+      "internal/store/store.go"
+    ],
+    "coverage_id": "GET%20%2Fapi%2Fv1%2Fterminal-stream%20session-bound%20output::internal%2Fpanel%2Fterminal_stream.go%23checkSession%20before%20output%20write::internal%2Fpanel::WEB-PROTOCOL-AND-AUTH.md%23Session%20fixation%20and%20invalidation"
+  },
+  {
+    "reviewed_paths": [
+      "internal/auth/service.go",
+      "internal/panel/server.go",
+      "internal/store/store.go"
+    ],
+    "ordinary_attack_class_block": "WEB-PROTOCOL-AND-AUTH.md#Session fixation and invalidation",
+    "prior_status": "prior_needs_validation",
+    "canonical_refs": {
+      "boundary": "Credential-state replacement and restart authentication after durability uncertainty",
+      "surface": "Password-change session revocation",
+      "subsystem": "internal/auth+internal/panel+internal/store",
+      "attack_class": "WEB-PROTOCOL-AND-AUTH.md#Session fixation and invalidation"
+    },
+    "agent_id": "p3_auth_revocation_fresh",
+    "local_checks": [
+      {
+        "invariant": "Password change must revoke the user sessions as one state transition that remains effective after restart.",
+        "method": "source",
+        "result": "Fresh source-only Phase 3 retained the precise fingerprint as needs_validation; it verified the code path but cannot establish deployment-specific crash recovery of the old JSON.",
+        "reviewed_paths": [
+          "internal/auth/service.go",
+          "internal/panel/server.go",
+          "internal/store/store.go"
+        ],
+        "artifact": null,
+        "agent_id": "p3_auth_revocation_fresh"
+      },
+      {
+        "agent_id": "p5_auth_record_run29",
+        "reviewed_paths": [
+          "internal/auth/service.go",
+          "internal/panel/server.go",
+          "internal/store/store.go"
+        ],
+        "invariant": "Retained security record must accurately ground its trace, preconditions, contract, impact, blockers, mitigations, and validation plan in frozen source and applicable protocol.",
+        "method": "source",
+        "result": "Historical malformed or superseded P5 output; not counted as current Phase 5 proof. Original note: Fresh independent Phase 5 source review decision=verified; fingerprint=auth-state-dir-fsync-error-revives-revoked-session, verdict remains needs_validation. 源码路径和所引行号均有效并支持所述根因：密码变更经 Origin、会话、CSRF 和当前密码校验后，更新密码哈希并删除该用户会话；Linux rename 成功后目录 Sync 错误被忽略，处理器清除当前响应 cookie 并返回 200。Store.Open 加载旧 JSON，未过期旧令牌可按哈希重新匹配；源码未显示启动时会额外撤销这些会话。断电后目标文件系统和存储栈是否恢复旧状态仍无法由源码确定，candidate 将其保留为 blocker；验证计划限于可销毁 VM 和非生产克隆并检查 fsync、恢复状态及旧令牌结果。因此保留 needs_validation。 Evidence file: agents/p5_auth_record_run29/result.json SHA256=841AB7A590026E305A802ACE14B6D7F0944AA10ACE928347E65E3690EE525A04.",
+        "artifact": null
+      },
+      {
+        "reviewed_paths": [
+          "internal/auth/service.go",
+          "internal/panel/server.go",
+          "internal/store/store.go"
+        ],
+        "invariant": "Password change must revoke the user sessions as one state transition that remains effective after restart.",
+        "method": "source",
+        "result": "Fresh independent Phase 5 P5 decision=verified; retained finding record matches the verified record exactly. fingerprint=auth-state-dir-fsync-error-revives-revoked-session. Exact P5 JSON C:/GitHub/_release-evidence/v1.25.0/cf-audit/run-29/agents/p5_auth_fresh_verify_run29/result.json SHA-256 6c072e3b9d1ce1447940c9d844e0e65efab21afd021d6b8668c9f4e7e1a4f1ed. P5 output identifies gpt-6-luna/max; target source execution and tests were not run.",
+        "artifact": null,
+        "agent_id": "b1_atomicfile"
+      }
+    ],
+    "status": "candidate",
+    "result_fingerprints": [
+      "auth-state-dir-fsync-error-revives-revoked-session"
+    ],
+    "boundary": "Credential-state replacement and restart authentication after durability uncertainty",
+    "excluded_blocks": [],
+    "wave": 1,
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#Session fixation and invalidation",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Deletion, revocation, and lifecycle attack classes"
+    ],
+    "surface": "Password-change session revocation",
+    "attack_class": "WEB-PROTOCOL-AND-AUTH.md#Session fixation and invalidation",
+    "attempts": [],
+    "subsystem": "internal/auth+internal/panel+internal/store",
+    "unresolved": [
+      "尚未确认目标部署的数据文件系统、挂载选项、容器或虚拟化层、块存储和写缓存配置；源码无法证明该环境中的目录 Sync 会失败，也无法证明断电后会恢复变更前且可解析的 JSON。旧令牌重新有效还要求该旧会话未过期。"
+    ],
+    "starting_paths": [
+      "internal/auth/service.go",
+      "internal/panel/server.go",
+      "internal/store/store.go"
+    ],
+    "coverage_id": "Password-change%20session%20revocation::Credential-state%20replacement%20and%20restart%20authentication%20after%20durability%20uncertainty::internal%2Fauth%2Binternal%2Fpanel%2Binternal%2Fstore::WEB-PROTOCOL-AND-AUTH.md%23Session%20fixation%20and%20invalidation"
+  }
+]

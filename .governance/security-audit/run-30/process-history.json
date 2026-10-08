@@ -1,0 +1,40 @@
+{
+  "closeout": {
+    "window_start": "2026-10-08T18:23:08Z",
+    "initial_max_wall_seconds": 600,
+    "initial_deadline": "2026-10-08T18:33:08Z",
+    "actual_model_calls": 8,
+    "max_actual_model_calls": 8,
+    "tokens": null,
+    "usd": null,
+    "approval_addenda": [
+      {
+        "path": "process/closure-approval-addendum-r1.json",
+        "sha256": "c9fcf672142e291ede2ff52b84023485c93466a933a1a6de35ff7af65c979573"
+      },
+      {
+        "path": "process/closure-approval-addendum-r2.json",
+        "sha256": "75d8a41f1398045576219d775deaae884faa963946567499ab7152d9b767723a"
+      }
+    ],
+    "final_clean_sealed_at": "2026-10-08T19:17:52Z",
+    "last_extension_received_at": "2026-10-08T19:18:14Z",
+    "last_extension_deadline": "2026-10-08T19:23:08Z",
+    "last_extension_effective_scope": "Intake-only, from receipt; no retroactive authorization and no zero-overrun claim.",
+    "initial_max_actual_model_calls": 2,
+    "shared_window_id": "v125-cf-record-closeout-20261008T182308Z"
+  },
+  "earlier_merge_window": {
+    "status": "partial",
+    "start": "2026-10-08T17:22:17Z",
+    "end": "2026-10-08T18:22:17Z",
+    "historical_records_unchanged": true
+  },
+  "process_incidents": {
+    "count": 45,
+    "after_production_write": 0,
+    "external_path": "C:\\GitHub\\_release-evidence\\v1.25.0/process-incidents-preparation-r9.json",
+    "sha256": "6aa29aefc169b1eab7cdf91da800d2e1ba4a404e967a01128c939ca85dc92555",
+    "classification": "Root release preparation count, including two later export/admission interceptions; final-clean original count43 remains unchanged."
+  }
+}

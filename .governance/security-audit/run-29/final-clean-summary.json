@@ -1,0 +1,27 @@
+{
+  "decision": "pass",
+  "checked_run": "run-29",
+  "coverage_scope_complete": false,
+  "global_coverage_complete": false,
+  "source_identity_matches": true,
+  "latest_official_attempt": "r6",
+  "official_validators": "both exitCode 0",
+  "findings_summary": {
+    "total": 3,
+    "needs_validation": 2,
+    "rejected": 1,
+    "accepted_risk": 0
+  },
+  "risk_acceptance": null,
+  "risk_closed": false,
+  "full_critic_record": {
+    "external_path": "C:/GitHub/_release-evidence/v1.25.0/cf-audit/final-clean-run29-r6-run30-r5.json",
+    "sha256": "89406dae669a7abe2ce91ad6054434a9bc43cb082cea90a03815ee265f01b4cf"
+  },
+  "limitations": [
+    "Scoped record/package review only.",
+    "No global 54/169 completion claim.",
+    "Needs-validation records remain open; no risk acceptance.",
+    "No target code, tests, builds, services, or production execution."
+  ]
+}
