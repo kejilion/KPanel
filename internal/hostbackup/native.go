@@ -237,6 +237,7 @@ func (e *Engine) prepareVolumes(ctx context.Context, p *Payload) error {
 		if v.Name != name || v.Driver != old.Driver || len(v.Options) > 0 || !path.IsAbs(v.Mountpoint) || e.excluded(v.Mountpoint) {
 			return backup.ErrInvalid
 		}
+		p.Volumes[name] = v
 		for n, r := range p.Roots {
 			if r.Path == old.Mountpoint {
 				p.Roots[n].Path = v.Mountpoint
