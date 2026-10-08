@@ -129,13 +129,13 @@ GitHub Release：[v1.25.0-rc.13](https://github.com/kejilion/KPanel/releases/tag
 结构化指标没有产品回滚、紧急热修复或重复发布，产品恢复字段因此不适用；流程失败另行记录：首次发现 2026-10-08T06:45:26Z，最后验证通道恢复 2026-10-08T08:00:38.303Z。公开 Release 的非摘要发布边界文案已逃逸至历史正文，本记录与主线 Changelog 澄清生产未核验，历史产物不回写；L3 R1、正文本地编码比对及浏览器夹具失败则被各自门禁拦截。结构化冻结时间按校验器使用毫秒精度，原始七位小数 `2026-10-08T06:34:47.6115371Z` 在 freeze-final.json 保留，未改变冻结输入。
 
 <!-- kpanel-release-process-metrics:start -->
-- 已记录发布流程异常或无效证据拦截次数：25
+- 已记录发布流程异常或无效证据拦截次数：26
 - 其中生产写操作开始后异常次数：0
 <!-- kpanel-release-process-metrics:end -->
 
 ### 流程异常明细
 
-所有首轮命令失败、无效证据、R1 失败和恢复记录原样保留。最近五个正式版本 v1.24.0/v1.23.0/v1.22.0/v1.21.0/v1.20.0 已复核；路径读取指纹在 v1.24.0 有历史复发，11 次当前事件完整计入，没有靠合并明细降低总数。现场改用正确命令不等于永久修复；唯一入口/预检的永久改进仍未完成，责任发布任务，2026-10-14 复核，在下一次 L3 生产写前处理。未执行生产，不把流程重试计为产品生产变更失败。
+所有首轮命令失败、无效证据、R1 失败和恢复记录原样保留。最近五个正式版本 v1.24.0/v1.23.0/v1.22.0/v1.21.0/v1.20.0 已复核；路径读取指纹在 v1.24.0 有历史复发，12 次当前事件完整计入，没有靠合并明细降低总数。现场改用正确命令不等于永久修复；唯一入口/预检的永久改进仍未完成，责任发布任务，2026-10-14 复核，在下一次 L3 生产写前处理。未执行生产，不把流程重试计为产品生产变更失败。
 
 <!-- kpanel-release-process-incidents:start -->
 [
@@ -151,10 +151,10 @@ GitHub Release：[v1.25.0-rc.13](https://github.com/kejilion/KPanel/releases/tag
   {
     "fingerprint": "preflight/read-only-file-inspection/unverified-path",
     "position": "before-production-write",
-    "count": 11,
-    "impact": "rg included nonexistent .codex; corrected to tracked .codex-workflows (count=1). Additional event: Read attempted guessed RC12 result.json; discovered authoritative manifest paths instead (count=1). Additional event: rg given literal internal/panel/self* and web/src/components/settings/*.vue as positional paths on Windows; corrected to --glob or discovered tracked file paths Additional root read passed literal internal/panel/auth*.go on Windows; corrected to directory plus --glob and excluded tests to limit irrelevant results. (count=3). Additional event: Guessed scripts/source-check-groups.mjs was absent; actual grouped authority is scripts/run-source-checks.mjs (count=1). Additional event: rg given absent .workflows and docs/RELEASE_CHANNELS.md; tracked .codex-workflows and docs/release-channels.md discovered via rg --files (count=1). Additional event: Two attempted source reads used absent internal/selfupdate/release_summary.go and cmd/kejilion-panel/main.go; actual internal/agent/self_update.go and cmd/paneld/main.go read after rg discovery Additional root read attempted absent internal/agent/config.go and guessed web/src/components/settings/AutomaticUpdateSection.vue; actual Config is in internal/panel/config.go and UI is web/src/views/SettingsView.vue, discovered and read. Both failed reads retained. (count=4).",
+    "count": 12,
+    "impact": "rg included nonexistent .codex; corrected to tracked .codex-workflows (count=1). Additional event: Read attempted guessed RC12 result.json; discovered authoritative manifest paths instead (count=1). Additional event: rg given literal internal/panel/self* and web/src/components/settings/*.vue as positional paths on Windows; corrected to --glob or discovered tracked file paths Additional root read passed literal internal/panel/auth*.go on Windows; corrected to directory plus --glob and excluded tests to limit irrelevant results. (count=3). Additional event: Guessed scripts/source-check-groups.mjs was absent; actual grouped authority is scripts/run-source-checks.mjs (count=1). Additional event: rg given absent .workflows and docs/RELEASE_CHANNELS.md; tracked .codex-workflows and docs/release-channels.md discovered via rg --files (count=1). Additional event: Two attempted source reads used absent internal/selfupdate/release_summary.go and cmd/kejilion-panel/main.go; actual internal/agent/self_update.go and cmd/paneld/main.go read after rg discovery Additional root read attempted absent internal/agent/config.go and guessed web/src/components/settings/AutomaticUpdateSection.vue; actual Config is in internal/panel/config.go and UI is web/src/views/SettingsView.vue, discovered and read. Both failed reads retained. Owned remote generated-file cleanup first probed a guessed status.json; canonical inventory showed status.txt. Guard failed before any remote removal (root chunk a9118b). Correct authoritative key/value status input, preserve source/inputs/evidence, rerun the owned cleanup. (count=5).",
     "recoveryEvidence": "Root release transcript and process-incidents-current.json preserve each failed command. Successful replacements and canonical receipts are retained in C:/GitHub/_release-evidence/v1.25.0-rc.13.",
-    "permanentAction": "Repeated path guessing is retained as 11 events, including after a prior reminder. Use rg --files before each read. Permanent shared preflight/fixture repair is not completed; release task owns follow-up by 2026-10-14, before any next L3 production write. Owner: release task; review due 2026-10-14 before production L3.",
+    "permanentAction": "Repeated path guessing is retained as 12 events, including after a prior reminder. Use rg --files before each read. Permanent shared preflight/fixture repair is not completed; release task owns follow-up by 2026-10-14, before any next L3 production write. Owner: release task; review due 2026-10-14 before production L3.",
     "historicalReleases": [
       "v1.24.0"
     ]
@@ -277,3 +277,9 @@ GitHub Release：[v1.25.0-rc.13](https://github.com/kejilion/KPanel/releases/tag
 全部来源 worktree 物理保留，自己的 frozen release worktree 与两个 L3 源码/输入/证据保留用于恢复；本地 preview/依赖的实际最终回收另在 cleanup-closeout-result.json 记录。未新增监控会话、常驻清理任务、工作流或旁路台账。
 
 本版只完成预览产物与上述范围验收；CF 完整覆盖、真实 WAN/10 GiB、突然断电、全平台/长期稳定性、原生触摸/缩放与真实 systemd 生产更新回滚仍未验证。已通过完整 L3、同 SHA CI、公开产物与实际 notes 用户旅程，结合透明性能/审计边界作为预览交付；这些证据没有扩展生产或稳定授权。
+
+### 最终自有资源处置
+
+本次本地 Mock 已由 canonical stop 停止；自有 release worktree 的 web/node_modules 回收 238387741 bytes，web/dist 原本不存在，源码/Git/日志保留。C: 实测可用空间 109011996672 → 109264179200 bytes。
+
+两个已结束 L3 run 的 web/node_modules 与 R2 web/dist 回收 423342440 bytes；R1/R2 精确 status.txt、候选 HEAD、clean 状态及活跃 container mount/process cwd 检查通过。arena 可用空间实测 4526764032 → 5051293696 bytes。这些是回收时测量，宿主并发会影响卷净变化；源码、Git、bundle、plan、status、完整日志和固定 Runner 保留。此前状态文件路径的失败探测已经完整计入上述第26次流程事件，首次文档候选 8764dd675be4bc3f579661ad67b75c2773a0bfb4 与其两项成功 CI 保留，最终文档候选重新获得同 SHA CI，不复用旧 SHA 结论。
