@@ -311,6 +311,14 @@ func (s *Server) retryBackupUpload(w http.ResponseWriter, r *http.Request, id st
 		s.backupError(w, r, err)
 		return
 	}
+	// Repeating an already completed automatic copy to the same destination
+	// is idempotent. It cannot erase an outstanding retention warning or turn
+	// an upload-only request into a recovery of failed pruning.
+	if previous.Automatic && previous.Status == "completed" && previous.Remote != nil && previous.Remote.Status == "completed" &&
+		previous.Remote.StorageID == storage.ID && previous.Remote.Destination == storage.Fingerprint() {
+		s.writeJSON(w, 202, previous)
+		return
+	}
 	record, err := s.backups.ReserveUpload(id)
 	if err != nil {
 		s.backupError(w, r, err)
@@ -322,17 +330,7 @@ func (s *Server) retryBackupUpload(w http.ResponseWriter, r *http.Request, id st
 	automatic := record.Automatic && record.Remote != nil && record.Remote.StorageID == storage.ID && record.Remote.Destination == storage.Fingerprint()
 	err = s.backups.Update(id, func(r *backup.Record) { r.Remote = receipt; r.Automatic = automatic })
 	if err == nil {
-		err = s.backups.Run(id, func(ctx context.Context, id string) error {
-			if err := s.uploadBackup(ctx, id, storage, receipt); err != nil {
-				return err
-			}
-			// Uploading an existing package does not retry retention. Preserve
-			// that warning until a later automatic export actually prunes.
-			if automatic && previous.ErrorCode == "retention_failed" {
-				return s.backups.Update(id, func(r *backup.Record) { r.ErrorCode = "retention_failed" })
-			}
-			return nil
-		})
+		err = s.backups.Run(id, func(ctx context.Context, id string) error { return s.uploadBackup(ctx, id, storage, receipt) })
 	}
 	if err != nil {
 		_ = s.backups.Abort(id, "start_failed")

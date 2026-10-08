@@ -223,6 +223,20 @@ func TestAutomaticBackupUploadRetryPreservesHealthAndIdentity(t *testing.T) {
 			close(gate.release)
 			t.Fatalf("retry status=%d body=%s", w.Code, w.Body.String())
 		}
+		if expected == "warning" {
+			select {
+			case <-gate.entered:
+				close(gate.release)
+				t.Fatal("completed automatic copy was uploaded again")
+			default:
+			}
+			close(gate.release)
+			var receipt backup.Record
+			if err := json.Unmarshal(w.Body.Bytes(), &receipt); err != nil || receipt.Status != "completed" || receipt.ErrorCode != "retention_failed" || s.backupHealth().State != "warning" || s.backups.Busy() {
+				t.Fatal("idempotent upload erased the completed warning receipt", receipt, s.backupHealth(), err)
+			}
+			return
+		}
 		select {
 		case <-gate.entered:
 		case <-time.After(5 * time.Second):
@@ -253,9 +267,14 @@ func TestAutomaticBackupUploadRetryPreservesHealthAndIdentity(t *testing.T) {
 	if err := s.backups.Update(second.ID, func(r *backup.Record) { r.ErrorCode = "retention_failed" }); err != nil {
 		t.Fatal(err)
 	}
+	warningID := s.backupNotificationStatus().ID
+	retry(storage.ID, true, true, "warning")
 	retry(storage.ID, false, true, "warning")
 	if s.backupNotificationStatus().Completed {
 		t.Fatal("upload-only retry claimed to recover retention")
+	}
+	if s.backupNotificationStatus().ID != warningID {
+		t.Fatal("repeated completed upload produced a new warning event")
 	}
 	if err := s.backupRemote.PutStorage(s.backupRemote.Snapshot().Revision, backupremote.Storage{Name: "Other", Kind: "webdav", Endpoint: "https://other.example/dav", Username: "backup", Secret: "secret"}); err != nil {
 		t.Fatal(err)
