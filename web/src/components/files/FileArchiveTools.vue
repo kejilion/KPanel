@@ -9,7 +9,7 @@ import { fileAPIForHost } from '@/lib/fileHostContext'
 import type { FileActionInput, FileArchiveDirectory, FileArchiveJob, FileEntry } from '@/types/api'
 
 const props = defineProps<{ hostId: string; path: string; archiveManagementAvailable?: boolean }>()
-const emit = defineEmits<{ changed: [hostId: string, path: string]; open: [hostId: string, path: string] }>()
+const emit = defineEmits<{ changed: [hostId: string, path: string, reveal: string[]]; open: [hostId: string, path: string] }>()
 const i18n = useI18n()
 const jobs = ref<FileArchiveJob[]>([])
 const capability = computed(() => props.archiveManagementAvailable === undefined
@@ -74,7 +74,7 @@ async function refreshJobs() {
     if (disposed || current.signal.aborted || token !== generation) return
     const old = new Map(jobs.value.map(job => [job.id, job]))
     for (const job of result.items) {
-      if (old.has(job.id) && active(old.get(job.id)!) && !active(job)) emit('changed', host, job.target)
+      if (old.has(job.id) && active(old.get(job.id)!) && !active(job)) emit('changed', host, job.target, job.result.succeeded.flatMap((item) => item.destination ? [item.destination] : []))
     }
     jobs.value = result.items; jobsError.value = ''; discoveryFailures = 0
   } catch (error) {

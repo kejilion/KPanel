@@ -1235,6 +1235,49 @@ describe('FilesView route path', () => {
     expect(view.selected.value).toEqual(new Set([target.path]))
   })
 
+  it('selects the uploaded file once the refreshed directory contains it', async () => {
+    const view = setupView()
+    const uploaded = testEntry('notes.txt')
+    view.currentPath.value = '/srv'
+    mocks.list.mockResolvedValue({ ...testDirectory('/srv'), entries: [testEntry('other.txt'), { ...uploaded, path: '/srv/notes.txt' }] })
+    mocks.upload.mockImplementation(async (path: string, file: File) => ({ ...testEntry(file.name), path: `${path}/${file.name}` }))
+
+    await view.onDrop(externalFileDrop(externalFileEntry('notes.txt', 'hello')))
+
+    expect(view.selected.value).toEqual(new Set(['/srv/notes.txt']))
+  })
+
+  it('selects the renamed entry at its new path', async () => {
+    const view = setupView()
+    const entry = testEntry('old.txt')
+    view.currentPath.value = '/srv'
+    view.directory.value = { path: '/srv', entries: [{ ...entry, path: '/srv/old.txt' }] }
+    view.selected.value = new Set(['/srv/old.txt'])
+    view.openDialog('rename', { ...entry, path: '/srv/old.txt' })
+    view.dialogValue.value = 'new.txt'
+    mocks.action.mockResolvedValueOnce({
+      action: 'rename',
+      succeeded: [{ path: '/srv/old.txt', destination: '/srv/new.txt' }],
+      failed: [],
+    })
+    mocks.list.mockResolvedValue({ ...testDirectory('/srv'), entries: [{ ...testEntry('new.txt'), path: '/srv/new.txt' }] })
+
+    await view.submitDialog()
+
+    expect(view.selected.value).toEqual(new Set(['/srv/new.txt']))
+  })
+
+  it('does not steal the selection when the finished result is outside the visible directory', async () => {
+    const view = setupView()
+    view.currentPath.value = '/other'
+    view.directory.value = { path: '/other', entries: [{ ...testEntry('keep.txt'), path: '/other/keep.txt' }] }
+    view.selected.value = new Set(['/other/keep.txt'])
+
+    await (view as unknown as { revealEntries: (paths: string[]) => Promise<void> }).revealEntries(['/srv/new.txt'])
+
+    expect(view.selected.value).toEqual(new Set(['/other/keep.txt']))
+  })
+
   it('ignores a route select target outside the loaded directory', async () => {
     mocks.route.query = { path: '/home', select: '/etc/hosts' }
     mocks.list.mockImplementation(async (path: string) => testDirectory(path))
