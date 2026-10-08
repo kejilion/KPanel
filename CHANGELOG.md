@@ -24,7 +24,7 @@
 
 ### 发布边界
 
-- 仅提升 Docker `preview` 并创建 GitHub prerelease；GitHub Latest、Docker `latest`、稳定更新源和生产环境保持 v1.24.0。
+- 仅提升 Docker `preview` 并创建 GitHub prerelease；GitHub Latest、Docker `latest` 与稳定更新源保持 v1.24.0；生产环境不在本次发布范围，实例版本未核验。
 - `scriptLinkageState=not-required`：使用已有且兼容的 `kejilion.sh` 契约；内置脚本、安装配置及应用市场默认入口没有变化。
 
 ## [1.25.0-rc.12] - 2026-10-08
