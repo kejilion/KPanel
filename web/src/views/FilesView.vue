@@ -851,7 +851,9 @@ async function openRequestedFile(value: unknown): Promise<void> {
     if (unmounted || hostId !== fileHostId.value || filePath !== openedRouteFile) return
     if (entry.kind !== 'file') {
       shortcutPreviewError.value = phrase('该路径现在不是普通文件，请从文件管理重新添加。')
-      toast.show('目标类型已变化', { message: '该路径现在不是普通文件，请从文件管理重新添加。' })
+      if (!shortcutFilePreviewOnly.value) {
+        toast.show('目标类型已变化', { message: '该路径现在不是普通文件，请从文件管理重新添加。' })
+      }
       return
     }
     selected.value = new Set([entry.path])
@@ -860,7 +862,7 @@ async function openRequestedFile(value: unknown): Promise<void> {
   } catch (error) {
     if (unmounted || hostId !== fileHostId.value || filePath !== openedRouteFile) return
     shortcutPreviewError.value = errorMessage(error)
-    toast.danger('桌面目标无法打开', errorMessage(error))
+    if (!shortcutFilePreviewOnly.value) toast.danger('桌面目标无法打开', errorMessage(error))
   }
 }
 
@@ -978,7 +980,7 @@ async function openPreview(entry: FileEntry): Promise<void> {
   } catch (error) {
     if (unmounted || hostId !== fileHostId.value || requestId !== previewRequestId) return
     shortcutPreviewError.value = errorMessage(error)
-    toast.danger('文件打开失败', errorMessage(error))
+    if (!shortcutFilePreviewOnly.value) toast.danger('文件打开失败', errorMessage(error))
     previewEntry.value = undefined
   } finally {
     if (requestId === previewRequestId) previewLoading.value = false

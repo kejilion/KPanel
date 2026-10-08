@@ -16,6 +16,8 @@ const mocks = vi.hoisted(() => ({
   cancelRemoteDownloadJob: vi.fn(),
   deleteRemoteDownloadJob: vi.fn(),
   hosts: vi.fn(),
+  danger: vi.fn(),
+  show: vi.fn(),
   route: { query: {} as Record<string, unknown> },
   push: vi.fn(),
 }))
@@ -58,7 +60,7 @@ vi.mock('@/lib/api', () => ({
 }))
 
 vi.mock('@/stores/toast', () => ({
-  useToast: () => ({ success: vi.fn(), danger: vi.fn(), show: vi.fn() }),
+  useToast: () => ({ success: vi.fn(), danger: mocks.danger, show: mocks.show }),
 }))
 
 function directory(path: string) {
@@ -956,6 +958,7 @@ describe('FilesView desktop shortcut loading', () => {
       const panel = new DOMWrapper(document.body).get('.modal-panel')
       expect(shortcutState().attributes('role')).toBe('alert')
       expect(shortcutState().text()).toContain('file lookup unavailable')
+      expect(mocks.danger).not.toHaveBeenCalled()
 
       await shortcutState().get('button').trigger('click')
       await flushPromises()
@@ -978,11 +981,14 @@ describe('FilesView desktop shortcut loading', () => {
       expect(wrapper.get('.files-page').isVisible()).toBe(false)
       const panel = new DOMWrapper(document.body).get('.modal-panel')
       expect(shortcutState().text()).toContain('file content unavailable')
+      expect(mocks.danger).not.toHaveBeenCalled()
+      await panel.get('.modal-panel__window-action:not(.modal-panel__window-action--close)').trigger('click')
 
       await shortcutState().get('button').trigger('click')
       await flushPromises()
       expect(new DOMWrapper(document.body).get('.modal-panel').element).toBe(panel.element)
       expect(mocks.text).toHaveBeenCalledTimes(2)
+      expect(panel.classes()).toContain('modal-panel--fullscreen')
       expect(wrapper.get('.files-page').isVisible()).toBe(false)
       expect(new DOMWrapper(document.body).get('.shortcut-preview-content').text()).toBe('recovered file content')
     } finally {
@@ -1006,6 +1012,33 @@ describe('FilesView desktop shortcut loading', () => {
       expect(panel.classes()).toContain('modal-panel--fullscreen')
       expect(panel.get('.shortcut-preview-content').text()).toContain('loaded in the same frame')
       expect(mocks.list).not.toHaveBeenCalled()
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('shows a changed target type inside the shortcut frame without a toolbar-covering toast', async () => {
+    mocks.entry.mockResolvedValue({ ...shortcutEntry, kind: 'directory' })
+    const wrapper = mountShortcut()
+    try {
+      await flushPromises()
+      expect(shortcutState().attributes('role')).toBe('alert')
+      expect(shortcutState().text()).toContain('该路径现在不是普通文件')
+      expect(mocks.show).not.toHaveBeenCalled()
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('still reports a content failure from an ordinary file-manager route', async () => {
+    mocks.route.query = { file: shortcutEntry.path }
+    mocks.entry.mockResolvedValue(shortcutEntry)
+    mocks.text.mockRejectedValueOnce(new Error('normal preview read failed'))
+    const wrapper = mount(FilesView, { attachTo: document.body })
+    try {
+      await flushPromises()
+      expect(mocks.danger).toHaveBeenCalledWith('文件打开失败', 'normal preview read failed')
+      expect(new DOMWrapper(document.body).find('.file-shortcut-preview').exists()).toBe(false)
     } finally {
       wrapper.unmount()
     }
