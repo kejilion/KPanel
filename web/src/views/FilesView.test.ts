@@ -1215,6 +1215,32 @@ describe('FilesView route path', () => {
     expect(mocks.push).not.toHaveBeenCalled()
   })
 
+  it('selects the route select target, paging forward until it is loaded', async () => {
+    const first = testEntry('a.txt')
+    const target = testEntry('b.txt')
+    mocks.route.query = { path: '/', select: target.path }
+    mocks.list.mockImplementation(async (path: string, options: { offset?: number }) =>
+      options.offset
+        ? { ...testDirectory(path), entries: [target], offset: 1, total: 2 }
+        : { ...testDirectory(path), entries: [first], total: 2, truncated: true, nextOffset: 1 },
+    )
+    const view = setupView()
+
+    await view.loadRequestedRoute()
+
+    expect(view.selected.value).toEqual(new Set([target.path]))
+  })
+
+  it('ignores a route select target outside the loaded directory', async () => {
+    mocks.route.query = { path: '/home', select: '/etc/hosts' }
+    mocks.list.mockImplementation(async (path: string) => testDirectory(path))
+    const view = setupView()
+
+    await view.loadRequestedRoute()
+
+    expect(view.selected.value.size).toBe(0)
+  })
+
   it('does not record failed or superseded directory navigation', async () => {
     let resolveSlow: ((value: FileDirectoryResult) => void) | undefined
     mocks.list.mockImplementation((path: string) => {
