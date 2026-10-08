@@ -20,7 +20,12 @@ import {
   Trash2,
   EyeOff,
   File,
+  FilePlus,
+  FileText,
   FolderOpen,
+  FolderPlus,
+  ChevronDown,
+  ChevronRight,
   HardDriveUpload,
   LoaderCircle,
   Check,
@@ -100,6 +105,16 @@ import {
   type DesktopExternalTransferAPI,
   type DesktopExternalTransferProgress,
 } from '@/lib/desktopExternalDrop'
+import {
+  DESKTOP_NEW_ITEM_LABELS,
+  DESKTOP_NEW_ITEM_TYPES,
+  desktopNewItemUsesFlyout,
+  desktopNewItemManifest,
+  desktopNewItemName,
+  desktopNewItemType,
+  type DesktopNewItemID,
+  type DesktopNewItemType,
+} from '@/lib/desktopNewItems'
 import { shortcutFileGradient, shortcutFileIcon } from '@/lib/fileEntryPresentation'
 import { kpanelUpdateSettingsPath } from '@/lib/kpanelUpdate'
 import type { DesktopStartMenuItem } from '@/lib/desktopStartMenu'
@@ -1047,6 +1062,14 @@ const contextMenuTarget = ref<'desktop' | 'taskbar' | 'taskbar-window'>('desktop
 const contextMenuElement = ref<HTMLElement>()
 const menuEntry = ref<DesktopEntry>()
 const menuNavPath = ref('')
+const newItemMenuOpen = ref(false)
+const newItem = ref<{ type: DesktopNewItemType; name: string; origin: { x: number; y: number } }>()
+const newItemBusy = ref(false)
+const newItemFlyoutMode = ref(false)
+const newItemFlyoutStyle = ref<Record<string, string>>({})
+const newItemFlyoutElement = ref<HTMLElement>()
+let menuOrigin = { x: 0, y: 0 }
+const NEW_ITEM_LABELS = DESKTOP_NEW_ITEM_LABELS
 const menuSelectionKeys = ref<string[]>([])
 const menuRemovableCount = computed(() => {
   const selected = new Set(menuSelectionKeys.value)
@@ -1483,6 +1506,7 @@ async function showContextMenu(
       ? document.activeElement
       : undefined
   contextMenu.value = { x: event.clientX, y: event.clientY, open: true }
+  menuOrigin = { x: event.clientX, y: event.clientY }
   contextMenuTarget.value = target
   menuEntry.value = entry
   menuNavPath.value = navPath
@@ -1538,6 +1562,7 @@ function onEntryOpen(_event: MouseEvent | KeyboardEvent, entry: DesktopEntry): v
 
 function closeContextMenu(restoreFocus = true): void {
   contextMenu.value.open = false
+  newItemMenuOpen.value = false
   menuEntry.value = undefined
   menuNavPath.value = ''
   menuSelectionKeys.value = []
@@ -1552,6 +1577,7 @@ function closeContextMenu(restoreFocus = true): void {
 function closeContextMenuOnScroll(event: Event): void {
   cancelDesktopLongPress()
   if (contextMenuElement.value?.contains(event.target as Node)) return
+  if (newItemFlyoutElement.value?.contains(event.target as Node)) return
   closeContextMenu(false)
 }
 
@@ -2720,6 +2746,7 @@ function onGlobalPointerDown(event: PointerEvent): void {
   if (event.button === 2) return
   const target = event.target
   if (target instanceof Node && contextMenuElement.value?.contains(target)) return
+  if (target instanceof Node && newItemFlyoutElement.value?.contains(target)) return
   closeContextMenu(false)
 }
 
@@ -2820,9 +2847,52 @@ function onGlobalKeyDown(event: KeyboardEvent): void {
   else clearIconSelection()
 }
 
+async function openNewItemMenu(event: Event, options: { hover?: boolean; keyboard?: boolean } = {}): Promise<void> {
+  const flyout = desktopNewItemUsesFlyout()
+  if (options.hover && !flyout) return
+  newItemFlyoutMode.value = flyout
+  newItemMenuOpen.value = options.hover || options.keyboard ? true : !newItemMenuOpen.value
+  if (!flyout || !newItemMenuOpen.value) return
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  newItemFlyoutStyle.value = { left: `${rect.right + 4}px`, top: `${rect.top - 6}px` }
+  await nextTick()
+  const flyoutElement = newItemFlyoutElement.value
+  if (!flyoutElement) return
+  const width = flyoutElement.offsetWidth
+  const height = flyoutElement.offsetHeight
+  const left = rect.right + 4 + width + 10 > window.innerWidth ? Math.max(10, rect.left - width - 4) : rect.right + 4
+  const top = Math.max(10, Math.min(rect.top - 6, window.innerHeight - height - 10))
+  newItemFlyoutStyle.value = { left: `${left}px`, top: `${top}px` }
+  if (options.keyboard) focusFirstContextMenuItem(flyoutElement, 'keyboard')
+}
+
+function onContextMenuPointerOver(event: PointerEvent): void {
+  if (!newItemMenuOpen.value || !newItemFlyoutMode.value) return
+  const item = (event.target as HTMLElement | null)?.closest('[role="menuitem"]')
+  if (item && item.getAttribute('data-context-action') !== 'new-item') newItemMenuOpen.value = false
+}
+
+function onNewItemFlyoutKeyDown(event: KeyboardEvent): void {
+  const flyout = newItemFlyoutElement.value
+  if (!flyout) return
+  if (event.key === 'ArrowLeft') {
+    event.preventDefault()
+    newItemMenuOpen.value = false
+    contextMenuElement.value?.querySelector<HTMLElement>('[data-context-action="new-item"]')?.focus()
+    return
+  }
+  showContextMenuKeyboardFocus(flyout)
+  moveContextMenuFocus(flyout, event)
+}
+
 function onContextMenuKeyDown(event: KeyboardEvent): void {
   const menu = contextMenuElement.value
   if (!menu) return
+  if (event.key === 'ArrowRight' && (event.target as HTMLElement | null)?.dataset?.contextAction === 'new-item') {
+    event.preventDefault()
+    void openNewItemMenu({ currentTarget: event.target } as unknown as Event, { keyboard: true })
+    return
+  }
   showContextMenuKeyboardFocus(menu)
   moveContextMenuFocus(menu, event)
 }
@@ -2979,14 +3049,18 @@ function onDesktopFileDragLeave(event: DragEvent): void {
   }
 }
 
-function desktopDropPosition(event: DragEvent): DesktopIconPosition | undefined {
+function desktopPositionAt(clientX: number, clientY: number): DesktopIconPosition | undefined {
   const element = iconsElement.value
   if (!element) return undefined
   const rect = element.getBoundingClientRect()
   return desktopIconPixelsToPosition({
-    left: event.clientX - rect.left,
-    top: event.clientY - rect.top + element.scrollTop,
+    left: clientX - rect.left,
+    top: clientY - rect.top + element.scrollTop,
   }, iconBounds.value)
+}
+
+function desktopDropPosition(event: DragEvent): DesktopIconPosition | undefined {
+  return desktopPositionAt(event.clientX, event.clientY)
 }
 
 async function addDroppedFileEntries(
@@ -3443,6 +3517,61 @@ function onContextMenuAction(
       }
       break
     }
+  }
+}
+
+function openNewItemDialog(id: DesktopNewItemID): void {
+  const origin = menuOrigin
+  closeContextMenu()
+  newItem.value = {
+    type: desktopNewItemType(id),
+    name: i18n.t(NEW_ITEM_LABELS[id].fallback as Parameters<typeof i18n.t>[0]),
+    origin,
+  }
+}
+
+function closeNewItemDialog(): void {
+  if (newItemBusy.value) return
+  newItem.value = undefined
+}
+
+async function createNewItem(): Promise<void> {
+  const pending = newItem.value
+  if (!pending || newItemBusy.value) return
+  const name = desktopNewItemName(pending.type, pending.name)
+  if (!name) {
+    toast.danger(i18n.t('desktop.newItemInvalid'), '')
+    return
+  }
+  newItemBusy.value = true
+  try {
+    const result = await uploadExternalDrop(
+      desktopNewItemManifest(pending.type, name),
+      localDesktopFileAPI(),
+      new AbortController().signal,
+      () => {},
+      desktopUploadDirectory.value,
+    )
+    if (result.failed.length) throw new Error(result.failed[0]!.detail)
+    const destination = desktopPositionAt(pending.origin.x, pending.origin.y) ?? { x: 0, y: 0 }
+    const created = await addDroppedFileEntries(result.entries, destination)
+    newItem.value = undefined
+    if (created.added[0]) setIconSelection([`shortcut:${created.added[0].id}`])
+    toast.success(i18n.t('desktop.newItemCreated'), result.entries[0]?.name ?? name)
+  } catch (error) {
+    if (error instanceof DesktopShortcutLimitError) {
+      toast.danger(i18n.t('desktop.shortcutLimitTitle'), i18n.t('desktop.shortcutLimitMessage', {
+        available: error.available,
+        requested: error.requested,
+      }))
+    } else {
+      toast.danger(
+        i18n.t('desktop.workspaceSaveErrorTitle'),
+        error instanceof Error ? error.message : workspaceErrorMessage(error),
+      )
+    }
+  } finally {
+    newItemBusy.value = false
   }
 }
 
@@ -4662,6 +4791,7 @@ function onViewportResize(): void {
         @contextmenu.prevent.stop
         @pointerdown.stop
         @pointermove="showContextMenuPointerFocus"
+        @pointerover="onContextMenuPointerOver"
         @keydown="onContextMenuKeyDown"
       >
         <template v-if="menuSelectionKeys.length > 1">
@@ -4812,18 +4942,39 @@ function onViewportResize(): void {
             <Plus :size="15" aria-hidden="true" />
             {{ i18n.t('desktop.shortcutAdd') }}
           </button>
-          <button
-            type="button"
-            role="menuitem"
-            :disabled="!workspace.available"
-            @click="onContextMenuAction('manage-icons')"
-          >
-            <MonitorCog :size="15" aria-hidden="true" />
-            {{ i18n.t('desktop.iconManagerTitle') }}
-          </button>
           <button type="button" role="menuitem" :disabled="groupSaving || !workspace.available" @click="createGroup()">
             <Plus :size="15" />{{ i18n.t('desktop.groupCreate') }}
           </button>
+          <button
+            type="button"
+            role="menuitem"
+            data-context-action="new-item"
+            :aria-expanded="newItemMenuOpen"
+            :disabled="!workspace.available"
+            aria-haspopup="menu"
+            @pointerenter="openNewItemMenu($event, { hover: true })"
+            @click.stop="openNewItemMenu($event, { keyboard: $event.detail === 0 && desktopNewItemUsesFlyout() })"
+          >
+            <FilePlus :size="15" aria-hidden="true" />
+            {{ i18n.t('desktop.newItem') }}
+            <ChevronDown v-if="newItemMenuOpen && !newItemFlyoutMode" class="desktop__context-chevron" :size="14" aria-hidden="true" />
+            <ChevronRight v-else class="desktop__context-chevron" :size="14" aria-hidden="true" />
+          </button>
+          <template v-if="newItemMenuOpen && !newItemFlyoutMode">
+            <button
+              v-for="type in DESKTOP_NEW_ITEM_TYPES"
+              :key="type.id"
+              type="button"
+              role="menuitem"
+              class="desktop__context-sub"
+              :data-new-item="type.id"
+              @click="openNewItemDialog(type.id)"
+            >
+              <FolderPlus v-if="type.kind === 'directory'" :size="15" aria-hidden="true" />
+              <FileText v-else :size="15" aria-hidden="true" />
+              {{ i18n.t(NEW_ITEM_LABELS[type.id].label as Parameters<typeof i18n.t>[0]) }}
+            </button>
+          </template>
           <div class="desktop__context-separator" role="separator" />
           <button type="button" role="menuitem" data-context-action="theme" @click="onContextMenuAction('theme')">
             <Sun v-if="theme.resolved.value === 'dark'" :size="15" aria-hidden="true" />
@@ -4838,6 +4989,15 @@ function onViewportResize(): void {
           >
             <ImageIcon :size="15" aria-hidden="true" />
             {{ i18n.t('desktop.changeWallpaper') }}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            :disabled="!workspace.available"
+            @click="onContextMenuAction('manage-icons')"
+          >
+            <MonitorCog :size="15" aria-hidden="true" />
+            {{ i18n.t('desktop.iconManagerTitle') }}
           </button>
           <button
             type="button"
@@ -4885,6 +5045,31 @@ function onViewportResize(): void {
         </template>
       </div>
     </Transition>
+    <div
+      v-if="contextMenu.open && newItemMenuOpen && newItemFlyoutMode"
+      ref="newItemFlyoutElement"
+      class="desktop__context-menu desktop__context-flyout k-context-menu"
+      :style="newItemFlyoutStyle"
+      role="menu"
+      :aria-label="i18n.t('desktop.newItem')"
+      @contextmenu.prevent.stop
+      @pointerdown.stop
+      @pointermove="showContextMenuPointerFocus"
+      @keydown="onNewItemFlyoutKeyDown"
+    >
+      <button
+        v-for="type in DESKTOP_NEW_ITEM_TYPES"
+        :key="type.id"
+        type="button"
+        role="menuitem"
+        :data-new-item="type.id"
+        @click="openNewItemDialog(type.id)"
+      >
+        <FolderPlus v-if="type.kind === 'directory'" :size="15" aria-hidden="true" />
+        <FileText v-else :size="15" aria-hidden="true" />
+        {{ i18n.t(NEW_ITEM_LABELS[type.id].label as Parameters<typeof i18n.t>[0]) }}
+      </button>
+    </div>
 
     <Transition name="desktop-menu">
       <div
@@ -5153,6 +5338,44 @@ function onViewportResize(): void {
         </button>
         <button class="button button--ghost" type="button" @click="detailEntry = undefined">
           {{ i18n.t('common.closeDialog') }}
+        </button>
+      </template>
+    </ModalDialog>
+
+    <ModalDialog
+      :open="Boolean(newItem)"
+      :title="i18n.t('desktop.newItemTitle')"
+      size="small"
+      @close="closeNewItemDialog"
+    >
+      <form class="desktop__new-item-form" @submit.prevent="createNewItem">
+        <label>
+          <span>{{ i18n.t('desktop.newItemLabel') }}</span>
+          <span class="desktop__new-item-field">
+            <input
+              v-if="newItem"
+              v-model="newItem.name"
+              maxlength="200"
+              autocomplete="off"
+              spellcheck="false"
+              data-new-item-name
+              :class="{ 'desktop__new-item-input--ext': newItem.type.extension }"
+            />
+            <em v-if="newItem?.type.extension" aria-hidden="true">{{ newItem.type.extension }}</em>
+          </span>
+        </label>
+      </form>
+      <template #footer>
+        <button class="button button--ghost" type="button" :disabled="newItemBusy" @click="closeNewItemDialog">
+          {{ i18n.t('common.cancel') }}
+        </button>
+        <button
+          class="button button--primary"
+          type="button"
+          :disabled="newItemBusy || !newItem?.name.trim()"
+          @click="createNewItem"
+        >
+          {{ i18n.t('desktop.newItemCreate') }}
         </button>
       </template>
     </ModalDialog>

@@ -842,7 +842,11 @@ describe('FilesView remote download', () => {
     expect(refreshButton).toContain('<RefreshCw')
     expect(refreshButton).not.toMatch(/>\s*刷新\s*</)
     expect(source).toMatch(/\.file-command-bar__actions \.file-command-bar__refresh\s*{[\s\S]*?width:\s*40px;[\s\S]*?padding:\s*0;/)
-    expect(source).toContain('title="新建目录" aria-label="新建目录"')
+    // The old "new directory" button was replaced by the shared "New" menu (same types as the desktop).
+    expect(source).toContain('data-new-toolbar')
+    expect(source).toContain('data-new-trigger')
+    expect(source).toContain('DESKTOP_NEW_ITEM_TYPES')
+    expect(source).not.toContain("phrase('新建目录')")
     expect(source).not.toContain('新建文件夹')
   })
 
