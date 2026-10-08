@@ -106,7 +106,9 @@ import {
   type DesktopExternalTransferProgress,
 } from '@/lib/desktopExternalDrop'
 import {
+  DESKTOP_NEW_ITEM_LABELS,
   DESKTOP_NEW_ITEM_TYPES,
+  desktopNewItemUsesFlyout,
   desktopNewItemManifest,
   desktopNewItemName,
   desktopNewItemType,
@@ -1067,16 +1069,7 @@ const newItemFlyoutMode = ref(false)
 const newItemFlyoutStyle = ref<Record<string, string>>({})
 const newItemFlyoutElement = ref<HTMLElement>()
 let menuOrigin = { x: 0, y: 0 }
-const NEW_ITEM_LABELS: Record<DesktopNewItemID, { label: string; fallback: string }> = {
-  folder: { label: 'desktop.newFolder', fallback: 'desktop.newItemDefaultFolder' },
-  txt: { label: 'desktop.newTxt', fallback: 'desktop.newItemDefaultTxt' },
-  md: { label: 'desktop.newMd', fallback: 'desktop.newItemDefaultMd' },
-  sh: { label: 'desktop.newSh', fallback: 'desktop.newItemDefaultFile' },
-  json: { label: 'desktop.newJson', fallback: 'desktop.newItemDefaultFile' },
-  yaml: { label: 'desktop.newYaml', fallback: 'desktop.newItemDefaultFile' },
-  conf: { label: 'desktop.newConf', fallback: 'desktop.newItemDefaultFile' },
-  py: { label: 'desktop.newPy', fallback: 'desktop.newItemDefaultFile' },
-}
+const NEW_ITEM_LABELS = DESKTOP_NEW_ITEM_LABELS
 const menuSelectionKeys = ref<string[]>([])
 const menuRemovableCount = computed(() => {
   const selected = new Set(menuSelectionKeys.value)
@@ -2852,13 +2845,8 @@ function onGlobalKeyDown(event: KeyboardEvent): void {
   else clearIconSelection()
 }
 
-// Pointer-and-wide screens get a side flyout; touch and narrow screens expand inline.
-function newItemUsesFlyout(): boolean {
-  return window.matchMedia?.('(hover: hover) and (pointer: fine) and (min-width: 700px)').matches ?? false
-}
-
 async function openNewItemMenu(event: Event, options: { hover?: boolean; keyboard?: boolean } = {}): Promise<void> {
-  const flyout = newItemUsesFlyout()
+  const flyout = desktopNewItemUsesFlyout()
   if (options.hover && !flyout) return
   newItemFlyoutMode.value = flyout
   newItemMenuOpen.value = options.hover || options.keyboard ? true : !newItemMenuOpen.value
@@ -4962,7 +4950,7 @@ function onViewportResize(): void {
             :disabled="!workspace.available"
             aria-haspopup="menu"
             @pointerenter="openNewItemMenu($event, { hover: true })"
-            @click.stop="openNewItemMenu($event, { keyboard: $event.detail === 0 && newItemUsesFlyout() })"
+            @click.stop="openNewItemMenu($event, { keyboard: $event.detail === 0 && desktopNewItemUsesFlyout() })"
           >
             <FilePlus :size="15" aria-hidden="true" />
             {{ i18n.t('desktop.newItem') }}

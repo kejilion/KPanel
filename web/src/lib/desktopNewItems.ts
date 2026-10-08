@@ -35,6 +35,23 @@ export const DESKTOP_NEW_ITEM_TYPES: readonly DesktopNewItemType[] = [
   },
 ]
 
+/** i18n keys for the menu label and the default name of each type. */
+export const DESKTOP_NEW_ITEM_LABELS: Record<DesktopNewItemID, { label: string; fallback: string }> = {
+  folder: { label: 'desktop.newFolder', fallback: 'desktop.newItemDefaultFolder' },
+  txt: { label: 'desktop.newTxt', fallback: 'desktop.newItemDefaultTxt' },
+  md: { label: 'desktop.newMd', fallback: 'desktop.newItemDefaultMd' },
+  sh: { label: 'desktop.newSh', fallback: 'desktop.newItemDefaultFile' },
+  json: { label: 'desktop.newJson', fallback: 'desktop.newItemDefaultFile' },
+  yaml: { label: 'desktop.newYaml', fallback: 'desktop.newItemDefaultFile' },
+  conf: { label: 'desktop.newConf', fallback: 'desktop.newItemDefaultFile' },
+  py: { label: 'desktop.newPy', fallback: 'desktop.newItemDefaultFile' },
+}
+
+// Pointer-and-wide screens get a side flyout; touch and narrow screens expand inline.
+export function desktopNewItemUsesFlyout(): boolean {
+  return window.matchMedia?.('(hover: hover) and (pointer: fine) and (min-width: 700px)').matches ?? false
+}
+
 export function desktopNewItemType(id: DesktopNewItemID): DesktopNewItemType {
   return DESKTOP_NEW_ITEM_TYPES.find((type) => type.id === id) ?? DESKTOP_NEW_ITEM_TYPES[0]!
 }

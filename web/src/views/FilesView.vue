@@ -31,6 +31,10 @@ import {
   Pencil,
   Pin,
   Plus,
+  FilePlus,
+  FileText,
+  FolderPlus,
+  ChevronDown,
   RefreshCw,
   RotateCcw,
   Scissors,
@@ -41,6 +45,15 @@ import {
   Upload,
   X,
 } from '@lucide/vue'
+import {
+  DESKTOP_NEW_ITEM_LABELS,
+  DESKTOP_NEW_ITEM_TYPES,
+  desktopNewItemName,
+  desktopNewItemType,
+  desktopNewItemUsesFlyout,
+  type DesktopNewItemID,
+  type DesktopNewItemType,
+} from '@/lib/desktopNewItems'
 import HostSwitcher from '@/components/common/HostSwitcher.vue'
 import ModalDialog from '@/components/common/ModalDialog.vue'
 import ModalWindowControls from '@/components/common/ModalWindowControls.vue'
@@ -424,6 +437,15 @@ const remoteDownloadTasksVisible = computed(() => (
 ))
 const dialogAction = ref<DialogAction>()
 const dialogValue = ref('')
+const dialogNewType = ref<DesktopNewItemType>()
+const newMenuOpen = ref(false)
+const newMenuSource = ref<'context' | 'toolbar'>('context')
+const newFlyoutMode = ref(false)
+const newFlyoutStyle = ref<Record<string, string>>({})
+const newFlyoutElement = ref<HTMLElement>()
+const newFlyoutVisible = computed(() =>
+  newMenuOpen.value && (newMenuSource.value === 'toolbar' || (Boolean(contextMenu.value) && newFlyoutMode.value)),
+)
 const dialogFormat = ref<ArchiveFormat>('tar.gz')
 const dialogBusy = ref(false)
 const dialogEntries = ref<FileEntry[]>([])
@@ -669,7 +691,7 @@ const previewURL = computed(() =>
 )
 const dialogTitle = computed(() => {
   const titles: Record<DialogAction, string> = {
-    mkdir: '新建目录',
+    mkdir: dialogNewType.value ? i18n.t('desktop.newItemTitle') : '新建目录',
     rename: '重命名',
     chmod: dialogEntries.value.length > 1 ? `修改 ${dialogEntries.value.length} 项权限` : '修改权限',
     compress: dialogEntries.value.length > 1 ? `压缩 ${dialogEntries.value.length} 项` : '压缩文件',
@@ -1600,12 +1622,88 @@ function handleContextMenuKeydown(event: KeyboardEvent): void {
   const menu = contextMenuElement.value
   if (!menu) return
   showContextMenuKeyboardFocus(menu)
+  if (event.key === 'ArrowRight' && (event.target as HTMLElement | null)?.hasAttribute('data-new-trigger')) {
+    event.preventDefault()
+    void openNewMenu({ currentTarget: event.target } as unknown as Event, { keyboard: true })
+    return
+  }
   if (moveContextMenuFocus(menu, event)) return
   if (event.key === 'Escape') {
     event.preventDefault()
     contextMenu.value = undefined
     contextMenuOpener?.focus({ preventScroll: true })
   }
+}
+
+async function placeNewFlyout(anchor: DOMRect, side: 'right' | 'below', keyboard = false): Promise<void> {
+  newFlyoutStyle.value = side === 'right'
+    ? { left: `${anchor.right + 4}px`, top: `${anchor.top - 6}px` }
+    : { left: `${anchor.left}px`, top: `${anchor.bottom + 4}px` }
+  await nextTick()
+  const flyout = newFlyoutElement.value
+  if (!flyout) return
+  const width = flyout.offsetWidth
+  const height = flyout.offsetHeight
+  const left = side === 'right'
+    ? (anchor.right + 4 + width + 10 > window.innerWidth ? Math.max(10, anchor.left - width - 4) : anchor.right + 4)
+    : Math.max(10, Math.min(anchor.left, window.innerWidth - width - 10))
+  const top = side === 'right'
+    ? Math.max(10, Math.min(anchor.top - 6, window.innerHeight - height - 10))
+    : (anchor.bottom + 4 + height + 10 > window.innerHeight ? Math.max(10, anchor.top - height - 4) : anchor.bottom + 4)
+  newFlyoutStyle.value = { left: `${left}px`, top: `${top}px` }
+  if (keyboard) focusFirstContextMenuItem(flyout, 'keyboard')
+}
+
+async function openNewMenu(event: Event, options: { hover?: boolean; keyboard?: boolean } = {}): Promise<void> {
+  const flyout = desktopNewItemUsesFlyout()
+  if (options.hover && !flyout) return
+  newMenuSource.value = 'context'
+  newFlyoutMode.value = flyout
+  newMenuOpen.value = options.hover || options.keyboard ? true : !newMenuOpen.value
+  if (!flyout || !newMenuOpen.value) return
+  await placeNewFlyout((event.currentTarget as HTMLElement).getBoundingClientRect(), 'right', options.keyboard)
+}
+
+async function toggleToolbarNewMenu(event: MouseEvent): Promise<void> {
+  const open = !(newMenuOpen.value && newMenuSource.value === 'toolbar')
+  const button = event.currentTarget as HTMLElement
+  newMenuSource.value = 'toolbar'
+  contextMenu.value = undefined
+  contextMenuOpener = button
+  newMenuOpen.value = open
+  if (open) await placeNewFlyout(button.getBoundingClientRect(), 'below', event.detail === 0)
+}
+
+function onContextMenuPointerOver(event: PointerEvent): void {
+  if (!newMenuOpen.value || newMenuSource.value !== 'context' || !newFlyoutMode.value) return
+  const item = (event.target as HTMLElement | null)?.closest('[role="menuitem"]')
+  if (item && !item.hasAttribute('data-new-trigger')) newMenuOpen.value = false
+}
+
+function handleNewFlyoutKeydown(event: KeyboardEvent): void {
+  const flyout = newFlyoutElement.value
+  if (!flyout) return
+  event.stopPropagation()
+  const closeToTrigger = event.key === 'Escape' || (event.key === 'ArrowLeft' && newMenuSource.value === 'context')
+  if (closeToTrigger) {
+    event.preventDefault()
+    newMenuOpen.value = false
+    const trigger = newMenuSource.value === 'context'
+      ? contextMenuElement.value?.querySelector<HTMLElement>('[data-new-trigger]')
+      : contextMenuOpener
+    trigger?.focus({ preventScroll: true })
+    return
+  }
+  showContextMenuKeyboardFocus(flyout)
+  moveContextMenuFocus(flyout, event)
+}
+
+function openNewDialog(id: DesktopNewItemID): void {
+  const type = desktopNewItemType(id)
+  newMenuOpen.value = false
+  openDialog('mkdir')
+  dialogNewType.value = type
+  dialogValue.value = `${i18n.t(DESKTOP_NEW_ITEM_LABELS[id].fallback as Parameters<typeof i18n.t>[0])}${type.extension}`
 }
 
 function openDialog(action: DialogAction, entry?: FileEntry): void {
@@ -1626,7 +1724,10 @@ function openDialog(action: DialogAction, entry?: FileEntry): void {
     return
   }
   dialogAction.value = action
-  if (action === 'mkdir') dialogValue.value = ''
+  if (action === 'mkdir') {
+    dialogValue.value = ''
+    dialogNewType.value = undefined
+  }
   else if (action === 'rename') dialogValue.value = dialogEntries.value[0]?.name || ''
   else if (action === 'chmod') dialogValue.value = '644'
   else if (action === 'compress') {
@@ -1790,6 +1891,19 @@ async function submitDialog(): Promise<void> {
   archiveController = controller
   dialogBusy.value = true
   try {
+    const newType = action === 'mkdir' ? dialogNewType.value : undefined
+    if (newType?.kind === 'file') {
+      const name = desktopNewItemName(newType, dialogValue.value)
+      if (!name) throw new Error('名称不可用，请更换。')
+      await fileAPI.value.upload(currentPath.value, new File([newType.template], name, { type: newType.mime }), false)
+      toast.success('已创建', name)
+      dialogAction.value = undefined
+      dialogValue.value = ''
+      dialogEntries.value = []
+      dialogNewType.value = undefined
+      await loadDirectory()
+      return
+    }
     let input: FileActionInput
     if (action === 'mkdir') {
       input = { action, target: currentPath.value, name: dialogValue.value.trim() }
@@ -2524,9 +2638,14 @@ function formatTime(value: string): string {
       }).format(date)
 }
 
+watch(contextMenu, (value) => {
+  if (!value && newMenuSource.value === 'context') newMenuOpen.value = false
+})
+
 function handleWindowClick(event: MouseEvent): void {
   const target = event.target as HTMLElement
   if (!target.closest('.file-context-menu')) contextMenu.value = undefined
+  if (newMenuSource.value === 'toolbar' && newMenuOpen.value && !target.closest('.file-context-menu, [data-new-toolbar]')) newMenuOpen.value = false
 }
 
 function closeContextMenuOnViewportChange(): void {
@@ -2535,7 +2654,9 @@ function closeContextMenuOnViewportChange(): void {
 
 function closeContextMenuOnScroll(event: Event): void {
   if (contextMenuElement.value?.contains(event.target as Node)) return
+  if (newFlyoutElement.value?.contains(event.target as Node)) return
   contextMenu.value = undefined
+  newMenuOpen.value = false
 }
 
 function handleFileShortcut(event: KeyboardEvent): void {
@@ -2743,8 +2864,17 @@ onBeforeUnmount(() => {
         >
           <Share2 :size="15" /> <span class="file-command-bar__label">分享管理</span>
         </button>
-        <button class="button button--secondary button--small" type="button" title="新建目录" aria-label="新建目录" @click="openDialog('mkdir')">
-          <Plus :size="15" /> <span class="file-command-bar__label">新建目录</span>
+        <button
+          class="button button--secondary button--small"
+          type="button"
+          :title="i18n.t('desktop.newItem')"
+          :aria-label="i18n.t('desktop.newItem')"
+          aria-haspopup="menu"
+          :aria-expanded="newMenuOpen && newMenuSource === 'toolbar'"
+          data-new-toolbar
+          @click="toggleToolbarNewMenu"
+        >
+          <Plus :size="15" /> <span class="file-command-bar__label">{{ i18n.t('desktop.newItem') }}</span>
         </button>
         <button
           class="button button--secondary button--small"
@@ -3325,6 +3455,7 @@ onBeforeUnmount(() => {
         role="menu"
         :aria-label="phrase('文件操作')"
         @pointermove="showContextMenuPointerFocus"
+        @pointerover="onContextMenuPointerOver"
         @keydown.stop="handleContextMenuKeydown"
       >
       <button v-if="contextMenu.entry" role="menuitem" type="button" @click="openEntry(contextMenu.entry)">
@@ -3389,13 +3520,63 @@ onBeforeUnmount(() => {
       >
         <Pin :size="15" />{{ phrase(contextHasMultipleEntries ? `添加 ${contextBatchEntries.filter(canAddToDesktop).length} 项到桌面` : '添加到桌面') }}
       </button>
-      <button v-if="!contextMenu.entry" role="menuitem" type="button" @click="openDialog('mkdir')">
-        <Plus :size="15" />{{ phrase('新建目录') }}
+      <button
+        v-if="!contextMenu.entry"
+        role="menuitem"
+        type="button"
+        data-new-trigger
+        aria-haspopup="menu"
+        :aria-expanded="newMenuOpen && newMenuSource === 'context'"
+        @pointerenter="openNewMenu($event, { hover: true })"
+        @click.stop="openNewMenu($event, { keyboard: $event.detail === 0 && desktopNewItemUsesFlyout() })"
+      >
+        <FilePlus :size="15" />{{ i18n.t('desktop.newItem') }}
+        <ChevronDown v-if="newMenuOpen && newMenuSource === 'context' && !newFlyoutMode" class="file-context-menu__chevron" :size="14" />
+        <ChevronRight v-else class="file-context-menu__chevron" :size="14" />
       </button>
+      <template v-if="!contextMenu.entry && newMenuOpen && newMenuSource === 'context' && !newFlyoutMode">
+        <button
+          v-for="type in DESKTOP_NEW_ITEM_TYPES"
+          :key="type.id"
+          role="menuitem"
+          type="button"
+          class="file-context-menu__sub"
+          :data-new-item="type.id"
+          @click="openNewDialog(type.id)"
+        >
+          <FolderPlus v-if="type.kind === 'directory'" :size="15" />
+          <FileText v-else :size="15" />{{ i18n.t(DESKTOP_NEW_ITEM_LABELS[type.id].label as Parameters<typeof i18n.t>[0]) }}
+        </button>
+      </template>
       <hr v-if="contextMenu.entry" role="separator" />
       <button v-if="contextMenu.entry" class="danger-link k-context-menu__item--danger" role="menuitem" type="button" @click="openDialog('trash', contextMenu.entry)">
         <Trash2 :size="15" />{{ phrase('移入回收站') }}
       </button>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div
+        v-if="newFlyoutVisible"
+        ref="newFlyoutElement"
+        class="file-context-menu file-context-menu--flyout k-context-menu"
+        :style="newFlyoutStyle"
+        role="menu"
+        :aria-label="i18n.t('desktop.newItem')"
+        @pointermove="showContextMenuPointerFocus"
+        @keydown="handleNewFlyoutKeydown"
+      >
+        <button
+          v-for="type in DESKTOP_NEW_ITEM_TYPES"
+          :key="type.id"
+          role="menuitem"
+          type="button"
+          :data-new-item="type.id"
+          @click="openNewDialog(type.id)"
+        >
+          <FolderPlus v-if="type.kind === 'directory'" :size="15" />
+          <FileText v-else :size="15" />{{ i18n.t(DESKTOP_NEW_ITEM_LABELS[type.id].label as Parameters<typeof i18n.t>[0]) }}
+        </button>
       </div>
     </Teleport>
 
@@ -3488,7 +3669,7 @@ onBeforeUnmount(() => {
           <span>
             {{
               phrase(dialogAction === 'mkdir'
-                ? '文件夹名称'
+                ? (dialogNewType?.kind === 'file' ? '文件名称' : '文件夹名称')
                 : dialogAction === 'rename'
                   ? '新名称'
                   : dialogAction === 'chmod'
@@ -4807,6 +4988,19 @@ onBeforeUnmount(() => {
   cursor: pointer;
   font-size: 14px;
   line-height: 1.3;
+}
+
+.file-context-menu__chevron {
+  margin-left: auto;
+  color: var(--text-muted);
+}
+
+.file-context-menu__sub {
+  padding-left: 22px;
+}
+
+.file-context-menu--flyout {
+  min-width: 176px;
 }
 
 .file-context-menu hr {
