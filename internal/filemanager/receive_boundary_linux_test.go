@@ -6,10 +6,12 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -290,4 +292,103 @@ func TestReceiveCleanupRetainsUnownedObjectsAfterRestart(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReceiveProcessCrashRecoversPrivatePublicationBesideOrdinaryNames(t *testing.T) {
+	for _, kind := range []string{"file", "directory"} {
+		t.Run(kind, func(t *testing.T) {
+			root := t.TempDir()
+			command := exec.Command(os.Args[0], "-test.run=^TestReceiveCrashPublicationFixture$")
+			command.Env = append(os.Environ(), "KPANEL_RECEIVE_CRASH_ROOT="+root, "KPANEL_RECEIVE_CRASH_KIND="+kind)
+			output, err := command.CombinedOutput()
+			var exited *exec.ExitError
+			if !errors.As(err, &exited) || exited.ExitCode() != 86 {
+				t.Fatalf("fixture did not exit at durable publication: %v %s", err, output)
+			}
+			journal, err := os.ReadFile(filepath.Join(root, "fixture-session.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var session contract.FileReceiveSession
+			if err := json.Unmarshal(journal, &session); err != nil {
+				t.Fatal(err)
+			}
+			m := newReceiveManager(t, root)
+			resumed, err := m.ReceiveStatus(context.Background(), session.ID, strings.Repeat("a", 64))
+			if err != nil || resumed.State != "complete" {
+				t.Fatalf("crashed publication not recovered: %#v %v", resumed, err)
+			}
+			for _, name := range []string{"body", "result"} {
+				actual, err := os.ReadFile(filepath.Join(root, name))
+				if err != nil || string(actual) != "ordinary" {
+					t.Fatalf("ordinary %s changed: %q %v", name, actual, err)
+				}
+			}
+		})
+	}
+}
+
+func TestReceiveCrashPublicationFixture(t *testing.T) {
+	root, kind := os.Getenv("KPANEL_RECEIVE_CRASH_ROOT"), os.Getenv("KPANEL_RECEIVE_CRASH_KIND")
+	if root == "" {
+		t.Skip("only invoked as an owned crash fixture")
+	}
+	if kind != "file" && kind != "directory" {
+		t.Fatal("invalid fixture kind")
+	}
+	m := newReceiveManager(t, root)
+	data := []byte("payload")
+	if kind == "directory" {
+		var archive bytes.Buffer
+		writer := tar.NewWriter(&archive)
+		_ = writer.WriteHeader(&tar.Header{Name: "child.txt", Mode: 0644, Size: 7, Typeflag: tar.TypeReg})
+		_, _ = writer.Write(data)
+		_ = writer.Close()
+		data = archive.Bytes()
+	}
+	input := testReceiveInput(int64(len(data)))
+	input.Kind = kind
+	session, err := m.BeginReceive(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.WriteReceiveChunk(context.Background(), session.ID, input.SourceKey, 0, bytes.NewReader(data), receiveDigest(data)); err != nil {
+		t.Fatal(err)
+	}
+	encoded, _ := json.Marshal(session)
+	if err := os.WriteFile(filepath.Join(root, "fixture-session.json"), encoded, 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"body", "result"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte("ordinary"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ctx := receiveMutationContext{Context: context.Background(), check: func() error {
+		record := m.receives.records[session.ID]
+		if record.Session.State != "committing" || record.PublishIdentity == "" {
+			return nil
+		}
+		publication, err := m.rootFS.OpenRoot(rootName(receiveExtract(record)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		child := "body"
+		if kind == "directory" {
+			child = "result"
+		}
+		if err := publishReceiveObject(publication, child, m.rootFS, input.Name, false); err != nil {
+			t.Fatal(err)
+		}
+		if err := syncRootDirectory(publication, "."); err != nil {
+			t.Fatal(err)
+		}
+		if err := syncRootDirectory(m.rootFS, "."); err != nil {
+			t.Fatal(err)
+		}
+		os.Exit(86) // Simulate process loss: no Manager/deferred cleanup runs.
+		return nil
+	}}
+	_, err = m.CommitReceive(ctx, session.ID, input.SourceKey, int64(len(data)), receiveDigest(data))
+	t.Fatalf("fixture did not reach publication: %v", err)
 }

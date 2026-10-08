@@ -272,6 +272,9 @@ func (m *Manager) importDirectory(ctx context.Context, input contract.FileReceiv
 		}
 		return contract.FileEntry{}, err
 	}
+	if err := syncRootDirectory(publication, "."); err != nil {
+		return contract.FileEntry{}, err
+	}
 	if err := syncRootDirectory(parent, "."); err != nil {
 		return contract.FileEntry{}, err
 	}

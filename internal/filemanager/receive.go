@@ -752,27 +752,37 @@ func (m *Manager) reconcileReceiveCommit(ctx context.Context, record *receiveRec
 			return ErrConflict
 		}
 		staging := receiveTemp(record)
+		stagingRoot := parent
+		stagingName := path.Base(staging)
 		if record.ExtractIdentity != "" {
 			if stageInfo, err := parent.Lstat(path.Base(receiveExtract(record))); err == nil {
-				if !sameReceiveObject(stageInfo, record.extractInfo, record.ExtractIdentity) {
+				if !stageInfo.IsDir() || stageInfo.Mode()&os.ModeSymlink != 0 || !sameReceiveObject(stageInfo, record.extractInfo, record.ExtractIdentity) {
 					return ErrConflict
 				}
-				child := "body"
-				if record.Input.Kind == "directory" {
-					child = "result"
+				publication, err := parent.OpenRoot(path.Base(receiveExtract(record)))
+				if err != nil {
+					return err
 				}
-				staging = joinVirtual(receiveExtract(record), child)
+				defer publication.Close()
+				opened, err := publication.Stat(".")
+				if err != nil || !os.SameFile(stageInfo, opened) {
+					return ErrConflict
+				}
+				stagingRoot, stagingName = publication, "body"
+				if record.Input.Kind == "directory" {
+					stagingName = "result"
+				}
 			} else if errors.Is(err, os.ErrNotExist) {
-				staging = receiveExtract(record)
+				stagingName = path.Base(receiveExtract(record))
 			} else {
 				return err
 			}
 		} else if record.Input.Kind == "directory" {
-			staging = receiveExtract(record)
+			stagingName = path.Base(receiveExtract(record))
 		}
 		// A no-replace failure leaves staging intact. Metadata equality with
 		// an unrelated target must never be interpreted as successful publish.
-		if _, err := parent.Lstat(path.Base(staging)); !errors.Is(err, os.ErrNotExist) {
+		if _, err := stagingRoot.Lstat(stagingName); !errors.Is(err, os.ErrNotExist) {
 			return ErrConflict
 		}
 		identity, err := m.receivePublishIdentity(ctx, parent, record.Input.Name, info)
@@ -1006,6 +1016,9 @@ func (m *Manager) CommitReceive(ctx context.Context, id, sourceKey string, size 
 		}
 		err = publishReceiveObject(stage, "body", parent, record.Input.Name, replace)
 		if err != nil {
+			return contract.FileReceiveSession{}, err
+		}
+		if err := syncRootDirectory(stage, "."); err != nil {
 			return contract.FileReceiveSession{}, err
 		}
 		if err := syncRootDirectory(parent, "."); err != nil {

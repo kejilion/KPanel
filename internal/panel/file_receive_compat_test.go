@@ -138,6 +138,37 @@ func TestPairedReceiveNegotiatesBeforeSendingUnsupportedRoutes(t *testing.T) {
 	}
 }
 
+// V1 enters the target's authenticated federated handler directly; V2/V3
+// enters the cluster stream handler. Fault the shared Agent boundary for V1.
+type receiveV1CapabilityAgent struct {
+	*transferIntegrationAgent
+	capability        string
+	sessions, uploads atomic.Int32
+}
+
+func (a *receiveV1CapabilityAgent) Get(ctx context.Context, route, query, id string) (AgentResponse, error) {
+	if route == "/v1/files" {
+		if a.capability == "denied" {
+			return AgentResponse{StatusCode: http.StatusForbidden, ContentType: "application/json", Body: []byte(`{"error":"denied"}`)}, nil
+		}
+		if a.capability == "legacy" {
+			payload, _ := json.Marshal(contract.FileDirectory{Path: "/home", Entries: []contract.FileEntry{}})
+			return AgentResponse{StatusCode: http.StatusOK, ContentType: "application/json", Body: payload}, nil
+		}
+	}
+	return a.transferIntegrationAgent.Get(ctx, route, query, id)
+}
+
+func (a *receiveV1CapabilityAgent) OpenStream(ctx context.Context, method, route, query, id string, body io.Reader, headers http.Header, size int64) (*http.Response, error) {
+	if route == "/v1/files/transfer/sessions" {
+		a.sessions.Add(1)
+	}
+	if route == "/v1/files/upload" {
+		a.uploads.Add(1)
+	}
+	return a.transferIntegrationAgent.OpenStream(ctx, method, route, query, id, body, headers, size)
+}
+
 func TestBrowserReceiveCapabilityUsesGrantedV1Relay(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("V1 credential permission validation requires Linux; covered by the Linux gate")
@@ -145,35 +176,15 @@ func TestBrowserReceiveCapabilityUsesGrantedV1Relay(t *testing.T) {
 	for _, capability := range []string{"current", "legacy", "denied"} {
 		t.Run(capability, func(t *testing.T) {
 			target, _ := newTestServerWithPublicURL(t, "https://example.com")
-			_, _, root := realTransferAgent(t, target)
+			integration, _, root := realTransferAgent(t, target)
+			capabilityAgent := &receiveV1CapabilityAgent{transferIntegrationAgent: integration, capability: capability}
+			target.agent = capabilityAgent
 			_ = target.cluster.Close()
 			var err error
 			target.cluster, err = cluster.NewService(cluster.ServiceConfig{DataDir: t.TempDir(), Telemetry: historyTestTelemetry{}})
 			if err != nil {
 				t.Fatal(err)
 			}
-			handler := target.federatedFileHandler()
-			var sessions, uploads atomic.Int32
-			target.cluster.SetFileRelayHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/v1/files" {
-					if capability == "denied" {
-						http.Error(w, "denied", 403)
-						return
-					}
-					if capability == "legacy" {
-						w.Header().Set("Content-Type", "application/json")
-						_ = json.NewEncoder(w).Encode(contract.FileDirectory{Path: "/home", Entries: []contract.FileEntry{}})
-						return
-					}
-				}
-				if r.URL.Path == "/v1/files/transfer/sessions" {
-					sessions.Add(1)
-				}
-				if r.URL.Path == "/v1/files/upload" {
-					uploads.Add(1)
-				}
-				handler.ServeHTTP(w, r)
-			}))
 			network := httptest.NewTLSServer(target)
 			t.Cleanup(network.Close)
 			roots := x509.NewCertPool()
@@ -238,21 +249,21 @@ func TestBrowserReceiveCapabilityUsesGrantedV1Relay(t *testing.T) {
 			payload, _ := json.Marshal(contract.FileReceiveRequest{Operation: "create", Input: &input})
 			created := request("POST", "/api/v1/files/transfer/sessions?hostId="+host.ID, payload, "application/json")
 			if capability == "denied" {
-				if created.Code != 503 || sessions.Load() != 0 || uploads.Load() != 0 {
+				if created.Code != 503 || capabilityAgent.sessions.Load() != 0 || capabilityAgent.uploads.Load() != 0 {
 					t.Fatalf("denial downgraded: %d", created.Code)
 				}
 				return
 			}
 			if capability == "legacy" {
-				if created.Code != 404 || sessions.Load() != 0 {
+				if created.Code != 404 || capabilityAgent.sessions.Load() != 0 {
 					t.Fatalf("legacy capability=%d %s", created.Code, created.Body.String())
 				}
 				uploaded := request("POST", "/api/v1/files/upload?hostId="+host.ID+"&path=%2Fhome&name=v1.txt&overwrite=false", []byte("payload"), "application/octet-stream")
-				if uploaded.Code != 201 || uploads.Load() != 1 {
+				if uploaded.Code != 201 || capabilityAgent.uploads.Load() != 1 {
 					t.Fatalf("legacy upload=%d %s", uploaded.Code, uploaded.Body.String())
 				}
 			} else {
-				if created.Code != 201 {
+				if created.Code != 200 {
 					t.Fatalf("v1 create=%d %s", created.Code, created.Body.String())
 				}
 				var session contract.FileReceiveSession
