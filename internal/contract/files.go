@@ -79,6 +79,8 @@ type FileDirectory struct {
 	Truncated                  bool        `json:"truncated"`
 	ScanTruncated              bool        `json:"scanTruncated,omitempty"`
 	ArchiveManagementAvailable bool        `json:"archiveManagementAvailable,omitempty"`
+	FileReceiveVersion         int         `json:"fileReceiveVersion,omitempty"`
+	PanelFileReceiveVersion    int         `json:"panelFileReceiveVersion,omitempty"`
 	ReadAt                     time.Time   `json:"readAt"`
 }
 

@@ -368,13 +368,17 @@ func readPersistedJobs(statePath string) (persistedJobs, error) {
 }
 
 func validateJob(job contract.FileRemoteDownloadJob) error {
+	validName := validJobName(job.Name)
+	if job.SourceKind == "cross-host" {
+		validName = validCrossTransferName(job.Name)
+	}
 	validSourceKind := job.SourceKind == "" && validSource(job.Source) && job.TargetHostID == "" ||
 		job.SourceKind == "cross-host" && strings.HasPrefix(job.Source, "kpanel://") && jobIDPattern.MatchString(strings.TrimPrefix(job.Source, "kpanel://")) &&
 			(job.TargetHostID == "" || jobIDPattern.MatchString(job.TargetHostID))
 	if !jobIDPattern.MatchString(job.ID) || !validJobState(job.State) || job.CreatedAt.IsZero() ||
 		job.UpdatedAt.Before(job.CreatedAt) || job.LoadedBytes < 0 || job.TotalBytes < 0 ||
 		job.LoadedBytes > contract.MaxFileTransferBytes+(32<<20) || job.TotalBytes > contract.MaxFileTransferBytes || !validSourceKind ||
-		!validTargetDirectory(job.TargetDirectory) || (job.Name != "" && !validJobName(job.Name)) {
+		!validTargetDirectory(job.TargetDirectory) || (job.Name != "" && !validName) {
 		return errors.New("invalid remote download job")
 	}
 	terminal := !activeJobState(job.State)
@@ -423,6 +427,21 @@ func validJobName(value string) bool {
 	}
 	for _, character := range value {
 		if unicode.IsControl(character) {
+			return false
+		}
+	}
+	return true
+}
+
+// Cross-host jobs retain names already accepted by the file manager. The URL
+// downloader's stricter suggested-name policy must not rename or reject them.
+func validCrossTransferName(value string) bool {
+	if value == "" || value == "." || value == ".." || len(value) > 255 ||
+		!utf8.ValidString(value) || strings.ContainsAny(value, "/\\\x00") {
+		return false
+	}
+	for _, prefix := range []string{".kpanel-edit-", ".kpanel-upload-", ".kpanel-copy-", ".kpanel-archive-", ".kpanel-extract-"} {
+		if strings.HasPrefix(value, prefix) {
 			return false
 		}
 	}

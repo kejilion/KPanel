@@ -93,7 +93,7 @@ func (s *Server) federatedFileList(w http.ResponseWriter, r *http.Request) {
 		s.writeProblem(w, r, http.StatusServiceUnavailable, "agent_unavailable", "Agent unavailable", "")
 		return
 	}
-	s.writeAgentResponse(w, r, response)
+	s.writeAgentResponse(w, r, withPanelFileReceiveVersion(response))
 }
 
 func (s *Server) federatedFileEntry(w http.ResponseWriter, r *http.Request) {

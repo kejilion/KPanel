@@ -104,6 +104,7 @@ func (s *Server) fileList(w http.ResponseWriter, r *http.Request) {
 		writeFileProblem(w, requestID, err)
 		return
 	}
+	result.FileReceiveVersion = 1
 	writeJSON(w, http.StatusOK, result)
 }
 

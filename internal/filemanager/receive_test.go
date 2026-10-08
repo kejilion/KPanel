@@ -254,6 +254,38 @@ func TestReceiveCompletedFilesDoNotExhaustActiveSlots(t *testing.T) {
 	}
 }
 
+func TestReceiveExpiredMovedParentDoesNotBlockUnrelatedUploads(t *testing.T) {
+	root := t.TempDir()
+	clock := time.Now()
+	m, err := New(Config{Root: root, Now: func() time.Time { return clock }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = m.Close() })
+	if err := os.Mkdir(filepath.Join(root, "original"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	input := testReceiveInput(7)
+	input.Directory = "/original"
+	session, err := m.BeginReceive(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(filepath.Join(root, "original"), filepath.Join(root, "moved")); err != nil {
+		t.Fatal(err)
+	}
+	clock = clock.Add(receiveLifetime + time.Second)
+	if _, err := m.BeginReceive(context.Background(), testReceiveInput(7)); err != nil {
+		t.Fatalf("expired moved parent disabled unrelated uploads: %v", err)
+	}
+	if _, exists := m.receives.records[session.ID]; exists {
+		t.Fatal("expired unreachable checkpoint retained")
+	}
+	if _, err := os.Stat(filepath.Join(root, "moved", ".kpanel-upload-"+session.ID)); err != nil {
+		t.Fatal("cleanup searched and removed moved filesystem state", err)
+	}
+}
+
 func TestReceiveDirectoryCommitRecoveryPreservesRootMetadata(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
@@ -304,3 +336,76 @@ func TestReceiveDirectoryCommitRecoveryPreservesRootMetadata(t *testing.T) {
 		t.Fatalf("content=%q err=%v", got, err)
 	}
 }
+
+func TestReceiveCommitRecoveryRejectsMetadataCollision(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	m := newReceiveManager(t, root)
+	input := testReceiveInput(7)
+	session, err := m.BeginReceive(ctx, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.WriteReceiveChunk(ctx, session.ID, input.SourceKey, 0, strings.NewReader("payload"), receiveDigest([]byte("payload"))); err != nil {
+		t.Fatal(err)
+	}
+	record := m.receives.records[session.ID]
+	file, err := m.openReceiveFile(ctx, record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Chmod(0644); err != nil {
+		t.Fatal(err)
+	}
+	info, _ := file.Stat()
+	_ = file.Close()
+	target := joinVirtual(input.Directory, input.Name)
+	record.PublishVersion = resourceVersion(target, info)
+	record.PublishIdentity, err = m.receivePublishIdentity(ctx, receiveTemp(record), info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record.Session.State = "committing"
+	if err := m.persistReceivesLocked(); err != nil {
+		t.Fatal(err)
+	}
+	// The intended inode was never published. An unrelated file happens to
+	// carry the same ordinary resourceVersion, despite different content.
+	if err := os.WriteFile(filepath.Join(root, input.Name), []byte("another"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(filepath.Join(root, input.Name), info.ModTime(), info.ModTime()); err != nil {
+		t.Fatal(err)
+	}
+	_ = m.Close()
+	m = newReceiveManager(t, root)
+	if _, err := m.ReceiveStatus(ctx, session.ID, input.SourceKey); !errors.Is(err, ErrConflict) {
+		t.Fatalf("unpublished metadata collision marked complete: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".kpanel-upload-"+session.ID)); err != nil {
+		t.Fatal("owned staging unexpectedly removed", err)
+	}
+	got, _ := os.ReadFile(filepath.Join(root, input.Name))
+	if string(got) != "another" {
+		t.Fatal("external target changed")
+	}
+}
+
+func TestReceiveStreamAdmitsBeforeReadingSource(t *testing.T) {
+	m := newReceiveManager(t, t.TempDir())
+	for i := 0; i < cap(m.streamGate); i++ {
+		m.streamGate <- struct{}{}
+	}
+	source := &receiveCountingReader{}
+	_, err := m.ReceiveStream(context.Background(), testReceiveInput(7), source, 7)
+	if !errors.Is(err, ErrBusy) || source.reads != 0 {
+		t.Fatalf("unbounded admission: reads=%d err=%v", source.reads, err)
+	}
+	if len(m.receives.records) != 0 {
+		t.Fatal("rejected stream created a durable session")
+	}
+}
+
+type receiveCountingReader struct{ reads int }
+
+func (r *receiveCountingReader) Read([]byte) (int, error) { r.reads++; return 0, io.EOF }

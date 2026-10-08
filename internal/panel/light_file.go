@@ -1,7 +1,9 @@
 package panel
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"mime"
@@ -12,6 +14,7 @@ import (
 	"time"
 
 	"github.com/kejilion/kejilion-panel/internal/cluster"
+	"github.com/kejilion/kejilion-panel/internal/contract"
 	"github.com/kejilion/kejilion-panel/internal/httpstream"
 )
 
@@ -97,6 +100,27 @@ func (s *Server) handleLightFileRelay(w http.ResponseWriter, r *http.Request) {
 	input := cluster.LightFileRequest{
 		Method: r.Method, Path: agentPath, RawQuery: values.Encode(),
 		Headers: lightFileRelayHeaders(r), Body: body, BodyLength: r.ContentLength,
+	}
+	if agentPath == "/v1/files/transfer/sessions" && r.Method == http.MethodPost {
+		payload, readErr := io.ReadAll(http.MaxBytesReader(w, body, 64<<10))
+		var command contract.FileReceiveRequest
+		if readErr != nil || json.Unmarshal(payload, &command) != nil {
+			s.writeProblem(w, r, http.StatusBadRequest, "file_request_invalid", "传输会话请求无效", "")
+			return
+		}
+		if command.Operation == "create" && command.Input != nil {
+			supportErr := s.fileReceiveSupport(transferContext, hostID, host.Kind, command.Input.Directory, requestID(r))
+			if supportErr != nil {
+				_ = s.audit(r, session.User.ID, "file.remote.relay", "cluster-host", hostID, "failure", nil)
+				if errors.Is(supportErr, errReceiveUnsupported) {
+					s.writeProblem(w, r, http.StatusNotFound, "file_receive_unsupported", "目标主机使用兼容文件传输", "")
+				} else {
+					s.writeProblem(w, r, http.StatusServiceUnavailable, "file_relay_unavailable", "远端主机文件代理未连接", "")
+				}
+				return
+			}
+		}
+		input.Body, input.BodyLength = bytes.NewReader(payload), int64(len(payload))
 	}
 	var response *http.Response
 	if host.Kind == cluster.HostKindLightNode {

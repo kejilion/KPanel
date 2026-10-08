@@ -66,6 +66,7 @@ type Manager struct {
 	trashInfo      string
 	now            func() time.Time
 	uploadGate     chan struct{}
+	streamGate     chan struct{}
 	downloadGate   chan struct{}
 	shareGate      chan struct{}
 	maxCopyEntries int
@@ -122,6 +123,7 @@ func New(config Config) (*Manager, error) {
 		rootFS:         rootFS,
 		now:            config.Now,
 		uploadGate:     make(chan struct{}, 2),
+		streamGate:     make(chan struct{}, 2),
 		downloadGate:   make(chan struct{}, 4),
 		shareGate:      make(chan struct{}, maxShareReads),
 		maxCopyEntries: config.MaxCopyEntries,

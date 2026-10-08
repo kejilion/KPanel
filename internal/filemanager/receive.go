@@ -1,6 +1,7 @@
 package filemanager
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -40,6 +41,7 @@ type receiveRecord struct {
 	Input           contract.FileReceiveInput   `json:"input"`
 	OriginalVersion string                      `json:"originalVersion,omitempty"`
 	PublishVersion  string                      `json:"publishVersion,omitempty"`
+	PublishIdentity string                      `json:"publishIdentity,omitempty"`
 	hasher          hash.Hash
 	identity        os.FileInfo
 }
@@ -246,7 +248,12 @@ func (m *Manager) cleanupReceivesLocked() error {
 			continue
 		}
 		if err := m.removeReceiveTemp(record); err != nil && record.Session.State != "complete" && record.Session.State != "aborted" {
-			return err
+			// A moved/deleted/replaced parent no longer identifies the owned
+			// staging location. Forget only its expired checkpoint; never follow
+			// the replacement or let it block unrelated receiving directories.
+			if !errors.Is(err, os.ErrNotExist) && !errors.Is(err, ErrSymlink) && !errors.Is(err, ErrProtected) && !errors.Is(err, ErrReadOnly) {
+				return err
+			}
 		}
 		delete(m.receives.records, id)
 		changed = true
@@ -504,7 +511,7 @@ func (m *Manager) ReceiveStatus(ctx context.Context, id, sourceKey string) (cont
 		return contract.FileReceiveSession{}, err
 	}
 	if record.Session.State == "committing" {
-		if err := m.reconcileReceiveCommit(record); err != nil {
+		if err := m.reconcileReceiveCommit(ctx, record); err != nil {
 			return contract.FileReceiveSession{}, err
 		}
 	}
@@ -594,7 +601,7 @@ func (m *Manager) WriteReceiveChunk(ctx context.Context, id, sourceKey string, o
 	return record.Session, nil
 }
 
-func (m *Manager) reconcileReceiveCommit(record *receiveRecord) error {
+func (m *Manager) reconcileReceiveCommit(ctx context.Context, record *receiveRecord) error {
 	target := joinVirtual(record.Input.Directory, record.Input.Name)
 	if info, err := m.rootFS.Lstat(rootName(target)); err == nil {
 		if record.Input.Overwrite && record.OriginalVersion != "" && resourceVersion(target, info) == record.OriginalVersion {
@@ -605,6 +612,25 @@ func (m *Manager) reconcileReceiveCommit(record *receiveRecord) error {
 		}
 		if record.PublishVersion == "" || resourceVersion(target, info) != record.PublishVersion {
 			return ErrConflict
+		}
+		staging := receiveTemp(record)
+		if record.Input.Kind == "directory" {
+			staging = receiveExtract(record)
+		}
+		// A no-replace failure leaves staging intact. Metadata equality with
+		// an unrelated target must never be interpreted as successful publish.
+		if _, err := m.rootFS.Lstat(rootName(staging)); !errors.Is(err, os.ErrNotExist) {
+			return ErrConflict
+		}
+		identity, err := m.receivePublishIdentity(ctx, target, info)
+		if err != nil || record.PublishIdentity == "" || identity != record.PublishIdentity {
+			return ErrConflict
+		}
+		if record.Input.Kind == "file" {
+			digest, err := m.receivePublishedFileDigest(ctx, target, info)
+			if err != nil || digest != record.Session.PrefixSHA256 {
+				return ErrReceiveChecksum
+			}
 		}
 		entry, err := m.Stat(target)
 		if err != nil {
@@ -620,6 +646,50 @@ func (m *Manager) reconcileReceiveCommit(record *receiveRecord) error {
 	}
 	record.Session.State = "receiving"
 	return m.persistReceivesLocked()
+}
+
+func (m *Manager) receivePublishedFileDigest(ctx context.Context, virtual string, info os.FileInfo) (string, error) {
+	file, err := m.rootFS.Open(rootName(virtual))
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	opened, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() || !os.SameFile(info, opened) {
+		return "", ErrConflict
+	}
+	hasher := sha256.New()
+	count, err := io.CopyBuffer(hasher, &contextReader{ctx, io.LimitReader(file, contract.MaxFileTransferBytes+1)}, make([]byte, 64<<10))
+	if err != nil || count != info.Size() {
+		return "", ErrReceiveChecksum
+	}
+	latest, err := file.Stat()
+	if err != nil || !os.SameFile(info, latest) || resourceVersion(virtual, latest) != resourceVersion(virtual, info) {
+		return "", ErrConflict
+	}
+	return hex.EncodeToString(hasher.Sum(nil)), nil
+}
+
+func (m *Manager) receivePublishIdentity(ctx context.Context, virtual string, info os.FileInfo) (string, error) {
+	if identity := stableReceiveIdentity(info); identity != "" {
+		return identity, nil
+	}
+	// Linux uses a rename-stable device/inode identity. Local tooling on other
+	// platforms proves the bounded content instead of trusting metadata alone.
+	if info.Mode().IsRegular() {
+		digest, err := m.receivePublishedFileDigest(ctx, virtual, info)
+		return "sha256:" + digest, err
+	}
+	hasher := sha256.New()
+	writer := tar.NewWriter(hasher)
+	budget := &copyBudget{maxEntries: m.maxCopyEntries, maxBytes: m.maxCopyBytes}
+	if err := m.walkArchive(ctx, virtual, "", info, budget, m.tarEntryWriter(writer)); err != nil {
+		return "", err
+	}
+	if err := writer.Close(); err != nil {
+		return "", err
+	}
+	return "sha256:" + hex.EncodeToString(hasher.Sum(nil)), nil
 }
 
 func (m *Manager) CommitReceive(ctx context.Context, id, sourceKey string, size int64, digest string) (contract.FileReceiveSession, error) {
@@ -638,7 +708,7 @@ func (m *Manager) CommitReceive(ctx context.Context, id, sourceKey string, size 
 		return contract.FileReceiveSession{}, ErrReceiveChecksum
 	}
 	if record.Session.State == "committing" {
-		if err := m.reconcileReceiveCommit(record); err != nil {
+		if err := m.reconcileReceiveCommit(ctx, record); err != nil {
 			return contract.FileReceiveSession{}, err
 		}
 	}
@@ -665,6 +735,11 @@ func (m *Manager) CommitReceive(ctx context.Context, id, sourceKey string, size 
 		}
 		entry, err := m.importDirectory(ctx, record.Input, file, receiveExtract(record), func(info os.FileInfo) error {
 			record.PublishVersion = resourceVersion(target, info)
+			identity, err := m.receivePublishIdentity(ctx, receiveExtract(record), info)
+			if err != nil {
+				return err
+			}
+			record.PublishIdentity = identity
 			return m.persistReceivesLocked()
 		})
 		if err != nil {
@@ -713,6 +788,10 @@ func (m *Manager) CommitReceive(ctx context.Context, id, sourceKey string, size 
 			return contract.FileReceiveSession{}, err
 		}
 		record.PublishVersion = resourceVersion(target, info)
+		record.PublishIdentity, err = m.receivePublishIdentity(ctx, receiveTemp(record), info)
+		if err != nil {
+			return contract.FileReceiveSession{}, err
+		}
 		record.Session.State = "committing"
 		if err := m.persistReceivesLocked(); err != nil {
 			record.Session.State = "receiving"
@@ -760,7 +839,7 @@ func (m *Manager) AbortReceive(ctx context.Context, id, sourceKey string) error 
 		return err
 	}
 	if record.Session.State == "committing" {
-		if err := m.reconcileReceiveCommit(record); err != nil {
+		if err := m.reconcileReceiveCommit(ctx, record); err != nil {
 			return err
 		}
 	}
@@ -786,6 +865,12 @@ func (m *Manager) closeReceiveSessions() {
 // ReceiveStream is the compatibility adapter for one-shot uploads/imports.
 // New clients retain the same receiving session across reconnects instead.
 func (m *Manager) ReceiveStream(ctx context.Context, input contract.FileReceiveInput, content io.Reader, limit int64) (contract.FileEntry, error) {
+	// Admit compatibility streams before reading or allocating a chunk. This
+	// gate is separate from chunk writes/extraction to avoid nested gate waits.
+	if err := acquireNow(ctx, m.streamGate); err != nil {
+		return contract.FileEntry{}, err
+	}
+	defer release(m.streamGate)
 	if input.SourceKey == "" {
 		var identity [32]byte
 		if _, err := rand.Read(identity[:]); err != nil {

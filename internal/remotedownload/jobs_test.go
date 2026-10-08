@@ -376,3 +376,29 @@ func TestJobStoreFailsClosedOnInconsistentCompletedState(t *testing.T) {
 		t.Fatal("inconsistent completed state remained available")
 	}
 }
+
+func TestCrossHostJobsPreserveOrdinaryFileNames(t *testing.T) {
+	store, err := OpenJobStore(filepath.Join(t.TempDir(), "jobs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	for i, name := range []string{" report.txt", "report.txt ", ".kpanel-user.txt"} {
+		job := contract.FileRemoteDownloadJob{ID: fmt.Sprintf("%032x", i+1), State: "queued", Source: "kpanel://" + strings.Repeat("b", 32), SourceKind: "cross-host", TargetDirectory: "/home", Name: name, CreatedAt: now, UpdatedAt: now}
+		if err := store.Create(job); err != nil {
+			t.Fatalf("ordinary name %q rejected: %v", name, err)
+		}
+		loaded, _ := store.Get(job.ID)
+		if loaded.Name != name {
+			t.Fatalf("name was normalized: %q", loaded.Name)
+		}
+	}
+	for _, name := range []string{"../outside", ".kpanel-upload-owned", ".kpanel-extract-owned", "name\x00"} {
+		if validCrossTransferName(name) {
+			t.Fatalf("internal/invalid name accepted: %q", name)
+		}
+	}
+	if validJobName(" report.txt") || validJobName(".kpanel-user.txt") {
+		t.Fatal("URL suggested-name policy weakened")
+	}
+}

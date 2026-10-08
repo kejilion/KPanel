@@ -89,7 +89,26 @@ func (s *Server) handleFileList(w http.ResponseWriter, r *http.Request) {
 		s.writeProblem(w, r, http.StatusServiceUnavailable, "agent_unavailable", "Agent unavailable", "")
 		return
 	}
-	s.writeAgentResponse(w, r, response)
+	s.writeAgentResponse(w, r, withPanelFileReceiveVersion(response))
+}
+
+// The separate Panel marker proves that the authenticated relay itself accepts
+// session routes. An old Panel passing through a newer Agent's list is still
+// a legacy receiver; neither an authentication failure nor a broken stream is
+// an unsupported-capability signal.
+func withPanelFileReceiveVersion(response AgentResponse) AgentResponse {
+	if response.StatusCode != http.StatusOK {
+		return response
+	}
+	var directory contract.FileDirectory
+	if json.Unmarshal(response.Body, &directory) != nil || directory.FileReceiveVersion != 1 {
+		return response
+	}
+	directory.PanelFileReceiveVersion = 1
+	if payload, err := json.Marshal(directory); err == nil {
+		response.Body = payload
+	}
+	return response
 }
 
 func (s *Server) handleFileEntry(w http.ResponseWriter, r *http.Request) {

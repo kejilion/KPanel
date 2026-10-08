@@ -31,11 +31,17 @@ func (e *fileReceiveHTTPError) Error() string {
 }
 
 type fileReceiveTarget struct {
-	open func(context.Context, string, string, io.Reader, int64) (*http.Response, error)
+	open     func(context.Context, string, string, io.Reader, int64) (*http.Response, error)
+	supports func(context.Context, contract.FileReceiveInput) error
 }
 
 func (s *Server) fileReceiver(hostID string, kind cluster.HostKind, requestID string) fileReceiveTarget {
-	return fileReceiveTarget{open: func(ctx context.Context, method, query string, body io.Reader, size int64) (*http.Response, error) {
+	return fileReceiveTarget{supports: func(ctx context.Context, input contract.FileReceiveInput) error {
+		if hostID == "" {
+			return nil // The local Agent has an ordinary 404 compatibility signal.
+		}
+		return s.fileReceiveSupport(ctx, hostID, kind, input.Directory, requestID)
+	}, open: func(ctx context.Context, method, query string, body io.Reader, size int64) (*http.Response, error) {
 		mediaType := "application/json"
 		if method == http.MethodPut {
 			mediaType = "application/octet-stream"
@@ -52,6 +58,47 @@ func (s *Server) fileReceiver(hostID string, kind cluster.HostKind, requestID st
 		}
 		return streamer.OpenStream(ctx, method, "/v1/files/transfer/sessions", query, requestID, body, http.Header{"Content-Type": []string{mediaType}}, size)
 	}}
+}
+
+func (s *Server) fileReceiveSupport(ctx context.Context, hostID string, kind cluster.HostKind, directory, requestID string) error {
+	query := url.Values{"path": {directory}, "limit": {"1"}}.Encode()
+	var payload []byte
+	if hostID == "" {
+		response, err := s.agent.Get(ctx, "/v1/files", query, requestID)
+		if err != nil {
+			return err
+		}
+		if response.StatusCode != http.StatusOK {
+			return &fileReceiveHTTPError{status: response.StatusCode}
+		}
+		payload = response.Body
+	} else {
+		response, err := s.openFileHostRequest(ctx, hostID, kind, cluster.LightFileRequest{
+			Method: http.MethodGet, Path: "/v1/files", RawQuery: query, Body: http.NoBody,
+		})
+		if err != nil {
+			return err
+		}
+		defer response.Body.Close()
+		stop := context.AfterFunc(ctx, func() { _ = response.Body.Close() })
+		defer stop()
+		if response.StatusCode != http.StatusOK {
+			return &fileReceiveHTTPError{status: response.StatusCode}
+		}
+		payload, err = io.ReadAll(io.LimitReader(response.Body, (64<<10)+1))
+		if err != nil {
+			return err
+		}
+	}
+	var result contract.FileDirectory
+	if len(payload) > 64<<10 || json.Unmarshal(payload, &result) != nil || result.Path != directory ||
+		result.FileReceiveVersion < 0 || result.FileReceiveVersion > 1 || result.PanelFileReceiveVersion < 0 || result.PanelFileReceiveVersion > 1 {
+		return errors.New("receiver capability response invalid")
+	}
+	if result.FileReceiveVersion != 1 || hostID != "" && kind == cluster.HostKindPanel && result.PanelFileReceiveVersion != 1 {
+		return errReceiveUnsupported
+	}
+	return nil
 }
 
 func readReceiveResponse(ctx context.Context, response *http.Response, err error) (contract.FileReceiveSession, error) {
@@ -88,6 +135,11 @@ func readReceiveResponse(ctx context.Context, response *http.Response, err error
 }
 
 func (t fileReceiveTarget) command(ctx context.Context, input contract.FileReceiveRequest) (contract.FileReceiveSession, error) {
+	if input.Operation == "create" && input.Input != nil && t.supports != nil {
+		if err := t.supports(ctx, *input.Input); err != nil {
+			return contract.FileReceiveSession{}, err
+		}
+	}
 	data, err := json.Marshal(input)
 	if err != nil {
 		return contract.FileReceiveSession{}, err
@@ -145,9 +197,6 @@ func (s *Server) receiveFileTransfer(
 	stop := context.AfterFunc(ctx, func() { _ = initial.Close() })
 	defer func() { stop() }()
 	session, err := target.command(ctx, contract.FileReceiveRequest{Operation: "create", Input: &input})
-	if errors.Is(err, cluster.ErrFileRelayUnavailable) {
-		err = errReceiveUnsupported
-	}
 	if errors.Is(err, errReceiveUnsupported) && legacy != nil {
 		entry, err := legacy(body)
 		return entry, entry.SizeBytes, err
