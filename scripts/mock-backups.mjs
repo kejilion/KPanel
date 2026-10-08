@@ -10,7 +10,7 @@ function publicSettings() {
   const latest = automatic.at(-1)
   const success = automatic.filter(r => r.status === 'completed' && r.size > 0 && (!r.remote || r.remote.status === 'completed')).at(-1)
   const state = !settings.schedule.enabled ? 'disabled' : settings.schedule.lastError === 'schedule_missed' ? 'missed' : !latest ? 'idle' : ['queued', 'running'].includes(latest.status) ? 'running' : latest.status === 'failed' ? 'failed' : latest.errorCode ? 'warning' : 'healthy'
-  return { ...settings, health: { state, lastSuccessAt: success?.updatedAt, lastRecordId: latest?.id, errorCode: settings.schedule.lastError || latest?.errorCode } }
+  return { ...settings, health: { state, lastSuccessAt: success?.createdAt, lastRecordId: latest?.id, errorCode: settings.schedule.lastError || latest?.errorCode } }
 }
 function updated() { settings.revision = `mock-settings-${++sequence}`; return publicSettings() }
 function remote(record, id) { if (id) record.remote = { storageId: id, storageName: settings.storages.find(s => s.id === id)?.name || 'Remote', key: `kpanel-${record.id}.kpb`, status: 'completed' }; return record }

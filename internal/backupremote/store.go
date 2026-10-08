@@ -249,6 +249,22 @@ func (s *Store) SetRunError(code string) error {
 	return s.SetRunErrorForRevision("", code)
 }
 
+// Bind an accepted task to its plan without changing the next scheduled slot.
+func (s *Store) MarkRunForRevision(revision string, started time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if revision == "" || revision != s.state.Revision {
+		return ErrConflict
+	}
+	if started.IsZero() {
+		return ErrInvalid
+	}
+	v := cloneSettings(s.state)
+	v.Schedule.LastRun = started.UTC()
+	v.Schedule.LastError = ""
+	return s.save(v, false)
+}
+
 // A worker from an earlier configuration cannot overwrite the current
 // schedule's outcome after the administrator changes it.
 func (s *Store) SetRunErrorForRevision(revision, code string) error {

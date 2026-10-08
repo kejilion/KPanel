@@ -1,17 +1,6 @@
 import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
-  ['自动备份已关闭', 'Automatic backups are disabled'],
-  ['自动备份等待首次执行', 'Waiting for the first automatic backup'],
-  ['自动备份正在执行', 'Automatic backup in progress'],
-  ['自动备份最近一次已完成', 'Latest automatic backup completed'],
-  ['自动备份已完成，旧副本清理失败', 'Backup completed; old copies could not be pruned'],
-  ['自动备份失败，请检查任务记录', 'Automatic backup failed; check the task history'],
-  ['自动备份错过执行窗口', 'Automatic backup missed its window'],
-  ['自动备份状态暂不可用', 'Automatic backup status is unavailable'],
-  ['最近成功的自动备份：', 'Last successful automatic backup:'],
-  ['暂无成功记录', 'No successful backup on record'],
-  ['下次自动备份：', 'Next automatic backup:'],
   ['站点名称与图标', 'Site name and icon'],
   ['自定义面板与登录页标识', 'Custom panel and sign-in branding'],
   ['图标', 'Icon'],

@@ -24,6 +24,16 @@ beforeEach(() => { vi.clearAllMocks(); mocks.list.mockResolvedValue(page); mocks
 afterEach(() => wrappers.splice(0).forEach(wrapper => wrapper.unmount()))
 
 describe('notification history', () => {
+  it('labels automatic backup events and applies the backup category filter', async () => {
+    mocks.list.mockResolvedValue({ ...page, items: [{ ...event, rule: 'backup', message: 'Automatic backup failed' }] })
+    const wrapper = await open()
+    expect(wrapper.get('.notification-history__type').text()).toContain('自动备份')
+    const category = wrapper.findAll('select').find(select => select.find('option[value="backup"]').exists())!
+    await category.setValue('backup')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(mocks.list).toHaveBeenLastCalledWith(expect.objectContaining({ rule: 'backup' }), expect.any(AbortSignal))
+  })
   it('matches OS icons by host ID, normalizes the local host and keeps a fallback for removed hosts', async () => {
     mocks.hosts.mockResolvedValue({ items: [
       { id: 'panel-node-id', isLocal: true, lastSnapshot: { telemetry: { osId: 'debian' } } },

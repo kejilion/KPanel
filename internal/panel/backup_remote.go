@@ -209,6 +209,14 @@ func (s *Server) startBackupExport(input backupRequest, keep int) (backup.Record
 		_ = s.backups.Abort(record.ID, "start_failed")
 		return record, err
 	}
+	if automatic && currentPlan {
+		if err = s.backupRemote.MarkRunForRevision(planSettings.Revision, record.CreatedAt); errors.Is(err, backupremote.ErrConflict) {
+			currentPlan = false
+		} else if err != nil {
+			_ = s.backups.Abort(record.ID, "start_failed")
+			return record, err
+		}
+	}
 	err = s.backups.Run(record.ID, func(ctx context.Context, id string) (result error) {
 		defer func() {
 			if automatic && currentPlan {
@@ -298,16 +306,33 @@ func (s *Server) retryBackupUpload(w http.ResponseWriter, r *http.Request, id st
 		s.remoteBackupError(w, r, err)
 		return
 	}
+	previous, err := s.backups.Get(id)
+	if err != nil {
+		s.backupError(w, r, err)
+		return
+	}
 	record, err := s.backups.ReserveUpload(id)
 	if err != nil {
 		s.backupError(w, r, err)
 		return
 	}
 	receipt := remoteReceipt(storage, record)
-	// A manual copy does not enrol older backups in automatic retention.
-	err = s.backups.Update(id, func(r *backup.Record) { r.Remote = receipt; r.Automatic = false })
+	// Retrying an automatic copy to its original destination preserves its
+	// identity. Manual exports and copies to another target are not enrolled.
+	automatic := record.Automatic && record.Remote != nil && record.Remote.StorageID == storage.ID && record.Remote.Destination == storage.Fingerprint()
+	err = s.backups.Update(id, func(r *backup.Record) { r.Remote = receipt; r.Automatic = automatic })
 	if err == nil {
-		err = s.backups.Run(id, func(ctx context.Context, id string) error { return s.uploadBackup(ctx, id, storage, receipt) })
+		err = s.backups.Run(id, func(ctx context.Context, id string) error {
+			if err := s.uploadBackup(ctx, id, storage, receipt); err != nil {
+				return err
+			}
+			// Uploading an existing package does not retry retention. Preserve
+			// that warning until a later automatic export actually prunes.
+			if automatic && previous.ErrorCode == "retention_failed" {
+				return s.backups.Update(id, func(r *backup.Record) { r.ErrorCode = "retention_failed" })
+			}
+			return nil
+		})
 	}
 	if err != nil {
 		_ = s.backups.Abort(id, "start_failed")

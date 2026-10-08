@@ -65,8 +65,10 @@ func scheduleHealth(settings backupremote.Settings, records []backup.Record) bac
 			latest = &copy
 		}
 		if record.Status == "completed" && record.Size > 0 && (record.Remote == nil || record.Remote.Status == "completed") &&
-			(health.LastSuccessAt == nil || record.UpdatedAt.After(*health.LastSuccessAt)) {
-			at := record.UpdatedAt
+			!record.CreatedAt.IsZero() && (health.LastSuccessAt == nil || record.CreatedAt.After(*health.LastSuccessAt)) {
+			// The immutable start time identifies the backup's data age. Local
+			// expiry and upload retries may update UpdatedAt years later.
+			at := record.CreatedAt
 			health.LastSuccessAt = &at
 		}
 	}
@@ -75,7 +77,11 @@ func scheduleHealth(settings backupremote.Settings, records []backup.Record) bac
 	}
 	if latest != nil {
 		health.LastRecordID = latest.ID
-		body, _ := json.Marshal([]any{latest.ID, latest.Status, latest.ErrorCode, latest.UpdatedAt})
+		remoteStatus, remoteDestination := "", ""
+		if latest.Remote != nil {
+			remoteStatus, remoteDestination = latest.Remote.Status, latest.Remote.Destination
+		}
+		body, _ := json.Marshal([]any{latest.ID, latest.Status, latest.ErrorCode, remoteStatus, remoteDestination})
 		sum := sha256.Sum256(body)
 		health.eventID = hex.EncodeToString(sum[:])
 		switch latest.Status {

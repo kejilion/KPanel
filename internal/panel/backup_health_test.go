@@ -22,9 +22,9 @@ func TestBackupHealthUsesFinalMatchingReceipts(t *testing.T) {
 		if health.State != test.state || health.LastSuccessAt == nil {
 			t.Fatalf("health=%+v", health)
 		}
-		wantSuccess := success.UpdatedAt
+		wantSuccess := success.CreatedAt
 		if test.status == "completed" {
-			wantSuccess = latest.UpdatedAt
+			wantSuccess = latest.CreatedAt
 		}
 		if !health.LastSuccessAt.Equal(wantSuccess) {
 			t.Fatalf("non-final result reported success: %+v", health)
@@ -53,6 +53,12 @@ func TestBackupHealthUsesFinalMatchingReceipts(t *testing.T) {
 	if completed := scheduleHealth(settings, []backup.Record{latest}); completed.eventID == failed.eventID {
 		t.Fatal("same-record upload recovery lost its identity")
 	}
+	latest.ErrorCode = "retention_failed"
+	before := scheduleHealth(settings, []backup.Record{latest})
+	latest.UpdatedAt = latest.UpdatedAt.Add(8 * 24 * time.Hour)
+	if after := scheduleHealth(settings, []backup.Record{latest}); after.eventID != before.eventID || !after.LastSuccessAt.Equal(*before.LastSuccessAt) {
+		t.Fatal("maintenance changed the backup's time or final-result identity")
+	}
 	manual := success
 	manual.Automatic = false
 	otherModules := success
@@ -65,7 +71,7 @@ func TestBackupHealthUsesFinalMatchingReceipts(t *testing.T) {
 func TestBackupHealthBindsRemoteDestination(t *testing.T) {
 	storage := backupremote.Storage{ID: "remote", Kind: "webdav", Endpoint: "https://nas.example", Prefix: "current"}
 	settings := backupremote.Settings{Storages: []backupremote.Storage{storage}, Schedule: backupremote.Schedule{Enabled: true, Modules: []string{"panel"}, StorageID: storage.ID}}
-	record := backup.Record{Automatic: true, Action: "export", Status: "completed", Modules: []string{"panel"}, Size: 100, UpdatedAt: time.Now(), Remote: &backup.RemoteCopy{StorageID: storage.ID, Destination: storage.Fingerprint(), Status: "uploading"}}
+	record := backup.Record{Automatic: true, Action: "export", Status: "completed", Modules: []string{"panel"}, Size: 100, CreatedAt: time.Now(), UpdatedAt: time.Now(), Remote: &backup.RemoteCopy{StorageID: storage.ID, Destination: storage.Fingerprint(), Status: "uploading"}}
 	if h := scheduleHealth(settings, []backup.Record{record}); h.LastSuccessAt != nil {
 		t.Fatal("incomplete remote upload counted as success")
 	}

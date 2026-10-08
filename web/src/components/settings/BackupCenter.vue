@@ -152,7 +152,7 @@ onBeforeUnmount(() => { disposed = true; clearTimeout(timer) })
         <div class="backup-health" role="status" aria-live="polite">
           <p class="backup-health__state" :class="{ 'backup-error': settingsError || ['failed', 'missed', 'warning'].includes(settings?.health?.state || '') }">{{ phrase(settingsError ? '自动备份状态暂不可用' : healthLabel) }}</p>
           <template v-if="settings && !settingsError">
-            <p class="backup-note">{{ phrase('最近成功的自动备份：') }} {{ settings.health?.lastSuccessAt ? formatDateTime(settings.health.lastSuccessAt) : phrase('暂无成功记录') }}</p>
+            <p class="backup-note">{{ phrase('最近成功的自动备份（开始时间）：') }} {{ settings.health?.lastSuccessAt ? formatDateTime(settings.health.lastSuccessAt) : phrase('暂无成功记录') }}</p>
             <p v-if="settings.schedule.enabled && settings.schedule.nextRun" class="backup-note">{{ phrase('下次自动备份：') }} {{ formatDateTime(settings.schedule.nextRun) }}</p>
           </template>
         </div>
