@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { Check, Circle, LoaderCircle, RefreshCw, Rocket, TriangleAlert } from '@lucide/vue'
 import ModalDialog from '@/components/common/ModalDialog.vue'
 import ErrorState from '@/components/feedback/ErrorState.vue'
 import LoadingState from '@/components/feedback/LoadingState.vue'
+import { usePollingRequest } from '@/composables/usePollingRequest'
 import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
 import { ApiError, api } from '@/lib/api'
 import { useToast } from '@/stores/toast'
@@ -16,12 +17,8 @@ const emit = defineEmits<{ close: [] }>()
 const toast = useToast()
 const snapshot = ref<SystemTuningSnapshot>()
 const selected = ref<SystemTuningItemID[]>([])
-const loading = ref(false)
-const refreshing = ref(false)
 const submitting = ref(false)
 const error = ref('')
-let controller: AbortController | undefined
-let timer: number | undefined
 
 function phrase(value: string): string {
   phraseCatalogVersion.value
@@ -54,42 +51,31 @@ const completedItems = computed(() => {
   return new Set(currentIndex > 0 ? selected.value.slice(0, currentIndex) : [])
 })
 
-function clearTimer(): void {
-  if (timer !== undefined) window.clearTimeout(timer)
-  timer = undefined
-}
-
 function selectedFromPolicy(policy: string): SystemTuningItemID[] {
   const separator = policy.indexOf('.')
   if (separator < 0) return []
   return policy.slice(separator + 1).split(',').filter((item): item is SystemTuningItemID => definitions.some((definition) => definition.id === item))
 }
 
-async function load(silent = false): Promise<void> {
-  if (!props.open || !props.readable) return
-  controller?.abort()
-  controller = new AbortController()
-  if (silent) refreshing.value = true
-  else loading.value = true
-  error.value = ''
-  try {
-    snapshot.value = await api.system.systemTuning(controller.signal)
+const { load, stop, loading, refreshing } = usePollingRequest({
+  enabled: () => props.open && props.readable,
+  intervalMs: 1_800,
+  request: (signal) => api.system.systemTuning(signal),
+  apply: (value) => {
+    snapshot.value = value
     if (snapshot.value.maintenance.action === 'system-tuning' && snapshot.value.maintenance.policy) {
       const activeItems = selectedFromPolicy(snapshot.value.maintenance.policy)
       if (activeItems.length) selected.value = activeItems
     } else if (!selected.value.length) {
       selected.value = definitions.map((item) => item.id)
     }
-    clearTimer()
-    if (running.value) timer = window.setTimeout(() => void load(true), 1800)
-  } catch (reason) {
-    if (reason instanceof DOMException && reason.name === 'AbortError') return
+  },
+  shouldPoll: () => running.value,
+  onStart: () => { error.value = '' },
+  onError: (reason) => {
     error.value = reason instanceof ApiError ? reason.message : '无法读取系统综合调优状态。'
-  } finally {
-    loading.value = false
-    refreshing.value = false
-  }
-}
+  },
+})
 
 function toggle(item: SystemTuningItemID): void {
   if (running.value || submitting.value) return
@@ -121,12 +107,10 @@ watch(() => [props.open, props.readable] as const, ([open, readable]) => {
     selected.value = definitions.map((item) => item.id)
     void load()
   } else {
-    controller?.abort()
-    clearTimer()
+    stop()
   }
 }, { immediate: true })
 
-onBeforeUnmount(() => { controller?.abort(); clearTimer() })
 </script>
 
 <template>
