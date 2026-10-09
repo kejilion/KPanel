@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { contrastRatio } from '../theme/colors'
 import {
   collectVueStyleBlocks,
   collectVueStyleDeclarations,
@@ -88,7 +89,7 @@ function isComponentVisualDebt(declaration: (typeof componentDeclarations)[numbe
   }
   if (declaration.property === 'border-radius') return isNonTokenRadius(declaration.value)
   if (declaration.property === 'box-shadow') return isNonTokenShadow(declaration.value)
-  if (declaration.property === 'backdrop-filter') {
+  if (/^(?:-webkit-)?backdrop-filter$/.test(declaration.property)) {
     return isBlurFilter(declaration.value) && !isAllowedComponentBlurSelector(declaration.selector)
   }
   return false
@@ -302,18 +303,45 @@ describe('visual rhythm contract', () => {
   // the chrome material's blur, so no literal radius escapes the tokens.
   const CHROME_FILTER_ONLY = [':root:has(.classic-backdrop) .topbar']
   // Scrims and drag feedback keep their own light, fixed blur.
-  const FIXED_BLUR_SURFACES = ['.desktop__file-drop', '.modal-scrim', '.theme-color-actions > div']
+  const FIXED_BLUR_SURFACES = ['.desktop__file-drop', '.modal-scrim']
 
   function backdropRules(source: string): Array<{ selector: string, value: string }> {
     const rules = source.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)
     const found: Array<{ selector: string, value: string }> = []
     for (const rule of rules) {
-      for (const declaration of rule[2]!.matchAll(/(?:^|;)\s*backdrop-filter:\s*([^;]+);/g)) {
+      for (const declaration of rule[2]!.matchAll(/(?:^|;)\s*(?:-webkit-)?backdrop-filter:\s*([^;}]+)/g)) {
         found.push({ selector: rule[1]!.trim(), value: declaration[1]!.trim() })
       }
     }
     return found
   }
+
+  it('finds prefixed and unterminated filters and treats variable filters as possible blur', () => {
+    expect(backdropRules('.bad { -webkit-backdrop-filter: blur(30px) }')).toEqual([
+      { selector: '.bad', value: 'blur(30px)' },
+    ])
+    expect(backdropRules('.bad { color: red; backdrop-filter: blur(30px) }')).toEqual([
+      { selector: '.bad', value: 'blur(30px)' },
+    ])
+    for (const property of ['backdrop-filter', '-webkit-backdrop-filter']) {
+      expect(isComponentVisualDebt({ file: 'fixture.vue', line: 1, selector: '.bad', property, value: 'var(--x-blur)' })).toBe(true)
+    }
+  })
+
+  it('caps every literal backdrop blur, including fixed filters and component variables', () => {
+    for (const source of [main, desktop, desktopWallpaper, classicWallpaper, themes, ...componentStyleBlocks.map((block) => block.content)]) {
+      const clean = source.replace(/\/\*[\s\S]*?\*\//g, '')
+      const filters = [
+        ...backdropRules(clean).map((rule) => rule.value),
+        ...Array.from(clean.matchAll(/--[\w-]+\s*:\s*([^;{}]+)/g), (match) => match[1]!),
+      ]
+      for (const filter of filters) {
+        for (const blur of filter.matchAll(/\bblur\(\s*(\d*\.?\d+)(px|rem)\s*\)/g)) {
+          expect(Number(blur[1]) * (blur[2] === 'rem' ? 16 : 1), blur[0]).toBeLessThanOrEqual(24)
+        }
+      }
+    }
+  })
 
   it('limits translucency to shell chrome, short-lived overlays and scrims', () => {
     const materialSelectors = [...MATERIAL_SURFACES.chrome, ...MATERIAL_SURFACES.overlay, ...CHROME_FILTER_ONLY]
@@ -322,13 +350,33 @@ describe('visual rhythm contract', () => {
       for (const { selector, value } of backdropRules(source)) {
         if (value === 'none') continue
         const isMaterial = (materialSelectors as readonly string[]).includes(selector)
-        const isFixed = FIXED_BLUR_SURFACES.some((entry) => selector.includes(entry))
+        const isFixed = FIXED_BLUR_SURFACES.includes(selector)
         if (isMaterial && /^var\(--material-(chrome|overlay)-filter\)$/.test(value)) continue
-        if (isFixed && isBlurFilter(value)) continue
+        if (isFixed && /^blur\(\d*\.?\d+px\)(?:\s+saturate\(\d+%\))?$/.test(value)) continue
         offenders.push(`${name}: ${selector} { backdrop-filter: ${value} }`)
       }
     }
     expect(offenders).toEqual([])
+  })
+
+  it('keeps static material text readable over black and white without running the theme solver', () => {
+    for (const block of [themeBlock(':root {\n  color:'), themeBlock(":root[data-theme='dark']")]) {
+      const rgba = block.match(/--desktop-glass-strong:\s*rgb\((\d+) (\d+) (\d+) \/ ([\d.]+)%\)/)!
+      expect(rgba).toBeTruthy()
+      const alpha = Number(rgba[4]) / 100
+      for (const backdrop of [0, 255]) {
+        const background = '#' + rgba.slice(1, 4).map((channel) => Math.round(
+          Number(channel) * alpha + backdrop * (1 - alpha),
+        ).toString(16).padStart(2, '0')).join('')
+        for (const role of ['panel', 'chrome', 'overlay']) {
+          expect(themes).toContain(`--material-${role}-fill: var(--desktop-glass-strong);`)
+          for (const label of ['--text', '--text-soft', '--muted']) {
+            expect(contrastRatio(token(block, label), background), `${role}/${label} over ${backdrop}`)
+              .toBeGreaterThanOrEqual(4.5)
+          }
+        }
+      }
+    }
   })
 
   it('applies each material through its tokens, never a literal blur', () => {
@@ -392,6 +440,13 @@ describe('visual rhythm contract', () => {
     for (const role of ['chrome', 'overlay']) {
       expect(unsupported).toContain(`--material-${role}-fill: var(--surface-raised);`)
     }
+    for (const condition of [
+      '@media (prefers-reduced-transparency: reduce), (prefers-contrast: more)',
+      '@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)))',
+    ]) {
+      const fallback = classicWallpaper.slice(classicWallpaper.indexOf(condition)).match(/\.topbar\s*\{([^}]*)\}/)?.[1] ?? ''
+      expect(fallback, condition).toContain('background: var(--material-chrome-fill);')
+    }
   })
 
   it('tells the focused window apart by more than its shadow', () => {
@@ -414,6 +469,7 @@ describe('visual rhythm contract', () => {
       '--motion-duration-ambient: 420ms;',
       '--motion-ease-standard: cubic-bezier(.22, 1, .36, 1);',
       '--motion-ease-exit: cubic-bezier(.4, 0, 1, 1);',
+      '--motion-ease-fade: ease;',
     ]) expect(themes).toContain(token)
     // Surfaces migrated to the motion system stay on it.
     for (const selector of ['.desktop-window', '.desktop-window--closing', '.desktop-start-menu-enter-active', '.desktop-menu-enter-active', '.desktop-menu-leave-active']) {
@@ -456,7 +512,7 @@ describe('visual rhythm contract', () => {
         for (const curve of rule[2]!.matchAll(/cubic-bezier\(([^)]+)\)/g)) {
           const [, y1, , y2] = curve[1]!.split(',').map(Number)
           if (y1! >= 0 && y1! <= 1 && y2! >= 0 && y2! <= 1) continue
-          if (allowed.includes(rule[1]!.trim())) continue
+          if (allowed.includes(rule[1]!.trim()) && y1! >= 0 && y1! <= 1.3 && y2! >= 0 && y2! <= 1.3) continue
           offenders.push(`${name}: ${rule[1]!.trim()} ${curve[0]}`)
         }
       }
@@ -464,25 +520,82 @@ describe('visual rhythm contract', () => {
     expect(offenders).toEqual([])
   })
 
+  it('keeps migrated entry motion bounded and each exit property one step shorter', () => {
+    const rule = (source: string, selector: string) => source.match(new RegExp(`${escapeRegExp(selector)}\\s*\\{([^}]*)\\}`))?.[1] ?? ''
+    const closing = rule(desktop, '.desktop-window--closing')
+    expect(closing).toContain('opacity var(--motion-duration-instant) var(--motion-ease-exit)')
+    expect(closing).toContain('transform var(--motion-duration-fast) var(--motion-ease-exit)')
+    expect(rule(desktop, '.desktop-folder-enter-active')).toContain('opacity var(--motion-duration-base) var(--motion-ease-fade)')
+    expect(rule(desktop, '.desktop-folder-leave-active')).toContain('opacity var(--motion-duration-fast) var(--motion-ease-exit)')
+    expect(rule(desktop, '.desktop-folder-leave-active .desktop-folder__sheet')).toContain('opacity var(--motion-duration-instant) var(--motion-ease-exit)')
+    const folder = rule(desktop, '.desktop-folder-leave-to .desktop-folder__sheet')
+    const toast = rule(main, '.toast-leave-to')
+    expect(folder).toMatch(/scale\([\d.]+\)/)
+    expect(toast).toMatch(/translateX\([\d.]+px\)/)
+    expect(Number(folder.match(/scale\(([\d.]+)\)/)?.[1])).toBeGreaterThanOrEqual(.96)
+    expect(Math.abs(Number(toast.match(/translateX\(([\d.]+)px\)/)?.[1]))).toBeLessThanOrEqual(12)
+    expect(main).not.toMatch(/transform\s+var\(--motion-duration-[\w-]+\)\s+var\(--motion-ease-fade\)/)
+  })
+
   it('only lets literal motion durations shrink', () => {
     // Ratchet for 3.6.4: literal durations still owed to the motion tokens. Lower
     // a ceiling when a feature migrates; never raise one to fit new code.
-    const ceilings = { main: 28, desktop: 89, desktopWallpaper: 2, classicWallpaper: 0 }
+    const ceilings: Record<string, number> = {
+      main: 28, desktop: 89, desktopWallpaper: 2, classicWallpaper: 0,
+      'src/components/cluster/ClusterGlobe.vue': 1,
+      'src/components/cluster/ClusterNotificationsDialog.vue': 6,
+      'src/components/cluster/ClusterTemporarySortMenu.vue': 3,
+      'src/components/common/HostSwitcher.vue': 7,
+      'src/components/desktop/DesktopGroupCard.vue': 4,
+      'src/components/docker/DockerDeploymentEditor.vue': 5,
+      'src/components/docker/DockerUsageMeter.vue': 2,
+      'src/components/files/FileShareDialog.vue': 1,
+      'src/components/files/FileShareManagerDialog.vue': 1,
+      'src/components/files/FilesSplitWorkspace.vue': 2,
+      'src/components/gallery/GalleryMoveDialog.vue': 1,
+      'src/components/gallery/GalleryTile.vue': 5,
+      'src/components/gallery/GalleryViewer.vue': 12,
+      'src/components/monitoring/TrendChart.vue': 2,
+      'src/components/overview/DiskPartitionDialog.vue': 1,
+      'src/components/overview/FirewallManagerDialog.vue': 1,
+      'src/components/overview/SystemTuningDialog.vue': 4,
+      'src/components/sites/LocalWebServicePicker.vue': 3,
+      'src/components/terminal/BatchTerminalPanel.vue': 3,
+      'src/components/terminal/TerminalQuickCommands.vue': 1,
+      'src/views/AppsView.vue': 5,
+      'src/views/ClusterShareView.vue': 5,
+      'src/views/ClusterView.vue': 1,
+      'src/views/DiagnosticsView.vue': 13,
+      'src/views/DockerView.vue': 15,
+      'src/views/EnvironmentView.vue': 1,
+      'src/views/FileShareView.vue': 1,
+      'src/views/FilesView.vue': 8,
+      'src/views/GalleryView.vue': 5,
+      'src/views/MonitoringView.vue': 8,
+      'src/views/ProcessManagerView.vue': 5,
+      'src/views/SettingsView.vue': 9,
+      'src/views/TerminalView.vue': 12,
+    }
     const literalDurations = (source: string) => {
       let total = 0
-      for (const match of source.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/(?:transition|animation)(?:-duration|-delay)?:([^;{}]+);/g)) {
-        total += (match[1]!.match(/(?<![\w-])\d*\.?\d+m?s\b/g) ?? []).filter((value) => !['0s', '.01ms', '0.01ms'].includes(value)).length
+      for (const match of source.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/(?:(?:transition|animation)(?:-duration|-delay)?|--[\w-]+)\s*:\s*([^;{}]+)/g)) {
+        total += (match[1]!.match(/(?<![\w-])\d*\.?\d+m?s\b/g) ?? []).filter((value) => !['0s', '0ms', '.01ms', '0.01ms'].includes(value)).length
       }
       return total
     }
-    const counts = {
+    expect(literalDurations('.x { --x-duration: 300ms; transition: opacity var(--x-duration) }')).toBe(1)
+    expect(literalDurations('.x { animation: fade 300ms }')).toBe(1)
+    const counts: Record<string, number> = {
       main: literalDurations(main),
       desktop: literalDurations(desktop),
       desktopWallpaper: literalDurations(desktopWallpaper),
       classicWallpaper: literalDurations(classicWallpaper),
     }
-    for (const [name, ceiling] of Object.entries(ceilings)) {
-      expect(counts[name as keyof typeof counts], `${name} literal motion durations`).toBeLessThanOrEqual(ceiling)
+    for (const block of componentStyleBlocks) {
+      counts[block.file] = (counts[block.file] ?? 0) + literalDurations(block.content)
+    }
+    for (const [name, count] of Object.entries(counts)) {
+      expect(count, `${name} literal motion durations`).toBeLessThanOrEqual(ceilings[name] ?? 0)
     }
   })
 

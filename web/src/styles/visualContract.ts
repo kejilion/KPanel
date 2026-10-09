@@ -123,9 +123,9 @@ export function isNonTokenShadow(value: string): boolean {
   return normalized !== 'none' && !normalized.includes('var(')
 }
 
-/** A literal blur, or a material filter token that resolves to one. */
+/** A filter variable may resolve to blur; unapproved selectors must not hide it. */
 export function isBlurFilter(value: string): boolean {
-  return /\bblur\s*\(|var\(\s*--material-[\w-]*filter\s*\)/i.test(value)
+  return /\bblur\s*\(|\bvar\s*\(/i.test(value)
 }
 
 export function isAllowedComponentBlurSelector(selector: string): boolean {

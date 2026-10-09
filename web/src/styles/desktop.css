@@ -2258,7 +2258,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   transform: translateY(10px) scale(.965);
   pointer-events: none;
   transition:
-    opacity var(--motion-duration-fast) var(--motion-ease-exit),
+    opacity var(--motion-duration-instant) var(--motion-ease-exit),
     transform var(--motion-duration-fast) var(--motion-ease-exit);
   will-change: opacity, transform;
 }
@@ -5871,9 +5871,13 @@ body.desktop-mode-open::-webkit-scrollbar {
   touch-action: pan-y;
 }
 
-.desktop-folder-enter-active,
+.desktop-folder-enter-active {
+  /* Vue waits for the root transition; keep it as long as the sheet transform. */
+  transition: opacity var(--motion-duration-base) var(--motion-ease-fade);
+}
+
 .desktop-folder-leave-active {
-  transition: opacity var(--motion-duration-fast) var(--motion-ease-fade);
+  transition: opacity var(--motion-duration-fast) var(--motion-ease-exit);
 }
 
 .desktop-folder-enter-active .desktop-folder__sheet {
@@ -5885,7 +5889,7 @@ body.desktop-mode-open::-webkit-scrollbar {
 .desktop-folder-leave-active .desktop-folder__sheet {
   transition:
     transform var(--motion-duration-fast) var(--motion-ease-exit),
-    opacity var(--motion-duration-fast) var(--motion-ease-exit);
+    opacity var(--motion-duration-instant) var(--motion-ease-exit);
 }
 
 .desktop-folder-enter-from,
@@ -5896,7 +5900,7 @@ body.desktop-mode-open::-webkit-scrollbar {
 .desktop-folder-enter-from .desktop-folder__sheet,
 .desktop-folder-leave-to .desktop-folder__sheet {
   opacity: 0;
-  transform: scale(.92);
+  transform: scale(.96);
 }
 
 @media (max-width: 760px) {

@@ -1417,7 +1417,7 @@ textarea:focus-visible,
 
 .site-template-toggle svg {
   flex: 0 0 auto;
-  transition: transform var(--motion-duration-fast) var(--motion-ease-fade);
+  transition: transform var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 .site-template-toggle svg.is-open {
@@ -2832,7 +2832,7 @@ textarea:focus-visible,
 .toast-enter-from,
 .toast-leave-to {
   opacity: 0;
-  transform: translateX(20px);
+  transform: translateX(12px);
 }
 
 /* Cards and dashboard */
@@ -2922,7 +2922,7 @@ textarea:focus-visible,
 
 .metric-link .metric-card {
   height: 100%;
-  transition: border-color var(--motion-duration-fast) var(--motion-ease-fade), box-shadow var(--motion-duration-fast) var(--motion-ease-fade), transform var(--motion-duration-fast) var(--motion-ease-fade);
+  transition: border-color var(--motion-duration-fast) var(--motion-ease-fade), box-shadow var(--motion-duration-fast) var(--motion-ease-fade), transform var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 .metric-link:hover .metric-card {
@@ -3546,7 +3546,7 @@ textarea:focus-visible,
   border-radius: 50%;
   background: var(--surface-raised);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
-  transition: transform var(--motion-duration-fast) var(--motion-ease-fade);
+  transition: transform var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 .configuration-switch.is-on {
@@ -3781,7 +3781,7 @@ textarea:focus-visible,
   transition:
     border-color var(--motion-duration-fast) var(--motion-ease-fade),
     box-shadow var(--motion-duration-fast) var(--motion-ease-fade),
-    transform var(--motion-duration-fast) var(--motion-ease-fade);
+    transform var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 .overview-system-card:hover {
@@ -3865,7 +3865,7 @@ textarea:focus-visible,
 .overview-system-card__arrow {
   align-self: center;
   color: var(--muted);
-  transition: color var(--motion-duration-fast) var(--motion-ease-fade), transform var(--motion-duration-fast) var(--motion-ease-fade);
+  transition: color var(--motion-duration-fast) var(--motion-ease-fade), transform var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 .overview-system-card:hover .overview-system-card__arrow {

@@ -48,6 +48,21 @@ function expectAccessible(tokens: ThemeTokenMap): void {
       `${foreground}/${background}`,
     ).toBeGreaterThanOrEqual(4.5)
   }
+  // The weakest label must remain readable even on the opposite wallpaper.
+  // Cover both glass fills for every preset and adversarial palette below.
+  for (const fill of ['--desktop-glass', '--desktop-glass-strong'] as const) {
+    const rgba = tokens[fill].match(/^rgb\((\d+) (\d+) (\d+) \/ ([\d.]+)%\)$/)!
+    const alpha = Number(rgba[4]) / 100
+    for (const backdrop of [0, 255]) {
+      const background = '#' + rgba.slice(1, 4).map((channel) => Math.round(
+        Number(channel) * alpha + backdrop * (1 - alpha),
+      ).toString(16).padStart(2, '0')).join('')
+      for (const label of ['--text', '--text-soft', '--muted'] as const) {
+        expect(contrastRatio(tokens[label], background), `${label}/${fill} over ${backdrop}`)
+          .toBeGreaterThanOrEqual(4.5)
+      }
+    }
+  }
   expect(contrastRatio(tokens['--control-border'], tokens['--surface'])).toBeGreaterThanOrEqual(3)
   expect(contrastRatio(tokens['--control-border'], tokens['--surface-raised'])).toBeGreaterThanOrEqual(3)
   expect(contrastRatio(tokens['--theme-accent'], tokens['--surface'])).toBeGreaterThanOrEqual(3)

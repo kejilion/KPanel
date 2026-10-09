@@ -174,8 +174,21 @@ body:has(.classic-backdrop) {
   --auth-wallpaper-veil-end: 86%;
 }
 
-/* The explicit show-through choice keeps its wallpaper with reduced transparency.
- * Forced-colors still uses solid surfaces for high-contrast legibility. */
+/* The wallpaper choice remains visible behind the page. Shell chrome follows
+ * the accessibility preference even when show-through was explicitly selected. */
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  :root:has(.classic-backdrop) .topbar {
+    background: var(--material-chrome-fill);
+  }
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root:has(.classic-backdrop) .topbar {
+    background: var(--material-chrome-fill);
+  }
+}
+
+/* Forced colors also removes the wallpaper and restores opaque page surfaces. */
 @media (forced-colors: active) {
   :root[data-classic-wallpaper] .auth-layout__brand,
   :root[data-auth-wallpaper='server'] .auth-layout__brand {
