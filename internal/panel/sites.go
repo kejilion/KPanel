@@ -760,3 +760,69 @@ func hasUnsupportedPEMControlCharacter(value string) bool {
 	}
 	return false
 }
+
+// handleSiteCertificateRenew forwards a manual certificate request. The Agent
+// owns the script call; the Panel only authenticates, audits and pins identity.
+func (s *Server) handleSiteCertificateRenew(w http.ResponseWriter, r *http.Request) {
+	const prefix = "/api/v1/sites/"
+	const suffix = "/certificate-renewal"
+	siteID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, prefix), suffix)
+	if r.URL.RawPath != "" || r.URL.RawQuery != "" || !siteIDPattern.MatchString(siteID) {
+		s.writeProblem(w, r, http.StatusNotFound, "route_not_found", "Route not found", "")
+		return
+	}
+	if !s.checkOrigin(w, r) {
+		return
+	}
+	_, session, ok := s.requireSession(w, r)
+	if !ok || !s.checkCSRF(w, r, session) {
+		return
+	}
+	var input struct {
+		PrimaryDomain           optionalString `json:"primaryDomain"`
+		ExpectedResourceVersion optionalString `json:"expectedResourceVersion"`
+	}
+	if err := s.decodeJSON(w, r, &input); err != nil {
+		return
+	}
+	normalized, valid := "", false
+	if input.PrimaryDomain.Set {
+		normalized, valid = normalizePanelSiteDomain(input.PrimaryDomain.Value)
+	}
+	if !valid || normalized != input.PrimaryDomain.Value {
+		s.writeValidationProblem(w, r, "primaryDomain", "primaryDomain must be a valid normalized ASCII domain")
+		return
+	}
+	payload := map[string]string{"primaryDomain": normalized}
+	if input.ExpectedResourceVersion.Set {
+		if !resourceVersionPattern.MatchString(input.ExpectedResourceVersion.Value) {
+			s.writeValidationProblem(w, r, "expectedResourceVersion", "expectedResourceVersion must be a sha256 resource version")
+			return
+		}
+		payload["expectedResourceVersion"] = input.ExpectedResourceVersion.Value
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		s.writeProblem(w, r, http.StatusInternalServerError, "request_encoding_failed", "Request encoding failed", "")
+		return
+	}
+	change := map[string]any{"primaryDomain": normalized}
+	if err := s.audit(r, session.User.ID, "site.certificate_renew", "site", siteID, "intent", change); err != nil {
+		s.writeProblem(w, r, http.StatusServiceUnavailable, "audit_unavailable", "Audit storage unavailable", "")
+		return
+	}
+	response, err := s.hostOps.Do(
+		r.Context(), http.MethodPost, "/v1/sites/"+siteID+"/certificate-renewal", "", requestID(r), body,
+	)
+	if err != nil {
+		_ = s.audit(r, session.User.ID, "site.certificate_renew", "site", siteID, "failure", change)
+		s.writeProblem(w, r, http.StatusServiceUnavailable, "agent_unavailable", "Agent unavailable", "")
+		return
+	}
+	result := "failure"
+	if response.StatusCode >= http.StatusOK && response.StatusCode < http.StatusMultipleChoices {
+		result = "success"
+	}
+	_ = s.audit(r, session.User.ID, "site.certificate_renew", "site", siteID, result, change)
+	s.writeAgentResponse(w, r, response)
+}

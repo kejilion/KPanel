@@ -479,6 +479,9 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		s.handleSiteIcon(w, r)
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/apps/icons/"):
 		s.handleAppIcon(w, r)
+	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/v1/sites/") &&
+		strings.HasSuffix(r.URL.Path, "/certificate-renewal"):
+		s.handleSiteCertificateRenew(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/sites":
 		s.handleSiteCreate(w, r)
 	case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/api/v1/sites/"):
