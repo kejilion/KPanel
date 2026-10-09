@@ -18,6 +18,8 @@ import { VISUAL_CONTRACT_BASELINE, baselineKey } from './visualContractBaseline'
 const main = readFileSync(new URL('./main.css', import.meta.url), 'utf8')
 const desktop = readFileSync(new URL('./desktop.css', import.meta.url), 'utf8')
 const themes = readFileSync(new URL('./themes.css', import.meta.url), 'utf8')
+const classicWallpaper = readFileSync(new URL('./classicWallpaper.css', import.meta.url), 'utf8')
+const desktopWallpaper = readFileSync(new URL('./desktopWallpaper.css', import.meta.url), 'utf8')
 const filesView = readFileSync(new URL('../views/FilesView.vue', import.meta.url), 'utf8')
 const sources = { main, desktop }
 const webRoot = fileURLToPath(new URL('../../', import.meta.url))
@@ -296,6 +298,9 @@ describe('visual rhythm contract', () => {
   } as const
   // Panels rest on the wallpaper alone: translucent fill, no resident live blur.
   const PANEL_SURFACES = ['.desktop-clock,\n.desktop-monitor,\n.desktop-service-status']
+  // Chrome whose fill is tuned elsewhere (the classic wallpaper level) still takes
+  // the chrome material's blur, so no literal radius escapes the tokens.
+  const CHROME_FILTER_ONLY = [':root:has(.classic-backdrop) .topbar']
   // Scrims and drag feedback keep their own light, fixed blur.
   const FIXED_BLUR_SURFACES = ['.desktop__file-drop', '.modal-scrim', '.theme-color-actions > div']
 
@@ -311,9 +316,9 @@ describe('visual rhythm contract', () => {
   }
 
   it('limits translucency to shell chrome, short-lived overlays and scrims', () => {
-    const materialSelectors = [...MATERIAL_SURFACES.chrome, ...MATERIAL_SURFACES.overlay]
+    const materialSelectors = [...MATERIAL_SURFACES.chrome, ...MATERIAL_SURFACES.overlay, ...CHROME_FILTER_ONLY]
     const offenders: string[] = []
-    for (const [name, source] of Object.entries(sources)) {
+    for (const [name, source] of Object.entries({ ...sources, classicWallpaper, desktopWallpaper })) {
       for (const { selector, value } of backdropRules(source)) {
         if (value === 'none') continue
         const isMaterial = (materialSelectors as readonly string[]).includes(selector)
@@ -424,6 +429,60 @@ describe('visual rhythm contract', () => {
     // materials appear by fading their surface, never by interpolating the blur.
     for (const source of Object.values(sources)) {
       expect(source).not.toMatch(/transition(?:-property)?:[^;]*\bbackdrop-filter\b/)
+    }
+  })
+
+  it('moves the classic shell on the same motion tokens', () => {
+    const rule = (selector: string) => main.match(new RegExp(`\\n${escapeRegExp(selector)}\\s*\\{([^}]*)\\}`))?.[1] ?? ''
+    // Sidebar geometry moves together on the base step; the collapsed labels hand
+    // off visibility only after that step, so text never shows mid-collapse.
+    expect(rule('.sidebar')).toMatch(/width var\(--motion-duration-base\) var\(--motion-ease-standard\),\s*transform var\(--motion-duration-base\)/)
+    expect(main).toMatch(/\.sidebar--collapsed \.sidebar__user > svg\s*\{[^}]*opacity var\(--motion-duration-instant\)[^}]*visibility 0s linear var\(--motion-duration-base\);/)
+    // Controls keep their 160ms feedback, now named.
+    expect(rule('.button')).toMatch(/transition:\s*border-color var\(--motion-duration-fast\) var\(--motion-ease-fade\)/)
+    // Dialogs settle on the base step; toasts and fades leave quicker than they came.
+    expect(rule('.modal-panel')).toContain('animation: modal-panel-in var(--motion-duration-base) var(--motion-ease-standard) both;')
+    expect(rule('.modal-backdrop')).toContain('animation: modal-backdrop-in var(--motion-duration-fast) var(--motion-ease-fade) both;')
+    expect(rule('.toast-leave-active')).toContain('var(--motion-duration-instant) var(--motion-ease-exit)')
+    expect(rule('.fade-leave-active')).toContain('var(--motion-duration-instant) var(--motion-ease-exit)')
+  })
+
+  it('keeps overshoot to the app icon launch and hover feedback', () => {
+    // ui-visual-language 3.6.2: nothing bounces, except the icon you just pressed.
+    const allowed = ['.desktop__icon-glyph', '.desktop__icon--launching .desktop__icon-glyph']
+    const offenders: string[] = []
+    for (const [name, source] of Object.entries({ ...sources, desktopWallpaper, classicWallpaper })) {
+      for (const rule of source.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+        for (const curve of rule[2]!.matchAll(/cubic-bezier\(([^)]+)\)/g)) {
+          const [, y1, , y2] = curve[1]!.split(',').map(Number)
+          if (y1! >= 0 && y1! <= 1 && y2! >= 0 && y2! <= 1) continue
+          if (allowed.includes(rule[1]!.trim())) continue
+          offenders.push(`${name}: ${rule[1]!.trim()} ${curve[0]}`)
+        }
+      }
+    }
+    expect(offenders).toEqual([])
+  })
+
+  it('only lets literal motion durations shrink', () => {
+    // Ratchet for 3.6.4: literal durations still owed to the motion tokens. Lower
+    // a ceiling when a feature migrates; never raise one to fit new code.
+    const ceilings = { main: 28, desktop: 89, desktopWallpaper: 2, classicWallpaper: 0 }
+    const literalDurations = (source: string) => {
+      let total = 0
+      for (const match of source.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/(?:transition|animation)(?:-duration|-delay)?:([^;{}]+);/g)) {
+        total += (match[1]!.match(/(?<![\w-])\d*\.?\d+m?s\b/g) ?? []).filter((value) => !['0s', '.01ms', '0.01ms'].includes(value)).length
+      }
+      return total
+    }
+    const counts = {
+      main: literalDurations(main),
+      desktop: literalDurations(desktop),
+      desktopWallpaper: literalDurations(desktopWallpaper),
+      classicWallpaper: literalDurations(classicWallpaper),
+    }
+    for (const [name, ceiling] of Object.entries(ceilings)) {
+      expect(counts[name as keyof typeof counts], `${name} literal motion durations`).toBeLessThanOrEqual(ceiling)
     }
   })
 

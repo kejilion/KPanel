@@ -111,10 +111,12 @@ body:has(.classic-backdrop) {
   background: color-mix(in srgb, var(--sidebar) var(--classic-wallpaper-sidebar), transparent);
 }
 
+/* Shell chrome over the wallpaper (ui-visual-language 3.5): the blur is the chrome
+   material's; the fill stays tuned to the chosen classic wallpaper level. */
 :root:has(.classic-backdrop) .topbar {
   background: color-mix(in srgb, var(--surface) var(--classic-wallpaper-topbar), transparent);
-  -webkit-backdrop-filter: blur(18px) saturate(1.2);
-  backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: var(--material-chrome-filter);
+  backdrop-filter: var(--material-chrome-filter);
 }
 
 /*
