@@ -30,6 +30,7 @@ type Manager struct {
 	siteDataRuntime     SiteDataRuntime
 	scriptDeleter       siteScriptDeleter
 	certificateReplacer siteCertificateReplacer
+	certificateRenewer  siteCertificateRenewer
 	recipeJobs          *recipeJobRegistry
 	jobExecutable       string
 	jobRunner           recipeJobCommandRunner
@@ -46,6 +47,7 @@ func NewManager(webRoot string, discoverer *Discoverer, nginx NginxController) *
 		webRoot: filepath.Clean(webRoot), discoverer: discoverer, nginx: nginx,
 		scriptDeleter:       kejilionSiteScriptDeleter{},
 		certificateReplacer: scriptCertificateReplacer{},
+		certificateRenewer:  scriptCertificateRenewer{},
 	}
 	if runtime, ok := nginx.(SiteDataRuntime); ok {
 		manager.siteDataRuntime = runtime

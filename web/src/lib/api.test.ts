@@ -626,6 +626,38 @@ describe('API client', () => {
     })
   })
 
+  it('posts manual certificate renewal with only the site identity and version', async () => {
+    const id = 'a'.repeat(32)
+    const version = `sha256:${'b'.repeat(64)}`
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      jsonResponse({
+        id,
+        primaryDomain: 'example.com',
+        domains: ['example.com'],
+        kind: 'static',
+        enabled: true,
+        health: 'healthy',
+        tls: { enabled: true, status: 'valid' },
+        origin: 'cli',
+        consistency: 'in_sync',
+        resourceVersion: version,
+        allowedActions: ['update', 'delete'],
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(api.sites.renewCertificate(id, 'example.com', version)).resolves.toMatchObject({
+      primaryDomain: 'example.com',
+    })
+    const requestInit = fetchMock.mock.calls[0]?.[1] as RequestInit
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(`/api/v1/sites/${id}/certificate-renewal`)
+    expect(requestInit.method).toBe('POST')
+    expect(JSON.parse(String(requestInit.body))).toEqual({
+      primaryDomain: 'example.com',
+      expectedResourceVersion: version,
+    })
+  })
+
   it('shows the actionable validation field instead of the generic problem title', async () => {
     vi.stubGlobal(
       'fetch',

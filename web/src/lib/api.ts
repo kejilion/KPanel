@@ -2034,6 +2034,13 @@ export const api = {
       }),
     update: async (id: string, body: SiteInput): Promise<Site> =>
       normalizeSite(await request<RawSite>(`/sites/${encodeURIComponent(id)}`, { method: 'PATCH', body })),
+    renewCertificate: async (id: string, primaryDomain: string, expectedResourceVersion?: string): Promise<Site> =>
+      normalizeSite(
+        await request<RawSite>(`/sites/${encodeURIComponent(id)}/certificate-renewal`, {
+          method: 'POST',
+          body: { primaryDomain, expectedResourceVersion },
+        }),
+      ),
     remove: (id: string, primaryDomain: string) =>
       request<SiteDeleteResult>(
         `/sites/${encodeURIComponent(id)}`,

@@ -163,6 +163,26 @@ Agent 校验证书 PEM、域名（换证覆盖全部已绑定域名）、有效�
 交互对照采用 [cPanel SSL/TLS 官方文档](https://docs.cpanel.net/cpanel/security/ssl-tls/) 的按域名提交
 证书链和私钥、回读成功或失败的方式；业务路径与续签语义以 `kejilion.sh` 为准。
 
+## 手动申请证书
+
+自动签发和每日续签器保持不变；站点列表与详情仅在脚本管理站点的证书为 `expiring`（30 天内）或 `expired` 时追加
+“手动申请证书”入口，调用 `POST /sites/:id/certificate-renewal`，只接受 `primaryDomain` 与可选
+`expectedResourceVersion`。可信脚本必须包含 `KPANEL_WEB_CERTIFICATE_FORCE_RENEW_PROTOCOL_VERSION="1"` 和
+`kpanel_web_force_renew_certificate()`，否则能力 `sites.certificate-renew` 关闭并说明需更新配套脚本。
+
+Agent 以 root 在独立 transient unit 中固定执行 `k ssl <domain>`，仅附加 `KJ_WEB_FORCE_RENEW=1`、
+`KJ_WEB_NONINTERACTIVE=1`。未设置开关的 `k ssl` 行为不变（证书对仍有效时直接返回，不重新签发）。开关开启后脚本：
+站点证书对、配置和 Nginx 容器必须存在；`.custom` 站点与非 Let's Encrypt 签发的证书拒绝；持有与续签器、换证事务相同的
+`.kpanel-certificate.lock`；停止 Nginx 后以 standalone 方式 `--force-renewal`，仅在新证书对通过域名、有效期与私钥校验后
+原子替换旧文件并启动、校验、重载 Nginx，失败即还原旧 pair 并重载；恢复也失败时返回 `needs_attention`。输出只有固定回执
+`KPANEL_CERTIFICATE renewed|failed|busy|custom|not_managed|invalid|unavailable|needs_attention`，不含 Certbot 输出或密钥。
+`k ssl` 的退出码不可信，Agent 因此还要求重新发现的站点证书为 `valid` 且到期时间晚于申请前，否则按 `needs_attention` 处理。
+
+申请期间 Nginx 停止约 1 分钟；经同一 Nginx 访问面板时浏览器连接会中断，前端据此继续轮询站点状态直至证书更新。
+Panel 记录 `site.certificate_renew` 的意图与结果审计，只含主域名。脚本源仍须先发布到 `kejilion/sh` 主线，再由发布任务更新
+Dockerfile 固定的脚本修订与摘要；固定脚本尚无该协议时入口保持禁用。真实 Let's Encrypt 签发、80 端口占用与 Nginx 停启仅有
+fixture 验证，实机未验证。
+
 ## 固定模板摘要
 
 用于兼容回归的当前模板 SHA-256：
