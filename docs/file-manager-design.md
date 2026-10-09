@@ -69,12 +69,12 @@
 | 不可信输入 | 虚拟路径、文件名、批量来源、目标目录、权限、上传内容、文本内容、Range、远程 URL、重定向和响应头 |
 | 权限与可写范围 | `os.Root` 固定根 `/`；保护 KPanel 凭据/状态目录及回收站，`/proc`、`/sys`、`/dev` 只读；回收站固定在 Agent 实际状态目录内 |
 | Agent 服务边界 | systemd 保持文件管理根目录可写并对 Panel 状态单独设置 `ReadOnlyPaths`；OpenRC 使用 root:group、`no_new_privs`、严格 umask 和受保护配置，但没有等价 mount namespace；写入仅授予 root Agent，Panel 容器不挂载宿主机根目录 |
-| 最坏输入/输出 | JSON 64 KiB；远程 URL 4 KiB、响应头 64 KiB；文本编辑 2 MiB；单次上传或远程下载 512 MiB；列表单页 500 项、最多扫描 20,000 项；回收站最多 10,000 项、单次显示 500 项；批量 100 项 |
+| 最坏输入/输出 | JSON 64 KiB；远程 URL 4 KiB、响应头 64 KiB；文本编辑 2 MiB；新版接收会话及 URL 下载普通文件 10 GiB，旧一次性上传兼容路径 512 MiB；列表单页 500 项、最多扫描 20,000 项；回收站最多 10,000 项、单次显示 500 项；批量 100 项 |
 | 最大并发 | 上传 2、远程下载 2、下载 4，超限立即返回 `429`；远程下载最终还受 Agent 上传总闸门约束；复制、移动、压缩、解压及回收站操作串行执行；复制和归档预算按整批累计 10,000 项/10 GiB |
-| 超时、取消与重试 | 普通 API 保留短超时；文件流使用 45 秒上游正文空闲超时和 2 小时硬上限；压缩/解压及远程下载可由页面主动取消；远程下载取消立即停止读取并清理尚未提交的临时产物，若与原子提交重叠则刷新目录确认；写操作和远程 GET 不自动重试 |
+| 超时、取消与重试 | 普通 API 保留短超时；文件流使用 45 秒上游正文空闲超时和 2 小时硬上限；压缩/解压及远程下载可由页面主动取消；取消清理尚未提交的临时产物，若与原子提交重叠则刷新目录确认；新版接收会话来源最多重开 3 次，分块与提交最多尝试 3 次，始终只保留已持久确认的前缀；旧一次性写入不自动重放 |
 | 真实状态 | `Lstat`、打开后 `Stat`、目录内容和文件元数据 |
 | 失败与回滚 | 上传/编辑使用同目录临时文件、`fsync` 和原子替换，并保留权限、所有者与 Linux 扩展属性；复制失败清理目标临时产物；回收站元数据原子写入，恢复与彻底删除逐项报告结果 |
-| 性能预算 | 文件页面懒加载；不增加首屏包；流式传输使用固定 64 KiB 缓冲；目录搜索在 Agent 有界执行并按 500 项分页；多选上传与目录拖入按 Agent 上传闸门并发 2 路；缩略图带 `resourceVersion` 的 URL 只对 200/304 返回 `private, max-age=3600`，Agent 先处理 `If-None-Match` 再进入生成闸门，并在进程内按路径与版本缓存最多 8 MiB（不落盘），其余文件响应保持 `no-store`；远端完整 KPanel 声明 `panel-stream-v3` 时文件请求走可复用的 Noise 流式连接，见 [终端与文件传输 v3](terminal-file-transport-v3.md) |
+| 性能预算 | 文件页面懒加载；不增加首屏包；普通流式拷贝使用 64 KiB 缓冲，新版接收会话使用 8 MiB 校验块；目录搜索在 Agent 有界执行并按 500 项分页；多选上传与目录拖入按 Agent 上传闸门并发 2 路；缩略图带 `resourceVersion` 的 URL 只对 200/304 返回 `private, max-age=3600`，Agent 先处理 `If-None-Match` 再进入生成闸门，并在进程内按路径与版本缓存最多 8 MiB（不落盘），其余文件响应保持 `no-store`；远端完整 KPanel 声明 `panel-stream-v3` 时文件请求走可复用的 Noise 流式连接，见 [终端与文件传输 v3](terminal-file-transport-v3.md) |
 | 网络入侵风险 | 路径穿越、符号链接逃逸、CSRF、超大请求、恶意 MIME、SSRF、DNS rebinding、重定向绕过、签名 URL 泄漏、资源耗尽 |
 
 ### 3.1 Windows Chromium 下载兼容边界
@@ -192,8 +192,9 @@ Browser POST JSON（URL 只在 body）
      -> 公开 HTTP/HTTPS 固定 GET
      -> DNS 全部地址 fail-closed 校验并直拨 IP
      -> 最多 5 次重定向，每跳复核，拒绝 HTTPS -> HTTP
-  -> Agent /v1/files/upload（只看到字节流、目录和名称）
-  -> filemanager.Upload 同目录暂存、fsync、no-replace 原子发布
+  -> Agent /v1/files/transfer/sessions（创建、顺序校验分块、持久确认、提交）
+  -> 同目录暂存、fsync、no-replace 原子发布
+  -> 旧 Agent 不支持接收会话时兼容 /v1/files/upload
 ```
 
 - URL 最多 4096 字节，只接受绝对 HTTP/HTTPS；拒绝 userinfo、fragment、控制字符、反斜杠、
@@ -204,16 +205,18 @@ Browser POST JSON（URL 只在 body）
 - 客户端不读取环境代理，不接受自定义方法、Header、Cookie、Authorization、Host、请求体、私网
   allowlist 或跳过 TLS。固定 `Accept-Encoding: identity`，拒绝压缩响应；跨域重定向清除 Referer，
   避免源 URL 的查询签名泄漏。
-- 只接受完整的 `200 OK`，拒绝 `Content-Range`、其他 `2xx` 和压缩响应；上游错误正文不落盘、
-  不回显。Content-Length 已知超限时提前拒绝，未知长度仍由 Panel 与 Agent 读取到 `512 MiB + 1`
-  后中止。DNS 与最多 8 个候选 IP 共用一次连接阶段时限，TLS、响应头、正文空闲和总时长也均有界。
+- 首次 GET 接受完整 `200 OK`；持有强 ETag 和完整长度时，重连允许经过精确范围、ETag 和最终 URL
+  校验的 `206`。忽略 Range 或缺少强验证器时，重读并核对已确认前缀；来源变化即停止。上游错误
+  正文不落盘、不回显，压缩响应和其他 `2xx` 仍拒绝。新版普通文件上限为 10 GiB，旧上传兼容路径
+  为 512 MiB；已知超限提前拒绝，未知长度在流中按路径限额中止。DNS 与最多 8 个候选 IP 共用一次
+  连接阶段时限，TLS、响应头、正文空闲和总时长也均有界。
 - 保存名称优先级为管理员明确名称、有效 Content-Disposition、`download`；不从 URL 路径推断名称，
   避免路径型签名令牌进入文件名、状态或审计。每个候选只可作为 255 字节以内 basename，不得决定
   目录。已有同名文件时在下载前生成 ` (1)` 等后缀，
   最终提交仍使用 no-replace 处理竞态，绝不静默覆盖。
 - 默认 UI 创建后台任务，状态为 `queued -> connecting -> transferring -> confirming -> complete|error`；
   用户停止后为 `cancelled`。已知总量显示真实进度，未知总量只显示已接收字节，不伪造百分比。
-  `confirming` 表示 Agent 已结束原子上传、Panel 正在核对返回结果，不把它误写成“正在提交”。关闭、
+  新版会话的 `confirming` 表示分块已确认，正在验证完整内容并提交；旧上传路径则核对上传返回结果。关闭、
   刷新或离开文件页面只停止浏览器轮询，Panel worker 继续；旧的请求作用域 NDJSON POST 保留兼容。
 - Panel 任务索引只持久化脱敏 origin、目标目录、安全名称、字节数、状态、结果与时间。完整 URL 只在
   worker 内存中存活，不进入索引，所以 Panel 重启会把遗留 active 状态保守标记为 `interrupted`，不自动

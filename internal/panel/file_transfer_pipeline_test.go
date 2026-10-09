@@ -21,8 +21,18 @@ import (
 	"github.com/kejilion/kejilion-panel/internal/remotedownload"
 )
 
-func TestFileTransferPipelineRecoversOnlyDurablePrefix(t *testing.T) {
+// The experiment is deliberately enabled only by the candidate's test harness.
+// The baseline has no such hook, so the identical benchmark can compare both.
+func (s *Server) enableFileTransferPrefetchExperiment() { s.fileTransferPrefetch = true }
+
+func newTransferPipelineServer(t *testing.T) *Server {
 	server, _ := newTestServer(t)
+	server.enableFileTransferPrefetchExperiment()
+	return server
+}
+
+func TestFileTransferPipelineRecoversOnlyDurablePrefix(t *testing.T) {
+	server := newTransferPipelineServer(t)
 	a, _, root := realTransferAgent(t, server)
 	a.lostChunk, a.lostCommit = true, true
 	data := bytes.Repeat([]byte("prefetch-content"), 2*contract.FileTransferChunkBytes/15+123)
@@ -60,7 +70,7 @@ func (transferPipelineResolver) LookupNetIP(context.Context, string, string) ([]
 }
 
 func TestFileTransferSegmentedFailureResumesDurablePrefix(t *testing.T) {
-	server, _ := newTestServer(t)
+	server := newTransferPipelineServer(t)
 	_, _, root := realTransferAgent(t, server)
 	data := pipelineOffsetData(32 << 20)
 	var faults, resumes atomic.Int32
@@ -97,7 +107,7 @@ func TestFileTransferSegmentedFailureResumesDurablePrefix(t *testing.T) {
 }
 
 func TestFileTransferPipelineCancellationAbortsLargeReceive(t *testing.T) {
-	server, _ := newTestServer(t)
+	server := newTransferPipelineServer(t)
 	_, _, root := realTransferAgent(t, server)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -136,7 +146,7 @@ func TestFileTransferPipelineCancellationAbortsLargeReceive(t *testing.T) {
 func TestFileTransferSegmentedConsistencyFailureCannotResume(t *testing.T) {
 	for _, fault := range []string{"etag", "range", "encoding", "unexpected-full"} {
 		t.Run(fault, func(t *testing.T) {
-			server, _ := newTestServer(t)
+			server := newTransferPipelineServer(t)
 			_, _, root := realTransferAgent(t, server)
 			data := pipelineOffsetData(32 << 20)
 			var faults, suffixes atomic.Int32
@@ -151,7 +161,7 @@ func TestFileTransferSegmentedConsistencyFailureCannotResume(t *testing.T) {
 					case "range":
 						w.Header().Set("Content-Range", "bytes 0-2097151/33554432")
 					case "encoding":
-						w.Header().Del("Content-Length")
+						w.Header().Set("Content-Length", strconv.Itoa(2<<20))
 						w.Header().Set("Content-Encoding", "gzip")
 					case "unexpected-full":
 						w.Header().Del("Content-Range")
@@ -178,6 +188,9 @@ func TestFileTransferSegmentedConsistencyFailureCannotResume(t *testing.T) {
 			if result.State != "error" || faults.Load() != 1 || suffixes.Load() != 0 {
 				t.Fatalf("consistency failure recovered: %#v faults=%d suffixes=%d", result, faults.Load(), suffixes.Load())
 			}
+			if fault == "encoding" && result.Code != "remote_download_encoding_unsupported" {
+				t.Fatalf("encoding check was masked by another validator: %#v", result)
+			}
 			entries, err := os.ReadDir(filepath.Join(root, "home"))
 			if err != nil || len(entries) != 0 {
 				t.Fatalf("inconsistent receive retained: %v %v", entries, err)
@@ -195,7 +208,7 @@ func pipelineOffsetData(size int) []byte {
 }
 
 func TestFileTransferPipelineRejectsTruncatedLargeSource(t *testing.T) {
-	server, _ := newTestServer(t)
+	server := newTransferPipelineServer(t)
 	_, _, root := realTransferAgent(t, server)
 	data := bytes.Repeat([]byte{42}, 2*contract.FileTransferChunkBytes)
 	server.remoteDownloadOpen = func(context.Context, string) (*http.Response, error) {

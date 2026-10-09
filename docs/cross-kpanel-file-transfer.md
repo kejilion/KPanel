@@ -82,6 +82,10 @@ URL 来源有强 ETag 和完整长度时使用 `Range`/`If-Range`；忽略 Range
 不经过后台接收会话。这里统一的是接收、确认及失败语义，沿用现有 HTTPS/Noise/Panel-Agent 通道，
 不新增 SSH/SFTP 服务，也不实现 rsync 的内容差分算法。
 
+分支中的预取与 HTTP 多路分段原型默认关闭，只由显式性能夹具启用。它保留顺序持久确认，
+不会把来源读取进度当作已落盘进度。实际受益条件、资源代价与未验证范围见
+[文件传输加速可行性实测](file-transfer-performance-evaluation.md)。
+
 ## 状态机
 
 单项：`idle -> connecting -> transferring -> committing -> shortcut? -> complete`

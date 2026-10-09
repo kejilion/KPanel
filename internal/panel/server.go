@@ -105,6 +105,8 @@ type Server struct {
 	downloadTickets         map[[32]byte]fileDownloadTicket
 	remoteDownloadOpen      func(context.Context, string) (*http.Response, error)
 	remoteDownloadRangeOpen func(context.Context, string, remotedownload.ResumeRequest) (*http.Response, error)
+	// Experiment opt-in. Keep production defaults until resource/benefit gates pass.
+	fileTransferPrefetch    bool
 	remoteDownloadGate      chan struct{}
 	remoteDownloadJobs      *remotedownload.JobStore
 	remoteDownloadMu        sync.Mutex

@@ -232,7 +232,7 @@ func (s *Server) receiveFileTransfer(
 		}
 		// Small/unknown streams keep the existing allocation and timing. Large
 		// streams overlap one source chunk with the previous durable Agent write.
-		if input.SizeBytes >= 2*contract.FileTransferChunkBytes {
+		if s.fileTransferPrefetch && input.SizeBytes >= 2*contract.FileTransferChunkBytes {
 			return httpstream.NewPrefetchReadCloser(source, contract.FileTransferChunkBytes/2)
 		}
 		return source

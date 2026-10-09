@@ -167,6 +167,9 @@ func runTransferBench(t *testing.T, spec transferBenchCase) {
 	defer agentHTTP.Close()
 	agent := &transferIntegrationAgent{url: agentHTTP.URL, client: agentHTTP.Client()}
 	server := &Server{agent: agent}
+	if experiment, ok := any(server).(interface{ enableFileTransferPrefetchExperiment() }); ok {
+		experiment.enableFileTransferPrefetchExperiment()
+	}
 	config := remotedownload.Config{Resolver: benchPublicResolver{}, Dialer: func(ctx context.Context, network, _ string) (net.Conn, error) {
 		return (&net.Dialer{}).DialContext(ctx, network, origin.Listener.Addr().String())
 	}}

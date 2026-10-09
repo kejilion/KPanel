@@ -17,6 +17,12 @@ samples="${TRANSFER_SAMPLES:-5}"
 [[ "$samples" =~ ^[1-9][0-9]*$ ]] && (( samples <= 30 )) || exit 2
 read -r -a cases <<< "${TRANSFER_CASES:-fast source-limited balanced no-range request-delay-20ms request-delay-100ms small-files two-tasks large}"
 read -r -a variants <<< "${TRANSFER_VARIANTS:-baseline pipeline segmented}"
+for case_name in "${cases[@]}"; do
+  case "$case_name" in
+    fast|source-limited|balanced|no-range|request-delay-20ms|request-delay-100ms|small-files|two-tasks|large) ;;
+    *) echo "Unknown benchmark case: $case_name" >&2; exit 2 ;;
+  esac
+done
 [[ ! -e "$output/samples.jsonl" ]] || { echo 'Use a new output directory for each run' >&2; exit 2; }
 sha256sum "$baseline" "$candidate" > "$output/binaries.sha256"
 uname -a > "$output/host.txt"
@@ -45,8 +51,11 @@ run_one() {
   # Only remove the exact task-owned scratch created above, inside this output.
   [[ "$scratch" == "$output"/transfer-scratch.* ]] && rm -rf -- "$scratch"
   if (( code != 0 )); then cat "$log"; return "$code"; fi
+  local -a rows=()
+  mapfile -t rows < <(sed -n 's/^TRANSFER_BENCH //p' "$log")
+  if (( ${#rows[@]} != 1 )); then echo "Missing or ambiguous measurement: $log" >&2; return 1; fi
   if [[ "$sample" != warmup ]]; then
-    sed -n 's/^TRANSFER_BENCH //p' "$log" >> "$output/samples.jsonl"
+    printf '%s\n' "${rows[0]}" >> "$output/samples.jsonl"
   fi
   printf '%s %s %s complete\n' "$case_name" "$variant" "$sample"
 }
