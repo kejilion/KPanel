@@ -3965,6 +3965,7 @@ onBeforeUnmount(() => {
         @dirty="previewDirty = $event"
         @saving="previewSaving = $event"
         @saved="loadDirectory()"
+        @download="download(previewEntry)"
       />
       <div v-else-if="previewEntry" class="media-viewer" :class="`media-viewer--${previewMode}`">
         <div v-if="previewMode === 'video'" class="media-player">
