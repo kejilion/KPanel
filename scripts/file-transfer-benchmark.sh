@@ -19,7 +19,7 @@ read -r -a cases <<< "${TRANSFER_CASES:-fast source-limited balanced no-range re
 read -r -a variants <<< "${TRANSFER_VARIANTS:-baseline pipeline segmented}"
 for case_name in "${cases[@]}"; do
   case "$case_name" in
-    fast|source-limited|balanced|no-range|request-delay-20ms|request-delay-100ms|small-files|two-tasks|large) ;;
+    fast|source-limited|slow-source|balanced|no-range|request-delay-20ms|request-delay-100ms|small-files|two-tasks|large) ;;
     *) echo "Unknown benchmark case: $case_name" >&2; exit 2 ;;
   esac
 done

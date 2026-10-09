@@ -49,6 +49,7 @@ func TestFileTransferPerformance(t *testing.T) {
 	cases := []transferBenchCase{
 		{"fast", 64 << 20, 1, 1, 0, 0, 0, false},
 		{"source-limited", 64 << 20, 1, 1, 8 << 20, 0, 0, false},
+		{"slow-source", 64 << 20, 1, 1, 2 << 20, 0, 0, false},
 		{"balanced", 64 << 20, 1, 1, 8 << 20, 8 << 20, 0, false},
 		{"no-range", 64 << 20, 1, 1, 8 << 20, 8 << 20, 0, true},
 		{"request-delay-20ms", 64 << 20, 1, 1, 0, 0, 20 * time.Millisecond, false},
