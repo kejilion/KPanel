@@ -1,0 +1,144 @@
+{
+  "schemaVersion": 1,
+  "run_id": "run-31",
+  "run_status": "incomplete",
+  "completion_scope": "Source-only manual SSL renewal slice; distinct final-clean critic missing at deadline. No completed coverage credit.",
+  "profile": "scoped",
+  "scope_mode": "scoped",
+  "scope_complete": false,
+  "global_coverage_complete": false,
+  "risk_acceptance": null,
+  "risk_closed": false,
+  "repo": "kejilion-panel",
+  "governance_head": "29f7451816a69acad9aa999dd936b1e1021f0627",
+  "skill_commit": "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8",
+  "source_ref": "f2c867b4b48ecc1eddb6ad60efef87f7a53c51dc",
+  "source_tree": "99813b177086265502efd914e201d9ec1bd1f638",
+  "source_dirty": false,
+  "comparison_base": "4c0694aa8e02e46145a775707b8d5a0355f7ce10",
+  "reviewed_commits": [
+    "f2c867b4b48ecc1eddb6ad60efef87f7a53c51dc"
+  ],
+  "scope_paths": [
+    "docs/legacy-site-contract.md",
+    "internal/agent/server.go",
+    "internal/agent/server_test.go",
+    "internal/panel/server.go",
+    "internal/panel/sites.go",
+    "internal/panel/sites_test.go",
+    "internal/sites/certificate_renew.go",
+    "internal/sites/certificate_renew_test.go",
+    "internal/sites/manager.go",
+    "web/src/components/sites/SiteCertificateRenewDialog.vue",
+    "web/src/i18n/pages/SitesView/en-US.ts",
+    "web/src/i18n/pages/SitesView/zh-TW.ts",
+    "web/src/lib/api.test.ts",
+    "web/src/lib/api.ts",
+    "web/src/views/SitesView.test.ts",
+    "web/src/views/SitesView.vue"
+  ],
+  "validation_mode": "source-only",
+  "execution": {
+    "model": "gpt-6-luna",
+    "reasoning_effort": "max",
+    "mode": "source-only",
+    "target_code_execution": false,
+    "production": false
+  },
+  "companion_sources": [
+    {
+      "repo": "kejilion-sh-claude-k-ssl-force-renew",
+      "source_ref": "f0e0c652451ff45fb1cc056b1c7362c97c04564b",
+      "source_tree": "76e1554aadda5c92269fc76c32a0dc6c5b957b36",
+      "source_dirty": false,
+      "comparison_base": "90d1b1f9ce6539bf3debcc8b75740602cacad360",
+      "selected_files": [
+        "cn/kejilion.sh",
+        "kejilion.sh",
+        "tests/test_kpanel_web_force_renew_smoke.sh"
+      ],
+      "scope_role": "fixed companion, not a reviewed KPanel commit"
+    }
+  ],
+  "findings_summary": {
+    "total": 1,
+    "needs_validation": 1,
+    "confirmed": 0,
+    "blocking_confirmed": 0
+  },
+  "findings_external_only": {
+    "path": "C:\\GitHub\\_release-evidence\\v1.26.0-rc.1/cf-ssl-run31/findings.json",
+    "sha256": "db84762cfb06d7ba9dbc7149932e7f4aab6ff146c31403121fdb42da1a98ac09",
+    "public": false
+  },
+  "coverage_ledger_external_only": {
+    "path": "C:\\GitHub\\_release-evidence\\v1.26.0-rc.1/cf-ssl-run31/coverage-ledger.json",
+    "sha256": "3c505e3a1c8adea52caa60971181a8ba4d974d55624a33bf4a746e58d8aea98c",
+    "public": false
+  },
+  "metadata_external_only": {
+    "path": "C:\\GitHub\\_release-evidence\\v1.26.0-rc.1/cf-ssl-run31/run-metadata.json",
+    "sha256": "fc0d5bfcae3b2203f6eb592cca4f4cd53c74f3a0bc51b8ffd3ff0303e2045d0f",
+    "public": false
+  },
+  "report_external_only": {
+    "path": "C:\\GitHub\\_release-evidence\\v1.26.0-rc.1/cf-ssl-run31/REPORT.md",
+    "sha256": "0b66052acee8fe09079aeeaa20debd589278dfc5fdd64816b8398586b40966e4",
+    "public": false
+  },
+  "official_validators": {
+    "findings": {
+      "exitCode": 0,
+      "result": "PASS: 1 findings valid"
+    },
+    "coverage": {
+      "exitCode": 0,
+      "result": "PASS: 5 coverage units valid"
+    },
+    "original_results": {
+      "path": "C:\\GitHub\\_release-evidence\\v1.26.0-rc.1/cf-ssl-run31/validator-results.json",
+      "sha256": "79a6c21524bf66de358fb24177439207468444c6e219d89df699bc04ccc99a85",
+      "public": false
+    }
+  },
+  "final_clean": {
+    "decision": "missing-at-deadline",
+    "deadline": "2026-10-09T09:29:19Z",
+    "coverage_credit": false
+  },
+  "execution_plan": {
+    "model": "gpt-6-luna",
+    "reasoning_effort": "max",
+    "validation_mode": "source-only",
+    "reviewed_commits": [
+      "f2c867b4b48ecc1eddb6ad60efef87f7a53c51dc"
+    ],
+    "comparison_base": "4c0694aa8e02e46145a775707b8d5a0355f7ce10",
+    "scope_complete": false,
+    "scope_reason": "One manual SSL-renewal feature commit selected from the official coverage output; remaining global pending commits stay out of scope.",
+    "max_wall_seconds": 2520,
+    "original_max_wall_seconds": 1200,
+    "max_agent_invocations": 16,
+    "max_concurrency": 2,
+    "budget_revisions_preserved_in": {
+      "path": "C:\\GitHub\\_release-evidence\\v1.26.0-rc.1/cf-ssl-run31/run-metadata.json",
+      "sha256": "fc0d5bfcae3b2203f6eb592cca4f4cd53c74f3a0bc51b8ffd3ff0303e2045d0f",
+      "public": false
+    },
+    "stop_conditions": [
+      "Exact clean source identity must remain fixed.",
+      "No target execution, tests, builds, browser, CA or production.",
+      "Do not exceed 16 invocations or the final 2520-second deadline."
+    ],
+    "dynamic_risk": "Effective deployment PATH and ACL for bare systemd-run invocation are unknown; no lower-trust PATH control established by source/package defaults.",
+    "handoff": "KPanel release owner retains needs_validation; required stable audit admission must be re-evaluated."
+  },
+  "costs": {
+    "wall_seconds": 2520,
+    "model_invocations_reported": 16,
+    "tokens": null,
+    "usd": null,
+    "unknown_reason": "Platform token counts and billing were not supplied; invocation count is the audit lead record."
+  },
+  "admission": "Preview nonblocking observation under PROJECT_RULES 5.4 only; incomplete run contributes no completed coverage. Source repairs 2adec96c/1800d955 and final release HEAD are outside reviewed_commits. Parent fixtures are not CF dynamic validation."
+}
