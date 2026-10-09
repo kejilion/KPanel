@@ -363,9 +363,11 @@ function discardAndReload() { drafts.clear(); void load(true) }
   --office-paper-accent: color-mix(in srgb, var(--brand) 78%, #000);
   --office-paper-hover: color-mix(in srgb, var(--brand) 6%, #fff);
   --office-paper-active: color-mix(in srgb, var(--brand) 10%, #fff);
-  --office-danger: color-mix(in srgb, var(--danger) 72%, var(--file-preview-text));
-  --office-success: color-mix(in srgb, var(--success) 72%, var(--file-preview-text));
-  --office-warning: color-mix(in srgb, var(--amber) 72%, var(--file-preview-text));
+  /* Status hues lean towards the workbench text colour so they stay readable on both the dark
+     (dark theme) and the lighter slate (light theme) workbench; text still carries the meaning. */
+  --office-danger: color-mix(in srgb, var(--danger) 35%, var(--file-preview-text));
+  --office-success: color-mix(in srgb, var(--success) 55%, var(--file-preview-text));
+  --office-warning: color-mix(in srgb, var(--amber) 55%, var(--file-preview-text));
   container: office-workspace / inline-size;
   position: relative;
   display: flex;
@@ -391,7 +393,7 @@ function discardAndReload() { drafts.clear(); void load(true) }
 .office-toolbar__start { display: flex; flex: 1 1 auto; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; }
 .office-toolbar__end { display: flex; align-items: center; gap: 4px; margin-left: auto; }
 .office-kind { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; white-space: nowrap; }
-.office-status { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 2px 10px; border-radius: 999px; color: var(--file-preview-muted); background: color-mix(in srgb, var(--file-preview-text) 7%, transparent); font-size: 13px; white-space: nowrap; }
+.office-status { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 2px 10px; border-radius: 999px; color: var(--file-preview-text); background: color-mix(in srgb, var(--file-preview-text) 7%, transparent); font-size: 13px; white-space: nowrap; }
 .office-status[data-tone='dirty'] { color: var(--file-preview-text); background: color-mix(in srgb, var(--file-preview-accent) 18%, transparent); }
 .office-status[data-tone='success'] svg { color: var(--office-success); }
 .office-status[data-tone='warning'] { color: var(--file-preview-text); }
@@ -488,7 +490,7 @@ function discardAndReload() { drafts.clear(); void load(true) }
 .office-formula-input { flex: 1; min-width: 0; max-height: 132px; padding: 6px 10px; overflow: auto; line-height: 1.55; resize: none; field-sizing: content; }
 .office-formula-input[readonly] { color: var(--file-preview-muted); }
 .office-formula-input::placeholder { color: var(--file-preview-muted); opacity: 1; }
-.office-chip { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; height: 36px; padding: 0 10px; border-radius: 999px; color: var(--file-preview-muted); background: color-mix(in srgb, var(--file-preview-text) 7%, transparent); font-size: 13px; white-space: nowrap; }
+.office-chip { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; height: 36px; padding: 0 10px; border-radius: 999px; color: var(--file-preview-text); background: color-mix(in srgb, var(--file-preview-text) 7%, transparent); font-size: 13px; white-space: nowrap; }
 .office-grid-scroll { flex: 1; min-height: 0; overflow: auto; background: var(--file-preview-background); }
 .office-grid { border-collapse: separate; border-spacing: 0; font-size: 14px; }
 .office-grid:focus-visible { outline: none; }
