@@ -1535,11 +1535,21 @@ function startMockRemoteDownloadJob(id, input, rawURL) {
     const directory = typeof input.targetDirectory === 'string' ? input.targetDirectory : '/home'
     const name = mockRemoteDownloadName(directory, input.name)
     const totalBytes = 8 * 1024 * 1024
-    updateMockRemoteDownloadJob(id, { state: 'transferring', name, totalBytes })
+    const isTorrent = mockRemoteDownloadJobs.get(id)?.sourceKind === 'bittorrent'
+    const transferMode = isTorrent ? (input.acceleration === 'off' ? 'bt-standard' : 'bt-adaptive') : 'single'
+    updateMockRemoteDownloadJob(id, { state: 'transferring', name, totalBytes, transferMode })
     for (const loadedBytes of [512 * 1024, 2 * 1024 * 1024, 5 * 1024 * 1024, totalBytes]) {
       await wait(520)
       if (!mockRemoteDownloadJobActive(mockRemoteDownloadJobs.get(id))) return
-      updateMockRemoteDownloadJob(id, { state: 'transferring', name, loadedBytes, totalBytes })
+      updateMockRemoteDownloadJob(id, {
+        state: 'transferring', name, totalBytes,
+        ...(isTorrent ? { sourceBytes: loadedBytes, loadedBytes: 0, peers: 4, speedBytes: 2 * 1024 * 1024 } : { loadedBytes }),
+      })
+    }
+    if (isTorrent) {
+      updateMockRemoteDownloadJob(id, { transferMode: 'bt-publish', peers: 0, speedBytes: 0 })
+      await wait(520)
+      if (!mockRemoteDownloadJobActive(mockRemoteDownloadJobs.get(id))) return
     }
     updateMockRemoteDownloadJob(id, { state: 'confirming', name, loadedBytes: totalBytes, totalBytes })
     await wait(620)
@@ -1568,12 +1578,12 @@ function fileShareAdminView(record, token = '') {
   }
 }
 
-async function readJSON(request) {
+async function readJSON(request, maxBytes = 65_536) {
   const chunks = []
   let size = 0
   for await (const chunk of request) {
     size += chunk.length
-    if (size > 65_536) throw new Error('request body exceeds visual mock limit')
+    if (size > maxBytes) throw new Error('request body exceeds visual mock limit')
     chunks.push(chunk)
   }
   return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
@@ -2045,11 +2055,15 @@ createServer(async (request, response) => {
     return
   }
   if (request.method === 'POST' && url.pathname === '/api/v1/files/remote-downloads') {
-    const input = await readJSON(request)
+    const input = await readJSON(request, 768 * 1024)
     if (input.background === true) {
       let source
+      let sourceKind = 'http'
       try {
-        source = new URL(String(input.url || '')).origin
+        const isTorrent = typeof input.torrent === 'string' && input.torrent.length > 0
+          || input.sourceKind === 'torrent' || String(input.url || '').startsWith('magnet:')
+        sourceKind = isTorrent ? 'bittorrent' : 'http'
+        source = isTorrent ? 'bittorrent' : new URL(String(input.url || '')).origin
       } catch {
         send(response, 422, { title: '请检查下载地址', status: 422, code: 'remote_download_invalid' })
         return
@@ -2058,7 +2072,7 @@ createServer(async (request, response) => {
       const id = mockRemoteDownloadJobCounter.toString(16).padStart(32, '0')
       const now = new Date().toISOString()
       const job = {
-        id, state: 'queued', source,
+        id, state: 'queued', source, sourceKind,
         targetDirectory: typeof input.targetDirectory === 'string' ? input.targetDirectory : '/home',
         ...(typeof input.name === 'string' && input.name.trim() ? { name: input.name.trim() } : {}),
         createdAt: now, updatedAt: now,
