@@ -290,8 +290,9 @@ describe('visual rhythm contract', () => {
 
   /*
    * Materials (docs/ui-visual-language.md 3.5). Live blur belongs to resident
-   * shell chrome and short-lived overlays only; content and window frames stay
-   * opaque. The selector lists are the machine side of the spec's layer table.
+   * shell chrome and short-lived overlays, with explicitly listed fixed filters.
+   * Classic wallpaper may tune page fills but never adds blur to content cards.
+   * The selector lists are the machine side of the spec's layer table.
    */
   const MATERIAL_SURFACES = {
     chrome: ['.desktop__menubar', '.desktop__taskbar'],
@@ -405,7 +406,7 @@ describe('visual rhythm contract', () => {
       'border-color: color-mix(in srgb, var(--brand) 20%, var(--desktop-glass-border));',
       'background: color-mix(in srgb, var(--brand) 18%, var(--desktop-glass));',
     ])
-    // Literal blur radii live only in the two material filters, capped at 24px.
+    // Material blur radii live in two tokens; fixed exceptions share the 24px cap.
     const filters = Array.from(themes.matchAll(/--material-(chrome|overlay)-filter:\s*blur\((\d+)px\)[^;]*;/g))
     expect(filters.map((match) => match[1])).toEqual(['chrome', 'overlay'])
     for (const match of filters) expect(Number(match[2])).toBeLessThanOrEqual(24)
@@ -416,7 +417,7 @@ describe('visual rhythm contract', () => {
     }
   })
 
-  it('keeps content, window frames and dialog panels opaque', () => {
+  it('keeps desktop windows solid and content panels free of live blur', () => {
     for (const selector of ['.desktop-window', '.desktop-window__titlebar', '.desktop-window__body', '.modal-panel']) {
       for (const { selector: ruleSelector, value } of [...backdropRules(main), ...backdropRules(desktop)]) {
         if (value === 'none') continue
@@ -428,7 +429,7 @@ describe('visual rhythm contract', () => {
     expect(desktop.match(/\.desktop-folder__sheet\s*\{([^}]*)\}/)?.[1]).not.toContain('backdrop-filter')
   })
 
-  it('turns every material solid when transparency, contrast or blur support says so', () => {
+  it('makes materials solid for accessibility and blurred surfaces solid without blur support', () => {
     const degrade = main.match(/@media \(prefers-reduced-transparency: reduce\), \(prefers-contrast: more\) \{\s*:root \{([^}]*)\}/)?.[1] ?? ''
     for (const role of ['panel', 'chrome', 'overlay']) {
       expect(degrade).toContain(`--material-${role}-fill: var(--surface-raised);`)
@@ -541,12 +542,11 @@ describe('visual rhythm contract', () => {
     // Ratchet for 3.6.4: literal durations still owed to the motion tokens. Lower
     // a ceiling when a feature migrates; never raise one to fit new code.
     const ceilings: Record<string, number> = {
-      main: 28, desktop: 89, desktopWallpaper: 2, classicWallpaper: 0,
+      main: 28, desktop: 78, desktopWallpaper: 2, classicWallpaper: 0,
       'src/components/cluster/ClusterGlobe.vue': 1,
       'src/components/cluster/ClusterNotificationsDialog.vue': 6,
       'src/components/cluster/ClusterTemporarySortMenu.vue': 3,
       'src/components/common/HostSwitcher.vue': 7,
-      'src/components/desktop/DesktopGroupCard.vue': 4,
       'src/components/docker/DockerDeploymentEditor.vue': 5,
       'src/components/docker/DockerUsageMeter.vue': 2,
       'src/components/files/FileShareDialog.vue': 1,
@@ -605,6 +605,8 @@ describe('visual rhythm contract', () => {
     expect(desktop).toMatch(/\.desktop-window\s*\{[^}]*box-shadow:\s*var\(--shadow-md\);/)
     expect(desktop).not.toMatch(/\.desktop__menubar\s*\{[^}]*inset 0 1px 0 rgb\(255 255 255/)
     expect(desktop).not.toMatch(/\.desktop__taskbar\s*\{[^}]*inset 0 1px 0 rgb\(255 255 255/)
+    const group = readFileSync(new URL('../components/desktop/DesktopGroupCard.vue', import.meta.url), 'utf8')
+    expect(group.match(/\.desktop-group\s*\{([^}]+)\}/)?.[1]).toContain('box-shadow: var(--shadow-md);')
   })
 
   it('routes the window close affordance through the danger pair', () => {

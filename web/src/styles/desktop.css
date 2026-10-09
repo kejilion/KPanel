@@ -1484,7 +1484,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   height: 96px;
   place-items: start center;
   /* One coordinate space keeps first-group creation / last-group dissolution continuous. */
-  transition: transform 280ms cubic-bezier(.22, 1, .36, 1), opacity 160ms ease, visibility 160ms;
+  transition: transform var(--motion-duration-layout) var(--motion-ease-standard), opacity var(--motion-duration-fast) var(--motion-ease-fade), visibility var(--motion-duration-fast);
 }
 
 /* Keep the measurable work area mounted while its first snapshot is restored. */
@@ -1507,7 +1507,7 @@ body.desktop-mode-open::-webkit-scrollbar {
 
 /* Reveal the settled workspace together; never animate its placement or stagger icons. */
 .desktop__icons:not(.desktop__icons--restoring) {
-  animation: desktop-workspace-reveal 180ms ease-out;
+  animation: desktop-workspace-reveal var(--motion-duration-fast) var(--motion-ease-fade);
 }
 
 @keyframes desktop-workspace-reveal {
@@ -1516,10 +1516,10 @@ body.desktop-mode-open::-webkit-scrollbar {
 }
 
 .desktop-group-surface-enter-active {
-  transition: opacity 220ms ease-out, scale 280ms cubic-bezier(.22, 1, .36, 1) !important;
+  transition: opacity var(--motion-duration-fast) var(--motion-ease-fade), scale var(--motion-duration-base) var(--motion-ease-standard) !important;
 }
 .desktop-group-surface-leave-active {
-  transition: opacity 180ms ease-in, scale 200ms ease-in !important;
+  transition: opacity var(--motion-duration-instant) var(--motion-ease-exit), scale var(--motion-duration-fast) var(--motion-ease-exit) !important;
   pointer-events: none;
 }
 .desktop-group-surface-enter-from, .desktop-group-surface-leave-to { opacity: 0; scale: .97; }
@@ -1534,7 +1534,7 @@ body.desktop-mode-open::-webkit-scrollbar {
 }
 :root .desktop__icon-slot[data-group-member] {
   transform-origin: center 28px;
-  transition: transform 280ms cubic-bezier(.22, 1, .36, 1), opacity 220ms ease, visibility 280ms;
+  transition: transform var(--motion-duration-layout) var(--motion-ease-standard), opacity var(--motion-duration-base) var(--motion-ease-fade), visibility var(--motion-duration-layout);
 }
 :root .desktop__icon-slot[data-group-member] .desktop__icon {
   width: 100%; height: 100%; padding: 1px; gap: 2px;

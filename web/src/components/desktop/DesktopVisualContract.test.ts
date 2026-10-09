@@ -115,11 +115,21 @@ describe('desktop visual and interaction contract', () => {
   it('positions icon slots independently and disables slot motion while dragging', () => {
     expect(styles).toMatch(/\.desktop__icons\s*\{[^}]*overflow-x:\s*hidden;[^}]*overflow-y:\s*auto;/)
     expect(styles).toMatch(/\.desktop__icons-scroll-space\s*\{[^}]*pointer-events:\s*none;/)
-    expect(styles).toMatch(/\.desktop__icon-slot\s*\{[^}]*position:\s*absolute;[^}]*transition:\s*transform 280ms [^;]+, opacity 160ms ease, visibility 160ms;/)
+    const slot = cssRule(styles, '.desktop__icon-slot')
+    expect(slot).toContain('position: absolute;')
+    expect(slot).toContain('transform var(--motion-duration-layout) var(--motion-ease-standard)')
+    expect(slot).toContain('opacity var(--motion-duration-fast) var(--motion-ease-fade)')
+    expect(slot).toContain('visibility var(--motion-duration-fast)')
     expect(styles).toMatch(/\.desktop__icon-slot--dragging\s*\{[^}]*transition:\s*none;/)
   })
 
   it('animates group surfaces without overriding placement, and disables motion on request', () => {
+    const entering = cssRule(styles, '.desktop-group-surface-enter-active')
+    const leaving = cssRule(styles, '.desktop-group-surface-leave-active')
+    expect(entering).toContain('opacity var(--motion-duration-fast) var(--motion-ease-fade)')
+    expect(entering).toContain('scale var(--motion-duration-base) var(--motion-ease-standard)')
+    expect(leaving).toContain('opacity var(--motion-duration-instant) var(--motion-ease-exit)')
+    expect(leaving).toContain('scale var(--motion-duration-fast) var(--motion-ease-exit)')
     expect(styles).toMatch(/\.desktop-group-surface-enter-from, \.desktop-group-surface-leave-to\s*\{[^}]*opacity: 0; scale: \.97;/)
     expect(styles).toMatch(/\.desktop-group-surface-leave-active\s*\{[^}]*pointer-events: none;/)
     expect(styles).toMatch(/\.desktop-group-surface-no-move\s*\{ transition: none !important;/)
