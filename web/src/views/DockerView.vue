@@ -39,6 +39,7 @@ import {
   Trash2,
   Waypoints,
   Wrench,
+  X,
 } from '@lucide/vue'
 import EmptyState from '@/components/feedback/EmptyState.vue'
 import ErrorState from '@/components/feedback/ErrorState.vue'
@@ -123,6 +124,7 @@ type DockerContextMenuItem =
   | { kind: 'image'; item: DockerInventory['images'][number] }
   | { kind: 'network'; item: DockerInventory['networks'][number] }
   | { kind: 'volume'; item: DockerInventory['volumes'][number] }
+  | { kind: 'batch' }
 type DockerContextMenu = DockerContextMenuItem & { x: number; y: number }
 
 interface CreatePortRow {
@@ -330,6 +332,7 @@ const contextNetwork = computed(() =>
 const contextVolume = computed(() =>
   contextMenu.value?.kind === 'volume' ? contextMenu.value.item : undefined,
 )
+const contextBatch = computed(() => contextMenu.value?.kind === 'batch')
 
 const runningCount = computed(() => data.value?.containers.filter((item) => item.state === 'running').length || 0)
 const manageableCount = computed(() => data.value?.containers.filter((item) => (item.allowedActions?.length || 0) > 0).length || 0)
@@ -732,6 +735,22 @@ watch(data, (inventory) => {
   if (next.size !== batchSelection.value.size) batchSelection.value = next
 })
 
+function batchMenuTitle(action: DockerBatchBarAction): string | undefined {
+  if (batchActive.value) return phrase('请等待当前批量操作完成')
+  if (action.disabledReason) return phrase(action.disabledReason)
+  return action.count ? undefined : phrase('所选项都不适用此操作')
+}
+
+function runBatchFromContextMenu(id: string): void {
+  contextMenu.value = undefined
+  openBatch(id)
+}
+
+function clearBatchSelectionFromContextMenu(): void {
+  closeContextMenu(true)
+  clearBatchSelection()
+}
+
 function openBatch(id: string): void {
   if (!batchTab.value || batchActive.value) return
   batchDialog.value = { plan: batchPlan(id as DockerBatchAction, batchSelection.value) }
@@ -817,11 +836,26 @@ async function settleContextMenu(focusOrigin: ContextMenuFocusOrigin): Promise<v
   focusFirstContextMenuItem(menu, focusOrigin)
 }
 
+function contextBatchKey(item: DockerContextMenuItem): string | undefined {
+  switch (item.kind) {
+    case 'container':
+    case 'image':
+    case 'network': return item.item.id
+    case 'volume': return item.item.name
+    default: return undefined
+  }
+}
+
 function openContextMenu(event: MouseEvent, item: DockerContextMenuItem): void {
   event.preventDefault()
   event.stopPropagation()
   contextMenuOpener = event.currentTarget instanceof HTMLElement ? event.currentTarget : null
-  contextMenu.value = { ...item, ...contextMenuPoint(event) } as DockerContextMenu
+  // Right-clicking a row inside a multi-selection acts on the whole selection,
+  // as in the file manager; the row's own ⋯ button always stays per item.
+  const key = contextBatchKey(item)
+  const selection = event.type === 'contextmenu' && Boolean(batchTab.value) && batchSelection.value.size > 1 &&
+    key !== undefined && batchSelection.value.has(key)
+  contextMenu.value = { ...(selection ? { kind: 'batch' as const } : item), ...contextMenuPoint(event) } as DockerContextMenu
   void settleContextMenu(contextMenuFocusOrigin(event))
 }
 
@@ -2350,6 +2384,28 @@ onBeforeUnmount(() => {
         </button>
       </template>
 
+      <template v-else-if="contextBatch">
+        <strong class="docker-context-menu__title">{{ phrase(`已选 ${batchSelection.size} 项`) }}</strong>
+        <template v-for="action in batchBarActions" :key="action.id">
+          <hr v-if="action.id.endsWith('remove') && batchBarActions.length > 1" />
+          <button
+            :class="{ 'danger-link k-context-menu__item--danger': action.id.endsWith('remove') }"
+            type="button"
+            role="menuitem"
+            :disabled="batchActive || !action.count || Boolean(action.disabledReason)"
+            :title="batchMenuTitle(action)"
+            @click="runBatchFromContextMenu(action.id)"
+          >
+            <component :is="action.icon" :size="15" />{{ phrase(action.label) }}
+            <span v-if="action.count" class="docker-context-menu__count">{{ action.count }}</span>
+          </button>
+        </template>
+        <hr />
+        <button type="button" role="menuitem" @click="clearBatchSelectionFromContextMenu">
+          <X :size="15" />{{ phrase('取消选择') }}
+        </button>
+      </template>
+
       <template v-else-if="contextVolume">
         <strong class="docker-context-menu__title">{{ contextVolume.name }}</strong>
         <button type="button" role="menuitem" @click="copyResourceValue(contextVolume.name, phrase('存储卷名称'))">
@@ -2846,6 +2902,9 @@ onBeforeUnmount(() => {
   font-size: 14px;
 }
 .docker-context-menu button.danger-link { color: var(--danger); }
+.docker-context-menu button:disabled { opacity: .48; cursor: not-allowed; }
+.docker-context-menu__count { min-width: 22px; margin-left: auto; padding: 1px 6px; border-radius: 999px; color: var(--brand); background: var(--brand-soft); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; text-align: center; }
+.docker-context-menu button.danger-link .docker-context-menu__count { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
 .docker-context-menu hr {
   width: 100%;
   margin: 4px 0;

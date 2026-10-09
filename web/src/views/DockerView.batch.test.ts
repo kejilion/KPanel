@@ -245,6 +245,52 @@ describe('Docker batch operations', () => {
     expect(document.body.querySelector('.docker-batch-bar__progress')).toBeNull()
   })
 
+  it('turns right-click on a row inside a multi-selection into a menu for the selection', async () => {
+    rowCheckbox('web').click()
+    rowCheckbox('db').click()
+    rowCheckbox('worker').click()
+    await flushPromises()
+    const menu = () => document.body.querySelector<HTMLElement>('.docker-context-menu')
+    const rightClick = (name: string) => rowCheckbox(name).closest('tr')!
+      .dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 40 }))
+
+    rightClick('db')
+    await flushPromises()
+    expect(menu()?.querySelector('.docker-context-menu__title')?.textContent).toBe('已选 3 项')
+    const items = [...menu()!.querySelectorAll<HTMLButtonElement>('button')]
+    expect(items.map((item) => [item.textContent?.replace(/\s+/g, ''), item.disabled])).toEqual([
+      ['启动1', false], ['重启2', false], ['暂停2', false], ['停止2', false], ['删除3', false], ['取消选择', false],
+    ])
+    items[3]!.click()
+    await flushPromises()
+    expect(menu()).toBeNull()
+    expect(document.body.textContent).toContain('将逐个停止 2 个容器。')
+    ;[...document.body.querySelectorAll<HTMLButtonElement>('.modal-panel button')].find((item) => item.textContent?.trim() === '取消')!.click()
+    await flushPromises()
+    expect(document.body.querySelector('.docker-batch')).toBeNull()
+
+    // An unselected row keeps its own menu and leaves the selection alone.
+    rightClick('cache')
+    await flushPromises()
+    expect(menu()?.querySelector('.docker-context-menu__title')?.textContent).toBe('cache')
+    document.body.click()
+    await flushPromises()
+    expect(document.body.querySelector('.docker-batch-bar__count')?.textContent).toBe('已选 3 项')
+
+    // The row's ⋯ button is always about that row.
+    rowCheckbox('db').closest('tr')!.querySelector<HTMLButtonElement>('.docker-context-trigger')!.click()
+    await flushPromises()
+    expect(menu()?.querySelector('.docker-context-menu__title')?.textContent).toBe('db')
+    document.body.click()
+    await flushPromises()
+
+    rightClick('web')
+    await flushPromises()
+    ;[...menu()!.querySelectorAll<HTMLButtonElement>('button')].find((item) => item.textContent?.includes('取消选择'))!.click()
+    await flushPromises()
+    expect(document.body.querySelector('.docker-batch-bar')).toBeNull()
+  })
+
   it('clears the selection when switching to the monitoring view', async () => {
     rowCheckbox('web').click()
     await flushPromises()
