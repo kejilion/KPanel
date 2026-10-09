@@ -170,6 +170,7 @@ Agent 校验证书 PEM、域名（换证覆盖全部已绑定域名）、有效�
 `expectedResourceVersion`。可信脚本必须包含 `KPANEL_WEB_CERTIFICATE_FORCE_RENEW_PROTOCOL_VERSION="1"` 和
 `kpanel_web_force_renew_certificate()`，否则能力 `sites.certificate-renew` 关闭并说明需更新配套脚本。
 
+手动续签当前只在 systemd 主机启用；OpenRC 的直接 shell 在超时强杀时不能保证执行 Nginx 恢复 trap，因此能力关闭。
 Agent 以 root 在独立 transient unit 中固定执行 `k ssl <domain>`，仅附加 `KJ_WEB_FORCE_RENEW=1`、
 `KJ_WEB_NONINTERACTIVE=1`。未设置开关的 `k ssl` 行为不变（证书对仍有效时直接返回，不重新签发）。开关开启后脚本：
 站点证书对、配置和 Nginx 容器必须存在；`.custom` 站点与非 Let's Encrypt 签发的证书拒绝；持有与续签器、换证事务相同的

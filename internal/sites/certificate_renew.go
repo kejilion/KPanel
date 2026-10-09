@@ -39,7 +39,20 @@ func (scriptCertificateRenewer) Available() error {
 	if _, err := findTrustedKejilionScript(certificateRenewRequirements...); err != nil {
 		return err
 	}
-	return jobcontrol.Available(systemRecipeJobRunner{})
+	return certificateRenewControlAvailable(systemRecipeJobRunner{})
+}
+
+// A direct OpenRC shell can be killed at the caller deadline before its EXIT
+// trap restores Nginx. Keep renewal disabled until that backend owns cleanup.
+func certificateRenewControlAvailable(runner jobcontrol.Runner) error {
+	backend, err := jobcontrol.Detect(runner)
+	if err != nil {
+		return err
+	}
+	if backend != jobcontrol.BackendSystemd {
+		return fmt.Errorf("manual certificate renewal requires systemd-managed cleanup; OpenRC is not supported")
+	}
+	return nil
 }
 
 func (m *Manager) CertificateRenewWritable() error {
@@ -118,7 +131,7 @@ func (scriptCertificateRenewer) Renew(ctx context.Context, domain string) error 
 		return fmt.Errorf("%w: certificate renewal protocol unavailable", ErrUnavailable)
 	}
 	controlRunner := systemRecipeJobRunner{}
-	if err := jobcontrol.Available(controlRunner); err != nil {
+	if err := certificateRenewControlAvailable(controlRunner); err != nil {
 		return fmt.Errorf("%w: certificate worker unavailable", ErrUnavailable)
 	}
 	// The script owns Nginx downtime and rollback; let it finish even if the
@@ -137,8 +150,8 @@ func (scriptCertificateRenewer) Renew(ctx context.Context, domain string) error 
 		},
 		UMask: "0077",
 	}
-	name, args, _, err := jobcontrol.ForegroundInvocation(controlRunner, spec)
-	if err != nil {
+	name, args, backend, err := jobcontrol.ForegroundInvocation(controlRunner, spec)
+	if err != nil || backend != jobcontrol.BackendSystemd {
 		return fmt.Errorf("%w: certificate worker unavailable", ErrUnavailable)
 	}
 	command := exec.CommandContext(ctx, name, args...)

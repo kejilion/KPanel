@@ -167,3 +167,33 @@ func TestCertificateRenewalResultMapsOnlyFixedReceipts(t *testing.T) {
 		}
 	}
 }
+
+type certificateRenewControlRunner struct{ backend string }
+
+func (runner certificateRenewControlRunner) LookPath(name string) (string, error) {
+	if (runner.backend == "systemd" && name == "systemd-run") ||
+		(runner.backend == "openrc" && (name == "start-stop-daemon" || name == "rc-service")) {
+		return "/usr/bin/" + name, nil
+	}
+	return "", errors.New("not found")
+}
+
+func (runner certificateRenewControlRunner) InitRuntimeDirectoryExists(path string) bool {
+	return (runner.backend == "systemd" && path == "/run/systemd/system") ||
+		(runner.backend == "openrc" && path == "/run/openrc")
+}
+
+func (certificateRenewControlRunner) Run(context.Context, string, ...string) ([]byte, error) {
+	return nil, errors.New("availability checks must not execute commands")
+}
+
+func TestCertificateRenewalRequiresSystemdCleanupBeforeExecution(t *testing.T) {
+	for _, backend := range []string{"systemd", "openrc", "unavailable"} {
+		t.Run(backend, func(t *testing.T) {
+			err := certificateRenewControlAvailable(certificateRenewControlRunner{backend: backend})
+			if (err == nil) != (backend == "systemd") {
+				t.Fatalf("backend=%s: %v", backend, err)
+			}
+		})
+	}
+}
