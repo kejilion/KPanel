@@ -43,8 +43,10 @@ function deckKeydown(event: KeyboardEvent) {
   if (event.isComposing || event.altKey || event.ctrlKey || event.metaKey || target.closest('textarea, input')) return
   const inRail = Boolean(target.closest('.office-rail'))
   const steps: Record<string, number> = { PageUp: -1, PageDown: 1, ArrowLeft: -1, ArrowRight: 1, ArrowUp: inRail ? -1 : 0, ArrowDown: inRail ? 1 : 0 }
-  const step = steps[event.key]
-  const next = event.key === 'Home' ? 0 : event.key === 'End' ? total.value - 1 : step ? sectionIndex.value + step : undefined
+  let next: number | undefined
+  if (event.key === 'Home') next = 0
+  else if (event.key === 'End') next = total.value - 1
+  else if (steps[event.key]) next = sectionIndex.value + steps[event.key]!
   if (next === undefined || next < 0 || next >= total.value) return
   event.preventDefault()
   go(next)

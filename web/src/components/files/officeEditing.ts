@@ -3,8 +3,6 @@ import type { OfficeItem } from '@/types/api'
 
 /** Draft editing state shared by the Word, Excel and PowerPoint views of one workspace. */
 export interface OfficeEditing {
-  /** Saving, or a committed save still awaits reload confirmation. */
-  locked: Readonly<Ref<boolean>>
   selectedId: Readonly<Ref<string | undefined>>
   editingId: Readonly<Ref<string | undefined>>
   value(item: OfficeItem): string

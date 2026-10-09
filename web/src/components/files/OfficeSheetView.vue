@@ -20,6 +20,7 @@ const rowStart = ref(1), columnStart = ref(1)
 const active = ref({ row: 1, column: 1 })
 const editor = ref<'cell' | 'bar'>()
 const nameDraft = ref('A1'), nameFocused = ref(false), nameError = ref(false)
+const copyNotice = ref<{ cell: string; ok: boolean }>()
 
 const section = computed(() => props.sections[sectionIndex.value])
 const cells = computed(() => new Map(section.value?.items.map(item => [`${item.row}:${item.column}`, item])))
@@ -37,6 +38,7 @@ const barValue = computed(() => {
 })
 const sheetHint = computed(() => {
   const item = activeItem.value
+  if (copyNotice.value) return copyNotice.value.ok ? t('office.cellCopied', { cell: copyNotice.value.cell }) : t('office.copyFailed')
   if (nameError.value) return t('office.invalidCell')
   if (!item) return t('office.emptyCell')
   if (item.formula) return t('office.formulaReadonly')
@@ -68,7 +70,7 @@ function scrollActive() {
 function moveTo(row: number, column: number) {
   const r = Math.max(1, Math.min(totalRows.value, row)), c = Math.max(1, Math.min(totalColumns.value, column))
   active.value = { row: r, column: c }
-  nameError.value = false
+  nameError.value = false; copyNotice.value = undefined
   if (r < rowStart.value) rowStart.value = r
   else if (r >= rowStart.value + OFFICE_SHEET_ROWS) rowStart.value = r - OFFICE_SHEET_ROWS + 1
   if (c < columnStart.value) columnStart.value = c
@@ -128,10 +130,14 @@ function gridKeydown(event: KeyboardEvent) {
     case 'Delete': if (editable && item) { handled(); editing.update(item, '') } return
     case 'Backspace': if (editable) { handled(); startCellEdit('') } return
   }
-  if (command && !event.altKey && event.key.toLowerCase() === 'c' && item) { handled(); void copyText(editing.value(item)); return }
+  if (command && !event.altKey && event.key.toLowerCase() === 'c' && item) { handled(); void copyCell(item); return }
   if (editable && event.key.length === 1 && !command && !event.altKey) { handled(); startCellEdit(event.key) }
 }
 
+async function copyCell(item: OfficeItem) {
+  const cell = activeName.value
+  copyNotice.value = { cell, ok: await copyText(editing.value(item)) }
+}
 function barFocus() {
   const item = activeItem.value
   if (item && editing.canEdit(item) && editing.editingId.value !== item.id && editing.startEdit(item)) editor.value = 'bar'
@@ -175,8 +181,8 @@ function nameKeydown(event: KeyboardEvent) {
 function nameBlur() { nameFocused.value = false; nameDraft.value = activeName.value }
 
 function tabKeydown(event: KeyboardEvent, index: number) {
-  const next = event.key === 'ArrowRight' ? index + 1 : event.key === 'ArrowLeft' ? index - 1
-    : event.key === 'Home' ? 0 : event.key === 'End' ? props.sections.length - 1 : undefined
+  const targets: Record<string, number> = { ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0, End: props.sections.length - 1 }
+  const next = targets[event.key]
   if (next === undefined) return
   event.preventDefault()
   sectionIndex.value = (next + props.sections.length) % props.sections.length

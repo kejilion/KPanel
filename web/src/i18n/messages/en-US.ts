@@ -31,6 +31,8 @@ export const enUSMessages = {
   'office.original': "Original: ",
   'office.copyChange': "Copy changed text",
   'office.copied': "Copied",
+  'office.copyFailed': "Copy failed. Select the text and copy it manually.",
+  'office.cellCopied': "Copied {cell}",
   'office.revertChange': "Undo this change",
   'office.discardAll': "Discard all changes",
   'office.reviewChanges': "Review changes",

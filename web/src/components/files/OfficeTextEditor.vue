@@ -54,7 +54,8 @@ function keydown(event: KeyboardEvent) {
   } else if (event.key === 'Enter') {
     event.preventDefault(); event.stopPropagation()
     if (props.multiline && event.altKey) insertLineBreak(element)
-    else finish('commit', props.multiline ? (event.shiftKey ? 'up' : 'down') : undefined)
+    else if (props.multiline) finish('commit', event.shiftKey ? 'up' : 'down')
+    else finish('commit')
   } else if (event.key === 'Tab' && props.multiline) {
     event.preventDefault(); event.stopPropagation(); finish('commit', event.shiftKey ? 'left' : 'right')
   }

@@ -7,6 +7,7 @@ import {
 import { useI18n } from '@/i18n'
 import { ApiError } from '@/lib/api'
 import { copyText } from '@/lib/clipboard'
+import { fileIconPalette } from '@/lib/fileEntryPresentation'
 import { fileAPIForHost } from '@/lib/fileHostContext'
 import { indexOfficeDocument, OFFICE_MAX_EDIT_BYTES, OFFICE_MAX_EDITS, type OfficeLocation } from '@/lib/officeDocument'
 import type { FileEntry, OfficeDocument, OfficeItem } from '@/types/api'
@@ -27,7 +28,7 @@ const sectionIndex = ref(0)
 const selectedId = ref<string>(), editingId = ref<string>()
 // A reactive Map tracks per-id has/get, so views refresh when a draft is first added.
 const drafts = reactive(new Map<string, string>())
-const changesOpen = ref(false), noticeOpen = ref(readNotice()), copiedId = ref<string>()
+const changesOpen = ref(false), noticeOpen = ref(readNotice()), copied = ref<{ id: string; ok: boolean }>()
 const view = ref<{ reveal(location: OfficeLocation): Promise<void> }>()
 const changesPanel = ref<HTMLElement>(), changesToggle = ref<HTMLButtonElement>(), reloadButton = ref<HTMLButtonElement>()
 let editOrigin: { id: string; draft?: string } | undefined
@@ -41,6 +42,8 @@ const signed = computed(() => doc.value?.notes.includes('signed_readonly') ?? fa
 const editable = computed(() => !signed.value && [...index.value.values()].some(location => location.item.editable))
 const kind = computed<OfficeKind>(() => doc.value?.kind ?? (/\.(xlsx|pptx)$/i.exec(props.entry.name)?.[1]?.toLowerCase() as OfficeKind | undefined) ?? 'docx')
 const kindIcon = computed(() => ({ docx: FileText, xlsx: FileSpreadsheet, pptx: Presentation })[kind.value])
+// Same hue as the file browser glyph for this format.
+const kindColor = computed(() => fileIconPalette[({ docx: 'document', xlsx: 'spreadsheet', pptx: 'presentation' } as const)[kind.value]][0])
 const kindLabel = computed(() => t(({ docx: 'office.kind.docx', xlsx: 'office.kind.xlsx', pptx: 'office.kind.pptx' } as const)[kind.value]))
 const changes = computed(() => [...drafts].map(([id, text]) => ({ id, text, location: index.value.get(id) })))
 const status = computed(() => {
@@ -65,7 +68,7 @@ watch(dirty, value => { if (!value) changesOpen.value = false })
 
 function draftValue(item: OfficeItem) { return item.id && drafts.has(item.id) ? drafts.get(item.id)! : item.text }
 const editing: OfficeEditing = {
-  locked, selectedId, editingId,
+  selectedId, editingId,
   value: draftValue,
   isModified: item => Boolean(item?.id && drafts.has(item.id)),
   canEdit: item => Boolean(item?.id && item.editable && !locked.value && !signed.value),
@@ -205,10 +208,13 @@ function revert(id: string) {
   if (!dirty.value) settleFocus()
 }
 async function copy(id: string, text: string) {
-  if (!await copyText(text)) return
-  copiedId.value = id
+  copied.value = { id, ok: await copyText(text) }
   clearTimeout(copiedTimer)
-  copiedTimer = setTimeout(() => { copiedId.value = undefined }, 1600)
+  copiedTimer = setTimeout(() => { copied.value = undefined }, 2400)
+}
+function copyLabel(id: string) {
+  if (copied.value?.id !== id) return t('office.copyChange')
+  return copied.value.ok ? t('office.copied') : t('office.copyFailed')
 }
 function discardAll() {
   editing.commit()
@@ -223,7 +229,7 @@ function discardAndReload() { drafts.clear(); void load(true) }
   <section class="office-workspace" :data-kind="kind" :aria-label="t('office.title')" @keydown="shortcut">
     <header class="office-toolbar">
       <div class="office-toolbar__start">
-        <span class="office-kind"><component :is="kindIcon" :size="18" aria-hidden="true" />{{ kindLabel }}</span>
+        <span class="office-kind"><component :is="kindIcon" :size="18" :color="kindColor" aria-hidden="true" />{{ kindLabel }}</span>
         <span v-if="status.text" class="office-status" :data-tone="status.tone" role="status">
           <LoaderCircle v-if="status.tone === 'busy'" :size="15" class="spin" aria-hidden="true" />
           <Check v-else-if="status.tone === 'success'" :size="15" aria-hidden="true" />
@@ -294,8 +300,10 @@ function discardAndReload() { drafts.clear(); void load(true) }
               <span class="office-change__after" data-i18n-ignore>{{ change.text || t('office.emptyText') }}</span>
               <span class="office-change__before"><span class="sr-only">{{ t('office.original') }}</span><span data-i18n-ignore>{{ change.location?.item.text || t('office.emptyText') }}</span></span>
             </button>
-            <button type="button" class="office-icon-button" :aria-label="copiedId === change.id ? t('office.copied') : t('office.copyChange')" :title="copiedId === change.id ? t('office.copied') : t('office.copyChange')" @click="copy(change.id, change.text)">
-              <Check v-if="copiedId === change.id" :size="16" aria-hidden="true" /><Copy v-else :size="16" aria-hidden="true" />
+            <button type="button" class="office-icon-button" :aria-label="copyLabel(change.id)" :title="copyLabel(change.id)" @click="copy(change.id, change.text)">
+              <Check v-if="copied?.id === change.id && copied.ok" :size="16" aria-hidden="true" />
+              <CircleAlert v-else-if="copied?.id === change.id" :size="16" class="office-copy-failed" aria-hidden="true" />
+              <Copy v-else :size="16" aria-hidden="true" />
             </button>
             <button type="button" class="office-icon-button" :aria-label="t('office.revertChange')" :title="t('office.revertChange')" :disabled="locked" @click="revert(change.id)"><Undo2 :size="16" aria-hidden="true" /></button>
           </li>
@@ -383,9 +391,6 @@ function discardAndReload() { drafts.clear(); void load(true) }
 .office-toolbar__start { display: flex; flex: 1 1 auto; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; }
 .office-toolbar__end { display: flex; align-items: center; gap: 4px; margin-left: auto; }
 .office-kind { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; white-space: nowrap; }
-.office-kind svg { color: #7ea7d8; }
-.office-workspace[data-kind='xlsx'] .office-kind svg { color: #5fb38c; }
-.office-workspace[data-kind='pptx'] .office-kind svg { color: #e3926f; }
 .office-status { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 2px 10px; border-radius: 999px; color: var(--file-preview-muted); background: color-mix(in srgb, var(--file-preview-text) 7%, transparent); font-size: 13px; white-space: nowrap; }
 .office-status[data-tone='dirty'] { color: var(--file-preview-text); background: color-mix(in srgb, var(--file-preview-accent) 18%, transparent); }
 .office-status[data-tone='success'] svg { color: var(--office-success); }
@@ -404,7 +409,7 @@ function discardAndReload() { drafts.clear(); void load(true) }
 .office-icon-button:hover:not(:disabled) { background: var(--file-preview-panel-raised); }
 .office-text-button { min-height: 32px; padding: 4px 10px; border: 0; border-radius: var(--radius-sm); color: var(--file-preview-text); background: color-mix(in srgb, var(--file-preview-text) 8%, transparent); font-size: 14px; font-weight: 600; white-space: nowrap; cursor: pointer; }
 .office-text-button:hover:not(:disabled) { background: var(--file-preview-panel-raised); }
-.office-text-button--danger { color: var(--office-danger); }
+.office-text-button--danger, .office-copy-failed { color: var(--office-danger); }
 
 /* Pending changes popover -------------------------------------------------- */
 .office-changes { position: absolute; top: calc(100% + 6px); right: 12px; display: flex; flex-direction: column; width: min(420px, calc(100% - 24px)); max-height: min(480px, 60dvh); overflow: hidden; color: var(--file-preview-text); background: var(--file-preview-panel); border: 1px solid var(--file-preview-border); border-radius: var(--radius); box-shadow: var(--shadow-md); font-weight: 400; }

@@ -30,6 +30,8 @@ export const zhCNMessages = {
   'office.original': "原文：",
   'office.copyChange': "复制修改后的文字",
   'office.copied': "已复制",
+  'office.copyFailed': "复制失败，请手动选择文字后复制",
+  'office.cellCopied': "已复制 {cell}",
   'office.revertChange': "撤销这处修改",
   'office.discardAll': "放弃全部修改",
   'office.reviewChanges': "查看修改",

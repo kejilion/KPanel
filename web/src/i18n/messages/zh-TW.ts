@@ -31,6 +31,8 @@ export const zhTWMessages = {
   'office.original': "原文：",
   'office.copyChange': "複製修改後的文字",
   'office.copied': "已複製",
+  'office.copyFailed': "複製失敗，請手動選取文字後複製",
+  'office.cellCopied': "已複製 {cell}",
   'office.revertChange': "復原這處修改",
   'office.discardAll': "放棄全部修改",
   'office.reviewChanges': "檢視修改",
