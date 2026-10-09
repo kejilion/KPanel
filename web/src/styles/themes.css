@@ -69,6 +69,32 @@
       var(--sidebar) 78%);
   --auth-form-background:
     linear-gradient(180deg, color-mix(in srgb, var(--surface) 94%, var(--brand-soft) 6%), var(--surface) 24rem);
+  /* Materials (docs/ui-visual-language.md 3.5). Content stays opaque; shell
+     surfaces and short-lived overlays are translucent. Fills reuse the glass
+     tokens the solver keeps contrast-safe, so text on a material reads like text
+     on a solid surface. A live blur is spent only where the backdrop can hold
+     moving content or text (chrome, overlays); panels resting on the wallpaper
+     alone take the fill without one. Literal blur values live only in the two
+     filters below. */
+  --material-panel-fill: var(--desktop-glass-strong);
+  --material-panel-edge: var(--desktop-glass-border);
+  --material-chrome-fill: var(--desktop-glass-strong);
+  --material-chrome-edge: var(--desktop-glass-border);
+  --material-chrome-filter: blur(16px) saturate(140%);
+  --material-overlay-fill: var(--desktop-glass-strong);
+  --material-overlay-edge: var(--border);
+  --material-overlay-filter: blur(20px) saturate(150%);
+  /* Motion (docs/ui-visual-language.md 3.6). Enter and move decelerate, exits
+     accelerate and are shorter; nothing bounces. The global reduced-motion rule
+     in main.css removes movement while state changes stay visible. */
+  --motion-duration-instant: 100ms;
+  --motion-duration-fast: 160ms;
+  --motion-duration-base: 220ms;
+  --motion-duration-layout: 260ms;
+  --motion-duration-ambient: 420ms;
+  --motion-ease-standard: cubic-bezier(.22, 1, .36, 1);
+  --motion-ease-exit: cubic-bezier(.4, 0, 1, 1);
+  --motion-ease-fade: ease;
 }
 
 :root {

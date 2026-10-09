@@ -215,11 +215,6 @@ defineExpose({ open, close, isOpen: computed(() => Boolean(request.value)), host
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 6px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  color: var(--text);
-  background: var(--surface);
-  box-shadow: var(--shadow-md);
 }
 
 .cluster-host-menu__title {

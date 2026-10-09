@@ -280,25 +280,146 @@ describe('visual rhythm contract', () => {
     expect(main).toMatch(/\.metric-card > strong\s*\{[^}]*font-variant-numeric:\s*tabular-nums;/)
   })
 
-  it('limits translucency to OS chrome and modal scrims', () => {
-    const allowed = [
-      '.desktop__menubar',
-      '.desktop__taskbar',
-      '.desktop__file-drop',
-      '.modal-scrim',
-      '.theme-color-actions > div',
-    ]
+  /*
+   * Materials (docs/ui-visual-language.md 3.5). Live blur belongs to resident
+   * shell chrome and short-lived overlays only; content and window frames stay
+   * opaque. The selector lists are the machine side of the spec's layer table.
+   */
+  const MATERIAL_SURFACES = {
+    chrome: ['.desktop__menubar', '.desktop__taskbar'],
+    overlay: ['.k-context-menu', '.desktop-start-menu'],
+  } as const
+  // Panels rest on the wallpaper alone: translucent fill, no resident live blur.
+  const PANEL_SURFACES = ['.desktop-clock,\n.desktop-monitor,\n.desktop-service-status']
+  // Scrims and drag feedback keep their own light, fixed blur.
+  const FIXED_BLUR_SURFACES = ['.desktop__file-drop', '.modal-scrim', '.theme-color-actions > div']
+
+  function backdropRules(source: string): Array<{ selector: string, value: string }> {
+    const rules = source.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)
+    const found: Array<{ selector: string, value: string }> = []
+    for (const rule of rules) {
+      for (const declaration of rule[2]!.matchAll(/(?:^|;)\s*backdrop-filter:\s*([^;]+);/g)) {
+        found.push({ selector: rule[1]!.trim(), value: declaration[1]!.trim() })
+      }
+    }
+    return found
+  }
+
+  it('limits translucency to shell chrome, short-lived overlays and scrims', () => {
+    const materialSelectors = [...MATERIAL_SURFACES.chrome, ...MATERIAL_SURFACES.overlay]
     const offenders: string[] = []
     for (const [name, source] of Object.entries(sources)) {
-      const rules = source.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)
-      for (const rule of rules) {
-        const selector = rule[1]!.trim()
-        if (!/backdrop-filter:\s*blur/.test(rule[2]!)) continue
-        if (allowed.some((entry) => selector.includes(entry))) continue
-        offenders.push(`${name}: ${selector}`)
+      for (const { selector, value } of backdropRules(source)) {
+        if (value === 'none') continue
+        const isMaterial = (materialSelectors as readonly string[]).includes(selector)
+        const isFixed = FIXED_BLUR_SURFACES.some((entry) => selector.includes(entry))
+        if (isMaterial && /^var\(--material-(chrome|overlay)-filter\)$/.test(value)) continue
+        if (isFixed && isBlurFilter(value)) continue
+        offenders.push(`${name}: ${selector} { backdrop-filter: ${value} }`)
       }
     }
     expect(offenders).toEqual([])
+  })
+
+  it('applies each material through its tokens, never a literal blur', () => {
+    for (const [role, selectors] of Object.entries(MATERIAL_SURFACES)) {
+      for (const selector of selectors) {
+        const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        const rule = `${main}\n${desktop}`.match(new RegExp(`(?:^|\\n)${escaped}\\s*\\{([^}]*)\\}`))?.[1] ?? ''
+        expect(rule, `${selector} must be a ${role} material`).toContain(`background: var(--material-${role}-fill);`)
+        expect(rule, selector).toContain(`border: 1px solid var(--material-${role}-edge);`)
+        expect(rule, selector).toContain(`backdrop-filter: var(--material-${role}-filter);`)
+        expect(rule, selector).toContain(`-webkit-backdrop-filter: var(--material-${role}-filter);`)
+      }
+    }
+    for (const selector of PANEL_SURFACES) {
+      const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const rule = desktop.match(new RegExp(`(?:^|\\n)${escaped}\\s*\\{([^}]*)\\}`))?.[1] ?? ''
+      expect(rule, selector).toContain('background: var(--material-panel-fill);')
+      expect(rule, selector).toContain('border: 1px solid var(--material-panel-edge);')
+      expect(rule, selector).not.toContain('backdrop-filter')
+    }
+    expect(desktop).toContain('--desktop-group-surface: var(--material-panel-fill);')
+    // Translucent surfaces consume material tokens so they turn solid together;
+    // raw glass survives only inside two brand-tinted state indicators.
+    const rawGlass = desktop.split('\n').filter((line) => /var\(--desktop-glass/.test(line) && !/^\s*--/.test(line)).map((line) => line.trim())
+    expect(rawGlass).toEqual([
+      'border-color: color-mix(in srgb, var(--brand) 20%, var(--desktop-glass-border));',
+      'background: color-mix(in srgb, var(--brand) 18%, var(--desktop-glass));',
+    ])
+    // Literal blur radii live only in the two material filters, capped at 24px.
+    const filters = Array.from(themes.matchAll(/--material-(chrome|overlay)-filter:\s*blur\((\d+)px\)[^;]*;/g))
+    expect(filters.map((match) => match[1])).toEqual(['chrome', 'overlay'])
+    for (const match of filters) expect(Number(match[2])).toBeLessThanOrEqual(24)
+    expect(themes).not.toMatch(/--material-panel-filter/)
+    // Text sits on materials, so their fills reuse the solver's contrast-safe glass.
+    for (const role of ['panel', 'chrome', 'overlay']) {
+      expect(themes).toContain(`--material-${role}-fill: var(--desktop-glass-strong);`)
+    }
+  })
+
+  it('keeps content, window frames and dialog panels opaque', () => {
+    for (const selector of ['.desktop-window', '.desktop-window__titlebar', '.desktop-window__body', '.modal-panel']) {
+      for (const { selector: ruleSelector, value } of [...backdropRules(main), ...backdropRules(desktop)]) {
+        if (value === 'none') continue
+        expect(ruleSelector.split(',').map((part) => part.trim()), `${selector} must not blur`).not.toContain(selector)
+      }
+    }
+    expect(desktop).toMatch(/\.desktop-window\s*\{[^}]*background:\s*var\(--surface\);/)
+    // A blurred scrim already softens what lies under the phone folder sheet.
+    expect(desktop.match(/\.desktop-folder__sheet\s*\{([^}]*)\}/)?.[1]).not.toContain('backdrop-filter')
+  })
+
+  it('turns every material solid when transparency, contrast or blur support says so', () => {
+    const degrade = main.match(/@media \(prefers-reduced-transparency: reduce\), \(prefers-contrast: more\) \{\s*:root \{([^}]*)\}/)?.[1] ?? ''
+    for (const role of ['panel', 'chrome', 'overlay']) {
+      expect(degrade).toContain(`--material-${role}-fill: var(--surface-raised);`)
+      expect(degrade).toContain(`--material-${role}-edge: var(--border-strong);`)
+    }
+    for (const role of ['chrome', 'overlay']) expect(degrade).toContain(`--material-${role}-filter: none;`)
+    const unsupported = main.match(/@supports not \(\(backdrop-filter: blur\(1px\)\) or \(-webkit-backdrop-filter: blur\(1px\)\)\) \{\s*:root \{([^}]*)\}/)?.[1] ?? ''
+    // Panels never blur, so only the blurred materials need a solid fallback.
+    for (const role of ['chrome', 'overlay']) {
+      expect(unsupported).toContain(`--material-${role}-fill: var(--surface-raised);`)
+    }
+  })
+
+  it('tells the focused window apart by more than its shadow', () => {
+    const inactive = desktop.match(/\n\.desktop-window__titlebar\s*\{([^}]*)\}/)?.[1] ?? ''
+    const active = desktop.match(/\.desktop-window--focused \.desktop-window__titlebar\s*\{([^}]*)\}/)?.[1] ?? ''
+    expect(inactive).toContain('background: var(--desktop-titlebar-inactive);')
+    expect(inactive).toContain('color: var(--muted);')
+    expect(active).toContain('background: var(--desktop-titlebar-active);')
+    expect(active).toContain('color: var(--text);')
+    expect(desktop).toMatch(/\.desktop-window--focused\s*\{[^}]*border-color:[^;]*var\(--brand\)[^;]*;[^}]*box-shadow:\s*var\(--desktop-window-shadow-active\);/)
+    expect(desktop).toMatch(/--desktop-titlebar-active:\s*color-mix\(in srgb, var\(--surface-raised\) \d+%, var\(--brand\) \d+%\);/)
+  })
+
+  it('moves on the shared motion tokens and never animates a blur', () => {
+    for (const token of [
+      '--motion-duration-instant: 100ms;',
+      '--motion-duration-fast: 160ms;',
+      '--motion-duration-base: 220ms;',
+      '--motion-duration-layout: 260ms;',
+      '--motion-duration-ambient: 420ms;',
+      '--motion-ease-standard: cubic-bezier(.22, 1, .36, 1);',
+      '--motion-ease-exit: cubic-bezier(.4, 0, 1, 1);',
+    ]) expect(themes).toContain(token)
+    // Surfaces migrated to the motion system stay on it.
+    for (const selector of ['.desktop-window', '.desktop-window--closing', '.desktop-start-menu-enter-active', '.desktop-menu-enter-active', '.desktop-menu-leave-active']) {
+      const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const rule = desktop.match(new RegExp(`\\n${escaped}\\s*\\{([^}]*)\\}`))?.[1] ?? ''
+      const transition = rule.match(/transition:\s*([^;]+);/)?.[1] ?? ''
+      expect(transition, selector).toContain('var(--motion-')
+      expect(transition, selector).not.toMatch(/\d+(?:\.\d+)?m?s\b/)
+    }
+    // Exits are quicker than entrances and accelerate away.
+    expect(desktop).toMatch(/\.desktop-menu-leave-active\s*\{[^}]*var\(--motion-duration-instant\) var\(--motion-ease-exit\)/)
+    // A backdrop blur re-samples everything behind it on every frame it changes;
+    // materials appear by fading their surface, never by interpolating the blur.
+    for (const source of Object.values(sources)) {
+      expect(source).not.toMatch(/transition(?:-property)?:[^;]*\bbackdrop-filter\b/)
+    }
   })
 
   it('drops painted-on highlights from neutral panels and window chrome', () => {

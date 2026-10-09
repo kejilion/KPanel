@@ -236,9 +236,14 @@ describe('desktop visual and interaction contract', () => {
     expect(desktopViewSource).toMatch(/function toggleDesktopTheme\(\): void \{\s*theme\.setTheme\(/)
     expect(desktopViewSource).not.toContain("classList.add('desktop-theme-transitioning')")
     expect(desktopViewSource).not.toContain('motionDuration(420)')
-    expect(styles).toMatch(/:root\.desktop-theme-transitioning \.desktop[\s\S]*?transition-duration:\s*\.42s;[\s\S]*?cubic-bezier\(\.22, 1, \.36, 1\);/)
+    // The crossfade runs on the ambient motion token; the store's cleanup timer
+    // must outlast it so the transition class is not removed mid-fade.
+    expect(themeStyles).toContain('--motion-duration-ambient: 420ms;')
+    expect(themeStyles).toContain('--motion-ease-standard: cubic-bezier(.22, 1, .36, 1);')
+    expect(Number(themeStoreSource.match(/THEME_TRANSITION_MS = (\d+)/)?.[1])).toBeGreaterThan(420)
+    expect(styles).toMatch(/:root\.desktop-theme-transitioning \.desktop[\s\S]*?transition-duration:\s*var\(--motion-duration-ambient\);[\s\S]*?transition-timing-function:\s*var\(--motion-ease-standard\);/)
     expect(styles).toMatch(/\.desktop__wallpaper-veil\s*\{[^}]*z-index:\s*2;/)
-    expect(styles).toMatch(/\.desktop__wallpaper-veil::before,\s*\.desktop__wallpaper-veil::after\s*\{[^}]*transition:\s*opacity \.42s cubic-bezier\(\.22, 1, \.36, 1\);/)
+    expect(styles).toMatch(/\.desktop__wallpaper-veil::before,\s*\.desktop__wallpaper-veil::after\s*\{[^}]*transition:\s*opacity var\(--motion-duration-ambient\) var\(--motion-ease-standard\);/)
     expect(styles).toMatch(/:root\[data-theme='dark'\] \.desktop__wallpaper-veil::after\s*\{[^}]*opacity:\s*1;/)
     expect(desktopViewSource).toContain('<div class="desktop__wallpaper-veil" aria-hidden="true" />')
   })

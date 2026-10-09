@@ -45,6 +45,29 @@
   --terminal-ansi-bright-white: #f0f2f1;
 }
 
+/* Materials (themes.css) turn solid when the system asks for less transparency
+   or more contrast, or cannot blur; layering then rests on the neutral ladder,
+   borders and shadows (docs/ui-visual-language.md 3.5.5). */
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  :root {
+    --material-panel-fill: var(--surface-raised);
+    --material-panel-edge: var(--border-strong);
+    --material-chrome-fill: var(--surface-raised);
+    --material-chrome-edge: var(--border-strong);
+    --material-chrome-filter: none;
+    --material-overlay-fill: var(--surface-raised);
+    --material-overlay-edge: var(--border-strong);
+    --material-overlay-filter: none;
+  }
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root {
+    --material-chrome-fill: var(--surface-raised);
+    --material-overlay-fill: var(--surface-raised);
+  }
+}
+
 /* Interactive terminals inherit the active dark foundation without changing
    the fixed palette used by editors and non-interactive log viewers. */
 :root[data-theme='dark'] .terminal-theme-scope {
@@ -704,8 +727,17 @@ textarea:focus-visible,
   outline-offset: 2px;
 }
 
+/* Every context menu is a short-lived overlay and shares one material
+   (docs/ui-visual-language.md 3.5). Components own placement and size only. */
 .k-context-menu {
   scrollbar-gutter: auto;
+  color: var(--text);
+  background: var(--material-overlay-fill);
+  border: 1px solid var(--material-overlay-edge);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  -webkit-backdrop-filter: var(--material-overlay-filter);
+  backdrop-filter: var(--material-overlay-filter);
 }
 
 .k-context-menu > [role='menuitem']:focus {
