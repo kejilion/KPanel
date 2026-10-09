@@ -130,7 +130,7 @@
 
 - 复核人 / 智能体：与实现分离的干净 Codex 会话，复验 `719e0fb8..3ffbad7f`；`95fdfebe` 仅补 OCR trailer，Git tree 相同
 - 复核提供商 / 实现提供商：codex / codex
-- 是否独立读取原始证据：是；当前主机未发现其他提供商可用非交互入口，记录 `fallback=provider-unavailable`
+- 是否独立读取原始证据：是；其他提供商的非交互入口不可用，当前主机未发现可调用入口，记录 `fallback=provider-unavailable`
 - 假设与方案评审结论：PASS WITH FOLLOW-UP；原三条重要源码/规范问题关闭，无新增阻断或重要发现
 - 门禁是否被削弱、绕过或只对样例优化：原版漏 WebKit 前缀、末尾无分号、组件变量与组件时长；修订增加对应覆盖
 - 复核状态：通过（PASS WITH FOLLOW-UP；一般后续及未验证平台保留；完整报告为候选证据目录 `followup/independent-review-codex-3ffbad7f.md`）
