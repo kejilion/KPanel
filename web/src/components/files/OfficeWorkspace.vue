@@ -519,7 +519,7 @@ function discardAndReload() { drafts.clear(); void load(true) }
 .office-rail { display: flex; flex-direction: column; gap: 12px; min-height: 0; padding: 16px 12px 16px 8px; overflow: auto; background: var(--file-preview-panel); border-right: 1px solid var(--file-preview-border); }
 .office-thumb { display: grid; flex: 0 0 auto; grid-template-columns: 22px minmax(0, 1fr); align-items: start; gap: 6px; padding: 4px; border: 0; border-radius: var(--radius-sm); color: var(--file-preview-muted); background: transparent; font-size: 13px; text-align: right; cursor: pointer; }
 .office-thumb[aria-current='true'] { color: var(--file-preview-text); font-weight: 600; }
-.office-thumb__slide { position: relative; display: block; overflow: hidden; container-type: inline-size; background: var(--office-paper); border-radius: 0; box-shadow: 0 0 0 1px var(--file-preview-border); transition: box-shadow 160ms ease; }
+.office-thumb__slide { position: relative; display: block; overflow: hidden; container-type: inline-size; background: var(--office-paper); border-radius: 0; box-shadow: 0 0 0 1px var(--file-preview-border); transition: box-shadow var(--motion-duration-fast) var(--motion-ease-fade); }
 .office-thumb:hover .office-thumb__slide { box-shadow: 0 0 0 2px color-mix(in srgb, var(--file-preview-accent) 55%, transparent); }
 .office-thumb[aria-current='true'] .office-thumb__slide { box-shadow: 0 0 0 2px var(--file-preview-accent); }
 .office-thumb__slide img { position: absolute; object-fit: contain; }
