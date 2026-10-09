@@ -1,0 +1,21 @@
+{
+  "source_ref": "0b808e7bb00ee5d058bf0b2857009c9307099965",
+  "fingerprint": "Bittorrent.PrivateMagnetDHTBeforeMetadata",
+  "title": "Private magnet hashes may reach public DHT before the private flag is known",
+  "proposed_verdict": "needs_validation",
+  "description": "Hash-only magnet discovery may use public DHT before the metadata private flag is known. Source review suggests this behavior; packet transmission was not observed. This is an unresolved candidate, not a confirmed finding.",
+  "blockers": [
+    "No bounded packet observation established whether an info_hash-bearing get_peers write reaches the repository PacketConn before metadataGuard.ready reveals the private flag.",
+    "The parent-supplied DHT dependency extract was not tied back to the repository go.sum h1 by independently recalculating its original module archive; its source provenance remains partial."
+  ],
+  "relevant_paths": [
+    "go.mod",
+    "go.sum",
+    "internal/bittorrent/engine.go",
+    "internal/bittorrent/metadata.go",
+    "internal/bittorrent/metadata_guard.go",
+    "internal/bittorrent/network.go"
+  ],
+  "next_step": "Complete independent Phase 5 validation in a separate audit run with an explicit budget. Full trace and bounded validation proposal remain in the external raw evidence.",
+  "disclosure": "Detailed unconfirmed trace and executable validation plan excluded from this governance summary; fingerprint and unresolved status preserved."
+}

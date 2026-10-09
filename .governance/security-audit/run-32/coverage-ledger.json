@@ -1,0 +1,1744 @@
+[
+  {
+    "coverage_id": "FilesView%20localization-only%20string%20updates::Static%20translations%20rendered%20as%20localized%20UI%20text%20in%20the%20existing%20FilesView::web%2Fsrc%2Fi18n::CLIENT-SIDE.md%23DOM-based%20XSS",
+    "canonical_refs": {
+      "surface": "FilesView localization-only string updates",
+      "boundary": "Static translations rendered as localized UI text in the existing FilesView",
+      "subsystem": "web/src/i18n",
+      "attack_class": "CLIENT-SIDE.md#DOM-based XSS"
+    },
+    "surface": "FilesView localization-only string updates",
+    "boundary": "Static translations rendered as localized UI text in the existing FilesView",
+    "subsystem": "web/src/i18n",
+    "attack_class": "DOM-based XSS",
+    "starting_paths": [
+      "web/src/i18n/messages/en-US.ts",
+      "web/src/i18n/messages/zh-CN.ts",
+      "web/src/i18n/messages/zh-TW.ts",
+      "web/src/i18n/pages/FilesView/en-US.ts",
+      "web/src/i18n/pages/FilesView/zh-TW.ts",
+      "web/src/views/FilesView.vue",
+      "web/src/views/FilesView.test.ts"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [],
+    "excluded_blocks": [
+      {
+        "block": "CLIENT-SIDE.md#DOM-based XSS",
+        "reason": "These files contain static localized labels and messages; no dynamic HTML sink is introduced."
+      },
+      {
+        "block": "ATTACK-CLASSES.md#Injection",
+        "reason": "The translations are source literals and do not construct commands or queries from untrusted input."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Coverage critic found only static localization changes, with no independent attacker-controlled entry point or sink; the existing FilesView submission unit covers the related UI flow."
+    ]
+  },
+  {
+    "coverage_id": "GET%20%2Ff%2F%7Btoken%7D::internal%2Fpanel%2Ffile_shares.go%23share%20token%20authorization::internal%2Fpanel%2Binternal%2Ffilemanager::ATTACK-CLASSES.md%23Access%20control::share%20lifecycle",
+    "canonical_refs": {
+      "surface": "GET /f/{token}",
+      "boundary": "internal/panel/file_shares.go#share token authorization",
+      "subsystem": "internal/panel+internal/filemanager",
+      "attack_class": "ATTACK-CLASSES.md#Access control",
+      "lifecycle": "share lifecycle"
+    },
+    "surface": "Public file-share download route",
+    "boundary": "Share-token publication path independent of smart-download jobs",
+    "subsystem": "File sharing",
+    "attack_class": "Access control",
+    "starting_paths": [
+      "internal/panel/file_shares.go",
+      "internal/filemanager/manager.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_same_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "The public share route is not a smart-download entry point or direct receive call-chain component."
+    ],
+    "lifecycle": "share lifecycle"
+  },
+  {
+    "coverage_id": "GET%20DELETE%20%2Fapi%2Fv1%2Ffiles%2Fremote-downloads%2F%7Bid%7D::internal%2Fpanel%2Ffile_remote_download_jobs.go%23job%20lookup%20cancellation%20persistence::internal%2Fpanel%2Binternal%2Fremotedownload::ATTACK-CLASSES.md%23Feature%20abuse%20and%20data%20leakage::queued%20work%2C%20cancellation%20and%20retention",
+    "canonical_refs": {
+      "surface": "GET DELETE /api/v1/files/remote-downloads/{id}",
+      "boundary": "internal/panel/file_remote_download_jobs.go#job lookup cancellation persistence",
+      "subsystem": "internal/panel+internal/remotedownload",
+      "attack_class": "ATTACK-CLASSES.md#Feature abuse and data leakage",
+      "lifecycle": "queued work, cancellation and retention"
+    },
+    "surface": "Smart-download job listing, cancellation and status events",
+    "boundary": "Session-bound job API, background worker lifetime, stored job state and redacted source metadata",
+    "subsystem": "Panel job coordinator and remote-download store",
+    "attack_class": "Feature abuse and data leakage",
+    "starting_paths": [
+      "docs/storage-strategy.md",
+      "internal/panel/cluster.go",
+      "internal/panel/file_remote_download_jobs_test.go",
+      "internal/panel/file_remote_download_jobs.go",
+      "internal/panel/file_remote_download_runner.go",
+      "internal/panel/file_remote_downloads.go",
+      "internal/remotedownload/jobs_linux_test.go",
+      "internal/remotedownload/jobs_test.go",
+      "internal/remotedownload/jobs.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Feature abuse and data leakage",
+    "selected_companion_blocks": [
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Retention and queued-work overrun",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Analytics, logs, traces, and diagnostics as alternate readers",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Stale authorization and derived copy use",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Detached work after cancellation",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Duplicate delivery and idempotency gaps",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Universal moves",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "ATTACK-CLASSES.md#Access control",
+        "reason": "The product uses one administrator principal and this unit is job lifecycle/data handling; direct endpoint authorization is covered separately."
+      },
+      {
+        "block": "CLIENT-SIDE.md#Browser-storage disclosure and stale authorization",
+        "reason": "This job state is stored and authorized server-side; no feature-specific browser storage was found."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [
+      {
+        "wave": 1,
+        "status": "covered",
+        "agent_id": "hunter_http_w1",
+        "reviewed_paths": [
+          "internal/auth/service.go",
+          "internal/panel/file_remote_download_jobs.go",
+          "internal/panel/file_remote_download_runner.go",
+          "internal/panel/file_remote_downloads.go",
+          "internal/panel/server.go",
+          "internal/remotedownload/jobs_linux_test.go",
+          "internal/remotedownload/jobs_test.go",
+          "internal/remotedownload/jobs.go"
+        ],
+        "local_checks": [
+          {
+            "agent_id": "hunter_http_w1",
+            "reviewed_paths": [
+              "internal/auth/service.go",
+              "internal/panel/file_remote_download_jobs.go",
+              "internal/panel/file_remote_download_runner.go",
+              "internal/panel/file_remote_downloads.go",
+              "internal/panel/server.go",
+              "internal/remotedownload/jobs_linux_test.go",
+              "internal/remotedownload/jobs_test.go",
+              "internal/remotedownload/jobs.go"
+            ],
+            "invariant": "Job reads and mutations require a live session; cancellation, persistence, and source metadata handling must not expose or revive revoked authority or sensitive URL components.",
+            "method": "source",
+            "result": "List/detail require a session; cancel/delete require Origin, live session and CSRF. Cancel signals worker context, active jobs cannot be deleted, completion removes cancellation entry, and Server.Close cancels/waits. Startup marks persisted active jobs interrupted. Full URLs remain in memory; persisted jobs and audit events get SourceDisplay (scheme/host only), with path/query/fragment/userinfo rejected for persisted URL sources. State capped at 100 records/256 KiB and stored in private directories/files. Logout revokes later route calls but accepted jobs continue on separate worker context unless explicitly canceled or server closes; no source contract requires logout to cancel accepted jobs.",
+            "artifact": null
+          }
+        ],
+        "result_fingerprints": [],
+        "unresolved": [],
+        "reassignment_reason": "Coverage critic found that Server.Close and closeRemoteDownloadJobs are defined in internal/panel/cluster.go, which was absent from the previous job lifecycle review; recheck job admission/cancellation or lookup/retention behavior with this shutdown path."
+      }
+    ],
+    "wave": 2,
+    "status": "covered",
+    "agent_id": "hunter_jobs_w2",
+    "reviewed_paths": [
+      "docs/storage-strategy.md",
+      "internal/contract/files.go",
+      "internal/panel/cluster.go",
+      "internal/panel/file_remote_download_jobs.go",
+      "internal/panel/file_remote_download_jobs_test.go",
+      "internal/panel/file_remote_downloads.go",
+      "internal/panel/file_remote_downloads_test.go",
+      "internal/panel/server.go",
+      "internal/remotedownload/client.go",
+      "internal/remotedownload/client_test.go",
+      "internal/remotedownload/jobs.go",
+      "internal/remotedownload/jobs_linux_test.go",
+      "internal/remotedownload/jobs_test.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_jobs_w2",
+        "reviewed_paths": [
+          "internal/panel/file_remote_download_jobs.go",
+          "internal/panel/server.go",
+          "internal/panel/cluster.go",
+          "internal/remotedownload/jobs.go",
+          "internal/panel/file_remote_download_jobs_test.go"
+        ],
+        "invariant": "Job reads require a Panel session; cancellation and deletion require Origin, session, and CSRF checks; active jobs cannot be deleted.",
+        "method": "source",
+        "result": "The route and JobStore enforce these checks. Cancellation resolves through the registered job context, and Delete rejects active states. No source-visible access or lifecycle invariant failure found.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter_jobs_w2",
+        "reviewed_paths": [
+          "internal/panel/file_remote_downloads.go",
+          "internal/panel/file_remote_download_jobs.go",
+          "internal/panel/cluster.go",
+          "internal/contract/files.go",
+          "internal/remotedownload/client.go",
+          "internal/remotedownload/jobs.go",
+          "internal/panel/file_remote_download_jobs_test.go",
+          "internal/panel/file_remote_downloads_test.go",
+          "internal/remotedownload/client_test.go",
+          "internal/remotedownload/jobs_test.go"
+        ],
+        "invariant": "A submitted URL’s path, query, fragment, or userinfo must not enter job status, persisted job state, or audit records.",
+        "method": "source",
+        "result": "ValidateURL rejects userinfo; SourceDisplay retains only scheme and host. Background jobs, audits, and status use that display value, while BitTorrent jobs store a generic source label. Error mapping is generic. Test source checks these surfaces against path and query secrets, including redirect URL material. No source-visible leakage found.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter_jobs_w2",
+        "reviewed_paths": [
+          "internal/panel/file_remote_download_jobs.go",
+          "internal/panel/file_remote_download_jobs_test.go",
+          "internal/remotedownload/jobs.go",
+          "internal/remotedownload/jobs_linux_test.go",
+          "internal/remotedownload/jobs_test.go",
+          "docs/storage-strategy.md"
+        ],
+        "invariant": "Queued and active work must have bounded lifetime and explicit cancellation; restart and deletion must not silently replay or retain active work as runnable.",
+        "method": "source",
+        "result": "Reservation and worker registration are synchronized; cancellation is propagated, Server.Close marks admission closed, cancels jobs, and waits. Startup marks persisted active jobs interrupted, and only terminal jobs can be deleted or evicted. The store bounds history and declares seven-day retention. Tests cover request detachment, cancellation, shutdown, restart recovery, deletion, and retention. No source-visible lifecycle failure found.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "hardening_notes": [
+      "Terminal job retention is seven days but pruning is opportunistic on store open, Create, or List; a long-lived idle process may retain terminal metadata longer. A 100-record/256-KiB cap, host-only source display and private file modes bound impact.",
+      "Accepted work uses an independent worker context and continues after logout/session revocation until explicit job cancel or server close. No source-defined contract requires logout to cancel accepted jobs; clarify product revocation policy if desired."
+    ],
+    "lifecycle": "queued work, cancellation and retention"
+  },
+  {
+    "coverage_id": "Local%20benchmark%20CLI%20invocation::Operator-supplied%20paths%2C%20image%20ID%2C%20and%20environment%20values%20flow%20through%20Bash%20into%20Docker%20mounts%2C%20test%20processes%2C%20output%20files%2C%20and%20scratch%20cleanup::Local%20download%20benchmark%20harness::ATTACK-CLASSES.md%23Injection",
+    "canonical_refs": {
+      "surface": "Local benchmark CLI invocation",
+      "boundary": "Operator-supplied paths, image ID, and environment values flow through Bash into Docker mounts, test processes, output files, and scratch cleanup",
+      "subsystem": "Local download benchmark harness",
+      "attack_class": "ATTACK-CLASSES.md#Injection"
+    },
+    "surface": "Local benchmark CLI invocation",
+    "boundary": "Operator-supplied paths, image ID, and environment values flow through Bash into Docker mounts, test processes, output files, and scratch cleanup",
+    "subsystem": "Local download benchmark harness",
+    "attack_class": "Injection",
+    "starting_paths": [
+      "scripts/file-transfer-benchmark.sh",
+      "scripts/smart-download-benchmark.sh",
+      "internal/panel/file_transfer_performance_linux_test.go",
+      "internal/panel/file_torrent_performance_linux_test.go",
+      "docs/file-transfer-performance-evaluation.md",
+      "docs/development-quality-standard.md",
+      "docs/file-manager-design.md"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+    "selected_companion_blocks": [
+      "CLOUD-AND-DEPLOYMENT.md#Host or control-plane capability exposure",
+      "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+      "CLOUD-AND-DEPLOYMENT.md#Universal moves",
+      "CLOUD-AND-DEPLOYMENT.md#Validation rules",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unbounded buffering and cardinality",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#File descriptor, handle, and temporary-resource leaks",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "SUPPLY-CHAIN-AND-RELEASE.md#Untrusted code in a privileged workflow",
+        "reason": "No workflow references either script; the repository documents manual local invocation."
+      },
+      {
+        "block": "WEB-PROTOCOL-AND-AUTH.md#Ordinary CSRF",
+        "reason": "These are local shell entry points with no browser endpoint."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 2,
+    "status": "covered",
+    "agent_id": "hunter_cli_w2",
+    "reviewed_paths": [
+      "scripts/file-transfer-benchmark.sh",
+      "scripts/smart-download-benchmark.sh",
+      "docs/file-transfer-performance-evaluation.md",
+      "docs/development-quality-standard.md",
+      "docs/file-manager-design.md",
+      "internal/panel/file_transfer_performance_linux_test.go",
+      "internal/panel/file_torrent_performance_linux_test.go",
+      "internal/panel/file_transfer_integration_test.go",
+      "internal/panel/file_transfer_pipeline_test.go",
+      "internal/panel/file_download_adaptive_test.go",
+      "internal/panel/file_torrent_downloads_test.go",
+      "internal/panel/server_test.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_cli_w2",
+        "invariant": "Operator inputs must not become shell injection or give an executed benchmark process unbounded host resources.",
+        "artifact": null,
+        "result": "Both scripts quote path and environment expansions, validate pinned image ID and case names, and use Docker network isolation, a read-only root, dropped capabilities, and CPU/memory/PID/tmp limits. Each nevertheless accepts any executable path and mounts host scratch read-write without a byte quota, redirects output to a persistent uncapped host log, and passes -test.timeout only to the executable without a host-side deadline. Docker mount parsing for comma-containing canonical paths is unresolved.",
+        "method": "source",
+        "reviewed_paths": [
+          "scripts/file-transfer-benchmark.sh",
+          "scripts/smart-download-benchmark.sh",
+          "docs/file-transfer-performance-evaluation.md",
+          "docs/development-quality-standard.md",
+          "docs/file-manager-design.md"
+        ]
+      },
+      {
+        "agent_id": "hunter_cli_w2",
+        "invariant": "Checked-in benchmark handlers and direct helpers keep intended fixture writes inside bounded temporary storage and local fixtures.",
+        "artifact": null,
+        "result": "Checked-in transfer handler uses fixed cases up to 256 MiB, torrent handler fixed 64 MiB, both t.TempDir, scripts set TMPDIR=/scratch, and direct helper tests use temporary filemanager roots/local HTTP fixtures. The scripts do not verify an arbitrary input executable or require that it honors flags, so handler bounds do not bound arbitrary writes or stdout.",
+        "method": "source",
+        "reviewed_paths": [
+          "internal/panel/file_transfer_performance_linux_test.go",
+          "internal/panel/file_torrent_performance_linux_test.go",
+          "internal/panel/file_transfer_integration_test.go",
+          "internal/panel/file_transfer_pipeline_test.go",
+          "internal/panel/file_download_adaptive_test.go",
+          "internal/panel/file_torrent_downloads_test.go",
+          "internal/panel/server_test.go"
+        ]
+      },
+      {
+        "invariant": "The benchmark invocation must not expose a lower-trust binary to unbounded shared host storage.",
+        "result": "Independent Phase 3 source review found a manual operator workflow: the docs direct the operator to build baseline/candidate test binaries, pass their paths and output directory, and the scripts record SHA-256. The principal developer additionally states as external owner context that actual inputs are frozen-repository test binaries and no remote/low-privilege product user selects them. Given the declared boundary, no lower-trust principal or cross-boundary storage effect is established; no finding retained. The owner statement is not repository evidence.",
+        "artifact": null,
+        "agent_id": "verify_cli_candidate",
+        "method": "source",
+        "reviewed_paths": [
+          "docs/file-transfer-performance-evaluation.md",
+          "scripts/file-transfer-benchmark.sh",
+          "scripts/smart-download-benchmark.sh",
+          "internal/panel/file_transfer_performance_linux_test.go",
+          "internal/panel/file_torrent_performance_linux_test.go"
+        ]
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "parent_hardening_notes": [
+      "Consider adding a quota for writable scratch and a cap for benchmark logs, especially when runs may share storage. Docker CPU, memory and PID limits do not cap host filesystem usage."
+    ]
+  },
+  {
+    "coverage_id": "POST%20%2Fapi%2Fv1%2Ffiles%2Fremote-downloads%23torrent%20input::internal%2Fbittorrent%2Fmetadata.go%23Parse%20and%20bounded%20bencode::internal%2Fbittorrent%2Binternal%2Fpanel::ATTACK-CLASSES.md%23Resource%20and%20file%20handling::metadata%20parsing%20and%20normalization",
+    "canonical_refs": {
+      "surface": "POST /api/v1/files/remote-downloads#torrent input",
+      "boundary": "internal/bittorrent/metadata.go#Parse and bounded bencode",
+      "subsystem": "internal/bittorrent+internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling",
+      "lifecycle": "metadata parsing and normalization"
+    },
+    "surface": "Magnet and .torrent metadata input",
+    "boundary": "Torrent body bounds, bencode parser limits, source normalization and supported metadata",
+    "subsystem": "BitTorrent parser and Panel input validator",
+    "attack_class": "Resource and file handling",
+    "starting_paths": [
+      "docs/development-quality-standard.md",
+      "docs/file-manager-design.md",
+      "internal/bittorrent/bounded.go",
+      "internal/bittorrent/engine_test.go",
+      "internal/bittorrent/metadata_test.go",
+      "internal/bittorrent/metadata.go",
+      "internal/contract/files.go",
+      "internal/panel/file_remote_downloads.go",
+      "internal/panel/file_torrent_downloads_test.go",
+      "internal/panel/file_torrent_downloads.go",
+      "web/src/lib/api.ts",
+      "web/src/views/FilesView.vue"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [
+      "MEMORY-SAFETY-AND-BINARY.md#Malformed binary metadata and relocation handling",
+      "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+      "MEMORY-SAFETY-AND-BINARY.md#Universal moves",
+      "MEMORY-SAFETY-AND-BINARY.md#Validation rules",
+      "MEMORY-SAFETY-AND-BINARY.md#Integer overflow, underflow, truncation, and signedness",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Message boundary and canonicalization disagreement",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Universal moves",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "ATTACK-CLASSES.md#Injection",
+        "reason": "Torrent metadata is parsed as bounded binary data and is not passed to a command interpreter."
+      },
+      {
+        "block": "WEB-PROTOCOL-AND-AUTH.md#Ordinary CSRF",
+        "reason": "The server-side parser is behind the common authenticated submission route."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 2,
+    "status": "covered",
+    "agent_id": "hunter_bt_w2",
+    "reviewed_paths": [
+      "internal/bittorrent/bounded.go",
+      "internal/bittorrent/metadata.go",
+      "internal/bittorrent/metadata_guard.go",
+      "internal/bittorrent/metadata_test.go",
+      "internal/contract/files.go",
+      "internal/panel/file_remote_downloads.go",
+      "internal/panel/file_torrent_downloads_test.go",
+      "internal/panel/server.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_bt_w2",
+        "reviewed_paths": [
+          "internal/bittorrent/bounded.go",
+          "internal/bittorrent/metadata.go",
+          "internal/bittorrent/metadata_guard.go",
+          "internal/bittorrent/metadata_test.go",
+          "internal/contract/files.go",
+          "internal/panel/file_remote_downloads.go",
+          "internal/panel/file_torrent_downloads_test.go",
+          "internal/panel/server.go"
+        ],
+        "invariant": "Panel torrent input must be bounded before decoding; metadata names, paths, file counts, sizes, and source protocols must remain safe through normalization.",
+        "method": "source",
+        "result": "The route decodes through MaxBytesReader. Parse bounds bencoded input to 512 KiB, depth 32, and 32768 nodes before reflective decoding. validateInfo caps files, paths, piece counts and total size; rejects traversal components and symlinks. Magnet parsing requires one btih xt, permits only xt/tr/dn/xl, caps tracker count and URL length, and validates tracker addresses. No source-visible parser or normalization invariant failure found.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "lifecycle": "metadata parsing and normalization"
+  },
+  {
+    "coverage_id": "POST%20%2Fapi%2Fv1%2Ffiles%2Fremote-downloads%23worker%20admission::internal%2Fremotedownload%2Fjobs.go%23concurrency%2Blimits%2Bcleanup::internal%2Fpanel%2Binternal%2Fremotedownload::ATTACK-CLASSES.md%23Resource%20and%20file%20handling::concurrency%2C%20cancellation%20and%20cleanup",
+    "canonical_refs": {
+      "surface": "POST /api/v1/files/remote-downloads#worker admission",
+      "boundary": "internal/remotedownload/jobs.go#concurrency+limits+cleanup",
+      "subsystem": "internal/panel+internal/remotedownload",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling",
+      "lifecycle": "concurrency, cancellation and cleanup"
+    },
+    "surface": "Authenticated HTTP download jobs and response streaming",
+    "boundary": "Request body, active worker count, byte limits, temporary state and cancellation cleanup",
+    "subsystem": "Panel worker and HTTP remote-download client",
+    "attack_class": "Resource and file handling",
+    "starting_paths": [
+      "docs/storage-strategy.md",
+      "internal/panel/cluster.go",
+      "internal/panel/file_remote_download_jobs_test.go",
+      "internal/panel/file_remote_download_runner.go",
+      "internal/panel/file_remote_downloads.go",
+      "internal/remotedownload/client.go",
+      "internal/remotedownload/jobs.go",
+      "internal/remotedownload/segmented.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unbounded buffering and cardinality",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#File descriptor, handle, and temporary-resource leaks",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota-accounting scope and reset gaps",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Detached work after cancellation"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Pre-authentication work imbalance",
+        "reason": "The job route performs session/origin/CSRF admission before creating a download job."
+      },
+      {
+        "block": "ATTACK-CLASSES.md#Injection",
+        "reason": "The worker streams to a file receiver and does not construct shell/SQL statements."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [
+      {
+        "wave": 1,
+        "status": "covered",
+        "agent_id": "hunter_http_w1",
+        "reviewed_paths": [
+          "internal/contract/files.go",
+          "internal/panel/config.go",
+          "internal/panel/file_remote_download_jobs.go",
+          "internal/panel/file_remote_download_runner.go",
+          "internal/panel/file_remote_downloads.go",
+          "internal/panel/file_transfer_receiver.go",
+          "internal/panel/file_transfer_sources.go",
+          "internal/panel/server.go",
+          "internal/remotedownload/client.go",
+          "internal/remotedownload/jobs.go",
+          "internal/remotedownload/segmented.go"
+        ],
+        "local_checks": [
+          {
+            "agent_id": "hunter_http_w1",
+            "reviewed_paths": [
+              "internal/contract/files.go",
+              "internal/panel/config.go",
+              "internal/panel/file_remote_download_jobs.go",
+              "internal/panel/file_remote_download_runner.go",
+              "internal/panel/file_remote_downloads.go",
+              "internal/panel/file_transfer_receiver.go",
+              "internal/panel/file_transfer_sources.go",
+              "internal/panel/server.go",
+              "internal/remotedownload/client.go",
+              "internal/remotedownload/jobs.go",
+              "internal/remotedownload/segmented.go"
+            ],
+            "invariant": "Authenticated download work, response bytes, buffers, connections, temporary state, and cancellation must have effective bounds through the Panel worker and HTTP source stream.",
+            "method": "source",
+            "result": "Request JSON is capped by MaxRequestBytes (default 1 MiB, configured maximum 16 MiB); job admission caps queued tasks at 10 and the shared transfer gate caps active transfers at 2. Transfers have a two-hour context deadline, HTTP connect/header/idle timeouts, a 64 KiB response-header cap, bounded per-host connections, and bounded redirects. The normal receive path streams fixed chunks and propagates cancellation; the legacy fallback has a 512 MiB limiting reader. Segmented reads use bounded buffers and worker counts. Job reservations release on failure/completion; cancellation and Server.Close cancel worker contexts. No source-visible unbounded accumulation path found.",
+            "artifact": null
+          }
+        ],
+        "result_fingerprints": [],
+        "unresolved": [],
+        "reassignment_reason": "Coverage critic found that Server.Close and closeRemoteDownloadJobs are defined in internal/panel/cluster.go, which was absent from the previous job lifecycle review; recheck job admission/cancellation or lookup/retention behavior with this shutdown path."
+      }
+    ],
+    "wave": 2,
+    "status": "covered",
+    "agent_id": "hunter_jobs_w2",
+    "reviewed_paths": [
+      "docs/storage-strategy.md",
+      "internal/panel/config.go",
+      "internal/panel/file_remote_download_jobs.go",
+      "internal/panel/file_remote_download_jobs_test.go",
+      "internal/panel/file_remote_download_runner.go",
+      "internal/panel/file_remote_downloads.go",
+      "internal/panel/file_remote_downloads_test.go",
+      "internal/panel/file_torrent_downloads.go",
+      "internal/panel/file_transfer_sources.go",
+      "internal/panel/server.go",
+      "internal/remotedownload/client.go",
+      "internal/remotedownload/jobs.go",
+      "internal/remotedownload/jobs_test.go",
+      "internal/remotedownload/segmented.go",
+      "internal/remotedownload/segmented_test.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_jobs_w2",
+        "reviewed_paths": [
+          "internal/panel/config.go",
+          "internal/panel/server.go",
+          "internal/panel/file_remote_download_jobs.go",
+          "internal/panel/file_remote_downloads.go",
+          "internal/panel/file_remote_download_jobs_test.go",
+          "internal/panel/file_remote_downloads_test.go"
+        ],
+        "invariant": "Authenticated input, queued jobs, and active workers must have effective per-request and aggregate bounds.",
+        "method": "source",
+        "result": "JSON bodies are capped by MaxRequestBytes (default 1 MiB, configured maximum 16 MiB); background reservations are capped at MaxQueuedJobs (10), and active transfers use a two-slot gate. Reservation, closing state, and WaitGroup registration share a mutex, preventing admission after shutdown begins. No unbounded admission path found.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter_jobs_w2",
+        "reviewed_paths": [
+          "internal/panel/file_remote_download_jobs.go",
+          "internal/panel/file_remote_downloads.go",
+          "internal/panel/file_remote_download_runner.go",
+          "internal/panel/file_transfer_sources.go",
+          "internal/panel/file_torrent_downloads.go",
+          "internal/remotedownload/client.go",
+          "internal/remotedownload/jobs.go",
+          "internal/remotedownload/segmented.go"
+        ],
+        "invariant": "Remote response work must remain bounded and cancellation must reach network reads, Agent transfer, and segmented workers.",
+        "method": "source",
+        "result": "The job context has a two-hour deadline and flows into HTTP and Agent operations. Current file transfers enforce MaxFileTransferBytes; the compatibility upload path caps at MaxUploadBytes. The HTTP client bounds headers and connections, and segmented reads use at most four 2 MiB buffers with cancellation and worker joining on Close. No source-visible unbounded buffering or detached-work path found.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter_jobs_w2",
+        "reviewed_paths": [
+          "internal/panel/file_remote_download_jobs.go",
+          "internal/panel/file_remote_download_jobs_test.go",
+          "internal/remotedownload/jobs.go",
+          "internal/remotedownload/jobs_test.go",
+          "internal/remotedownload/segmented.go",
+          "internal/remotedownload/segmented_test.go",
+          "docs/storage-strategy.md"
+        ],
+        "invariant": "Failure, cancellation, and completion must release worker capacity and temporary network resources, while persistence remains bounded.",
+        "method": "source",
+        "result": "Worker defers release the transfer gates, reservation, cancellation-map entry, and WaitGroup count. SegmentedBody.Close cancels and joins workers; the job store caps history at 100 records and 256 KiB and prunes expired terminal records. Test source covers cancellation, shutdown, bounded queueing, segmented read-ahead, and close joining; tests were not executed under the source-only constraint. No source-visible cleanup failure found.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "lifecycle": "concurrency, cancellation and cleanup"
+  },
+  {
+    "coverage_id": "POST%20%2Fapi%2Fv1%2Ffiles%2Fremote-downloads::internal%2Fpanel%2Ffile_remote_downloads.go%23handleFileRemoteDownload%20session%2BOrigin%2BCSRF::internal%2Fpanel%2Bweb%2Fsrc%2Fviews%2FFilesView.vue::ATTACK-CLASSES.md%23Access%20control::request%20admission",
+    "canonical_refs": {
+      "surface": "POST /api/v1/files/remote-downloads",
+      "boundary": "internal/panel/file_remote_downloads.go#handleFileRemoteDownload session+Origin+CSRF",
+      "subsystem": "internal/panel+web/src/views/FilesView.vue",
+      "attack_class": "ATTACK-CLASSES.md#Access control",
+      "lifecycle": "request admission"
+    },
+    "surface": "Smart-download browser submission to authenticated Panel route",
+    "boundary": "Panel session, Origin and CSRF checks plus normalized source/target input",
+    "subsystem": "Panel route and FilesView client",
+    "attack_class": "Access control",
+    "starting_paths": [
+      "web/src/views/FilesView.vue",
+      "web/src/lib/api.ts",
+      "web/src/types/api.ts",
+      "internal/panel/server.go",
+      "internal/panel/file_remote_downloads.go",
+      "internal/contract/files.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Ordinary CSRF",
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules",
+      "WEB-PROTOCOL-AND-AUTH.md#Session fixation and invalidation"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "CLIENT-SIDE.md#DOM-based XSS",
+        "reason": "The inspected FilesView uses typed API fields and localized text; no HTML injection sink was found in this feature path."
+      },
+      {
+        "block": "ATTACK-CLASSES.md#Injection",
+        "reason": "The submission handler does not pass these fields to SQL or command execution."
+      }
+    ],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter_http_w1",
+    "reviewed_paths": [
+      "internal/contract/files.go",
+      "internal/panel/file_remote_downloads.go",
+      "internal/panel/files.go",
+      "internal/panel/server.go",
+      "web/src/lib/api.ts",
+      "web/src/types/api.ts",
+      "web/src/views/FilesView.vue"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_http_w1",
+        "reviewed_paths": [
+          "internal/contract/files.go",
+          "internal/panel/file_remote_downloads.go",
+          "internal/panel/files.go",
+          "internal/panel/server.go",
+          "web/src/lib/api.ts",
+          "web/src/types/api.ts",
+          "web/src/views/FilesView.vue"
+        ],
+        "invariant": "A browser submission must be admitted only with a valid Panel session, Origin and session-bound CSRF token, then pass server-side source, target, name, and body validation before creating work.",
+        "method": "source",
+        "result": "The POST route checks Origin, authenticates the cookie session, validates the CSRF header against both the CSRF cookie and the authenticated session, then decodes bounded JSON with unknown fields rejected. Server validation normalizes and validates HTTP(S) URLs, constrains torrent inputs to background jobs, and validates target paths and filenames; the Vue checks are convenience only. The API client sends same-origin credentials and its in-memory CSRF token. No alternate submission route bypassing these controls was found.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "lifecycle": "request admission"
+  },
+  {
+    "coverage_id": "POST%20%2Fapi%2Fv1%2Ffiles%2Ftransfer%2Fsessions::internal%2Fpanel%2Ffile_transfer_receiver.go%23session%20and%20acknowledged%20chunk%20delivery::internal%2Fpanel%2Binternal%2Fagentclient::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries::chunk%20retry%20and%20durable%20publish",
+    "canonical_refs": {
+      "surface": "POST /api/v1/files/transfer/sessions",
+      "boundary": "internal/panel/file_transfer_receiver.go#session and acknowledged chunk delivery",
+      "subsystem": "internal/panel+internal/agentclient",
+      "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+      "lifecycle": "chunk retry and durable publish"
+    },
+    "surface": "Panel smart-download result delivery to Agent receive sessions",
+    "boundary": "Session creation, offset/checksum retries, durable acknowledgements and source binding",
+    "subsystem": "Panel-to-Agent transfer client",
+    "attack_class": "Chained vulnerabilities and trust boundaries",
+    "starting_paths": [
+      "internal/panel/file_transfer_receiver.go",
+      "internal/panel/file_transfer_sources.go",
+      "internal/panel/server.go",
+      "internal/panel/agent.go",
+      "internal/contract/files.go",
+      "internal/agentclient/client.go",
+      "internal/agent/file_receives.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+    "selected_companion_blocks": [
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Duplicate delivery and idempotency gaps",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Universal moves",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Validation rules",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Acknowledgment/commit ordering defects",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Per-item and streaming authorization gaps"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "ATTACK-CLASSES.md#Injection",
+        "reason": "Transfer chunks go through typed JSON/body APIs and file writes; no command or query sink is present."
+      },
+      {
+        "block": "WEB-PROTOCOL-AND-AUTH.md#Ordinary CSRF",
+        "reason": "The transfer is an internal Panel-to-Agent call after request admission."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter_publish_w1",
+    "reviewed_paths": [
+      "internal/agent/file_receives.go",
+      "internal/agentclient/client.go",
+      "internal/contract/files.go",
+      "internal/filemanager/receive.go",
+      "internal/panel/agent.go",
+      "internal/panel/file_receives.go",
+      "internal/panel/file_transfer_receiver.go",
+      "internal/panel/file_transfer_sources.go",
+      "internal/panel/server.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_publish_w1",
+        "reviewed_paths": [
+          "internal/panel/server.go",
+          "internal/panel/file_receives.go",
+          "internal/panel/agent.go",
+          "internal/agentclient/client.go",
+          "internal/agent/file_receives.go"
+        ],
+        "invariant": "Panel session operations are authenticated and mutating methods retain Origin/CSRF across local Agent proxy.",
+        "method": "source",
+        "result": "Panel route dispatches to session-required handler; mutating methods check Origin and CSRF before proxy. Proxy strictly validates query params, bounds request bodies, and streaming client attaches Agent bearer over Unix socket.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter_publish_w1",
+        "reviewed_paths": [
+          "internal/panel/file_transfer_receiver.go",
+          "internal/panel/file_transfer_sources.go",
+          "internal/contract/files.go",
+          "internal/agent/file_receives.go",
+          "internal/filemanager/receive.go"
+        ],
+        "invariant": "Retries/acks bind each chunk to same source, offset, checksum, durable prefix and final commit.",
+        "method": "source",
+        "result": "HTTP reopen verifies validators/final URL/replayed prefix. Torrent reopens regenerate deterministic stream from hash-verified pieces. Panel retries identical bytes and validates ID/offset/prefix hash. Agent checks digest and persists offset only after sync; commit checks size/prefix digest before publication and recovers lost ack by status.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "lifecycle": "chunk retry and durable publish"
+  },
+  {
+    "coverage_id": "POST%20%2Fapi%2Fv1%2Ffiles%2Fupload::internal%2Fpanel%2Ffiles.go%23handleFileUpload::internal%2Fpanel%2Binternal%2Fagent::ATTACK-CLASSES.md%23Resource%20and%20file%20handling::ordinary%20upload%20lifecycle",
+    "canonical_refs": {
+      "surface": "POST /api/v1/files/upload",
+      "boundary": "internal/panel/files.go#handleFileUpload",
+      "subsystem": "internal/panel+internal/agent",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling",
+      "lifecycle": "ordinary upload lifecycle"
+    },
+    "surface": "Legacy file upload route",
+    "boundary": "Independent upload request path outside smart-download result publication",
+    "subsystem": "Legacy file upload",
+    "attack_class": "Resource and file handling",
+    "starting_paths": [
+      "internal/panel/files.go",
+      "internal/filemanager/manager.go",
+      "internal/agent/server.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Existing upload route is not invoked by the smart-download receiver. Its generic manager context is reviewed only where receive publication directly depends on it."
+    ],
+    "lifecycle": "ordinary upload lifecycle"
+  },
+  {
+    "coverage_id": "POST%20%2Fv1%2Ffiles%2Ftransfer%2Fsessions::internal%2Fagent%2Fserver.go%23bearer%20authorization%20and%20route%20dispatch::internal%2Fagent%2Binternal%2Fagentclient::ATTACK-CLASSES.md%23Access%20control::receive%20route%20authorization",
+    "canonical_refs": {
+      "surface": "POST /v1/files/transfer/sessions",
+      "boundary": "internal/agent/server.go#bearer authorization and route dispatch",
+      "subsystem": "internal/agent+internal/agentclient",
+      "attack_class": "ATTACK-CLASSES.md#Access control",
+      "lifecycle": "receive route authorization"
+    },
+    "surface": "Privileged Agent receive-session API",
+    "boundary": "Panel Unix-socket caller and bearer-token authorization to new Agent route",
+    "subsystem": "Agent RPC authorization",
+    "attack_class": "Access control",
+    "starting_paths": [
+      "internal/agent/server.go",
+      "internal/agent/socket.go",
+      "internal/agent/file_receives.go",
+      "internal/agentclient/client.go",
+      "deploy/compose/compose.yml",
+      "deploy/systemd/kejilion-agent.service",
+      "deploy/install.sh"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Privileged helper as confused deputy",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Universal moves",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Validation rules",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Peer identity to application-principal confusion",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Universal moves",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Validation rules",
+      "CLOUD-AND-DEPLOYMENT.md#Host or control-plane capability exposure",
+      "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+      "CLOUD-AND-DEPLOYMENT.md#Universal moves",
+      "CLOUD-AND-DEPLOYMENT.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "ATTACK-CLASSES.md#Ordinary CSRF",
+        "reason": "This is a local Agent RPC surface, not a browser cookie endpoint."
+      },
+      {
+        "block": "ATTACK-CLASSES.md#Injection",
+        "reason": "The route receives typed transfer fields and does not invoke shell/SQL from them."
+      }
+    ],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter_publish_w1",
+    "reviewed_paths": [
+      "deploy/compose/compose.yml",
+      "deploy/install.sh",
+      "deploy/systemd/kejilion-agent.service",
+      "internal/agent/file_receives.go",
+      "internal/agent/server.go",
+      "internal/agent/socket.go",
+      "internal/agentclient/client.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_publish_w1",
+        "reviewed_paths": [
+          "internal/agent/server.go",
+          "internal/agent/file_receives.go"
+        ],
+        "invariant": "Every privileged receive route passes bearer authorization and strict operation dispatch.",
+        "method": "source",
+        "result": "ServeHTTP checks bearer authorization before route dispatch. Session route has explicit path, accepts GET/POST/PUT only, strictly validates query and request operation shape, and delegates to bounded filemanager methods.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter_publish_w1",
+        "reviewed_paths": [
+          "internal/agent/socket.go",
+          "internal/agentclient/client.go",
+          "deploy/compose/compose.yml",
+          "deploy/systemd/kejilion-agent.service",
+          "deploy/install.sh"
+        ],
+        "invariant": "Panel-to-Agent peer and credential are limited to intended local Panel capability.",
+        "method": "source",
+        "result": "Agent creates Unix socket root-owned with configured Panel group/mode 0660; token validated as regular file. Client sends bearer over Unix socket. Compose mounts socket/token read-only; systemd and installer declare root Agent, restricted runtime directory, group membership and token mode. Source does not prove live permissions.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "lifecycle": "receive route authorization"
+  },
+  {
+    "coverage_id": "commit%200b808e7bb00ee5d058bf0b2857009c9307099965%23smart-download%20feature::browser-to-Panel-to-network-to-Agent-to-host%20filesystem::internal%2Fbittorrent%2Binternal%2Fremotedownload%2Binternal%2Fpanel%2Binternal%2Fagent%2Binternal%2Ffilemanager::ATTACK-CLASSES.md%23Wildcard::end-to-end%20lifecycle",
+    "canonical_refs": {
+      "surface": "commit 0b808e7bb00ee5d058bf0b2857009c9307099965#smart-download feature",
+      "boundary": "browser-to-Panel-to-network-to-Agent-to-host filesystem",
+      "subsystem": "internal/bittorrent+internal/remotedownload+internal/panel+internal/agent+internal/filemanager",
+      "attack_class": "ATTACK-CLASSES.md#Wildcard",
+      "lifecycle": "end-to-end lifecycle"
+    },
+    "surface": "Cross-path smart-download feature composition",
+    "boundary": "Admission, outbound fetch/peer protocol, asynchronous state, Agent RPC and privileged filesystem publication",
+    "subsystem": "Smart-download end-to-end flow",
+    "attack_class": "Wildcard",
+    "starting_paths": [
+      "docs/cross-kpanel-file-transfer.md",
+      "internal/agent/file_receives.go",
+      "internal/bittorrent/engine.go",
+      "internal/filemanager/receive.go",
+      "internal/panel/file_remote_downloads.go",
+      "internal/panel/file_torrent_downloads.go",
+      "internal/panel/file_transfer_receiver.go",
+      "internal/remotedownload/client.go",
+      "web/src/views/FilesView.vue"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Wildcard",
+    "selected_companion_blocks": [
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Acknowledgment/commit ordering defects",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Universal moves",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Validation rules",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Stale authorization and derived copy use",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "ATTACK-CLASSES.md#Injection",
+        "reason": "No end-to-end command/SQL sink was identified in the download-to-file path."
+      },
+      {
+        "block": "SUPPLY-CHAIN-AND-RELEASE.md#Untrusted code in a privileged workflow",
+        "reason": "No workflow is in the selected feature commit or direct publication chain."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "hunter_publish_w1",
+    "reviewed_paths": [
+      "go.mod",
+      "go.sum",
+      "internal/agent/file_receives.go",
+      "internal/bittorrent/engine.go",
+      "internal/bittorrent/metadata.go",
+      "internal/bittorrent/metadata_guard.go",
+      "internal/bittorrent/network.go",
+      "internal/filemanager/archive.go",
+      "internal/filemanager/manager.go",
+      "internal/filemanager/receive.go",
+      "internal/filemanager/receive_identity_linux.go",
+      "internal/filemanager/receive_identity_other.go",
+      "internal/filemanager/transfer.go",
+      "internal/panel/file_remote_downloads.go",
+      "internal/panel/file_torrent_downloads.go",
+      "internal/panel/file_transfer_receiver.go",
+      "internal/panel/file_transfer_sources.go",
+      "internal/remotedownload/client.go",
+      "web/src/views/FilesView.vue"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_publish_w1",
+        "reviewed_paths": [
+          "internal/panel/file_remote_downloads.go",
+          "internal/bittorrent/metadata.go",
+          "internal/bittorrent/engine.go",
+          "internal/bittorrent/network.go"
+        ],
+        "invariant": "A private torrent must not expose its info hash to public DHT before the private flag is known.",
+        "method": "source",
+        "result": "Magnet input is parsed with Metadata unset; Download starts and attaches a public DHT server before AddTorrentSpec, and closes it only after metadata arrives and is marked private. Packet wrapper permits outbound datagrams to public endpoints. Whether pinned library emits an info-hash-bearing lookup in the interval remains unresolved.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter_publish_w1",
+        "reviewed_paths": [
+          "web/src/views/FilesView.vue",
+          "internal/panel/file_remote_downloads.go",
+          "internal/panel/file_torrent_downloads.go",
+          "internal/panel/file_transfer_sources.go",
+          "internal/remotedownload/client.go",
+          "internal/panel/file_transfer_receiver.go"
+        ],
+        "invariant": "Remote source data and metadata must stay bounded and must not override the selected canonical destination.",
+        "method": "source",
+        "result": "UI submits selected destination/source; Panel validates destination/name and canonicalizes HTTP URLs. HTTP uses public address validation and pinned dialing. Torrent metadata/tracker counts/paths/sizes bounded. Both modes feed common receive pipeline; no source-controlled destination or unbounded receive path found.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter_publish_w1",
+        "reviewed_paths": [
+          "internal/panel/file_transfer_receiver.go",
+          "internal/agent/file_receives.go",
+          "internal/filemanager/receive.go",
+          "internal/filemanager/receive_identity_linux.go",
+          "internal/filemanager/receive_identity_other.go",
+          "internal/filemanager/manager.go",
+          "internal/filemanager/transfer.go",
+          "internal/filemanager/archive.go"
+        ],
+        "invariant": "Acknowledged transfer chunks must be bound to a session and durably staged before publication.",
+        "method": "source",
+        "result": "Agent binds operations to session ID/source key; chunks size-limited and checksum-checked. File data sync precedes offset/hash journal persistence; publication uses rooted staging and identity checks. Directory TAR paths and extraction budgets checked before publication.",
+        "artifact": null
+      },
+      {
+        "artifact": null,
+        "result": "Independent Phase 3 source review: repository pins torrent v1.61.0 and dht/v2 v2.23.0 in go.mod/go.sum. The supplied version-labeled dependency extracts appear to show the torrent client starts periodic announce for a hash-only torrent and the DHT implementation emits outbound get_peers with info_hash even when Passive sets read-only mode; the repository manually attaches DHT before AddTorrentSpec and only closes it after metadataGuard publishes Private=true. The publicPacketConn forwards allowed public UDP writes. No bounded packet write was observed. The torrent extraction was compared with a local upstream extraction tree, but the DHT module archive h1 was not independently recalculated; dependency-source provenance is therefore partial.",
+        "invariant": "A private magnet info hash should not be sent to public DHT before the info dictionary reveals the private flag.",
+        "reviewed_paths": [
+          "go.mod",
+          "go.sum",
+          "internal/panel/file_remote_downloads.go",
+          "internal/panel/file_torrent_downloads.go",
+          "internal/bittorrent/metadata.go",
+          "internal/bittorrent/engine.go",
+          "internal/bittorrent/metadata_guard.go",
+          "internal/bittorrent/network.go"
+        ],
+        "method": "source",
+        "agent_id": "verify_magnet_deps"
+      }
+    ],
+    "result_fingerprints": [
+      "Bittorrent.PrivateMagnetDHTBeforeMetadata"
+    ],
+    "unresolved": [
+      "Repository source does not establish whether the pinned torrent library emits an info-hash-bearing DHT lookup before metadataGuard.ready reveals the private flag.",
+      "This source-only assignment did not run an isolated packet-capture check, so disclosure to a public DHT peer was not observed."
+    ],
+    "lifecycle": "end-to-end lifecycle"
+  },
+  {
+    "coverage_id": "deployed%20KPanel%20host%20runtime::effective%20image%20digest%20compose%20overrides%20host%20egress%20and%20filesystem::deployment%20environment::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries::runtime%20deployment",
+    "canonical_refs": {
+      "surface": "deployed KPanel host runtime",
+      "boundary": "effective image digest compose overrides host egress and filesystem",
+      "subsystem": "deployment environment",
+      "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+      "lifecycle": "runtime deployment"
+    },
+    "surface": "Live deployment and host configuration",
+    "boundary": "Effective container/systemd permissions, network egress and filesystem behavior",
+    "subsystem": "deployed environment",
+    "attack_class": "Chained vulnerabilities and trust boundaries",
+    "starting_paths": [
+      "deploy/compose/compose.yml",
+      "deploy/systemd/kejilion-agent.service",
+      "deploy/install.sh"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "The audit is source-only and has no access to or authorization to connect to a live deployment; source defaults cannot establish effective runtime configuration."
+    ],
+    "lifecycle": "runtime deployment"
+  },
+  {
+    "coverage_id": "go.mod%23github.com%2Fanacrolix%2Ftorrent::go.sum%23dependency%20integrity%20and%20package%20provenance::module%20github.com%2Fkejilion%2Fkejilion-panel::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries::dependency%20resolution%20and%20build",
+    "canonical_refs": {
+      "surface": "go.mod#github.com/anacrolix/torrent",
+      "boundary": "go.sum#dependency integrity and package provenance",
+      "subsystem": "module github.com/kejilion/kejilion-panel",
+      "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+      "lifecycle": "dependency resolution and build"
+    },
+    "surface": "New BitTorrent library dependency and build integration",
+    "boundary": "Pinned module version, checksums, imported API surface and version-specific peer behavior",
+    "subsystem": "Go module supply chain",
+    "attack_class": "Chained vulnerabilities and trust boundaries",
+    "starting_paths": [
+      "go.mod",
+      "go.sum",
+      "THIRD_PARTY_NOTICES.md",
+      "LICENSES/anacrolix-torrent-MPL-2.0.txt",
+      "internal/bittorrent/engine.go",
+      "internal/bittorrent/metadata_guard.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+    "selected_companion_blocks": [
+      "SUPPLY-CHAIN-AND-RELEASE.md#Dependency source and namespace confusion",
+      "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+      "SUPPLY-CHAIN-AND-RELEASE.md#Universal moves",
+      "SUPPLY-CHAIN-AND-RELEASE.md#Validation rules",
+      "SUPPLY-CHAIN-AND-RELEASE.md#Mutable and unbound build inputs"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "SUPPLY-CHAIN-AND-RELEASE.md#Untrusted code in a privileged workflow",
+        "reason": "This feature commit adds a Go module dependency but no CI/workflow file."
+      },
+      {
+        "block": "ATTACK-CLASSES.md#Injection",
+        "reason": "The dependency enters through Go module resolution, not a runtime command string."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 2,
+    "status": "covered",
+    "agent_id": "hunter_bt_w2",
+    "reviewed_paths": [
+      "LICENSES/anacrolix-torrent-MPL-2.0.txt",
+      "THIRD_PARTY_NOTICES.md",
+      "go.mod",
+      "go.sum",
+      "internal/bittorrent/engine.go",
+      "internal/bittorrent/metadata_guard.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_bt_w2",
+        "reviewed_paths": [
+          "LICENSES/anacrolix-torrent-MPL-2.0.txt",
+          "THIRD_PARTY_NOTICES.md",
+          "go.mod",
+          "go.sum",
+          "internal/bittorrent/engine.go",
+          "internal/bittorrent/metadata_guard.go"
+        ],
+        "invariant": "The BitTorrent dependency and the API surface consuming untrusted peer data must have a pinned, checksummed module identity and no source-visible alternate resolver path.",
+        "method": "source",
+        "result": "go.mod pins github.com/anacrolix/torrent v1.61.0 and github.com/anacrolix/dht/v2 v2.23.0; go.sum contains module and go.mod checksums. No replace or exclude directive was found. The third-party notice identifies the torrent dependency and its MPL-2.0 license. Runtime peer parsing is separately reviewed in the peer-message unit; no source-visible dependency-resolution bypass was found here.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "lifecycle": "dependency resolution and build"
+  },
+  {
+    "coverage_id": "internal%2Fbittorrent%2Fengine.go%23peer%20metadata%20exchange::internal%2Fbittorrent%2Fmetadata_guard.go%23peer%20message%20bounds%20and%20extension%20handling::internal%2Fbittorrent::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries::peer-to-metadata%20state%20transition",
+    "canonical_refs": {
+      "surface": "internal/bittorrent/engine.go#peer metadata exchange",
+      "boundary": "internal/bittorrent/metadata_guard.go#peer message bounds and extension handling",
+      "subsystem": "internal/bittorrent",
+      "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+      "lifecycle": "peer-to-metadata state transition"
+    },
+    "surface": "Untrusted BitTorrent peer messages and metadata",
+    "boundary": "Handshake, extension negotiation, metadata chunks and parser consumption",
+    "subsystem": "BitTorrent wire-protocol client",
+    "attack_class": "Chained vulnerabilities and trust boundaries",
+    "starting_paths": [
+      "docs/development-quality-standard.md",
+      "docs/file-manager-design.md",
+      "go.mod",
+      "go.sum",
+      "internal/bittorrent/bounded.go",
+      "internal/bittorrent/engine_test.go",
+      "internal/bittorrent/engine.go",
+      "internal/bittorrent/metadata_guard.go",
+      "internal/bittorrent/metadata.go",
+      "internal/bittorrent/network.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+    "selected_companion_blocks": [
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Message boundary and canonicalization disagreement",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Universal moves",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Validation rules",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Untrusted producer treated as control plane",
+      "MEMORY-SAFETY-AND-BINARY.md#Malformed binary metadata and relocation handling",
+      "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+      "MEMORY-SAFETY-AND-BINARY.md#Universal moves",
+      "MEMORY-SAFETY-AND-BINARY.md#Validation rules",
+      "MEMORY-SAFETY-AND-BINARY.md#Integer overflow, underflow, truncation, and signedness"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "ATTACK-CLASSES.md#Access control",
+        "reason": "Wire messages do not carry application users or resources in this single-admin client."
+      },
+      {
+        "block": "WEB-PROTOCOL-AND-AUTH.md#Ordinary CSRF",
+        "reason": "The peer protocol is outbound background work, not a browser session endpoint."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 2,
+    "status": "covered",
+    "agent_id": "hunter_bt_w2",
+    "reviewed_paths": [
+      "go.mod",
+      "go.sum",
+      "internal/bittorrent/bounded.go",
+      "internal/bittorrent/engine.go",
+      "internal/bittorrent/engine_test.go",
+      "internal/bittorrent/metadata.go",
+      "internal/bittorrent/metadata_guard.go",
+      "internal/bittorrent/metadata_test.go",
+      "internal/bittorrent/network.go",
+      "internal/bittorrent/network_test.go",
+      "internal/bittorrent/trackers.go",
+      "internal/panel/file_remote_downloads.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_bt_w2",
+        "reviewed_paths": [
+          "go.mod",
+          "go.sum",
+          "internal/bittorrent/bounded.go",
+          "internal/bittorrent/engine.go",
+          "internal/bittorrent/engine_test.go",
+          "internal/bittorrent/metadata.go",
+          "internal/bittorrent/metadata_guard.go",
+          "internal/bittorrent/metadata_test.go",
+          "internal/bittorrent/network.go",
+          "internal/bittorrent/network_test.go",
+          "internal/bittorrent/trackers.go",
+          "internal/panel/file_remote_downloads.go"
+        ],
+        "invariant": "Untrusted peer message length must be bounded before allocation or attacker-sized parsing work, not only after the dependency has formed a message object.",
+        "method": "source",
+        "result": "The engine registers metadataGuard.message and sets MaxAllocPeerRequestDataPerConn to 64 KiB. The callback receives a pp.Message, assigns its ExtendedPayload to data, calls scanBencode(data), and only then rejects len(data) above 64 KiB. This source order leaves the size check unable to bound work performed by scanBencode on an oversized payload. The checkout does not include the pinned dependency's peer-frame parser, so whether an earlier inbound frame cap prevents meaningful allocation or parsing cost is unresolved. The source supports a needs-validation candidate, not a confirmed impact.",
+        "artifact": null
+      },
+      {
+        "agent_id": "verify_bt_peer_frame",
+        "artifact": null,
+        "result": "Independent Phase 3 review of the parent-provided torrent v1.61.0 source extract found that the application constructors leave ChunkSize at zero, so the library applies its 16 KiB default and sets the peer decoder body cap to 4*max(chunkSize,16 KiB)=64 KiB. Decoder rejects a frame above MaxLength before creating the body reader or ExtendedPayload; ReadMessage runs only after successful Decode. The metadata guard scanBencode-before-64-KiB check therefore cannot receive an oversized frame on this path. MaxAllocPeerRequestDataPerConn controls outbound peer request data buffering, not inbound decoding. Candidate removed as non-finding. Revisit if future code supplies a custom larger ChunkSize.",
+        "invariant": "Inbound extension frame length must be checked before payload allocation and callback parsing.",
+        "reviewed_paths": [
+          "go.mod",
+          "go.sum",
+          "internal/bittorrent/engine.go",
+          "internal/bittorrent/metadata.go",
+          "internal/bittorrent/metadata_guard.go"
+        ],
+        "method": "source"
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "lifecycle": "peer-to-metadata state transition",
+    "parent_hardening_notes": [
+      "If future code supplies a custom ChunkSize above 16 KiB, re-evaluate the app-side metadata scan bound because the upstream frame cap scales with chunk size."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fbittorrent%2Fengine.go%23tracker%20DHT%20and%20peer%20dialing::internal%2Fbittorrent%2Fnetwork.go%23public%20peer%20address%20filter::internal%2Fbittorrent::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries::outbound%20discovery%20and%20peer%20connection",
+    "canonical_refs": {
+      "surface": "internal/bittorrent/engine.go#tracker DHT and peer dialing",
+      "boundary": "internal/bittorrent/network.go#public peer address filter",
+      "subsystem": "internal/bittorrent",
+      "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+      "lifecycle": "outbound discovery and peer connection"
+    },
+    "surface": "Tracker, DHT and BitTorrent peer network activity",
+    "boundary": "Untrusted tracker/peer addresses through DNS resolution and public-address dialing",
+    "subsystem": "BitTorrent network engine",
+    "attack_class": "Chained vulnerabilities and trust boundaries",
+    "starting_paths": [
+      "docs/development-quality-standard.md",
+      "internal/bittorrent/engine_test.go",
+      "internal/bittorrent/engine.go",
+      "internal/bittorrent/metadata.go",
+      "internal/bittorrent/network_test.go",
+      "internal/bittorrent/network.go",
+      "internal/bittorrent/trackers.go",
+      "internal/panel/file_torrent_downloads.go",
+      "internal/remotedownload/client.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+    "selected_companion_blocks": [
+      "CLOUD-AND-DEPLOYMENT.md#Metadata and internal-service reachability",
+      "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+      "CLOUD-AND-DEPLOYMENT.md#Universal moves",
+      "CLOUD-AND-DEPLOYMENT.md#Validation rules",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Untrusted producer treated as control plane",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Universal moves",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Validation rules",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Worker, pool, and priority starvation",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "WEB-PROTOCOL-AND-AUTH.md#Ordinary CSRF",
+        "reason": "Network discovery runs inside an already admitted Panel job."
+      },
+      {
+        "block": "ATTACK-CLASSES.md#Injection",
+        "reason": "Peer and tracker addresses feed network dialing, not shell/SQL execution."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 2,
+    "status": "covered",
+    "agent_id": "hunter_bt_w2",
+    "reviewed_paths": [
+      "internal/bittorrent/engine.go",
+      "internal/bittorrent/engine_test.go",
+      "internal/bittorrent/metadata.go",
+      "internal/bittorrent/network.go",
+      "internal/bittorrent/network_test.go",
+      "internal/bittorrent/trackers.go",
+      "internal/remotedownload/client.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_bt_w2",
+        "reviewed_paths": [
+          "internal/bittorrent/engine.go",
+          "internal/bittorrent/engine_test.go",
+          "internal/bittorrent/metadata.go",
+          "internal/bittorrent/network.go",
+          "internal/bittorrent/network_test.go",
+          "internal/bittorrent/trackers.go",
+          "internal/remotedownload/client.go"
+        ],
+        "invariant": "Tracker, DHT, and peer addresses must be checked as public before outbound connections, with DNS results pinned or revalidated at the dial boundary.",
+        "method": "source",
+        "result": "HTTP trackers use remotedownload.Client.Open, whose URL validation, public-address resolution, and pinned dialing apply to redirects and connections. UDP trackers reject any non-public DNS answer and replace the hostname with a resolved numeric address before dialing. Tracker-provided peers are filtered to public IPs; TCP peer dialing uses DialPublic. DHT packet I/O filters public endpoints, bounds datagrams to 4096 bytes, and accepts replies only from recently contacted endpoints. No source-visible route to private or loopback addresses found; no live network was contacted.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "lifecycle": "outbound discovery and peer connection"
+  },
+  {
+    "coverage_id": "internal%2Fbittorrent%2Fstorage.go%23Cache%20staging%20and%20result%20stream::internal%2Fbittorrent%2Fstorage.go%23private%20spool%20and%20bounded%20result::internal%2Fbittorrent%2Binternal%2Fpanel::ATTACK-CLASSES.md%23Resource%20and%20file%20handling::staging%2C%20completion%20and%20cleanup",
+    "canonical_refs": {
+      "surface": "internal/bittorrent/storage.go#Cache staging and result stream",
+      "boundary": "internal/bittorrent/storage.go#private spool and bounded result",
+      "subsystem": "internal/bittorrent+internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling",
+      "lifecycle": "staging, completion and cleanup"
+    },
+    "surface": "Downloaded BitTorrent pieces to private staging and Panel receiver",
+    "boundary": "Piece verification, temp cache naming, disk space bounds, cleanup and archive/file handoff",
+    "subsystem": "BitTorrent storage and Panel result adapter",
+    "attack_class": "Resource and file handling",
+    "starting_paths": [
+      "docs/file-manager-design.md",
+      "docs/storage-strategy.md",
+      "internal/bittorrent/engine.go",
+      "internal/bittorrent/space_other.go",
+      "internal/bittorrent/space_unix.go",
+      "internal/bittorrent/storage.go",
+      "internal/panel/file_remote_downloads.go",
+      "internal/panel/file_torrent_downloads.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#File descriptor, handle, and temporary-resource leaks",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota-accounting scope and reset gaps",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Retention and queued-work overrun",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Acknowledgment/commit ordering defects",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Universal moves",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "ATTACK-CLASSES.md#Injection",
+        "reason": "Piece data is verified and staged; no command execution sink is in this storage path."
+      },
+      {
+        "block": "CLIENT-SIDE.md#DOM-based XSS",
+        "reason": "This subsystem is server-side storage and does not render peer data in the browser."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 2,
+    "status": "covered",
+    "agent_id": "hunter_bt_w2",
+    "reviewed_paths": [
+      "internal/bittorrent/engine.go",
+      "internal/bittorrent/metadata.go",
+      "internal/bittorrent/metadata_test.go",
+      "internal/bittorrent/space_other.go",
+      "internal/bittorrent/space_unix.go",
+      "internal/bittorrent/storage.go",
+      "internal/filemanager/archive.go",
+      "internal/filemanager/receive.go",
+      "internal/filemanager/transfer.go",
+      "internal/panel/file_torrent_downloads.go",
+      "internal/panel/file_torrent_downloads_test.go",
+      "internal/panel/file_transfer_receiver.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_bt_w2",
+        "reviewed_paths": [
+          "internal/bittorrent/engine.go",
+          "internal/bittorrent/metadata.go",
+          "internal/bittorrent/metadata_test.go",
+          "internal/bittorrent/space_other.go",
+          "internal/bittorrent/space_unix.go",
+          "internal/bittorrent/storage.go",
+          "internal/filemanager/archive.go",
+          "internal/filemanager/receive.go",
+          "internal/filemanager/transfer.go",
+          "internal/panel/file_torrent_downloads.go",
+          "internal/panel/file_torrent_downloads_test.go",
+          "internal/panel/file_transfer_receiver.go"
+        ],
+        "invariant": "Downloaded pieces must stay in private bounded staging, and completed file or archive streams must reach publication through the common validated receiver with cleanup on failure.",
+        "method": "source",
+        "result": "OpenCache uses a private os.Root, a single-task gate, exclusive payload creation, and bounded cleanup. OpenTorrent validates metadata, checks available space on supported platforms, truncates to the validated total size, and piece reads/writes enforce offsets and lengths. Engine syncs the staged file before returning a result; Result.Open exposes a bounded file section or deterministic TAR stream. The Panel adapter sends both forms through receiveFileTransfer, and the Agent receive path verifies chunks and extracts only normalized regular files/directories into a staged tree before publication. No alternate publication path or source-visible traversal issue found.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "lifecycle": "staging, completion and cleanup"
+  },
+  {
+    "coverage_id": "internal%2Fcluster%2Ffile_relay_v1.go%23cross-node%20file%20relay::internal%2Fcluster%2Ffile_relay_v1_grants.go%23node%20transfer%20grants::internal%2Fcluster%2Bcmd%2Fkejilion-node::ATTACK-CLASSES.md%23Access%20control::cross-node%20transfer%20lifecycle",
+    "canonical_refs": {
+      "surface": "internal/cluster/file_relay_v1.go#cross-node file relay",
+      "boundary": "internal/cluster/file_relay_v1_grants.go#node transfer grants",
+      "subsystem": "internal/cluster+cmd/kejilion-node",
+      "attack_class": "ATTACK-CLASSES.md#Access control",
+      "lifecycle": "cross-node transfer lifecycle"
+    },
+    "surface": "Cross-node file relay and light-file broker",
+    "boundary": "Node-to-node grant and relay protocol",
+    "subsystem": "Cluster file transport",
+    "attack_class": "Access control",
+    "starting_paths": [
+      "internal/cluster/file_relay_v1.go",
+      "internal/cluster/file_relay_v1_grants.go",
+      "cmd/kejilion-node/file_broker.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Not called by the selected single-host smart-download result receiver; retained for later broader audit."
+    ],
+    "lifecycle": "cross-node transfer lifecycle"
+  },
+  {
+    "coverage_id": "internal%2Ffilemanager%2Freceive.go%23CommitReceive::internal%2Ffilemanager%2Freceive.go%23destination%20pinning%20journal%20and%20atomic%20publication::internal%2Ffilemanager::ATTACK-CLASSES.md%23Resource%20and%20file%20handling::create%2C%20resume%2C%20recover%20and%20publish",
+    "canonical_refs": {
+      "surface": "internal/filemanager/receive.go#CommitReceive",
+      "boundary": "internal/filemanager/receive.go#destination pinning journal and atomic publication",
+      "subsystem": "internal/filemanager",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling",
+      "lifecycle": "create, resume, recover and publish"
+    },
+    "surface": "Agent receive-session chunks to host file publication",
+    "boundary": "Session identity, target path normalization, quota reservations, temporary journal, recovery and commit",
+    "subsystem": "Rooted Agent file manager",
+    "attack_class": "Resource and file handling",
+    "starting_paths": [
+      "internal/agent/file_receives.go",
+      "internal/filemanager/receive.go",
+      "internal/filemanager/receive_identity_linux.go",
+      "internal/filemanager/receive_identity_other.go",
+      "internal/filemanager/manager.go",
+      "internal/filemanager/transfer.go",
+      "internal/filemanager/archive.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Stale authorization and derived copy use",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Retention and queued-work overrun",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unsafe recovery and capacity rollback",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota-accounting scope and reset gaps",
+      "MEMORY-SAFETY-AND-BINARY.md#Shared-state races and TOCTOU",
+      "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+      "MEMORY-SAFETY-AND-BINARY.md#Universal moves",
+      "MEMORY-SAFETY-AND-BINARY.md#Validation rules",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Acknowledgment/commit ordering defects",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Universal moves",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "ATTACK-CLASSES.md#Injection",
+        "reason": "The receiver writes file bytes and journals, without a shell or database query sink."
+      },
+      {
+        "block": "CLIENT-SIDE.md#DOM-based XSS",
+        "reason": "The receive session runs in the privileged Agent and does not render browser markup."
+      }
+    ],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter_publish_w1",
+    "reviewed_paths": [
+      "internal/agent/file_receives.go",
+      "internal/filemanager/archive.go",
+      "internal/filemanager/manager.go",
+      "internal/filemanager/receive_identity_linux.go",
+      "internal/filemanager/receive_identity_other.go",
+      "internal/filemanager/receive.go",
+      "internal/filemanager/transfer.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_publish_w1",
+        "reviewed_paths": [
+          "internal/agent/file_receives.go",
+          "internal/filemanager/receive.go"
+        ],
+        "invariant": "Receive input, capacity reservations, journal recovery and chunk acknowledgements remain bounded and session-bound.",
+        "method": "source",
+        "result": "Receive input normalized/size-checked; sessions, records, state and reserved bytes capped. Journal bounded and strictly decoded. Writes require matching ID/source key, verify digest/offset, sync data before persisting acknowledged prefix, and accept duplicate chunks only if bytes match.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter_publish_w1",
+        "reviewed_paths": [
+          "internal/filemanager/receive.go",
+          "internal/filemanager/manager.go"
+        ],
+        "invariant": "Resume/publication stay bound to opened parent and staging object, and protected paths are rejected.",
+        "method": "source",
+        "result": "Each parent opens through rooted handles and compares directory identity. Mutation protection, staging identity and target state are checked; recovery verifies acknowledged prefix before discarding tail. Ordinary path resolution rejects internal components and symlinks.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter_publish_w1",
+        "reviewed_paths": [
+          "internal/filemanager/receive.go",
+          "internal/filemanager/receive_identity_linux.go",
+          "internal/filemanager/receive_identity_other.go",
+          "internal/filemanager/transfer.go",
+          "internal/filemanager/archive.go"
+        ],
+        "invariant": "Commit publishes only verified private staging content and recovers safely across partial commit.",
+        "method": "source",
+        "result": "File publication stages held inode and uses Linux descriptor-relative no-replace rename for non-overwrite commit, then syncs/verifies published object. Directory commits persist staging identity, enforce TAR path/type/entry/byte limits, and publish only after validation. Non-Linux identity adapter is documented for local tooling; supplied Agent deployment is Linux.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "hardening_notes": [
+      "Receive-specific path validation and openReceiveDirectory do not apply the ordinary resolver's reserved .kpanel-* component predicate. Assigned smart-download callers resolve the selected parent first and the direct session route remains within single-admin authority, so this review did not establish lower-trust impact; applying the predicate in openReceiveDirectory would keep internal staging paths inaccessible through the receive API."
+    ],
+    "lifecycle": "create, resume, recover and publish"
+  },
+  {
+    "coverage_id": "internal%2Fremotedownload%2Fadaptive.go%23checkpoint%20source%20switch::internal%2Fremotedownload%2Fclient.go%23range%20and%20representation%20identity::internal%2Fremotedownload::ATTACK-CLASSES.md%23Business%20logic::resume%20and%20source%20replacement",
+    "canonical_refs": {
+      "surface": "internal/remotedownload/adaptive.go#checkpoint source switch",
+      "boundary": "internal/remotedownload/client.go#range and representation identity",
+      "subsystem": "internal/remotedownload",
+      "attack_class": "ATTACK-CLASSES.md#Business logic",
+      "lifecycle": "resume and source replacement"
+    },
+    "surface": "Adaptive segmented HTTP transfer and resume",
+    "boundary": "Response identity, range offsets, checkpoint acknowledgements and source replacement",
+    "subsystem": "HTTP remote-download client",
+    "attack_class": "Business logic",
+    "starting_paths": [
+      "docs/file-manager-design.md",
+      "internal/panel/file_download_adaptive_test.go",
+      "internal/panel/file_transfer_receiver.go",
+      "internal/panel/file_transfer_sources.go",
+      "internal/remotedownload/adaptive_test.go",
+      "internal/remotedownload/adaptive.go",
+      "internal/remotedownload/client.go",
+      "internal/remotedownload/segmented.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Acknowledgment/commit ordering defects",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Universal moves",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Validation rules",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Duplicate delivery and idempotency gaps",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Stale authorization and derived copy use",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "WEB-PROTOCOL-AND-AUTH.md#Ordinary CSRF",
+        "reason": "The resumed transfer is an asynchronous server-to-server data path after authenticated admission."
+      },
+      {
+        "block": "ATTACK-CLASSES.md#Injection",
+        "reason": "No command or query language is constructed from resumed response data."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter_http_w1",
+    "reviewed_paths": [
+      "internal/panel/file_download_adaptive_test.go",
+      "internal/panel/file_transfer_receiver.go",
+      "internal/panel/file_transfer_sources.go",
+      "internal/remotedownload/adaptive.go",
+      "internal/remotedownload/client.go",
+      "internal/remotedownload/segmented.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_http_w1",
+        "reviewed_paths": [
+          "internal/panel/file_download_adaptive_test.go",
+          "internal/panel/file_transfer_receiver.go",
+          "internal/panel/file_transfer_sources.go",
+          "internal/remotedownload/adaptive.go",
+          "internal/remotedownload/client.go",
+          "internal/remotedownload/segmented.go"
+        ],
+        "invariant": "A source switch uses only a receiver-confirmed durable offset and preserves representation identity and byte-prefix integrity across retries or ranges.",
+        "method": "source",
+        "result": "Receiver advances offset after successful chunk ack and verifies returned session ID, offset, and SHA-256 prefix before AdaptiveBody.Checkpoint. Range requests require a strong ETag and validate response ETag, final URL, exact Content-Range, known length. If Range ignored and full response returned, code replays and hashes durable prefix before switching. Segments read exact bounded ranges; mismatched or partial segments fail instead of silently retrying as new source. No checkpoint/source-identity invariant failure found.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "lifecycle": "resume and source replacement"
+  },
+  {
+    "coverage_id": "internal%2Fremotedownload%2Fclient.go%23HTTP%20source%20fetch::internal%2Fremotedownload%2Fclient.go%23URL%20validation%2Bpublic%20DNS%20pin%2Bredirect%20policy::internal%2Fremotedownload::ATTACK-CLASSES.md%23Resource%20and%20file%20handling::outbound%20request",
+    "canonical_refs": {
+      "surface": "internal/remotedownload/client.go#HTTP source fetch",
+      "boundary": "internal/remotedownload/client.go#URL validation+public DNS pin+redirect policy",
+      "subsystem": "internal/remotedownload",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling",
+      "lifecycle": "outbound request"
+    },
+    "surface": "User-controlled HTTP(S) remote source fetch",
+    "boundary": "URL parsing, resolver results, pinned dial and redirect policy",
+    "subsystem": "HTTP remote-download client",
+    "attack_class": "Resource and file handling",
+    "starting_paths": [
+      "internal/remotedownload/client.go",
+      "internal/panel/file_remote_downloads.go",
+      "internal/panel/file_remote_download_runner.go",
+      "internal/panel/file_torrent_downloads.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [
+      "CLOUD-AND-DEPLOYMENT.md#Metadata and internal-service reachability",
+      "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+      "CLOUD-AND-DEPLOYMENT.md#Universal moves",
+      "CLOUD-AND-DEPLOYMENT.md#Validation rules",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Message boundary and canonicalization disagreement",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Universal moves",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "WEB-PROTOCOL-AND-AUTH.md#Ordinary CSRF",
+        "reason": "This unit is the Panel's server-side outbound fetch after request admission."
+      },
+      {
+        "block": "ATTACK-CLASSES.md#Injection",
+        "reason": "The remote URL is consumed by the HTTP client, with no shell or SQL sink in this path."
+      }
+    ],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter_http_w1",
+    "reviewed_paths": [
+      "internal/panel/file_remote_download_runner.go",
+      "internal/panel/file_remote_downloads.go",
+      "internal/panel/file_torrent_downloads.go",
+      "internal/panel/file_transfer_sources.go",
+      "internal/panel/server.go",
+      "internal/remotedownload/client.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_http_w1",
+        "reviewed_paths": [
+          "internal/panel/file_remote_download_runner.go",
+          "internal/panel/file_remote_downloads.go",
+          "internal/panel/file_torrent_downloads.go",
+          "internal/panel/file_transfer_sources.go",
+          "internal/panel/server.go",
+          "internal/remotedownload/client.go"
+        ],
+        "invariant": "Every user-controlled HTTP(S) fetch, including redirects, range retries, and torrent metadata fetches, rejects nonpublic destinations and connects only to validated resolved addresses.",
+        "method": "source",
+        "result": "ValidateURL limits length and accepts HTTP(S), rejecting userinfo, opaque form, fragments, controls, backslashes, malformed ports and invalid hostnames. Transport disables proxies and dials via resolver that rejects entire answer set if any address is nonpublic, then uses numeric validated addresses. Redirects are bounded/revalidated and HTTPS cannot downgrade; authorization/cookie/referer removed. Resume and torrent metadata use same opener. Status/encoding, connection/header/idle timeouts checked. No source-visible SSRF bypass found.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "lifecycle": "outbound request"
+  }
+]

@@ -1,0 +1,575 @@
+{
+  "schemaVersion": 1,
+  "run_id": "run-32",
+  "run_status": "incomplete",
+  "completion_scope": "Source-only coverage hunters and Phase 3 candidate triage completed within the scoped source boundary. The run is incomplete because the authorized wall-clock budget was exhausted before post-wave and final-clean critics, Phase 5 verification, final record verification, and final Linux validation of the last ledger could be completed.",
+  "profile": "deep",
+  "scope_mode": "scoped",
+  "scope_complete": false,
+  "global_coverage_complete": false,
+  "risk_acceptance": null,
+  "risk_closed": false,
+  "repo": "kejilion-panel",
+  "source_ref": "0b808e7bb00ee5d058bf0b2857009c9307099965",
+  "source_tree": "d189d37451d982bd42c4802617dbdfe92df4fca2",
+  "source_dirty": false,
+  "comparison_base": "4c0694aa8e02e46145a775707b8d5a0355f7ce10",
+  "reviewed_commits": [
+    "0b808e7bb00ee5d058bf0b2857009c9307099965"
+  ],
+  "scope_paths": [
+    "LICENSES/anacrolix-torrent-MPL-2.0.txt",
+    "THIRD_PARTY_NOTICES.md",
+    "docs/cross-kpanel-file-transfer.md",
+    "docs/development-quality-standard.md",
+    "docs/file-manager-design.md",
+    "docs/storage-strategy.md",
+    "go.mod",
+    "go.sum",
+    "internal/bittorrent/bounded.go",
+    "internal/bittorrent/engine.go",
+    "internal/bittorrent/engine_test.go",
+    "internal/bittorrent/metadata.go",
+    "internal/bittorrent/metadata_guard.go",
+    "internal/bittorrent/metadata_test.go",
+    "internal/bittorrent/network.go",
+    "internal/bittorrent/network_test.go",
+    "internal/bittorrent/space_other.go",
+    "internal/bittorrent/space_unix.go",
+    "internal/bittorrent/storage.go",
+    "internal/bittorrent/trackers.go",
+    "internal/contract/files.go",
+    "internal/panel/cluster.go",
+    "internal/panel/file_download_adaptive_test.go",
+    "internal/panel/file_remote_download_jobs.go",
+    "internal/panel/file_remote_download_jobs_test.go",
+    "internal/panel/file_remote_downloads.go",
+    "internal/panel/file_torrent_downloads.go",
+    "internal/panel/file_torrent_downloads_test.go",
+    "internal/panel/file_torrent_performance_linux_test.go",
+    "internal/panel/file_transfer_performance_linux_test.go",
+    "internal/panel/file_transfer_receiver.go",
+    "internal/panel/file_transfer_sources.go",
+    "internal/panel/server.go",
+    "internal/remotedownload/adaptive.go",
+    "internal/remotedownload/adaptive_test.go",
+    "internal/remotedownload/client.go",
+    "internal/remotedownload/jobs.go",
+    "internal/remotedownload/jobs_linux_test.go",
+    "internal/remotedownload/jobs_test.go",
+    "internal/remotedownload/segmented.go",
+    "scripts/file-transfer-benchmark.sh",
+    "scripts/smart-download-benchmark.sh",
+    "web/src/i18n/messages/en-US.ts",
+    "web/src/i18n/messages/zh-CN.ts",
+    "web/src/i18n/messages/zh-TW.ts",
+    "web/src/i18n/pages/FilesView/en-US.ts",
+    "web/src/i18n/pages/FilesView/zh-TW.ts",
+    "web/src/types/api.ts",
+    "web/src/views/FilesView.test.ts",
+    "web/src/views/FilesView.vue"
+  ],
+  "governance_head": "0b808e7bb00ee5d058bf0b2857009c9307099965",
+  "skill_source": "https://github.com/cloudflare/security-audit-skill",
+  "skill_commit": "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8",
+  "validation_mode": "source-only",
+  "execution_policy": "source-only-no-target-execution",
+  "target_code_execution": false,
+  "production": false,
+  "production_connections": false,
+  "execution_plan": {
+    "model": "gpt-6-luna",
+    "reasoning_effort": "max",
+    "validation_mode": "source-only",
+    "reviewed_commits": [
+      "0b808e7bb00ee5d058bf0b2857009c9307099965"
+    ],
+    "comparison_base": "4c0694aa8e02e46145a775707b8d5a0355f7ce10",
+    "scope_complete": false,
+    "scope_reason": "Phase 1 coverage critic identified two evidence-bearing job lifecycle units needing fresh review at internal/panel/cluster.go, an uncovered local benchmark CLI boundary, and localization-only paths to retain as out_of_scope. Wave 2 now includes five planned BitTorrent units, one new benchmark unit, and two reassigned job lifecycle units.",
+    "max_wall_seconds": 3600,
+    "max_agent_invocations": 24,
+    "max_concurrency": 4,
+    "expected_plan": {
+      "validation_reserve": "Reserve one Phase 5 verifier for each retained candidate and one Phase 3 verifier for each new candidate; stop hunting and preserve unresolved candidates as incomplete if the remaining budget cannot validate them.",
+      "hunter_and_critic_reserve": "Five focused hunters total: HTTP admission/fetch and publication in wave 1; BitTorrent subsystem, benchmark CLI boundary, and job lifecycle recheck in wave 2; one post-wave critic after wave 2 and one separate final-clean critic.",
+      "reconnaissance": 4
+    },
+    "stop_conditions": [
+      "Source baseline must remain exact and clean at start and end.",
+      "No target code, product tests, builds, browser, live probes, remote connections, external APIs or production.",
+      "Do not exceed 24 child-agent invocations or 3600 seconds; retain unfinished units and findings as incomplete/needs_validation.",
+      "All retained candidate records require discovery/validation independence and fresh Phase-5 review."
+    ],
+    "dynamic_risks": [
+      "HTTP and BitTorrent outbound address/redirect/peer behavior is not dynamically verifiable in this source-only run.",
+      "Linux Node O_NOFOLLOW validator capability is unavailable on this Windows coordinator unless parent runs the provided validation request in the dedicated low-privilege network-none arena."
+    ],
+    "handoff": "Parent owns governance disclosure review and any minimal run promotion; unresolved dynamic risks go to the KPanel release/audit owner.",
+    "original_plan": {
+      "max_agent_invocations": 20,
+      "max_wall_seconds": 2400,
+      "scope_reason": "Initial estimate from one feature commit."
+    },
+    "budget_revisions": [
+      {
+        "from": 20,
+        "to": 24,
+        "reason": "50 changed paths plus direct call chains and separate candidate/record verifiers require more invocation reserve; no unrelated commits were added."
+      },
+      {
+        "from_max_wall_seconds": 2400,
+        "to_max_wall_seconds": 3600,
+        "adjusted_at_sample_utc": "2026-10-09T16:37:14Z",
+        "reason": "Parent authorized one bounded extension for the coverage critic additions, fresh cluster shutdown/lifecycle review, and independent pinned-dependency source verification; invocation cap remains 24."
+      }
+    ],
+    "profile_reason": "deep: 50 changed paths span HTTP SSRF/redirect and range resumption, untrusted BitTorrent protocol parsing/network, persistent jobs, and privileged Agent filesystem publication; scoped to one feature commit and its direct boundary callchains."
+  },
+  "budget": {
+    "max_agent_invocations": 24,
+    "max_wall_seconds": 3600,
+    "observed_wall_seconds_from_initial_sample": 3631,
+    "observed_wall_overrun_seconds": 31
+  },
+  "execution": {
+    "model": "gpt-6-luna",
+    "reasoning_effort": "max",
+    "mode": "source-only",
+    "target_code_execution": false,
+    "production": false
+  },
+  "costs": null,
+  "target_commit_parent": "b1a4fbdc82012286711b27ec7c1dfa3d51300de3",
+  "invocations_used": 15,
+  "process_anomalies": "hunter_http was initially launched before the architecture/coverage ledger and in_progress ownership were prepared. It was immediately interrupted and contributes no coverage evidence; it is counted in invocations_used. Subsequent assignments require preseeded ledger ownership. No pre-wave1 Linux ledger validator pass was obtained; first arena run on the 16:35:44Z snapshot failed with 22 errors and is preserved at cf-ledger-prevalidation.log. Windows O_NOFOLLOW validation did not run.The terminal sample was 2026-10-09T17:02:30Z, about 31 seconds beyond the 3600-second cap measured from the initial 16:01:59Z sample. The overrun occurred while saving the already-returned Phase 3 verifier result and terminal audit metadata; no further agents, source analysis, or target execution were initiated.",
+  "provenance_separation": "External review signals for later commits 3bf1fd341be0cf84b3c632d040fab1bd0a86d60e and 3c3106bc838d9fdc0d324dad0bc45751bf593388 are excluded from hunter prompts and CF findings; current source_ref remains 0b808e7bb00ee5d058bf0b2857009c9307099965.",
+  "invocation_log": [
+    {
+      "agent_id": "scout_product",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "fork_turns": "none",
+      "status": "completed",
+      "dispatch_time_utc": null,
+      "duration_seconds": null,
+      "tokens": null,
+      "note": "Dispatched just before run metadata initialization; exact timestamp unavailable."
+    },
+    {
+      "agent_id": "scout_authority",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "fork_turns": "none",
+      "status": "completed",
+      "dispatch_time_utc": null,
+      "duration_seconds": null,
+      "tokens": null,
+      "note": "Exact dispatch timestamp and duration unavailable in current tool transcript."
+    },
+    {
+      "agent_id": "scout_surfaces",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "fork_turns": "none",
+      "status": "completed",
+      "dispatch_time_utc": null,
+      "duration_seconds": null,
+      "tokens": null,
+      "note": "Exact dispatch timestamp and duration unavailable in current tool transcript."
+    },
+    {
+      "agent_id": "scout_execution",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "fork_turns": "none",
+      "status": "completed",
+      "dispatch_time_utc": null,
+      "duration_seconds": null,
+      "tokens": null,
+      "note": "Exact dispatch timestamp and duration unavailable in current tool transcript."
+    },
+    {
+      "agent_id": "hunter_http",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "fork_turns": "none",
+      "status": "interrupted_before_scope_assignment",
+      "dispatch_time_sample_utc": "2026-10-09T16:01:59Z",
+      "dispatch_time_exact": false,
+      "duration_seconds": null,
+      "tokens": null,
+      "coverage_credit": false,
+      "note": "Stopped after identifying that architecture and coverage units were not yet seeded. No result was accepted; exact platform dispatch/interruption timestamps are unavailable."
+    },
+    {
+      "agent_id": "hunter_http_w1",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "fork_turns": "none",
+      "status": "completed",
+      "dispatch_time_sample_utc": "2026-10-09T16:07:46Z",
+      "dispatch_time_exact": false,
+      "duration_seconds": null,
+      "tokens": null,
+      "coverage_unit_count": 5,
+      "note": "Final response observed at 2026-10-09T16:15:32Z; duration from immediately-prior clock sample and therefore approximate.",
+      "observed_duration_seconds": 466,
+      "duration_exact": false
+    },
+    {
+      "agent_id": "hunter_publish_w1",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "fork_turns": "none",
+      "status": "completed",
+      "dispatch_time_sample_utc": "2026-10-09T16:09:08Z",
+      "dispatch_time_exact": false,
+      "duration_seconds": null,
+      "tokens": null,
+      "coverage_unit_count": 4,
+      "note": "Final response observed at 2026-10-09T16:20:53Z; duration from immediately-prior clock sample and therefore approximate.",
+      "observed_duration_seconds": 705,
+      "duration_exact": false
+    },
+    {
+      "agent_id": "critic_wave1",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "fork_turns": "none",
+      "status": "completed",
+      "dispatch_time_sample_utc": "2026-10-09T16:22:02Z",
+      "dispatch_time_exact": false,
+      "duration_seconds": null,
+      "tokens": null,
+      "coverage_unit_count": 0,
+      "note": "Final result observed by 2026-10-09T16:32:19Z, after a 16:22:02Z dispatch sample; 617 seconds is an upper-bound estimate, not an exact duration.",
+      "observed_duration_seconds": 617,
+      "duration_exact": false
+    },
+    {
+      "agent_id": "verify_bt_private_magnet",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "fork_turns": "none",
+      "status": "completed",
+      "dispatch_time_sample_utc": "2026-10-09T16:22:54Z",
+      "dispatch_time_exact": false,
+      "duration_seconds": null,
+      "tokens": null,
+      "coverage_unit_count": 1,
+      "note": "Final result observed by 2026-10-09T16:29:38Z, after a 16:22:54Z dispatch sample; 404 seconds is approximate. Phase 3 decision: needs_validation.",
+      "observed_duration_seconds": 404,
+      "duration_exact": false
+    },
+    {
+      "agent_id": "verify_magnet_deps",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "fork_turns": "none",
+      "status": "completed",
+      "dispatch_time_sample_utc": "2026-10-09T16:29:38Z",
+      "dispatch_time_exact": false,
+      "duration_seconds": null,
+      "tokens": null,
+      "coverage_unit_count": 1,
+      "note": "Final result observed at 2026-10-09T16:47:02Z; dispatch sample at 16:29:38Z preceded task preparation and exact dispatch is unknown. The 1044-second interval is an upper-bound observation, not an exact duration. Phase 3 decision: needs_validation; dependency-source provenance remains partially unverified."
+    },
+    {
+      "agent_id": "hunter_cli_w2",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "fork_turns": "none",
+      "status": "completed",
+      "dispatch_time_sample_utc": "2026-10-09T16:42:12Z",
+      "dispatch_time_exact": false,
+      "duration_seconds": null,
+      "tokens": null,
+      "coverage_unit_count": 1,
+      "note": "Final response observed at 2026-10-09T16:47:02Z. The 16:42:12Z sample preceded prompt preparation; exact dispatch is unknown. The 290-second interval is an upper-bound observation, not an exact duration. Source-only CLI review returned one needs_validation candidate; no target execution."
+    },
+    {
+      "agent_id": "hunter_jobs_w2",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "fork_turns": "none",
+      "status": "completed",
+      "dispatch_time_sample_utc": "2026-10-09T16:50:58Z",
+      "dispatch_time_exact": false,
+      "duration_seconds": null,
+      "tokens": null,
+      "coverage_unit_count": 2,
+      "note": "Final response observed at 2026-10-09T16:53:21Z. Sample at 16:50:58Z was immediately after dispatch, so the 143-second interval is an lower-bound observation, not exact duration. Two reassigned job lifecycle units returned covered by source review; no code or tests executed.",
+      "duration_exact": false,
+      "elapsed_since_sample_seconds": 143,
+      "sample_relation": "after_dispatch"
+    },
+    {
+      "agent_id": "hunter_bt_w2",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "fork_turns": "none",
+      "status": "completed",
+      "dispatch_time_sample_utc": "2026-10-09T16:50:58Z",
+      "dispatch_time_exact": false,
+      "duration_seconds": null,
+      "tokens": null,
+      "coverage_unit_count": 5,
+      "note": "Final response observed at 2026-10-09T16:57:19Z. The 16:50:58Z clock sample was taken after launch; the 381-second elapsed interval is a lower bound, not an exact duration. Five BT units returned four covered and one needs_validation candidate; no target code/tests executed.",
+      "elapsed_since_sample_seconds": 381,
+      "sample_relation": "after_dispatch"
+    },
+    {
+      "agent_id": "verify_cli_candidate",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "fork_turns": "none",
+      "status": "completed",
+      "dispatch_time_sample_utc": "2026-10-09T16:54:29Z",
+      "dispatch_time_exact": false,
+      "duration_seconds": null,
+      "tokens": null,
+      "coverage_unit_count": 1,
+      "note": "Final response observed at 2026-10-09T16:56:34Z. The 16:54:29Z sample was taken after launch; exact dispatch time unavailable, so no exact duration is recorded. Independent Phase 3 review removed the candidate as non-finding under the declared trust boundary; owner-provided practice is recorded as external context, not repository evidence.",
+      "duration_exact": false,
+      "elapsed_since_sample_seconds": 125,
+      "sample_relation": "after_dispatch"
+    },
+    {
+      "agent_id": "verify_bt_peer_frame",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "fork_turns": "none",
+      "status": "completed",
+      "dispatch_time_sample_utc": "2026-10-09T16:58:52Z",
+      "dispatch_time_exact": false,
+      "duration_seconds": null,
+      "tokens": null,
+      "coverage_unit_count": 1,
+      "note": "Final response observed by 2026-10-09T17:01:00Z. The 16:58:52Z sample was after dispatch; 128 seconds is a lower-bound interval, not an exact duration. Independent source review of the parent-provided torrent source extract disproved the preallocation candidate; no target code was run.",
+      "elapsed_since_sample_seconds": 128,
+      "sample_relation": "after_dispatch"
+    }
+  ],
+  "supplementary_dependency_source_review": "The Phase 3 verifier inspected parent-supplied version-labeled torrent@v1.61.0 and dht/v2@v2.23.0 source extracts. go.mod/go.sum record the expected versions and checksums. The verifier reports torrent source matching a local upstream extraction, but the original DHT module zip was absent and its h1 could not be independently recalculated. Source semantics suggest outbound get_peers may carry the magnet infohash before private metadata is known; no PacketConn write was observed, so this remains needs_validation. External dependency paths are intentionally excluded from findings trace/evidence.",
+  "non_finding_hardening": [
+    "Benchmark scripts accept manually supplied executable/output paths and use writable host scratch plus uncapped logs, but the declared practice uses hash-recorded test binaries built from the frozen repo and no product user selects them. This remains operator-side storage hardening, not a confirmed security finding."
+  ],
+  "terminal_wall_clock_sample_utc": "2026-10-09T17:02:30Z",
+  "observed_wall_seconds_from_initial_sample": 3631,
+  "observed_wall_overrun_seconds": 31,
+  "incompleteness_reasons": [
+    "Post-wave coverage critic not run.",
+    "Distinct final-clean critic not run.",
+    "The one retained DHT candidate has not received fresh Phase 5 verification.",
+    "No findings.json was produced because final candidate verification was not completed; do not treat pending candidates as findings.",
+    "The final coverage-ledger SHA was not run through the pinned Linux validator.",
+    "Final record verifier and governance disclosure review remain with the parent."
+  ],
+  "final_findings_file": {
+    "reason": "Phase 5 candidate verification did not complete; pending-candidates.json retains one needs_validation candidate.",
+    "status": "not_created"
+  },
+  "scope_source": {
+    "sha256": "f50aa486d588034ea41343429bbbdb2511e289e5c77124592ebd741352afdc26",
+    "decision": "scoped-required",
+    "nextScopedComparisonBase": "4c0694aa8e02e46145a775707b8d5a0355f7ce10",
+    "selected_commit": "0b808e7bb00ee5d058bf0b2857009c9307099965",
+    "selection_reason": "One complete smart-download feature commit from nextScoped, including its all changed files and direct file-transfer/Agent publication call chains; unrelated pending commits stay out of scope."
+  },
+  "skill_pin_evidence": {
+    "pinned_commit": "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8",
+    "files_recorded": 19,
+    "local_sha256_matches": 19,
+    "upstream_blob_matches_recorded_local_blob": true,
+    "local_git_repository_present": false,
+    "assurance": "file-level match to prior pin-verification snapshot; no local Git commit object in skill directory"
+  },
+  "preflight_deviations": [
+    "One scout preceded run metadata initialization; exact gate timestamp unavailable.",
+    "First HTTP hunter preceded seeded architecture/ledger ownership, was interrupted and receives no coverage credit.",
+    "No pinned Linux ledger validation before wave 1; first checked snapshot failed with 22 errors. Later passing snapshots do not retroactively validate wave 1."
+  ],
+  "coverage_validation_history": [
+    {
+      "stage": "pre-wave1",
+      "result": "not_run",
+      "validator": null,
+      "input_sha256": null,
+      "note": "No Linux coverage-ledger validator was run before wave 1 hunters. Windows O_NOFOLLOW validation was not run; do not infer a pass."
+    },
+    {
+      "stage": "after-phase1-critic-before-ledger-repair",
+      "result": "fail",
+      "validator": "pinned validate-coverage-ledger.cjs in arena-154",
+      "input_sha256": "213DB106399C4CA1C222E6CEBD503D04E8AECDE26AC18459C16DE116E80E0860",
+      "error_count": 22,
+      "note": "Raw validator output preserved. This failure was not pre-hunter and does not count as pass."
+    },
+    {
+      "stage": "after-ledger-repair-before-wave2-assignment",
+      "result": "pass",
+      "validator": "pinned validate-coverage-ledger.cjs in arena-154",
+      "input_sha256": "0E55E2DC561938AB6780BA1EB7126E439E10AA20B4EDB6E0C6972FBB4991E452",
+      "validator_exit_code": 0,
+      "note": "Parent reports exact outcome: PASS: 20 coverage units valid. Low-privilege network-none Linux arena; validation applies to this exact SHA only."
+    },
+    {
+      "stage": "before-wave2-hunter-launch",
+      "result": "pass",
+      "validator": "pinned validate-coverage-ledger.cjs in arena-154",
+      "input_sha256": "37B5B627BF8CF8BD6E4417E32E745E47C6113E86199D42FC83964F94A1C919FE",
+      "validator_exit_code": 0,
+      "note": "Parent reports exact outcome: PASS: 20 coverage units valid. This validates the owner-split assignment snapshot; final versions require rerun."
+    },
+    {
+      "stage": "terminal-ledger-before-budget-stop",
+      "result": "not_run",
+      "validator": "pinned validate-coverage-ledger.cjs in arena-154",
+      "input_sha256": "F8EE6F37953051CB81F0F42B556F455F173781B65D5945AE9AF60FE12B3B71D9",
+      "note": "The final ledger differs from the previously passing owner-split snapshot and has no final validation result. Parent may validate this exact read-only snapshot; no result is inferred."
+    },
+    {
+      "stage": "post-run-raw-final-ledger",
+      "result": "fail",
+      "input_sha256": "f8ee6f37953051cb81f0f42b556f455f173781b65d5945ae9af60fe12b3b71d9",
+      "validator_exit_code": 1,
+      "error_count": 19,
+      "output_sha256": "5cbd059102d4dcd8f0a1c00d15e4b01fa40c390a34701cc4326e67f2b13b3c42",
+      "note": "Administrative Linux schema check after the budget stop. Four covered units had [null] placeholder arrays and the candidate aggregate omitted three paths already recorded in its owned checks."
+    }
+  ],
+  "raw_artifacts": {
+    "run-metadata.json": {
+      "sha256": "4d471bed74abf9a9a3d3e5dc4268fba5b13df53c2fd6cd9631211eaa7d00b00b",
+      "retained": "external raw evidence; immutable"
+    },
+    "coverage-ledger.json": {
+      "sha256": "f8ee6f37953051cb81f0f42b556f455f173781b65d5945ae9af60fe12b3b71d9",
+      "retained": "external raw evidence; immutable"
+    },
+    "audit-report.md": {
+      "sha256": "a70a9f717d4aa28199ba3aff8b25429b9b3b5e139141681416276f44ebcc6601",
+      "retained": "external raw evidence; immutable"
+    },
+    "pending-candidates.json": {
+      "sha256": "76f8be847a35ae721bc049ec3780ddcbd0ecd23992735eac94ed2ed94d89aa5d",
+      "retained": "external raw evidence; immutable"
+    }
+  },
+  "post_run_administration": {
+    "recorded_at": "2026-10-09T17:09:54.498Z",
+    "purpose": "Disclosure and schema normalization only; no new source audit, candidate validation, coverage credit or budget extension.",
+    "corrections": [
+      {
+        "index": 3,
+        "coverage_id": "Local%20benchmark%20CLI%20invocation::Operator-supplied%20paths%2C%20image%20ID%2C%20and%20environment%20values%20flow%20through%20Bash%20into%20Docker%20mounts%2C%20test%20processes%2C%20output%20files%2C%20and%20scratch%20cleanup::Local%20download%20benchmark%20harness::ATTACK-CLASSES.md%23Injection",
+        "field": "pending_candidate_records",
+        "change": "Detailed unconfirmed traces and proposed attack/validation steps retained externally; safe candidate summary is in pending-candidates.json"
+      },
+      {
+        "index": 4,
+        "coverage_id": "POST%20%2Fapi%2Fv1%2Ffiles%2Fremote-downloads%23torrent%20input::internal%2Fbittorrent%2Fmetadata.go%23Parse%20and%20bounded%20bencode::internal%2Fbittorrent%2Binternal%2Fpanel::ATTACK-CLASSES.md%23Resource%20and%20file%20handling::metadata%20parsing%20and%20normalization",
+        "field": "result_fingerprints",
+        "change": "[null] -> []; existing covered disposition and local checks unchanged"
+      },
+      {
+        "index": 4,
+        "coverage_id": "POST%20%2Fapi%2Fv1%2Ffiles%2Fremote-downloads%23torrent%20input::internal%2Fbittorrent%2Fmetadata.go%23Parse%20and%20bounded%20bencode::internal%2Fbittorrent%2Binternal%2Fpanel::ATTACK-CLASSES.md%23Resource%20and%20file%20handling::metadata%20parsing%20and%20normalization",
+        "field": "unresolved",
+        "change": "[null] -> []; existing covered disposition and local checks unchanged"
+      },
+      {
+        "index": 10,
+        "coverage_id": "commit%200b808e7bb00ee5d058bf0b2857009c9307099965%23smart-download%20feature::browser-to-Panel-to-network-to-Agent-to-host%20filesystem::internal%2Fbittorrent%2Binternal%2Fremotedownload%2Binternal%2Fpanel%2Binternal%2Fagent%2Binternal%2Ffilemanager::ATTACK-CLASSES.md%23Wildcard::end-to-end%20lifecycle",
+        "field": "reviewed_paths",
+        "change": "Aggregate existing owned local_checks only; no new source review",
+        "added": [
+          "go.mod",
+          "go.sum",
+          "internal/bittorrent/metadata_guard.go"
+        ]
+      },
+      {
+        "index": 10,
+        "coverage_id": "commit%200b808e7bb00ee5d058bf0b2857009c9307099965%23smart-download%20feature::browser-to-Panel-to-network-to-Agent-to-host%20filesystem::internal%2Fbittorrent%2Binternal%2Fremotedownload%2Binternal%2Fpanel%2Binternal%2Fagent%2Binternal%2Ffilemanager::ATTACK-CLASSES.md%23Wildcard::end-to-end%20lifecycle",
+        "field": "pending_candidate_records",
+        "change": "Detailed unconfirmed traces and proposed attack/validation steps retained externally; safe candidate summary is in pending-candidates.json"
+      },
+      {
+        "index": 12,
+        "coverage_id": "go.mod%23github.com%2Fanacrolix%2Ftorrent::go.sum%23dependency%20integrity%20and%20package%20provenance::module%20github.com%2Fkejilion%2Fkejilion-panel::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries::dependency%20resolution%20and%20build",
+        "field": "result_fingerprints",
+        "change": "[null] -> []; existing covered disposition and local checks unchanged"
+      },
+      {
+        "index": 12,
+        "coverage_id": "go.mod%23github.com%2Fanacrolix%2Ftorrent::go.sum%23dependency%20integrity%20and%20package%20provenance::module%20github.com%2Fkejilion%2Fkejilion-panel::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries::dependency%20resolution%20and%20build",
+        "field": "unresolved",
+        "change": "[null] -> []; existing covered disposition and local checks unchanged"
+      },
+      {
+        "index": 13,
+        "coverage_id": "internal%2Fbittorrent%2Fengine.go%23peer%20metadata%20exchange::internal%2Fbittorrent%2Fmetadata_guard.go%23peer%20message%20bounds%20and%20extension%20handling::internal%2Fbittorrent::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries::peer-to-metadata%20state%20transition",
+        "field": "pending_candidate_records",
+        "change": "Detailed unconfirmed traces and proposed attack/validation steps retained externally; safe candidate summary is in pending-candidates.json"
+      },
+      {
+        "index": 14,
+        "coverage_id": "internal%2Fbittorrent%2Fengine.go%23tracker%20DHT%20and%20peer%20dialing::internal%2Fbittorrent%2Fnetwork.go%23public%20peer%20address%20filter::internal%2Fbittorrent::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries::outbound%20discovery%20and%20peer%20connection",
+        "field": "result_fingerprints",
+        "change": "[null] -> []; existing covered disposition and local checks unchanged"
+      },
+      {
+        "index": 14,
+        "coverage_id": "internal%2Fbittorrent%2Fengine.go%23tracker%20DHT%20and%20peer%20dialing::internal%2Fbittorrent%2Fnetwork.go%23public%20peer%20address%20filter::internal%2Fbittorrent::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries::outbound%20discovery%20and%20peer%20connection",
+        "field": "unresolved",
+        "change": "[null] -> []; existing covered disposition and local checks unchanged"
+      },
+      {
+        "index": 15,
+        "coverage_id": "internal%2Fbittorrent%2Fstorage.go%23Cache%20staging%20and%20result%20stream::internal%2Fbittorrent%2Fstorage.go%23private%20spool%20and%20bounded%20result::internal%2Fbittorrent%2Binternal%2Fpanel::ATTACK-CLASSES.md%23Resource%20and%20file%20handling::staging%2C%20completion%20and%20cleanup",
+        "field": "result_fingerprints",
+        "change": "[null] -> []; existing covered disposition and local checks unchanged"
+      },
+      {
+        "index": 15,
+        "coverage_id": "internal%2Fbittorrent%2Fstorage.go%23Cache%20staging%20and%20result%20stream::internal%2Fbittorrent%2Fstorage.go%23private%20spool%20and%20bounded%20result::internal%2Fbittorrent%2Binternal%2Fpanel::ATTACK-CLASSES.md%23Resource%20and%20file%20handling::staging%2C%20completion%20and%20cleanup",
+        "field": "unresolved",
+        "change": "[null] -> []; existing covered disposition and local checks unchanged"
+      }
+    ],
+    "coverage_counts": {
+      "covered": 14,
+      "out_of_scope": 5,
+      "candidate": 1
+    },
+    "normalized_ledger_sha256": "b45a75b4a717b59f7a5b4b18c26846c029cd95a5cc37b5576270382851cf8abc",
+    "findings_validation": "not_run: no findings.json, because Phase 5 is incomplete",
+    "record_verification": "Independent final CF record verification remains incomplete",
+    "disclosure": "Raw scratch, local machine paths, detailed unconfirmed attack/validation plan excluded. Minimal status, evidence ownership and uncertainty preserved.",
+    "source_identity_rechecked": {
+      "source_ref": "0b808e7bb00ee5d058bf0b2857009c9307099965",
+      "source_tree": "d189d37451d982bd42c4802617dbdfe92df4fca2",
+      "source_dirty": false
+    },
+    "schema_validation": {
+      "status": "passed",
+      "exit_code": 0,
+      "checked_at": "2026-10-09T17:11:35.683Z",
+      "environment": "arena-154; Linux; uid=65534; network=none; readonly mounts/root; 1 CPU / 128 MiB; caps dropped",
+      "tool_image": "sha256:20667a9f1fad6590219ba8d8acdabc09a49f8683d4a877b847df17d28b83f8fb",
+      "skill_commit": "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8",
+      "argv": [
+        "node",
+        "/tools/validate-coverage-ledger.cjs",
+        "/input/coverage-ledger.json"
+      ],
+      "input_sha256": "b45a75b4a717b59f7a5b4b18c26846c029cd95a5cc37b5576270382851cf8abc",
+      "validator_sha256": "2eb280bd2e33c002916f86db9b29f9edfedb6454e5db973c766290465b868ac8",
+      "output": "coverage-validation.log",
+      "output_sha256": "087e962378f66daf2a503587fe7e2d35a134f259bbcfed6fbfd2d15f42f4de33",
+      "scope": "JSON structure only; no finding verification or completion claim"
+    }
+  }
+}
