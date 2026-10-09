@@ -12,6 +12,7 @@ KPanel.
 | `github.com/flynn/noise` | `v1.1.0` | BSD-3-Clause | [`LICENSES/flynn-noise-BSD-3-Clause.txt`](LICENSES/flynn-noise-BSD-3-Clause.txt) |
 | `github.com/minio/minio-go/v7` | `v7.3.0` | Apache-2.0 | [`LICENSES/Apache-2.0.txt`](LICENSES/Apache-2.0.txt) |
 | `github.com/coder/websocket` | `v1.8.15` | ISC | [`LICENSES/coder-websocket-ISC.txt`](LICENSES/coder-websocket-ISC.txt) |
+| `github.com/anacrolix/torrent` | `v1.61.0` | MPL-2.0 | [`LICENSES/anacrolix-torrent-MPL-2.0.txt`](LICENSES/anacrolix-torrent-MPL-2.0.txt) |
 | `golang.org/x/crypto` | `v0.54.0` | BSD-3-Clause | [`LICENSES/golang-x-crypto-BSD-3-Clause.txt`](LICENSES/golang-x-crypto-BSD-3-Clause.txt) |
 | `golang.org/x/image` | `v0.45.0` | BSD-3-Clause | [`LICENSES/golang-x-image-BSD-3-Clause.txt`](LICENSES/golang-x-image-BSD-3-Clause.txt) |
 | `golang.org/x/sys` | `v0.47.0` | BSD-3-Clause | [`LICENSES/golang-x-sys-BSD-3-Clause.txt`](LICENSES/golang-x-sys-BSD-3-Clause.txt) |

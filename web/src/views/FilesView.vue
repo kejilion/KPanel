@@ -395,9 +395,14 @@ const uploadTasks = ref<UploadTask[]>([])
 const remoteDownloadURLInput = ref<HTMLInputElement>()
 const remoteDownloadDialogOpen = ref(false)
 const remoteDownloadURL = ref('')
+const remoteDownloadAcceleration = ref(true)
+const remoteDownloadTorrent = ref('')
+const remoteDownloadTorrentName = ref('')
+const remoteDownloadTorrentLoading = ref(false)
+let remoteDownloadTorrentSelection = 0
 const remoteDownloadName = ref('')
 const remoteDownloadTarget = ref('/home')
-const remoteDownloadFormErrorCode = ref<'url' | 'name'>()
+const remoteDownloadFormErrorCode = ref<'url' | 'name' | 'torrent'>()
 const remoteDownloadHTTPWarningID = 'remote-download-http-warning'
 const remoteDownloadFormErrorID = 'remote-download-form-error'
 const remoteDownloadUsesPlainHTTP = computed(() =>
@@ -410,6 +415,7 @@ const remoteDownloadURLDescription = computed(() => {
   return descriptions.join(' ') || undefined
 })
 const remoteDownloadFormError = computed(() => {
+  if (remoteDownloadFormErrorCode.value === 'torrent') return i18n.t('files.remoteDownload.torrentInvalid')
   if (remoteDownloadFormErrorCode.value === 'url') return i18n.t('files.remoteDownload.urlInvalid')
   if (remoteDownloadFormErrorCode.value === 'name') return i18n.t('files.remoteDownload.nameInvalid')
   return ''
@@ -539,7 +545,15 @@ function isRemoteDownloadJobActive(job: FileRemoteDownloadJob): boolean {
 
 function remoteDownloadJobProgress(job: FileRemoteDownloadJob): number | undefined {
   if (!job.totalBytes || job.totalBytes <= 0) return undefined
-  return Math.min(100, Math.round(((job.loadedBytes || 0) / job.totalBytes) * 100))
+  return Math.min(100, Math.round((remoteDownloadVisibleBytes(job) / job.totalBytes) * 100))
+}
+
+function remoteDownloadSourcePhase(job: FileRemoteDownloadJob): boolean {
+  return job.transferMode === 'bt-standard' || job.transferMode === 'bt-adaptive'
+}
+
+function remoteDownloadVisibleBytes(job: FileRemoteDownloadJob): number {
+  return (remoteDownloadSourcePhase(job) ? job.sourceBytes : job.loadedBytes) || 0
 }
 
 function remoteDownloadJobProgressLabel(job: FileRemoteDownloadJob): string {
@@ -556,6 +570,8 @@ function remoteDownloadJobStateLabel(job: FileRemoteDownloadJob): string {
     case 'connecting':
       return i18n.t('files.remoteDownload.phaseConnecting')
     case 'transferring':
+      if (remoteDownloadSourcePhase(job)) return i18n.t('files.remoteDownload.phaseBTDownloading')
+      if (job.transferMode === 'bt-publish') return i18n.t('files.remoteDownload.phaseBTSaving')
       return i18n.t('files.remoteDownload.phaseTransferring')
     case 'confirming':
       return i18n.t('files.remoteDownload.phaseConfirming')
@@ -573,6 +589,11 @@ function remoteDownloadJobStateLabel(job: FileRemoteDownloadJob): string {
 function remoteDownloadJobDetail(job: FileRemoteDownloadJob): string {
   if (job.state === 'interrupted') return i18n.t('files.remoteDownload.interruptedDetail')
   if (job.state === 'cancelled') return i18n.t('files.remoteDownload.cancelledDetail')
+  if (isRemoteDownloadJobActive(job)) {
+    if (remoteDownloadSourcePhase(job)) return i18n.t('files.remoteDownload.peerProgress', { peers: job.peers || 0, speed: formatBytes(job.speedBytes || 0) })
+    if (job.transferMode === 'probing') return i18n.t('files.remoteDownload.probing')
+    if (job.transferMode === 'parallel') return i18n.t('files.remoteDownload.parallel')
+  }
   return job.state === 'error' ? remoteDownloadErrorDetail(job.code) : ''
 }
 
@@ -702,6 +723,16 @@ function errorMessage(error: unknown): string {
 
 function remoteDownloadErrorDetail(code?: string, fallback = ''): string {
   switch (code) {
+    case 'bt_version_unsupported':
+      return i18n.t('files.remoteDownload.error.btVersion')
+    case 'bt_metadata_invalid':
+      return i18n.t('files.remoteDownload.torrentInvalid')
+    case 'bt_storage_unavailable':
+      return i18n.t('files.remoteDownload.error.btStorage')
+    case 'bt_no_peers':
+      return i18n.t('files.remoteDownload.error.btPeers')
+    case 'target_receive_unsupported':
+      return i18n.t('files.remoteDownload.error.receiveUnsupported')
     case 'remote_download_invalid':
       return i18n.t('files.remoteDownload.error.invalid')
     case 'remote_download_busy':
@@ -2177,6 +2208,8 @@ function openRemoteDownloadDialog(): void {
   if (remoteDownloadSubmitting.value) return
   remoteDownloadTarget.value = currentPath.value
   remoteDownloadURL.value = ''
+  clearRemoteDownloadTorrent()
+  remoteDownloadAcceleration.value = true
   remoteDownloadName.value = ''
   remoteDownloadFormErrorCode.value = undefined
   remoteDownloadDialogOpen.value = true
@@ -2186,15 +2219,54 @@ function openRemoteDownloadDialog(): void {
 function closeRemoteDownloadDialog(): void {
   remoteDownloadDialogOpen.value = false
   remoteDownloadURL.value = ''
+  clearRemoteDownloadTorrent()
   remoteDownloadName.value = ''
   remoteDownloadFormErrorCode.value = undefined
 }
 
+function clearRemoteDownloadTorrent(): void {
+  remoteDownloadTorrentSelection++
+  remoteDownloadTorrent.value = ''
+  remoteDownloadTorrentName.value = ''
+  remoteDownloadTorrentLoading.value = false
+}
+
+async function pickRemoteDownloadTorrent(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  clearRemoteDownloadTorrent()
+  const selection = remoteDownloadTorrentSelection
+  if (!file.name.toLowerCase().endsWith('.torrent') || !file.size || file.size > 512 * 1024) {
+    remoteDownloadFormErrorCode.value = 'torrent'
+    return
+  }
+  remoteDownloadTorrentLoading.value = true
+  try {
+    const bytes = new Uint8Array(await file.arrayBuffer())
+    if (selection !== remoteDownloadTorrentSelection) return
+    let binary = ''
+    for (const byte of bytes) binary += String.fromCharCode(byte)
+    remoteDownloadTorrent.value = btoa(binary)
+    remoteDownloadTorrentName.value = file.name
+    remoteDownloadURL.value = ''
+    remoteDownloadFormErrorCode.value = undefined
+  } catch {
+    if (selection === remoteDownloadTorrentSelection) remoteDownloadFormErrorCode.value = 'torrent'
+  } finally {
+    if (selection === remoteDownloadTorrentSelection) remoteDownloadTorrentLoading.value = false
+  }
+}
+
 function validRemoteDownloadForm(): boolean {
+  if (remoteDownloadTorrentLoading.value) return false
   const rawURL = remoteDownloadURL.value.trim()
   try {
-    const parsed = new URL(rawURL)
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error('scheme')
+    if (!remoteDownloadTorrent.value) {
+      const parsed = new URL(rawURL)
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:' && parsed.protocol !== 'magnet:') throw new Error('scheme')
+    }
   } catch {
     remoteDownloadFormErrorCode.value = 'url'
     return false
@@ -2314,6 +2386,7 @@ function completedRemoteDownloadPath(job: FileRemoteDownloadJob): string[] {
 }
 
 function normalizedRemoteDownloadOrigin(value: string): string {
+  if (value === 'bittorrent' || value.startsWith('magnet:')) return 'bittorrent'
   try {
     return new URL(value).origin
   } catch {
@@ -2359,7 +2432,8 @@ async function submitRemoteDownload(): Promise<void> {
   const sourceURL = remoteDownloadURL.value.trim()
   const requestedName = remoteDownloadName.value.trim()
   const target = remoteDownloadTarget.value
-  const sourceOrigin = normalizedRemoteDownloadOrigin(sourceURL)
+  const torrentLink = /^https?:/i.test(sourceURL) && new URL(sourceURL).pathname.toLowerCase().endsWith('.torrent')
+  const sourceOrigin = remoteDownloadTorrent.value || torrentLink ? 'bittorrent' : normalizedRemoteDownloadOrigin(sourceURL)
   const knownJobIDs = new Set(remoteDownloadJobs.value.map((job) => job.id))
   const submittedAt = Date.now()
   remoteDownloadSubmitting.value = true
@@ -2368,6 +2442,9 @@ async function submitRemoteDownload(): Promise<void> {
   try {
     const job = await api.files.createRemoteDownloadJob({
       url: sourceURL, targetDirectory: target, ...(requestedName ? { name: requestedName } : {}),
+      acceleration: remoteDownloadAcceleration.value ? 'auto' : 'off',
+      ...(remoteDownloadTorrent.value ? { torrent: remoteDownloadTorrent.value } : {}),
+      ...(torrentLink ? { sourceKind: 'torrent' as const } : {}),
     })
     if (unmounted) return
     upsertRemoteDownloadJob(job)
@@ -3184,8 +3261,8 @@ onBeforeUnmount(() => {
                     aria-live="polite"
                     aria-atomic="true"
                   >{{ remoteDownloadJobStateLabel(job) }}</span>
-                  <span v-if="job.loadedBytes" class="remote-download-task__bytes">
-                    · {{ i18n.t('files.remoteDownload.received', { bytes: formatBytes(job.loadedBytes) }) }}<template v-if="job.totalBytes">
+                  <span v-if="remoteDownloadVisibleBytes(job)" class="remote-download-task__bytes">
+                    · {{ i18n.t(remoteDownloadSourcePhase(job) ? 'files.remoteDownload.verified' : 'files.remoteDownload.received', { bytes: formatBytes(remoteDownloadVisibleBytes(job)) }) }}<template v-if="job.totalBytes">
                       / {{ formatBytes(job.totalBytes) }}</template>
                   </span>
                 </div>
@@ -3195,7 +3272,7 @@ onBeforeUnmount(() => {
                 <progress
                   v-if="isRemoteDownloadJobActive(job)"
                   :max="job.totalBytes || 1"
-                  :value="job.totalBytes ? job.loadedBytes || 0 : undefined"
+                  :value="job.totalBytes ? remoteDownloadVisibleBytes(job) : undefined"
                   :aria-label="remoteDownloadJobProgressLabel(job)"
                 />
               </div>
@@ -3696,12 +3773,23 @@ onBeforeUnmount(() => {
             autocomplete="off"
             autocapitalize="off"
             spellcheck="false"
-            placeholder="https://example.com/archive.tar.gz"
+            :placeholder="i18n.t('files.remoteDownload.urlPlaceholder')"
             :aria-invalid="remoteDownloadFormErrorCode === 'url'"
             :aria-describedby="remoteDownloadURLDescription"
-            required
+            :required="!remoteDownloadTorrent"
+            :disabled="Boolean(remoteDownloadTorrent) || remoteDownloadTorrentLoading"
           />
         </label>
+        <div class="remote-download-torrent">
+          <label v-if="!remoteDownloadTorrent" class="button button--secondary">
+            {{ remoteDownloadTorrentLoading ? i18n.t('files.remoteDownload.readingTorrent') : i18n.t('files.remoteDownload.importTorrent') }}
+            <input type="file" accept=".torrent,application/x-bittorrent" :disabled="remoteDownloadTorrentLoading" @change="pickRemoteDownloadTorrent" />
+          </label>
+          <template v-else>
+            <span :title="remoteDownloadTorrentName">{{ remoteDownloadTorrentName }}</span>
+            <button class="button button--secondary" type="button" @click="clearRemoteDownloadTorrent">{{ i18n.t('files.remoteDownload.removeTorrent') }}</button>
+          </template>
+        </div>
         <p
           v-if="remoteDownloadUsesPlainHTTP"
           :id="remoteDownloadHTTPWarningID"
@@ -3722,6 +3810,10 @@ onBeforeUnmount(() => {
             :aria-describedby="remoteDownloadFormErrorCode === 'name' ? remoteDownloadFormErrorID : undefined"
           />
         </label>
+        <label class="remote-download-acceleration">
+          <input v-model="remoteDownloadAcceleration" type="checkbox" />
+          <span>{{ i18n.t('files.remoteDownload.smartAcceleration') }}<small>{{ i18n.t('files.remoteDownload.smartHint') }}</small></span>
+        </label>
         <div class="remote-download-note">
           <ShieldCheck :size="18" aria-hidden="true" />
           <span>{{ i18n.t('files.remoteDownload.note') }}</span>
@@ -3734,7 +3826,7 @@ onBeforeUnmount(() => {
           <button
             class="button button--primary"
             type="submit"
-            :disabled="remoteDownloadSubmitting || !remoteDownloadURL.trim()"
+            :disabled="remoteDownloadSubmitting || remoteDownloadTorrentLoading || (!remoteDownloadURL.trim() && !remoteDownloadTorrent)"
           >
             {{ remoteDownloadSubmitting
               ? i18n.t('files.remoteDownload.starting')
@@ -5158,6 +5250,47 @@ onBeforeUnmount(() => {
   background: color-mix(in srgb, var(--brand) 5%, var(--surface));
   font-size: 14px;
   line-height: 1.55;
+}
+
+.remote-download-torrent {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.remote-download-torrent > span {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.remote-download-torrent label { position: relative; cursor: pointer; }
+.remote-download-torrent input[type='file'] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.remote-download-torrent label:focus-within { outline: 2px solid var(--brand); outline-offset: 2px; }
+.remote-download-form .remote-download-acceleration {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+}
+.remote-download-acceleration input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+  margin: 2px 0 0;
+  padding: 0;
+  flex-shrink: 0;
+  accent-color: var(--brand);
+}
+.remote-download-form .remote-download-acceleration small {
+  display: block;
+  margin: 4px 0 0;
+  line-height: 1.5;
 }
 
 .remote-download-note svg {

@@ -277,6 +277,9 @@ type FileRemoteDownloadRequest struct {
 	TargetDirectory string `json:"targetDirectory"`
 	Name            string `json:"name,omitempty"`
 	Background      bool   `json:"background,omitempty"`
+	Acceleration    string `json:"acceleration,omitempty"`
+	Torrent         []byte `json:"torrent,omitempty"`
+	SourceKind      string `json:"sourceKind,omitempty"`
 }
 
 type FileRemoteDownloadJob struct {
@@ -291,6 +294,10 @@ type FileRemoteDownloadJob struct {
 	TotalBytes      int64      `json:"totalBytes,omitempty"`
 	Entry           *FileEntry `json:"entry,omitempty"`
 	Code            string     `json:"code,omitempty"`
+	TransferMode    string     `json:"transferMode,omitempty"`
+	Peers           int        `json:"peers,omitempty"`
+	SpeedBytes      int64      `json:"speedBytes,omitempty"`
+	SourceBytes     int64      `json:"sourceBytes,omitempty"`
 	CreatedAt       time.Time  `json:"createdAt"`
 	UpdatedAt       time.Time  `json:"updatedAt"`
 	FinishedAt      *time.Time `json:"finishedAt,omitempty"`
@@ -301,11 +308,15 @@ type FileRemoteDownloadJobList struct {
 }
 
 type FileTransferEvent struct {
-	State       string     `json:"state"`
-	LoadedBytes int64      `json:"loadedBytes,omitempty"`
-	TotalBytes  int64      `json:"totalBytes,omitempty"`
-	Name        string     `json:"name,omitempty"`
-	Entry       *FileEntry `json:"entry,omitempty"`
-	Code        string     `json:"code,omitempty"`
-	Detail      string     `json:"detail,omitempty"`
+	State        string     `json:"state"`
+	LoadedBytes  int64      `json:"loadedBytes,omitempty"`
+	TotalBytes   int64      `json:"totalBytes,omitempty"`
+	Name         string     `json:"name,omitempty"`
+	Entry        *FileEntry `json:"entry,omitempty"`
+	Code         string     `json:"code,omitempty"`
+	Detail       string     `json:"detail,omitempty"`
+	TransferMode string     `json:"transferMode,omitempty"`
+	Peers        int        `json:"peers,omitempty"`
+	SpeedBytes   int64      `json:"speedBytes,omitempty"`
+	SourceBytes  int64      `json:"sourceBytes,omitempty"`
 }

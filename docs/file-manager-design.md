@@ -197,7 +197,7 @@ Browser POST JSON（URL 只在 body）
   -> 旧 Agent 不支持接收会话时兼容 /v1/files/upload
 ```
 
-- URL 最多 4096 字节，只接受绝对 HTTP/HTTPS；拒绝 userinfo、fragment、控制字符、反斜杠、
+- HTTP URL 最多 4096 字节，只接受绝对 HTTP/HTTPS；拒绝 userinfo、fragment、控制字符、反斜杠、
   IPv6 zone、模糊数字主机、单标签主机和非法端口。
 - DNS 返回的每个地址都必须是公开 global-unicast；任一结果为 loopback、RFC1918/ULA、link-local、
   multicast、unspecified、CGNAT、文档/基准保留段、IPv4-mapped、NAT64、6to4 或 Teredo 时整次拒绝。
@@ -229,6 +229,31 @@ Browser POST JSON（URL 只在 body）
   提示刷新真实目录确认。目录不会出现半文件，但任务状态不能替代目录事实。
 - 审计仅记录 `scheme://host[:port]`、目标目录、安全文件名、字节数和结果码；完整 URL、路径、查询串、
   重定向链、响应正文及底层 `url.Error` 不进入审计、状态、Toast 或服务端错误。
+
+### 3.5 智能下载与 BT 来源适配
+
+- HTTP 默认智能模式，可在提交前关闭。文件至少 64 MiB，服务器明确声明 `Accept-Ranges: bytes`，且
+  有完整长度与强 ETag 才可试探。每完成 16 MiB 持久确认评估一次；来源耗时显著高于目标写入且剩余
+  工作足够时试两路，每路 2 MiB 有界分片。至少 15% 的端到端窗口收益才保留，无收益回到单路；每任务
+  最多一次试探。全局附加分段缓冲最多 8 MiB，不重复叠加通用预取。切换只发生在 Agent 已确认偏移，
+  所有分片复用现有 URL、DNS、TLS、Range、ETag 校验；忽略 Range 时验证完整重读前缀，不能混拼。
+- 同一输入支持公开 HTTP/HTTPS、以 `.torrent` 结尾的网址、导入 `.torrent` 文件及 btih 磁力。
+  API 对无 `.torrent` 后缀的种子网址可显式传 `sourceKind: "torrent"`。候选仅支持 BitTorrent v1，
+  不支持 v2/hybrid；metadata 最多 512 KiB、512 个文件、32 层路径、10 GiB 总量、8 MiB 单 piece。
+- BT 引擎固定 `github.com/anacrolix/torrent v1.61.0`，运行在无特权 Panel，按需创建、任务结束关闭。
+  HTTP tracker 走原专用客户端；UDP 和 DHT 通过公网过滤套接字，DHT 只接受最近查询端点的有界响应。
+  不监听 peer、不映射端口、不上传正文或完成后做种。仅下载限制会影响部分需要互惠的 swarm/私有站点。
+- 磁力 info 在原始 bencode 长度/深度检查后受控组装，piece 0 在完整 SHA1、路径与容量验证通过前不交给
+  库解码；工作循环在库锁外设置已验证 info。拒绝 xs/as/webseed/显式 peer/DHT 节点等旁路来源。
+- BT 与 HTTP、跨主机共用任务准入、取消、历史和 Agent receive，BT 额外的单任务资源额度先于公共
+  两个传输槽位申请，等待 BT 额度不占用 HTTP 槽。HTTP 自适应衡量来源+目标；BT 自适应只衡量来源
+  校验速度与暂存写压力，连接上限从 4 试到 8/16，收益不足回退，堆占用过高时收缩。无可用节点时无法
+  凭空加速，2 分钟无已校验进展失败。关闭智能模式仍保留协议本身的分片与最多 4 个 peer。
+- 来源获取时 `sourceBytes` 是已校验片段总量，`loadedBytes` 仍为目标持久确认字节（此时为零）。随后
+  单文件或确定性 TAR 进入同一接收层，失败重读已验证前缀，完成后一次原子发布；界面明确分阶段。
+  保存名称适用于单文件或整包目录，目标路径永远由文件管理与 Agent 校验，不由种子决定。
+- BT 只支持统一后台任务入口，关闭页面继续，取消清理，重启标记中断并清除来源暂存，不新增暂停/续跑
+  队列。缓存、空间峰值和回滚索引规则见 [存储策略](storage-strategy.md)。
 
 ## 4. 路径和隔离
 

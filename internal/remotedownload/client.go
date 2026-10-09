@@ -330,6 +330,15 @@ func (c *Client) dialContext(ctx context.Context, network, address string) (net.
 	return nil, lastError
 }
 
+// DialPublic applies the download DNS/IP policy to a protocol adapter's TCP
+// connections. It never delegates an unresolved hostname to the underlying dialer.
+func (c *Client) DialPublic(ctx context.Context, network, address string) (net.Conn, error) {
+	return c.dialContext(ctx, network, address)
+}
+
+// PublicAddress is the shared boundary for numeric peers and datagram endpoints.
+func PublicAddress(address netip.Addr) bool { return publicAddress(address) }
+
 func (c *Client) resolve(ctx context.Context, host string) ([]netip.Addr, error) {
 	if address, err := netip.ParseAddr(host); err == nil {
 		address = address.Unmap()

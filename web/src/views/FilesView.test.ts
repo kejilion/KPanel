@@ -220,6 +220,12 @@ interface FileBindings {
   }
   remoteDownloadDialogOpen: { value: boolean }
   remoteDownloadURL: { value: string }
+  remoteDownloadAcceleration: { value: boolean }
+  remoteDownloadTorrent: { value: string }
+  remoteDownloadTorrentName: { value: string }
+  pickRemoteDownloadTorrent: (event: Event) => Promise<void>
+  remoteDownloadVisibleBytes: (job: FileRemoteDownloadJob) => number
+  remoteDownloadJobStateLabel: (job: FileRemoteDownloadJob) => string
   remoteDownloadName: { value: string }
   remoteDownloadTarget: { value: string }
   remoteDownloadHTTPWarningID: string
@@ -583,6 +589,46 @@ describe('FilesView external upload', () => {
 })
 
 describe('FilesView remote download', () => {
+  it('submits magnet and torrent sources through the same job API', async () => {
+    const view = setupView()
+    mocks.createRemoteDownloadJob.mockResolvedValue(testRemoteDownloadJob({ sourceKind: 'bittorrent', source: 'bittorrent' }))
+    view.openRemoteDownloadDialog()
+    view.remoteDownloadURL.value = 'magnet:?xt=urn:btih:0123456789012345678901234567890123456789'
+    view.remoteDownloadAcceleration.value = false
+    await view.submitRemoteDownload()
+    expect(mocks.createRemoteDownloadJob).toHaveBeenLastCalledWith(expect.objectContaining({
+      url: expect.stringContaining('magnet:'), acceleration: 'off',
+    }))
+    view.openRemoteDownloadDialog()
+    view.remoteDownloadURL.value = 'https://example.com/demo.torrent?passkey=secret'
+    await view.submitRemoteDownload()
+    expect(mocks.createRemoteDownloadJob).toHaveBeenLastCalledWith(expect.objectContaining({ sourceKind: 'torrent', acceleration: 'auto' }))
+    expect(view.remoteDownloadURL.value).toBe('')
+  })
+
+  it('bounds torrent import and clears its bytes after submission', async () => {
+    const view = setupView()
+    view.openRemoteDownloadDialog()
+    const file = { name: 'demo.torrent', size: 4, arrayBuffer: async () => new TextEncoder().encode('d1:ae').buffer }
+    await view.pickRemoteDownloadTorrent({ target: { files: [file], value: '' } } as unknown as Event)
+    expect(view.remoteDownloadTorrent.value).toBe(btoa('d1:ae'))
+    mocks.createRemoteDownloadJob.mockResolvedValueOnce(testRemoteDownloadJob({ sourceKind: 'bittorrent', source: 'bittorrent' }))
+    await view.submitRemoteDownload()
+    expect(mocks.createRemoteDownloadJob).toHaveBeenCalledWith(expect.objectContaining({ url: '', torrent: btoa('d1:ae') }))
+    expect(view.remoteDownloadTorrent.value).toBe('')
+    await view.pickRemoteDownloadTorrent({ target: { files: [{ ...file, size: 513 * 1024 }], value: '' } } as unknown as Event)
+    expect(view.remoteDownloadFormError.value).toContain('512 KiB')
+  })
+
+  it('distinguishes verified BT source bytes from receiver acknowledgements', () => {
+    const view = setupView()
+    const job = testRemoteDownloadJob({ sourceKind: 'bittorrent', state: 'transferring', transferMode: 'bt-adaptive', sourceBytes: 4096, loadedBytes: 0, totalBytes: 8192 })
+    expect(view.remoteDownloadVisibleBytes(job)).toBe(4096)
+    expect(view.remoteDownloadJobStateLabel(job)).toContain('校验')
+    expect(view.remoteDownloadVisibleBytes({ ...job, transferMode: 'bt-publish', loadedBytes: 1024 })).toBe(1024)
+    expect(view.remoteDownloadJobStateLabel({ ...job, transferMode: 'bt-publish' })).toContain('保存')
+  })
+
   it('keeps an empty initial task refresh hidden until there is useful status to show', () => {
     const view = setupView()
 
@@ -606,19 +652,19 @@ describe('FilesView remote download', () => {
     expect(zhCN).toContain("'files.remoteDownload.label': '远程下载'")
     expect(zhCN).toContain("'files.remoteDownload.tooltip': '从链接下载，关闭页面后仍会继续'")
     expect(zhCN).toContain("'files.remoteDownload.dialogDescription': '从链接下载到 {target}，关闭页面后仍会继续。'")
-    expect(zhCN).toContain("'files.remoteDownload.note': '支持公开 HTTP/HTTPS 地址，单个文件最多 10 GiB。Panel 重启时任务会标记为中断且不自动重试；完整 URL 不会保存。'")
+    expect(zhCN).toContain("'files.remoteDownload.note': '支持公开 HTTP/HTTPS、.torrent 网址和文件、btih 磁力链接，任务总量最多 10 GiB。BT 下载需要额外磁盘暂存；重启后任务中断且不自动重试。完整链接不保存。'")
     expect(zhCN).toContain("'files.remoteDownload.tasksDescription': '关闭页面后仍会继续。'")
     expect(zhCN).not.toMatch(/离线下载|后台任务|后台下载/)
     expect(zhTW).toContain('"files.remoteDownload.label": "遠端下載"')
     expect(zhTW).toContain('"files.remoteDownload.tooltip": "從連結下載，關閉頁面後仍會繼續"')
     expect(zhTW).toContain('"files.remoteDownload.dialogDescription": "從連結下載到 {target}，關閉頁面後仍會繼續。"')
-    expect(zhTW).toContain('"files.remoteDownload.note": "支援公開 HTTP/HTTPS 網址，單一檔案最多 10 GiB。Panel 重新啟動時任務會標記為中斷且不自動重試；完整 URL 不會儲存。"')
+    expect(zhTW).toContain('"files.remoteDownload.note": "支援公開 HTTP/HTTPS、.torrent 網址與檔案、btih 磁力連結，任務總量最多 10 GiB。BT 下載需要額外磁碟暫存；重新啟動後任務中斷且不自動重試。完整連結不儲存。"')
     expect(zhTW).toContain('"files.remoteDownload.tasksDescription": "關閉頁面後仍會繼續。"')
     expect(zhTW).not.toMatch(/離線下載|背景任務|背景下載/)
     expect(enUS).toContain("'files.remoteDownload.label': 'Remote download'")
     expect(enUS).toContain("'files.remoteDownload.tooltip': 'Download from a link; it continues after you close this page'")
     expect(enUS).toContain("'files.remoteDownload.dialogDescription': 'Download from a link to {target}; it continues after you close this page.'")
-    expect(enUS).toContain("'files.remoteDownload.note': 'Supports public HTTP/HTTPS URLs up to 10 GiB per file. A Panel restart marks active downloads interrupted with no automatic retry, and the full URL is never saved.'")
+    expect(enUS).toContain("'files.remoteDownload.note': 'Supports public HTTP/HTTPS, .torrent URLs and files, and btih magnets, up to 10 GiB per task. BT needs additional temporary disk space. Restarted tasks are interrupted without automatic retry. Full links are not saved.'")
     expect(enUS).toContain("'files.remoteDownload.tasksDescription': 'Downloads continue after you close this page.'")
     expect(enUS).not.toMatch(/offline download|background task|background download/i)
   })
@@ -642,6 +688,7 @@ describe('FilesView remote download', () => {
       url: 'https://downloads.example.com/release.zip?token=secret',
       targetDirectory: '/home/releases',
       name: 'release.zip',
+      acceleration: 'auto',
     })
     expect(mocks.remoteDownload).not.toHaveBeenCalled()
     expect(view.remoteDownloadDialogOpen.value).toBe(false)
@@ -715,9 +762,9 @@ describe('FilesView remote download', () => {
 
     expect(mocks.createRemoteDownloadJob).not.toHaveBeenCalled()
     expect(view.remoteDownloadDialogOpen.value).toBe(true)
-    expect(view.remoteDownloadFormError.value).toContain('HTTP 或 HTTPS')
+    expect(view.remoteDownloadFormError.value).toContain('HTTP/HTTPS')
     await setLocale('en-US', false)
-    expect(view.remoteDownloadFormError.value).toBe('Enter a complete HTTP or HTTPS download URL.')
+    expect(view.remoteDownloadFormError.value).toBe('Enter an HTTP/HTTPS URL or btih magnet link, or import a .torrent file.')
   })
 
   it('keeps the plaintext HTTP warning and URL error descriptions synchronized', () => {

@@ -47,6 +47,9 @@ func (r *fileTransferContextReader) Read(data []byte) (int, error) {
 }
 
 func (s *Server) executeFileRemoteDownload(ctx context.Context, input contract.FileRemoteDownloadRequest, requestID string, emit func(contract.FileTransferEvent) bool) contract.FileTransferEvent {
+	if input.SourceKind == "torrent" {
+		return s.executeTorrentDownload(ctx, input, requestID, emit)
+	}
 	fail := func(err error, loaded, total int64, name string) contract.FileTransferEvent {
 		code, detail := fileRemoteDownloadError(err)
 		var receiver *fileReceiveHTTPError
@@ -88,6 +91,10 @@ func (s *Server) executeFileRemoteDownload(ctx context.Context, input contract.F
 		return fail(remotedownload.ErrUnreachable, 0, 0, input.Name)
 	}
 	defer response.Body.Close()
+	if input.Acceleration != "off" && s.remoteDownloadAdaptive != nil {
+		response.Body = s.remoteDownloadAdaptive(ctx, input.URL, response)
+		defer response.Body.Close()
+	}
 	if response.ContentLength > contract.MaxFileTransferBytes {
 		event := contract.FileTransferEvent{State: "error", Code: "remote_download_too_large", Detail: "远程文件超过 10 GiB。"}
 		emit(event)
@@ -150,6 +157,9 @@ func (s *Server) executeFileRemoteDownload(ctx context.Context, input contract.F
 	receive := contract.FileReceiveInput{Directory: input.TargetDirectory, Name: name, Kind: "file", SizeBytes: response.ContentLength,
 		SourceKey: transferSourceKey(input.URL + "\n" + validator + "\n" + modified + "\n" + strconv.FormatInt(response.ContentLength, 10))}
 	adaptEvent := func(event contract.FileTransferEvent) bool {
+		if mode, ok := response.Body.(interface{ TransferMode() string }); ok {
+			event.TransferMode = mode.TransferMode()
+		}
 		if event.State == "committing" {
 			event.State = "confirming"
 		}

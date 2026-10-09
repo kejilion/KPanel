@@ -2498,6 +2498,9 @@ export interface FileRemoteDownloadInput {
   url: string
   targetDirectory: string
   name?: string
+  acceleration?: 'auto' | 'off'
+  torrent?: string
+  sourceKind?: 'torrent'
 }
 
 export type FileRemoteDownloadState =
@@ -2531,7 +2534,7 @@ export interface FileRemoteDownloadJob {
   id: string
   state: FileRemoteDownloadJobState
   source: string
-  sourceKind?: 'cross-host'
+  sourceKind?: 'cross-host' | 'bittorrent'
   targetHostId?: string
   targetDirectory: string
   name?: string
@@ -2542,6 +2545,10 @@ export interface FileRemoteDownloadJob {
   createdAt: string
   updatedAt: string
   finishedAt?: string
+  transferMode?: 'single' | 'probing' | 'parallel' | 'bt-standard' | 'bt-adaptive' | 'bt-publish'
+  sourceBytes?: number
+  peers?: number
+  speedBytes?: number
 }
 
 export interface FileRemoteDownloadJobList {

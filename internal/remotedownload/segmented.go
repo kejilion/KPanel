@@ -30,9 +30,22 @@ func (c *Client) OpenSegmented(ctx context.Context, raw string, connections int)
 	// Release the initial connection before probing. Concurrent tasks must never
 	// hold every connection in the shared pool while waiting for another one.
 	_ = response.Body.Close()
+	return c.openSegments(ctx, raw, identity, connections, response)
+}
+
+// OpenSegmentedRange starts at an already durable receiver checkpoint. A 200
+// response is returned intact so the caller can validate its replayed prefix.
+func (c *Client) OpenSegmentedRange(ctx context.Context, raw string, identity ResumeRequest, connections int) (*http.Response, error) {
+	if identity.Offset <= 0 || identity.SizeBytes-identity.Offset < segmentBytes || identity.SizeBytes > contract.MaxFileTransferBytes || !StrongETag(identity.ETag) {
+		return nil, ErrSourceChanged
+	}
+	return c.openSegments(ctx, raw, identity, max(2, min(connections, 4)), nil)
+}
+
+func (c *Client) openSegments(ctx context.Context, raw string, identity ResumeRequest, connections int, response *http.Response) (*http.Response, error) {
 	streamContext, cancel := context.WithCancel(ctx)
 	probe := identity
-	probe.endOffset = segmentBytes
+	probe.endOffset = min(identity.Offset+segmentBytes, identity.SizeBytes)
 	first, err := c.open(streamContext, raw, &probe)
 	if err != nil {
 		cancel()
@@ -48,13 +61,21 @@ func (c *Client) OpenSegmented(ctx context.Context, raw string, connections int)
 		first.Body = &cancelReadCloser{ReadCloser: first.Body, cancel: cancel}
 		return first, nil
 	}
+	if response == nil {
+		response = new(http.Response)
+		*response = *first
+		response.ContentLength = identity.SizeBytes - identity.Offset
+	}
 	body := &segmentedBody{ctx: streamContext, cancel: cancel, done: make(chan struct{}),
 		first: first.Body,
 		jobs:  make(chan segmentJob, connections), results: make(chan segmentResult, connections),
-		pending: make(map[int64]segmentResult), size: identity.SizeBytes}
+		pending: make(map[int64]segmentResult), size: identity.SizeBytes, next: identity.Offset, scheduled: identity.Offset}
 	var workers sync.WaitGroup
 	for index := 0; index < connections; index++ {
-		job := segmentJob{offset: int64(index * segmentBytes), buffer: make([]byte, segmentBytes)}
+		if body.scheduled >= identity.SizeBytes {
+			break
+		}
+		job := segmentJob{offset: body.scheduled, buffer: make([]byte, segmentBytes)}
 		if index == 0 {
 			job.response = first
 		}

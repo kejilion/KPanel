@@ -246,7 +246,9 @@ func (s *Server) receiveFileTransfer(
 		if err := ctx.Err(); err != nil {
 			return contract.FileEntry{}, session.Offset, err
 		}
+		readStarted := time.Now()
 		count, readErr := io.ReadFull(reader, buffer)
+		readDuration := time.Since(readStarted)
 		ended := readErr != nil && reader.eof && (readErr == io.EOF || readErr == io.ErrUnexpectedEOF)
 		if readErr != nil && !ended {
 			// A changed/malformed representation is not a transport interruption.
@@ -274,6 +276,7 @@ func (s *Server) receiveFileTransfer(
 			continue
 		}
 		if count > 0 {
+			writeStarted := time.Now()
 			digest := sha256.Sum256(buffer[:count])
 			query := url.Values{"id": {id}, "sourceKey": {input.SourceKey}, "offset": {strconv.FormatInt(session.Offset, 10)}, "sha256": {hex.EncodeToString(digest[:])}}
 			before := session.Offset
@@ -295,6 +298,13 @@ func (s *Server) receiveFileTransfer(
 				return contract.FileEntry{}, before, errors.New("receiver checkpoint invalid")
 			}
 			session = next
+			if checkpoint, ok := body.(interface {
+				Checkpoint(int64, string, time.Duration, time.Duration) error
+			}); ok && session.Offset < input.SizeBytes && !ended {
+				if err := checkpoint.Checkpoint(session.Offset, session.PrefixSHA256, readDuration, time.Since(writeStarted)); err != nil {
+					return contract.FileEntry{}, session.Offset, err
+				}
+			}
 			if !emit(contract.FileTransferEvent{State: "transferring", LoadedBytes: session.Offset, TotalBytes: max(input.SizeBytes, 0), Name: input.Name}) {
 				return contract.FileEntry{}, session.Offset, context.Canceled
 			}

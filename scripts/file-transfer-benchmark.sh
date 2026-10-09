@@ -32,7 +32,7 @@ printf 'samples=%s cases=%s variants=%s\n' "$samples" "${cases[*]}" "${variants[
 run_one() {
   local case_name="$1" variant="$2" sample="$3" binary mode scratch log name code
   binary="$candidate"; mode=ordinary
-  case "$variant" in baseline) binary="$baseline";; pipeline) ;; segmented|segmented-2) mode="$variant";; *) exit 2;; esac
+  case "$variant" in baseline) binary="$baseline";; baseline-off) binary="$baseline"; mode=off;; candidate-off) mode=off;; adaptive) mode=adaptive;; pipeline) ;; segmented|segmented-2) mode="$variant";; *) exit 2;; esac
   scratch="$(mktemp -d "$output/transfer-scratch.XXXXXX")"
   name="kpanel-transfer-bench-${$}-$RANDOM"
   log="$output/${case_name}-${variant}-${sample}.log"

@@ -129,6 +129,9 @@ func runTransferBench(t *testing.T, spec transferBenchCase) {
 			partial = true
 		}
 		w.Header().Set("ETag", `"transfer-benchmark-v1"`)
+		if !spec.noRange {
+			w.Header().Set("Accept-Ranges", "bytes")
+		}
 		w.Header().Set("Content-Length", strconv.FormatInt(end-start, 10))
 		if partial {
 			w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end-1, spec.size))
@@ -167,7 +170,8 @@ func runTransferBench(t *testing.T, spec transferBenchCase) {
 	defer agentHTTP.Close()
 	agent := &transferIntegrationAgent{url: agentHTTP.URL, client: agentHTTP.Client()}
 	server := &Server{agent: agent}
-	if experiment, ok := any(server).(interface{ enableFileTransferPrefetchExperiment() }); ok {
+	mode := os.Getenv("KPANEL_TRANSFER_MODE")
+	if experiment, ok := any(server).(interface{ enableFileTransferPrefetchExperiment() }); ok && mode != "off" && mode != "adaptive" {
 		experiment.enableFileTransferPrefetchExperiment()
 	}
 	config := remotedownload.Config{Resolver: benchPublicResolver{}, Dialer: func(ctx context.Context, network, _ string) (net.Conn, error) {
@@ -178,8 +182,14 @@ func runTransferBench(t *testing.T, spec transferBenchCase) {
 		limit.SetInt(4)
 	}
 	client := remotedownload.NewClient(config)
-	mode := os.Getenv("KPANEL_TRANSFER_MODE")
 	server.remoteDownloadOpen, server.remoteDownloadRangeOpen = client.Open, client.OpenRange
+	if mode == "adaptive" {
+		experiment, ok := any(server).(interface{ enableAdaptiveDownloadExperiment(*remotedownload.Client) })
+		if !ok {
+			t.Fatal("candidate does not implement adaptive downloads")
+		}
+		experiment.enableAdaptiveDownloadExperiment(client)
+	}
 	if mode == "segmented" || mode == "segmented-2" {
 		accelerated, ok := any(client).(interface {
 			OpenSegmented(context.Context, string, int) (*http.Response, error)
