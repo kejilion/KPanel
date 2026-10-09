@@ -71,12 +71,19 @@ func TestSegmentedFallsBackWithoutJoiningRepresentations(t *testing.T) {
 					response.StatusCode = 200
 					response.Header.Del("Content-Range")
 					response.ContentLength = minSegmentedBytes
+					response.Body = io.NopCloser(io.LimitReader(segmentZeroReader{}, minSegmentedBytes))
 				}
 				return response, nil
 			})
 			response, err := client.OpenSegmented(context.Background(), "https://files.example.com/large", 4)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if kind == "ignored" {
+				count, readErr := io.Copy(io.Discard, response.Body)
+				if readErr != nil || count != minSegmentedBytes {
+					t.Fatalf("incomplete fallback: %d %v", count, readErr)
+				}
 			}
 			_ = response.Body.Close()
 			want := 1

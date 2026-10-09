@@ -18,6 +18,7 @@ import (
 	"github.com/kejilion/kejilion-panel/internal/cluster"
 	"github.com/kejilion/kejilion-panel/internal/contract"
 	"github.com/kejilion/kejilion-panel/internal/httpstream"
+	"github.com/kejilion/kejilion-panel/internal/remotedownload"
 )
 
 var errReceiveUnsupported = errors.New("target does not support receiving sessions")
@@ -248,6 +249,11 @@ func (s *Server) receiveFileTransfer(
 		count, readErr := io.ReadFull(reader, buffer)
 		ended := readErr != nil && reader.eof && (readErr == io.EOF || readErr == io.ErrUnexpectedEOF)
 		if readErr != nil && !ended {
+			// A changed/malformed representation is not a transport interruption.
+			// Retrying it could hide a failed segment's consistency check.
+			if errors.Is(readErr, remotedownload.ErrSourceChanged) || errors.Is(readErr, remotedownload.ErrPartialContent) || errors.Is(readErr, remotedownload.ErrEncoding) {
+				return contract.FileEntry{}, session.Offset, readErr
+			}
 			if reopen == nil || reconnects >= 3 {
 				return contract.FileEntry{}, session.Offset, readErr
 			}

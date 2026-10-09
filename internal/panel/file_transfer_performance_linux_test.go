@@ -3,6 +3,7 @@ package panel
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -80,6 +81,9 @@ func runTransferBench(t *testing.T, spec transferBenchCase) {
 	}
 	hash := sha256.New()
 	for left := spec.size; left > 0; {
+		// Distinguish every absolute block: a repeated/swapped 2 MiB segment or
+		// 8 MiB receive chunk must change the final digest.
+		binary.LittleEndian.PutUint64(block[:8], uint64(spec.size-left))
 		n := min(left, int64(len(block)))
 		if _, err := source.Write(block[:n]); err != nil {
 			t.Fatal(err)

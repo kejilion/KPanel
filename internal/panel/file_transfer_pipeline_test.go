@@ -3,6 +3,7 @@ package panel
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"io"
 	"net"
 	"net/http"
@@ -61,7 +62,7 @@ func (transferPipelineResolver) LookupNetIP(context.Context, string, string) ([]
 func TestFileTransferSegmentedFailureResumesDurablePrefix(t *testing.T) {
 	server, _ := newTestServer(t)
 	_, _, root := realTransferAgent(t, server)
-	data := bytes.Repeat([]byte{73}, 32<<20)
+	data := pipelineOffsetData(32 << 20)
 	var faults, resumes atomic.Int32
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("ETag", `"v1"`)
@@ -130,6 +131,67 @@ func TestFileTransferPipelineCancellationAbortsLargeReceive(t *testing.T) {
 	if err != nil || len(entries) != 0 {
 		t.Fatalf("cancel retained receive: %v %v", entries, err)
 	}
+}
+
+func TestFileTransferSegmentedConsistencyFailureCannotResume(t *testing.T) {
+	for _, fault := range []string{"etag", "range", "encoding", "unexpected-full"} {
+		t.Run(fault, func(t *testing.T) {
+			server, _ := newTestServer(t)
+			_, _, root := realTransferAgent(t, server)
+			data := pipelineOffsetData(32 << 20)
+			var faults, suffixes atomic.Int32
+			origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("ETag", `"v1"`)
+				if r.Header.Get("Range") == "bytes=8388608-10485759" && faults.CompareAndSwap(0, 1) {
+					w.Header().Set("Content-Range", "bytes 8388608-10485759/33554432")
+					w.Header().Set("Content-Length", "0")
+					switch fault {
+					case "etag":
+						w.Header().Set("ETag", `"v2"`)
+					case "range":
+						w.Header().Set("Content-Range", "bytes 0-2097151/33554432")
+					case "encoding":
+						w.Header().Del("Content-Length")
+						w.Header().Set("Content-Encoding", "gzip")
+					case "unexpected-full":
+						w.Header().Del("Content-Range")
+						w.WriteHeader(http.StatusOK)
+						return
+					}
+					w.WriteHeader(http.StatusPartialContent)
+					return
+				}
+				if r.Header.Get("Range") == "bytes=8388608-" {
+					suffixes.Add(1)
+				}
+				http.ServeContent(w, r, "large.bin", time.Time{}, bytes.NewReader(data))
+			}))
+			defer origin.Close()
+			client := remotedownload.NewClient(remotedownload.Config{MaxConnections: 4, Resolver: transferPipelineResolver{}, Dialer: func(ctx context.Context, network, _ string) (net.Conn, error) {
+				return (&net.Dialer{}).DialContext(ctx, network, origin.Listener.Addr().String())
+			}})
+			server.remoteDownloadOpen = func(ctx context.Context, raw string) (*http.Response, error) {
+				return client.OpenSegmented(ctx, raw, 2)
+			}
+			server.remoteDownloadRangeOpen = client.OpenRange
+			result := server.executeFileRemoteDownload(context.Background(), contract.FileRemoteDownloadRequest{URL: "http://download.example.com/large", TargetDirectory: "/home", Name: "large.bin"}, "identity", func(contract.FileTransferEvent) bool { return true })
+			if result.State != "error" || faults.Load() != 1 || suffixes.Load() != 0 {
+				t.Fatalf("consistency failure recovered: %#v faults=%d suffixes=%d", result, faults.Load(), suffixes.Load())
+			}
+			entries, err := os.ReadDir(filepath.Join(root, "home"))
+			if err != nil || len(entries) != 0 {
+				t.Fatalf("inconsistent receive retained: %v %v", entries, err)
+			}
+		})
+	}
+}
+
+func pipelineOffsetData(size int) []byte {
+	data := make([]byte, size)
+	for offset := 0; offset < len(data); offset += 8 {
+		binary.LittleEndian.PutUint64(data[offset:offset+8], uint64(offset))
+	}
+	return data
 }
 
 func TestFileTransferPipelineRejectsTruncatedLargeSource(t *testing.T) {
