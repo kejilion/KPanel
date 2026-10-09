@@ -26,6 +26,11 @@ const componentStyleBlocks = collectVueStyleBlocks(componentStyleRoot)
 const componentDeclarations = collectVueStyleDeclarations(componentStyleRoot)
 const baselineKeys = new Set(VISUAL_CONTRACT_BASELINE.map((entry) => baselineKey(entry)))
 
+/** A selector or literal, escaped for use inside a RegExp source. */
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
 /** Hex value of a token inside one themes.css block. */
 function token(block: string, name: string): string {
   const match = block.match(new RegExp(`${name}:\\s*(#[0-9a-f]{6})`, 'i'))
@@ -324,7 +329,7 @@ describe('visual rhythm contract', () => {
   it('applies each material through its tokens, never a literal blur', () => {
     for (const [role, selectors] of Object.entries(MATERIAL_SURFACES)) {
       for (const selector of selectors) {
-        const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        const escaped = escapeRegExp(selector)
         const rule = `${main}\n${desktop}`.match(new RegExp(`(?:^|\\n)${escaped}\\s*\\{([^}]*)\\}`))?.[1] ?? ''
         expect(rule, `${selector} must be a ${role} material`).toContain(`background: var(--material-${role}-fill);`)
         expect(rule, selector).toContain(`border: 1px solid var(--material-${role}-edge);`)
@@ -333,7 +338,7 @@ describe('visual rhythm contract', () => {
       }
     }
     for (const selector of PANEL_SURFACES) {
-      const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const escaped = escapeRegExp(selector)
       const rule = desktop.match(new RegExp(`(?:^|\\n)${escaped}\\s*\\{([^}]*)\\}`))?.[1] ?? ''
       expect(rule, selector).toContain('background: var(--material-panel-fill);')
       expect(rule, selector).toContain('border: 1px solid var(--material-panel-edge);')
@@ -407,7 +412,7 @@ describe('visual rhythm contract', () => {
     ]) expect(themes).toContain(token)
     // Surfaces migrated to the motion system stay on it.
     for (const selector of ['.desktop-window', '.desktop-window--closing', '.desktop-start-menu-enter-active', '.desktop-menu-enter-active', '.desktop-menu-leave-active']) {
-      const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const escaped = escapeRegExp(selector)
       const rule = desktop.match(new RegExp(`\\n${escaped}\\s*\\{([^}]*)\\}`))?.[1] ?? ''
       const transition = rule.match(/transition:\s*([^;]+);/)?.[1] ?? ''
       expect(transition, selector).toContain('var(--motion-')
