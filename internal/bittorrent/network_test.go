@@ -6,12 +6,47 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/anacrolix/torrent/tracker"
 	"github.com/kejilion/kejilion-panel/internal/remotedownload"
 )
+
+type peerCacheTestDialer struct{ fail bool }
+
+func (*peerCacheTestDialer) DialerNetwork() string { return "tcp" }
+func (d *peerCacheTestDialer) Dial(context.Context, string) (net.Conn, error) {
+	if d.fail {
+		return nil, io.ErrUnexpectedEOF
+	}
+	left, right := net.Pipe()
+	right.Close()
+	return left, nil
+}
+
+func TestRememberedPeersArePublicSuccessfulAndBounded(t *testing.T) {
+	base := &peerCacheTestDialer{}
+	dialer := &rememberedDialer{Dialer: base}
+	for port := 1; port <= 130; port++ {
+		conn, err := dialer.Dial(context.Background(), "93.184.216.34:"+strconv.Itoa(port))
+		if err != nil {
+			t.Fatal(err)
+		}
+		conn.Close()
+	}
+	for _, address := range []string{"93.184.216.34:130", "127.0.0.1:80", "[fe80::1%lo]:80"} {
+		conn, _ := dialer.Dial(context.Background(), address)
+		conn.Close()
+	}
+	base.fail = true
+	dialer.Dial(context.Background(), "1.1.1.1:80")
+	peers := dialer.peers()
+	if len(peers) != 128 || peers[0].Addr.String() != "93.184.216.34:3" || peers[127].Addr.String() != "93.184.216.34:130" {
+		t.Fatal("peer cache leaked, duplicated or retained unsafe/failed address")
+	}
+}
 
 type packet struct {
 	data    string

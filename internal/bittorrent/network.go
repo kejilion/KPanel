@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/anacrolix/torrent"
 	"github.com/anacrolix/torrent/bencode"
 	"github.com/kejilion/kejilion-panel/internal/remotedownload"
 )
@@ -16,6 +17,47 @@ type publicDialer struct{ client *remotedownload.Client }
 func (d publicDialer) DialerNetwork() string { return "tcp" }
 func (d publicDialer) Dial(ctx context.Context, address string) (net.Conn, error) {
 	return d.client.DialPublic(ctx, "tcp", address)
+}
+
+// The peer engine may consume spare candidates during its initial handshakes.
+// Remember only successfully dialled public peers, so increasing the connection
+// budget can actually retry them without issuing extra tracker announcements.
+type rememberedDialer struct {
+	torrent.Dialer
+	mu        sync.Mutex
+	addresses []netip.AddrPort
+}
+
+func (d *rememberedDialer) Dial(ctx context.Context, address string) (net.Conn, error) {
+	conn, err := d.Dialer.Dial(ctx, address)
+	if err == nil {
+		if peer, parseErr := netip.ParseAddrPort(address); parseErr == nil && peer.Port() != 0 && remotedownload.PublicAddress(peer.Addr()) {
+			d.mu.Lock()
+			found := false
+			for _, known := range d.addresses {
+				found = found || known == peer
+			}
+			if !found {
+				if len(d.addresses) == 128 {
+					copy(d.addresses, d.addresses[1:])
+					d.addresses = d.addresses[:127]
+				}
+				d.addresses = append(d.addresses, peer)
+			}
+			d.mu.Unlock()
+		}
+	}
+	return conn, err
+}
+
+func (d *rememberedDialer) peers() []torrent.PeerInfo {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	peers := make([]torrent.PeerInfo, 0, len(d.addresses))
+	for _, address := range d.addresses {
+		peers = append(peers, torrent.PeerInfo{Addr: net.TCPAddrFromAddrPort(address)})
+	}
+	return peers
 }
 
 // UDP replies are accepted only from recently contacted public endpoints. DHT

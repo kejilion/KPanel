@@ -147,7 +147,8 @@ func (e *Engine) Download(ctx context.Context, source Source, smart bool, progre
 	if dialer == nil {
 		dialer = publicDialer{e.client}
 	}
-	client.AddDialer(dialer)
+	remembered := &rememberedDialer{Dialer: dialer}
+	client.AddDialer(remembered)
 	var dhtServer *dht.Server
 	if !e.noDHT && (source.Metadata == nil || !source.Metadata.Private) {
 		packet, err := listenPublicPacket("udp4", "0.0.0.0:0", true)
@@ -236,7 +237,9 @@ func (e *Engine) Download(ctx context.Context, source Source, smart bool, progre
 				elapsed := now.Sub(window)
 				pressure := mem.HeapAlloc > 160<<20 || stage.writeNanos.Swap(0) > int64(elapsed)/2
 				limit := policy.observe(float64(p.Bytes-windowBytes)/elapsed.Seconds(), metadata.Size-p.Bytes, pressure)
-				t.SetMaxEstablishedConns(limit)
+				if previous := t.SetMaxEstablishedConns(limit); limit > previous {
+					t.AddPeers(remembered.peers())
+				}
 				window = now
 				windowBytes = p.Bytes
 			}
