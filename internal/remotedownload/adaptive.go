@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -160,7 +161,6 @@ func (b *AdaptiveBody) Checkpoint(offset int64, prefix string, read, write time.
 	b.switching = true
 	b.mu.Unlock()
 	started := time.Now()
-	_ = previous.Close()
 	identity := b.identity
 	identity.Offset = offset
 	var response *http.Response
@@ -170,6 +170,21 @@ func (b *AdaptiveBody) Checkpoint(offset int64, prefix string, read, write time.
 	} else {
 		response, err = b.client.OpenRange(b.ctx, b.raw, identity)
 	}
+	if parallel && err != nil && b.ctx.Err() == nil && !errors.Is(err, ErrSourceChanged) && !errors.Is(err, ErrPartialContent) && !errors.Is(err, ErrEncoding) {
+		// Keep the original stream at the durable offset until a probe opens.
+		// Temporary range failures must not destroy a still usable download.
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		b.switching = false
+		b.releaseLocked()
+		b.policy.Mode = "single"
+		b.overhead = time.Since(started)
+		if b.closed {
+			return io.ErrClosedPipe
+		}
+		return nil
+	}
+	_ = previous.Close()
 	if err == nil && response.StatusCode == http.StatusOK {
 		if response.ContentLength != identity.SizeBytes {
 			err = ErrSourceChanged

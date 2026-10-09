@@ -73,7 +73,7 @@ func TestMetadataRejectsAllocationsPathsAndUnsupportedSources(t *testing.T) {
 
 func TestMetadataGuardBoundsHandshakeAndRequests(t *testing.T) {
 	g := newMetadataGuard(metainfo.Hash{}, false)
-	d := pp.ExtendedHandshakeMessage{MetadataSize: MaxMetadataBytes + 1, M: map[pp.ExtensionName]pp.ExtensionNumber{"arbitrary-tracking-key": 1, "ut_metadata": 2}}
+	d := pp.ExtendedHandshakeMessage{MetadataSize: MaxMetadataBytes + 1, M: map[pp.ExtensionName]pp.ExtensionNumber{"arbitrary-tracking-key": 1, "ut_metadata": 2, "ut_pex": 3}}
 	g.handshake(nil, &d)
 	if d.MetadataSize != -1 || len(d.M) != 1 {
 		t.Fatal("unsafe handshake retained")
@@ -93,6 +93,12 @@ func TestMetadataGuardBoundsHandshakeAndRequests(t *testing.T) {
 	g.message(&torrent.PeerConn{}, &msg)
 	if !msg.Keepalive {
 		t.Fatal("arbitrary length reached expvar")
+	}
+	peer := &torrent.PeerConn{LocalLtepProtocolMap: &torrent.LocalLtepProtocolMap{Index: []pp.ExtensionName{pp.ExtensionNamePex}, NumBuiltin: 1}}
+	msg = pp.Message{Type: pp.Extended, ExtendedID: 1, ExtendedPayload: []byte("de")}
+	g.message(peer, &msg)
+	if !msg.Keepalive {
+		t.Fatal("peer exchange reached the library before private metadata was known")
 	}
 }
 

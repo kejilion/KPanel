@@ -40,7 +40,7 @@ func (g *metadataGuard) handshake(_ *torrent.PeerConn, d *pp.ExtendedHandshakeMe
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	for name := range d.M {
-		if name != pp.ExtensionNameMetadata && name != pp.ExtensionNamePex {
+		if name != pp.ExtensionNameMetadata {
 			delete(d.M, name)
 		}
 	}
@@ -89,7 +89,7 @@ func (g *metadataGuard) message(c *torrent.PeerConn, msg *pp.Message) {
 			return
 		}
 	}
-	if msg.ExtendedID != 0 && name != pp.ExtensionNameMetadata && name != pp.ExtensionNamePex {
+	if msg.ExtendedID != 0 && name != pp.ExtensionNameMetadata {
 		drop()
 		return
 	}

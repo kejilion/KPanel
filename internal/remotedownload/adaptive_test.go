@@ -48,7 +48,7 @@ func TestAdaptivePolicyUsesEndToEndBenefit(t *testing.T) {
 }
 
 func TestAdaptiveBodyKeepsExactCheckpointAcrossSwitches(t *testing.T) {
-	for _, kind := range []string{"range", "ignored", "changed", "no-benefit"} {
+	for _, kind := range []string{"range", "ignored", "changed", "no-benefit", "range-denied", "rate-limited", "server-error", "timeout"} {
 		t.Run(kind, func(t *testing.T) {
 			client := NewClient(Config{})
 			var requests atomic.Int32
@@ -56,6 +56,17 @@ func TestAdaptiveBodyKeepsExactCheckpointAcrossSwitches(t *testing.T) {
 				requests.Add(1)
 				response := segmentTestResponse(r, 80<<20)
 				response.Header.Set("Accept-Ranges", "bytes")
+				if r.Header.Get("Range") != "" {
+					status := map[string]int{"range-denied": 403, "rate-limited": 429, "server-error": 503}[kind]
+					if status != 0 {
+						response.StatusCode = status
+						response.Header.Del("ETag")
+					}
+					if kind == "timeout" {
+						response.Body.Close()
+						return nil, context.DeadlineExceeded
+					}
+				}
 				if r.Header.Get("Range") != "" && kind == "ignored" {
 					response.StatusCode = 200
 					response.ContentLength = 80 << 20
@@ -94,6 +105,11 @@ func TestAdaptiveBodyKeepsExactCheckpointAcrossSwitches(t *testing.T) {
 			}
 			if kind == "ignored" && body.TransferMode() != "single" {
 				t.Fatal("ignored range did not fall back")
+			}
+			if kind == "range-denied" || kind == "rate-limited" || kind == "server-error" || kind == "timeout" {
+				if body.TransferMode() != "single" || len(budget) != 0 || requests.Load() != 2 {
+					t.Fatal("failed probe did not preserve the original source and release its budget")
+				}
 			}
 			if kind == "no-benefit" {
 				n, err := io.CopyN(hash, body, 16<<20)

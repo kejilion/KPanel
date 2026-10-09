@@ -108,6 +108,11 @@ func TestEngineDownloadsTorrentAndMagnetFromRealPeer(t *testing.T) {
 			defer cache.Close()
 			engine := NewEngine(cache, client)
 			engine.noDHT = true
+			engine.configure = func(cfg *torrent.ClientConfig) {
+				if !cfg.DisablePEX {
+					t.Fatal("private or unknown torrent enables peer exchange")
+				}
+			}
 			var source Source
 			if kind == "torrent" {
 				source, err = Parse("", bencode.MustMarshal(mi))

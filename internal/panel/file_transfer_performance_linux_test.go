@@ -212,6 +212,8 @@ func runTransferBench(t *testing.T, spec transferBenchCase) {
 	runtime.ReadMemStats(&memBefore)
 	started := time.Now()
 	var wg sync.WaitGroup
+	var modesMu sync.Mutex
+	modes := make(map[string]int)
 	results := make(chan contract.FileTransferEvent, spec.files)
 	for worker := 0; worker < spec.parallel; worker++ {
 		wg.Add(1)
@@ -220,7 +222,14 @@ func runTransferBench(t *testing.T, spec transferBenchCase) {
 			for index := worker; index < spec.files; index += spec.parallel {
 				result := server.executeFileRemoteDownload(context.Background(), contract.FileRemoteDownloadRequest{
 					URL: "http://download.example.com/source.bin", TargetDirectory: "/home", Name: fmt.Sprintf("copy-%d.bin", index),
-				}, "benchmark", func(contract.FileTransferEvent) bool { return true })
+				}, "benchmark", func(event contract.FileTransferEvent) bool {
+					if mode := reflect.ValueOf(event).FieldByName("TransferMode"); mode.IsValid() && mode.String() != "" {
+						modesMu.Lock()
+						modes[mode.String()]++
+						modesMu.Unlock()
+					}
+					return true
+				})
 				results <- result
 			}
 		}(worker)
@@ -257,6 +266,7 @@ func runTransferBench(t *testing.T, spec transferBenchCase) {
 		"max_rss_kib": after.Maxrss, "allocated_bytes": memAfter.TotalAlloc - memBefore.TotalAlloc,
 		"source_requests": requests.Load(), "source_bytes": sourceBytes.Load(), "max_source_active": maxActive.Load(),
 		"agent_bytes": agent.chunkBytes, "hash_verified": true, "scope": "combined-origin-panel-agent-process",
+		"transfer_modes": modes,
 	})
 	fmt.Printf("TRANSFER_BENCH %s\n", data)
 }

@@ -92,6 +92,9 @@ func (e *Engine) Download(ctx context.Context, source Source, smart bool, progre
 	cfg := torrent.NewDefaultClientConfig()
 	cfg.DefaultStorage = stage
 	cfg.NoDHT = true
+	// The metadata of a magnet may turn out to be private. Keep peer exchange
+	// disabled for the entire session so an early handshake cannot leak peers.
+	cfg.DisablePEX = true
 	cfg.DisableTCP = true
 	cfg.DisableUTP = true
 	cfg.AcceptPeerConnections = false

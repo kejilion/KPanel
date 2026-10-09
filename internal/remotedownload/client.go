@@ -221,10 +221,6 @@ func (c *Client) open(ctx context.Context, raw string, resume *ResumeRequest) (*
 	if err != nil {
 		return nil, classifyError(ctx, err)
 	}
-	if resume != nil && (response.Header.Get("ETag") != resume.ETag || resume.FinalURL != "" && (response.Request == nil || response.Request.URL == nil || response.Request.URL.String() != resume.FinalURL)) {
-		response.Body.Close()
-		return nil, ErrSourceChanged
-	}
 	if response.StatusCode == http.StatusPartialContent && resume == nil {
 		response.Body.Close()
 		return nil, ErrPartialContent
@@ -232,6 +228,10 @@ func (c *Client) open(ctx context.Context, raw string, resume *ResumeRequest) (*
 	if response.StatusCode != http.StatusOK && (resume == nil || response.StatusCode != http.StatusPartialContent) {
 		response.Body.Close()
 		return nil, &StatusError{StatusCode: response.StatusCode}
+	}
+	if resume != nil && (response.Header.Get("ETag") != resume.ETag || resume.FinalURL != "" && (response.Request == nil || response.Request.URL == nil || response.Request.URL.String() != resume.FinalURL)) {
+		response.Body.Close()
+		return nil, ErrSourceChanged
 	}
 	if response.StatusCode == http.StatusPartialContent {
 		end := resume.SizeBytes
