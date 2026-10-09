@@ -25,7 +25,7 @@
 ### 发布边界
 
 - 仅创建 GitHub prerelease 并提升 Docker preview；沿用 release/v1.26.0-candidate 发布序列。
-- scriptLinkageState=coupled：变更集 kpanel-v1.26.0-rc.1-manual-certificate-renewal；兼容脚本 f0e0c652451ff45fb1cc056b1c7362c97c04564b 先可用，再冻结和构建面板。Docker latest 与应用市场默认入口不变。
+- scriptLinkageState=coupled：变更集 kpanel-v1.26.0-rc.1-manual-certificate-renewal；兼容脚本 1800d955f216aebd2776674368a8e469a671c489 先可用，再冻结和构建面板。Docker latest 与应用市场默认入口不变。
 
 
 ## [1.25.0] - 2026-10-09
