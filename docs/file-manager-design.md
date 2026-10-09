@@ -243,6 +243,8 @@ Browser POST JSON（URL 只在 body）
 - BT 引擎固定 `github.com/anacrolix/torrent v1.61.0`，运行在无特权 Panel，按需创建、任务结束关闭。
   HTTP tracker 走原专用客户端；UDP 和 DHT 通过公网过滤套接字，DHT 只接受最近查询端点的有界响应。
   不监听 peer、不映射端口、不上传正文或完成后做种。仅下载限制会影响部分需要互惠的 swarm/私有站点。
+  全程禁用 PEX；私有任务须提供 `.torrent`，以便在发现节点前禁用 DHT。磁力在元数据确定前可能查询
+  DHT；获知 private 标记后立即停止并提示导入种子，不下载正文或重新拨号，不承诺私有磁力隐私。
 - 磁力 info 在原始 bencode 长度/深度检查后受控组装，piece 0 在完整 SHA1、路径与容量验证通过前不交给
   库解码；工作循环在库锁外设置已验证 info。拒绝 xs/as/webseed/显式 peer/DHT 节点等旁路来源。
 - BT 与 HTTP、跨主机共用任务准入、取消、历史和 Agent receive，BT 额外的单任务资源额度先于公共

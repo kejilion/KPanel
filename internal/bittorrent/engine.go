@@ -196,6 +196,12 @@ func (e *Engine) Download(ctx context.Context, source Source, smart bool, progre
 		case err := <-stage.failed:
 			return nil, err
 		case m := <-guard.ready:
+			// Privacy is unknown until magnet metadata arrives. Do not download
+			// or retry peers discovered through DHT after learning it is private.
+			// A .torrent supplies this flag before any discovery and is supported.
+			if m.Private {
+				return nil, ErrPrivateMagnet
+			}
 			if err = t.SetInfoBytes(m.InfoBytes); err != nil {
 				if errors.Is(err, ErrStorage) {
 					return nil, ErrStorage
@@ -203,9 +209,6 @@ func (e *Engine) Download(ctx context.Context, source Source, smart bool, progre
 				return nil, ErrMetadata
 			}
 			metadata = &m
-			if m.Private && dhtServer != nil {
-				dhtServer.Close()
-			}
 			t.DownloadAll()
 		case <-t.Complete().On():
 			if metadata == nil {

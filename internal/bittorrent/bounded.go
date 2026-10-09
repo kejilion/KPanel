@@ -10,11 +10,12 @@ import (
 const MaxMetadataBytes = 512 << 10
 
 var (
-	ErrMetadata  = errors.New("torrent metadata is invalid or exceeds limits")
-	ErrVersion   = errors.New("torrent version is unsupported")
-	ErrIntegrity = errors.New("torrent integrity check failed")
-	ErrStorage   = errors.New("torrent temporary storage is unavailable or full")
-	ErrNoPeers   = errors.New("torrent peers or metadata are unavailable")
+	ErrMetadata      = errors.New("torrent metadata is invalid or exceeds limits")
+	ErrVersion       = errors.New("torrent version is unsupported")
+	ErrPrivateMagnet = errors.New("private magnet requires torrent metadata")
+	ErrIntegrity     = errors.New("torrent integrity check failed")
+	ErrStorage       = errors.New("torrent temporary storage is unavailable or full")
+	ErrNoPeers       = errors.New("torrent peers or metadata are unavailable")
 )
 
 // scanBencode validates before any reflective decoder allocates. Metadata wire

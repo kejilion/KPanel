@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
@@ -79,6 +80,12 @@ func TestEngineDownloadsTorrentAndMagnetFromRealPeer(t *testing.T) {
 	}
 	info := testInfo(data)
 	seeder := newFixtureSeeder(t, data, info)
+	privateInfo := info
+	private := true
+	privateInfo.Private = &private
+	privateSeeder := newFixtureSeeder(t, data, privateInfo)
+	privateMeta := metainfo.MetaInfo{InfoBytes: bencode.MustMarshal(privateInfo)}
+	privateHash := privateMeta.HashInfoBytes()
 	var announces atomic.Int32
 	trackerHTTP := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		announces.Add(1)
@@ -86,20 +93,25 @@ func TestEngineDownloadsTorrentAndMagnetFromRealPeer(t *testing.T) {
 			t.Error("invalid announce")
 		}
 		compact := []byte{93, 184, 216, 34, 0, 0}
-		binary.BigEndian.PutUint16(compact[4:], uint16(seeder.LocalPort()))
+		port := seeder.LocalPort()
+		if r.URL.Query().Get("info_hash") == string(privateHash[:]) {
+			port = privateSeeder.LocalPort()
+		}
+		binary.BigEndian.PutUint16(compact[4:], uint16(port))
 		w.Write(bencode.MustMarshal(map[string]any{"interval": 120, "peers": string(compact)}))
 	}))
 	defer trackerHTTP.Close()
 	_, trackerPort, _ := net.SplitHostPort(trackerHTTP.Listener.Addr().String())
 	client := remotedownload.NewClient(remotedownload.Config{Resolver: fixtureResolver{}, Dialer: func(ctx context.Context, network, address string) (net.Conn, error) {
 		_, port, _ := net.SplitHostPort(address)
-		if port != trackerPort && port != strconv.Itoa(seeder.LocalPort()) {
+		if port != trackerPort && port != strconv.Itoa(seeder.LocalPort()) && port != strconv.Itoa(privateSeeder.LocalPort()) {
 			return nil, remotedownload.ErrAddressBlocked
 		}
 		return (&net.Dialer{}).DialContext(ctx, network, net.JoinHostPort("127.0.0.1", port))
 	}})
 	mi := metainfo.MetaInfo{InfoBytes: bencode.MustMarshal(info), Announce: "http://fixture.test:" + trackerPort + "/announce?passkey=secret"}
-	for _, kind := range []string{"torrent", "magnet"} {
+	privateMeta.Announce = mi.Announce
+	for _, kind := range []string{"torrent", "magnet", "private-torrent", "private-magnet"} {
 		t.Run(kind, func(t *testing.T) {
 			cache, err := OpenCache(filepath.Join(t.TempDir(), "cache"))
 			if err != nil {
@@ -114,10 +126,14 @@ func TestEngineDownloadsTorrentAndMagnetFromRealPeer(t *testing.T) {
 				}
 			}
 			var source Source
-			if kind == "torrent" {
-				source, err = Parse("", bencode.MustMarshal(mi))
+			selected, selectedInfo := mi, info
+			if kind == "private-torrent" || kind == "private-magnet" {
+				selected, selectedInfo = privateMeta, privateInfo
+			}
+			if kind == "torrent" || kind == "private-torrent" {
+				source, err = Parse("", bencode.MustMarshal(selected))
 			} else {
-				source, err = Parse(mi.Magnet(nil, &info).String(), nil)
+				source, err = Parse(selected.Magnet(nil, &selectedInfo).String(), nil)
 			}
 			if err != nil {
 				t.Fatal(err)
@@ -130,6 +146,16 @@ func TestEngineDownloadsTorrentAndMagnetFromRealPeer(t *testing.T) {
 				}
 				return true
 			})
+			if kind == "private-magnet" {
+				if !errors.Is(err, ErrPrivateMagnet) || result != nil {
+					t.Fatalf("private magnet accepted: %v", err)
+				}
+				entries, _ := os.ReadDir(cache.root.Name())
+				if len(entries) != 0 {
+					t.Fatal("rejected private magnet left staging")
+				}
+				return
+			}
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -146,7 +172,7 @@ func TestEngineDownloadsTorrentAndMagnetFromRealPeer(t *testing.T) {
 			}
 		})
 	}
-	if announces.Load() != 2 {
+	if announces.Load() != 4 {
 		t.Fatalf("announces=%d", announces.Load())
 	}
 }

@@ -205,6 +205,8 @@ func fileRemoteDownloadName(requested string, response *http.Response) string {
 func fileRemoteDownloadError(err error) (string, string) {
 	var statusError *remotedownload.StatusError
 	switch {
+	case errors.Is(err, bittorrent.ErrPrivateMagnet):
+		return "bt_private_magnet_unsupported", "私有任务请导入 .torrent 文件，以便在连接前确定节点发现策略。"
 	case errors.Is(err, bittorrent.ErrVersion):
 		return "bt_version_unsupported", "此候选支持 BitTorrent v1 种子和 btih 磁力链接。"
 	case errors.Is(err, bittorrent.ErrMetadata), errors.Is(err, bittorrent.ErrIntegrity):

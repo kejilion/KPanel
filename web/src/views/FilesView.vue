@@ -725,6 +725,8 @@ function remoteDownloadErrorDetail(code?: string, fallback = ''): string {
   switch (code) {
     case 'bt_version_unsupported':
       return i18n.t('files.remoteDownload.error.btVersion')
+    case 'bt_private_magnet_unsupported':
+      return i18n.t('files.remoteDownload.error.btPrivateMagnet')
     case 'bt_metadata_invalid':
       return i18n.t('files.remoteDownload.torrentInvalid')
     case 'bt_storage_unavailable':
