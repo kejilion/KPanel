@@ -69,13 +69,15 @@
       var(--sidebar) 78%);
   --auth-form-background:
     linear-gradient(180deg, color-mix(in srgb, var(--surface) 94%, var(--brand-soft) 6%), var(--surface) 24rem);
-  /* Materials (docs/ui-visual-language.md 3.5). Content stays opaque; shell
-     surfaces and short-lived overlays are translucent. Fills reuse the glass
+  /* Materials (docs/ui-visual-language.md 3.5). Content defaults to solid fills;
+     classicWallpaper.css scopes the explicit wallpaper show-through exception.
+     Shell, desktop panels and short-lived overlays use the material fills.
+     Fills reuse the glass
      tokens checked against black/white backdrops for text, text-soft and muted
      at >= 4.5:1, including these static defaults. A live blur is spent only where the backdrop can hold
      moving content or text (chrome, overlays); panels resting on the wallpaper
      alone take the fill without one. Material blur values live in the two
-     filters below; scrims and drag hints retain their bounded fixed filters. */
+     filters below; scrims, drag hints and the public share hero retain bounded fixed filters. */
   --material-panel-fill: var(--desktop-glass-strong);
   --material-panel-edge: var(--desktop-glass-border);
   --material-chrome-fill: var(--desktop-glass-strong);
@@ -85,7 +87,8 @@
   --material-overlay-edge: var(--border);
   --material-overlay-filter: blur(20px) saturate(150%);
   /* Motion (docs/ui-visual-language.md 3.6). Enter and move decelerate, exits
-     accelerate and are shorter; nothing bounces. The global reduced-motion rule
+     accelerate and are shorter. Only app icon feedback permits bounded overshoot.
+     The global reduced-motion rule
      in main.css removes movement while state changes stay visible. */
   --motion-duration-instant: 100ms;
   --motion-duration-fast: 160ms;
