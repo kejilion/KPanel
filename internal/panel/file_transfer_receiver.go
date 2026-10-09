@@ -17,6 +17,7 @@ import (
 
 	"github.com/kejilion/kejilion-panel/internal/cluster"
 	"github.com/kejilion/kejilion-panel/internal/contract"
+	"github.com/kejilion/kejilion-panel/internal/httpstream"
 )
 
 var errReceiveUnsupported = errors.New("target does not support receiving sessions")
@@ -224,6 +225,18 @@ func (s *Server) receiveFileTransfer(
 	if session.Offset != 0 || session.State != "receiving" {
 		return contract.FileEntry{}, 0, errors.New("receiver creation invalid")
 	}
+	prefetch := func(source io.ReadCloser) io.ReadCloser {
+		if ahead, ok := source.(interface{ ReadAheadBytes() int }); ok && ahead.ReadAheadBytes() > 0 {
+			return source
+		}
+		// Small/unknown streams keep the existing allocation and timing. Large
+		// streams overlap one source chunk with the previous durable Agent write.
+		if input.SizeBytes >= 2*contract.FileTransferChunkBytes {
+			return httpstream.NewPrefetchReadCloser(source, contract.FileTransferChunkBytes/2)
+		}
+		return source
+	}
+	body = prefetch(body)
 	buffer := make([]byte, contract.FileTransferChunkBytes)
 	hasher := sha256.New()
 	reader := &fileTransferEOFReader{Reader: body}
@@ -247,6 +260,7 @@ func (s *Server) receiveFileTransfer(
 			if err != nil {
 				return contract.FileEntry{}, session.Offset, err
 			}
+			body = prefetch(body)
 			stop()
 			current := body
 			stop = context.AfterFunc(ctx, func() { _ = current.Close() })

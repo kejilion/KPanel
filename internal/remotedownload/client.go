@@ -54,6 +54,9 @@ type Config struct {
 	ResponseHeaderTimeout time.Duration
 	IdleTimeout           time.Duration
 	RejectRedirects       bool
+	// MaxConnections bounds shared connections to one origin, including probes.
+	// The default remains two; segmented file downloads may opt into four.
+	MaxConnections int
 }
 
 type Client struct {
@@ -80,6 +83,10 @@ func NewClient(config Config) *Client {
 	if config.IdleTimeout <= 0 {
 		config.IdleTimeout = 45 * time.Second
 	}
+	if config.MaxConnections <= 0 {
+		config.MaxConnections = 2
+	}
+	config.MaxConnections = min(config.MaxConnections, 4)
 	if config.Dialer == nil {
 		dialer := &net.Dialer{Timeout: config.ConnectTimeout, KeepAlive: 30 * time.Second}
 		config.Dialer = dialer.DialContext
@@ -94,8 +101,8 @@ func NewClient(config Config) *Client {
 		ForceAttemptHTTP2:      true,
 		DisableCompression:     true,
 		MaxIdleConns:           4,
-		MaxIdleConnsPerHost:    2,
-		MaxConnsPerHost:        2,
+		MaxIdleConnsPerHost:    config.MaxConnections,
+		MaxConnsPerHost:        config.MaxConnections,
 		IdleConnTimeout:        45 * time.Second,
 		TLSHandshakeTimeout:    config.TLSHandshakeTimeout,
 		ResponseHeaderTimeout:  config.ResponseHeaderTimeout,
@@ -164,6 +171,8 @@ type ResumeRequest struct {
 	SizeBytes int64
 	ETag      string
 	FinalURL  string
+	// endOffset is exclusive; zero keeps the existing suffix-resume request.
+	endOffset int64
 }
 
 var ErrSourceChanged = errors.New("remote download source changed")
@@ -203,6 +212,9 @@ func (c *Client) open(ctx context.Context, raw string, resume *ResumeRequest) (*
 	request.Header.Set("User-Agent", "KPanel-Remote-Download/1")
 	if resume != nil {
 		request.Header.Set("Range", fmt.Sprintf("bytes=%d-", resume.Offset))
+		if resume.endOffset > 0 {
+			request.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", resume.Offset, resume.endOffset-1))
+		}
 		request.Header.Set("If-Range", resume.ETag)
 	}
 	response, err := c.httpClient.Do(request)
@@ -222,8 +234,12 @@ func (c *Client) open(ctx context.Context, raw string, resume *ResumeRequest) (*
 		return nil, &StatusError{StatusCode: response.StatusCode}
 	}
 	if response.StatusCode == http.StatusPartialContent {
-		expected := fmt.Sprintf("bytes %d-%d/%d", resume.Offset, resume.SizeBytes-1, resume.SizeBytes)
-		if response.Header.Get("Content-Range") != expected || response.ContentLength >= 0 && response.ContentLength != resume.SizeBytes-resume.Offset {
+		end := resume.SizeBytes
+		if resume.endOffset > 0 {
+			end = resume.endOffset
+		}
+		expected := fmt.Sprintf("bytes %d-%d/%d", resume.Offset, end-1, resume.SizeBytes)
+		if response.Header.Get("Content-Range") != expected || response.ContentLength >= 0 && response.ContentLength != end-resume.Offset {
 			response.Body.Close()
 			return nil, ErrSourceChanged
 		}
