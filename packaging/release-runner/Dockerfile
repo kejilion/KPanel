@@ -2,12 +2,12 @@
 
 FROM node:24.21.0-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS node-runtime
 
-FROM golang:1.27.1-alpine@sha256:8a5910f31396cd4d89662f56c68b3ae31d374308270a1c3bd96672ee5ed43414
+FROM golang:1.27.2-alpine@sha256:85dc1069ac644ea3c527b177303a406eb3358192816cd7f9e5848eb658851673
 
 LABEL org.opencontainers.image.title="KPanel release gate runner" \
       org.opencontainers.image.description="Fixed Linux release gate runner for KPanel" \
       org.opencontainers.image.source="https://github.com/kejilion/KPanel" \
-      org.opencontainers.image.base.golang="golang:1.27.1-alpine@sha256:8a5910f31396cd4d89662f56c68b3ae31d374308270a1c3bd96672ee5ed43414" \
+      org.opencontainers.image.base.golang="golang:1.27.2-alpine@sha256:85dc1069ac644ea3c527b177303a406eb3358192816cd7f9e5848eb658851673" \
       org.opencontainers.image.base.node="node:24.21.0-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1"
 
 RUN --mount=type=secret,id=https_proxy,required=false \
@@ -30,7 +30,7 @@ COPY --from=node-runtime /usr/local/lib/node_modules /usr/local/lib/node_modules
 
 RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
-    && go version | grep -F 'go1.27.1' \
+    && go version | grep -F 'go1.27.2' \
     && node --version | grep -Fx 'v24.21.0' \
     && npm --version \
     && npx --version \

@@ -7,7 +7,7 @@ const dockerfile = readFileSync(resolve(import.meta.dirname, '..', '..', 'packag
 
 test('release runner pins bases and direct packages and keeps npm executable', () => {
   assert.match(dockerfile, /^FROM node:24\.21\.0-alpine@sha256:[0-9a-f]{64} AS node-runtime$/m);
-  assert.match(dockerfile, /^FROM golang:1\.27\.1-alpine@sha256:[0-9a-f]{64}$/m);
+  assert.match(dockerfile, /^FROM golang:1\.27\.2-alpine@sha256:[0-9a-f]{64}$/m);
   for (const component of ['bash', 'build-base', 'ca-certificates', 'coreutils', 'docker-cli', 'docker-cli-buildx', 'git', 'make']) {
     assert.match(dockerfile, new RegExp(`\\s${component.replaceAll('-', '\\-')}=[^\\s\\\\]+`));
   }
@@ -26,7 +26,7 @@ test('Go toolchain stays aligned across modules, images, Runner and CI', () => {
   const root = resolve(import.meta.dirname, '..', '..');
   const read = path => readFileSync(resolve(root, path), 'utf8');
   const goVersion = read('go.mod').match(/^go (\d+\.\d+\.\d+)$/m)?.[1];
-  assert.equal(goVersion, '1.27.1');
+  assert.equal(goVersion, '1.27.2');
   const goBase = dockerfile.match(/^FROM (golang:[^\s]+)$/m)?.[1];
   assert.ok(goBase?.startsWith(`golang:${goVersion}-alpine@sha256:`));
   assert.ok(read('Dockerfile').includes(`FROM --platform=$BUILDPLATFORM ${goBase} AS go-build`));
@@ -41,7 +41,7 @@ test('Go toolchain stays aligned across modules, images, Runner and CI', () => {
   const siteWorkflow = read('.codex-workflows/kpanel-site-icon-cache-validation.workflow.yaml');
   const sitePins = [...siteWorkflow.matchAll(/golang:([^\s]+)/g)];
   assert.equal(sitePins.length, 3);
-  assert.ok(sitePins.every(([, pin]) => pin === `${goVersion}-bookworm@sha256:69a7b9788769bec032d238959b61854e9ae87f57be9029ec04e9885fabf99195`));
+  assert.ok(sitePins.every(([, pin]) => pin === `${goVersion}-bookworm@sha256:5cf287a799e6b94384bad13d16b14904c531f51ba65792237e122ce42b392f61`));
 });
 
 test('release runner accepts the optional build proxy only as a BuildKit secret', () => {
