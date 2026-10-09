@@ -172,13 +172,13 @@ Linux/amd64 manifest `sha256:04a395e1e80d27f8dba9a18ec9e1f373f69acf498b043782223
 <!-- kpanel-release-metrics:end -->
 
 <!-- kpanel-release-process-metrics:start -->
-- 已记录发布流程异常或无效证据拦截次数：26
+- 已记录发布流程异常或无效证据拦截次数：27
 - 其中生产写操作开始后异常次数：0
 <!-- kpanel-release-process-metrics:end -->
 
 记录口径为本次已留存的执行/取证异常，非全部历史任务推断。正常产品动效断言、可达安全门禁及真实 GPU 预算失败在质量证据保留，不为降低计数改成通过；这些产品结果不自动计作流程异常。所有以下事件均在生产写入前，生产写入次数为 0。
 
-流程复核已读取当前失败原件并比较最近 5 个正式验收 v1.25.0 至 v1.21.0，摘要及路径见 `process-history-review-r5.json`（r1/r2/r3/r4 原件保留）。CRLF staging、noexec scratch 与 SSH quoting 复用历史 fingerprint，Go 预检错误由原始 docker run 命令纠正为容器 Runner 缺少 Go。两次 Windows 清理失败复用 v1.24.0 的 file-entry execution-policy 与 automatic-policy-denial fingerprint，保留 2026-10-10 复核期限；两处历史版本字段格式被指标门禁拦截后按原 tag 修正，首次错误文档和日志保留；原台账计数不降低，包含两次文档检查失败共 26 次。第二轮未报告标记语法错误按唯一入口契约修正，预览禁止生产部署的说明保留在正文。重复 CRLF/noexec 的本轮外部入口恢复不等于共享唯一入口永久修复，后者须在下一次 L3 生产写操作前完成；发布负责人于 2026-10-16 或生产准入前复核，以先发生者为准。
+流程复核已读取当前失败原件并比较最近 5 个正式验收 v1.25.0 至 v1.21.0，摘要及路径见 `process-history-review-r6.json`（r1/r2/r3/r4/r5 原件保留）。CRLF staging、noexec scratch 与 SSH quoting 复用历史 fingerprint，Go 预检错误由原始 docker run 命令纠正为容器 Runner 缺少 Go。两次 Windows 清理失败复用 v1.24.0 的 file-entry execution-policy 与 automatic-policy-denial fingerprint，保留 2026-10-10 复核期限；两处历史版本字段格式被指标门禁拦截后按原 tag 修正，首次错误文档和日志保留；原台账计数不降低，包含两次文档指标检查和一次本地 L0 环境失败共 27 次。第二轮未报告标记语法错误按唯一入口契约修正，预览禁止生产部署的说明保留在正文。L0 治理测试的 Go 子进程 PATH 缺失复用 v1.25.0 已有指纹，首个文档提交与原始失败保留，只为当前子进程资格化已固定工具。重复 CRLF/noexec 的本轮外部入口恢复不等于共享唯一入口永久修复，后者须在下一次 L3 生产写操作前完成；发布负责人于 2026-10-16 或生产准入前复核，以先发生者为准。
 
 <!-- kpanel-release-process-incidents:start -->
 [
@@ -391,6 +391,17 @@ Linux/amd64 manifest `sha256:04a395e1e80d27f8dba9a18ec9e1f373f69acf498b043782223
     "recoveryEvidence": "docs-metrics-r2.log、docs-metrics-r2-execution.json 和 acceptance-before-preview-marker-repair-r1.md 保留原件；依据 report-release-metrics.mjs 的 EMPTY_VALUE 契约，将指标值改为精确“不适用”，预览版禁止生产部署的事实保留在正文。随后使用独立 r3 日志执行同一门禁。",
     "permanentAction": "发布负责人于 2026-10-10 或下一次 L3 生产写操作前复核，以先发生者为准；退出条件为外部验收生成入口使用完整规范字段语法并在提交前通过未改变的指标门禁。当前字段修正不声称共享入口永久修复。",
     "historicalReleases": []
+  },
+  {
+    "fingerprint": "preflight/release-notes/go-not-on-path",
+    "position": "before-production-write",
+    "count": 1,
+    "impact": "文档 L0 的治理测试为 257/260 通过，3 项发布说明契约测试因子进程 PATH 缺少 Go（go: command not found / spawnSync go ENOENT）失败。首次文档提交 7f1d74f3 保留且未推送，不计本地核验通过。",
+    "recoveryEvidence": "docs-l0-r3.log、docs-l0-r3-execution.json 和首个文档提交保留；复用 freeze-notes-supplement-r5.json 已固定的 Go1.27.2，可执行文件 SHA-256 b8cd508a0a7aac883cd750e9e75eb306d219e726bdf1cde29009490729437fbf。仅为当前核验子进程补充工具 PATH，经 Node 与 Git Bash 两端资格化后重跑完整同一 L0 门禁。",
+    "permanentAction": "发布负责人于 2026-10-10 或下一次 L3 生产写操作前复核，以先发生者为准；退出条件为共享执行入口在治理测试前资格化全部实际调用工具并保留子进程环境摘要。当前环境恢复不声称共享唯一入口永久修复；沿用 v1.25.0 已有 Go PATH 根因指纹。",
+    "historicalReleases": [
+      "v1.25.0"
+    ]
   }
 ]
 <!-- kpanel-release-process-incidents:end -->
