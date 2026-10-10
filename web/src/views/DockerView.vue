@@ -2860,7 +2860,7 @@ onBeforeUnmount(() => {
 .docker-page--batch { padding-bottom: 96px; }
 .desktop-window__body .docker-page--batch { padding-bottom: 0; }
 .docker-batch-dock-enter-active,
-.docker-batch-dock-leave-active { transition: opacity .16s ease; }
+.docker-batch-dock-leave-active { transition: opacity var(--motion-duration-fast) var(--motion-ease-fade); }
 .docker-batch-dock-enter-from,
 .docker-batch-dock-leave-to { opacity: 0; }
 .docker-context-menu {
