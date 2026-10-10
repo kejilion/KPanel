@@ -106,17 +106,25 @@ func TestTorrentAdapterUsesCommonReceiverAndAtomicDirectory(t *testing.T) {
 				return (&net.Dialer{}).DialContext(ctx, network, net.JoinHostPort("127.0.0.1", port))
 			}})
 			server.btDownload = bittorrent.NewEngine(server.btCache, client).Download
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			// This correctness fixture downloads 12 MiB and retries lost ACKs.
+			// Keep it bounded while allowing race-instrumented I/O to finish.
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 			defer cancel()
+			started := time.Now()
+			var lastProgress contract.FileTransferEvent
 			result := server.executeFileRemoteDownload(ctx, contract.FileRemoteDownloadRequest{SourceKind: "torrent", Torrent: bencode.MustMarshal(mi), TargetDirectory: "/home", Background: true}, "torrent-test", func(event contract.FileTransferEvent) bool {
+				if event.State != "error" {
+					lastProgress = event
+				}
 				if event.TransferMode == "bt-adaptive" && event.LoadedBytes != 0 {
 					t.Error("source progress impersonated receiver acknowledgement")
 				}
 				return true
 			})
 			if result.State != "complete" || result.Entry == nil {
-				t.Fatalf("result=%#v", result)
+				t.Fatalf("result=%#v elapsed=%s lastProgress=%#v", result, time.Since(started), lastProgress)
 			}
+			t.Logf("transfer elapsed=%s", time.Since(started))
 			var got []byte
 			if multi {
 				a, e := os.ReadFile(filepath.Join(targetRoot, "home", "bundle", "a.bin"))
