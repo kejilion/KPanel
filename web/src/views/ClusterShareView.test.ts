@@ -302,8 +302,13 @@ describe('ClusterShareView anonymous snapshot', () => {
     for (const privateField of ['origin', 'peerFingerprint', 'remoteNodeId', 'resourceVersion']) {
       expect(source).not.toContain(`host.${privateField}`)
     }
-    expect(source).toContain('<OperatingSystemIcon')
-    expect(source).toContain('<CountryFlagIcon')
+    // System and region details sit behind the same hover cards as the cluster page;
+    // they only read fields the public snapshot already whitelists.
+    expect(source).toContain('<ClusterHostSystemInfo class="share-card__system" :system="host" />')
+    expect(source).toContain('<ClusterHostRegionInfo class="share-card__region" :location="host.location" shared />')
+    expect(source.indexOf('<ClusterHostRegionInfo')).toBeLessThan(source.indexOf('<h2>{{ host.name }}</h2>'))
+    expect(source).not.toContain('<OperatingSystemIcon')
+    expect(source).not.toContain('<CountryFlagIcon')
     expect(source).toContain("formatNetworkTrafficCounter(clusterTrafficCounters(host), 'received')")
     expect(source).toContain("formatNetworkTrafficCounter(clusterTrafficCounters(host), 'sent')")
     expect(source).not.toContain('formatTotalNetworkTraffic')
@@ -311,16 +316,21 @@ describe('ClusterShareView anonymous snapshot', () => {
     expect(source).toContain(':hosts="filteredHosts"')
     expect(source).toContain('const { resolved: resolvedTheme, setTheme } = useTheme()')
     expect(source).toContain(':class="`is-${viewMode}`"')
-    expect(source.indexOf('<dt>实时流量</dt>')).toBeLessThan(source.indexOf('<dt><ClusterTrafficHeading'))
-    expect(source.indexOf('<dt><ClusterTrafficHeading')).toBeLessThan(source.indexOf('运行时间</dt>'))
+    expect(source.indexOf('实时网速</dt>')).toBeLessThan(source.indexOf('<ClusterTrafficHeading'))
+    expect(source.indexOf('<ClusterTrafficHeading')).toBeLessThan(source.indexOf('运行时间</dt>'))
     expect(source).toContain('<div class="share-details__uptime">')
-    expect(source).toContain('grid-template-columns: minmax(300px, 1fr) minmax(300px, 0.95fr) 24rem;')
-    expect(source).toMatch(/\.share-grid\.is-list \.share-details \{[^}]*grid-template-columns:\s*minmax\(0, 13rem\) minmax\(0, 11rem\);[^}]*justify-content:\s*start;/)
-    expect(source).toMatch(/\.share-grid\.is-list \.share-details__traffic \{[^}]*grid-column:\s*1;/)
-    expect(source).toMatch(/\.share-grid\.is-list \.share-details__uptime \{[^}]*grid-column:\s*2;[^}]*grid-row:\s*1 \/ span 2;/)
+    expect(source).toContain('formatCapacityPair(host.memory.usedBytes, host.memory.totalBytes)')
+    expect(source).toContain(':class="`is-${usageTone(host.disk.usagePercent)}`"')
     expect(source).toContain('@click="load()"')
     expect(source).toContain('<span>刷新</span>')
-    expect(source).toMatch(/@media \(max-width: 650px\)[\s\S]*?\.share-grid\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);/)
+
+    // Same responsive contract as the cluster list: no sideways scrolling at any width.
+    const styles = source.slice(source.indexOf('<style scoped>'))
+    expect(styles).toMatch(/\.share-grid\s*\{[^}]*container:\s*share-layout \/ inline-size;[^}]*grid-template-columns:\s*repeat\(auto-fill, minmax\(min\(100%, 22\.5rem\), 1fr\)\);/)
+    const medium = styles.slice(styles.indexOf('@container share-layout (min-width: 42.5rem)'), styles.indexOf('@container share-layout (min-width: 62rem)'))
+    expect(medium).toMatch(/grid-template-areas:\s*"header header"\s*"metrics details";/)
+    expect(styles.slice(styles.indexOf('@container share-layout (min-width: 62rem)'))).toMatch(/grid-template-areas:\s*"header metrics details";/)
+    expect(styles).not.toMatch(/minmax\(300px, 1fr\) minmax\(300px, 0\.95fr\) 24rem/)
 
     const routerSource = readFileSync(new URL('../router.ts', import.meta.url), 'utf8')
     expect(routerSource).toContain("path: '/share/:token'")

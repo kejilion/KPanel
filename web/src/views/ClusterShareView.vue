@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import ClusterShareTheme from '@/components/cluster/ClusterShareTheme.vue'
 import ClusterHostDetails from '@/components/cluster/ClusterHostDetails.vue'
+import ClusterHostRegionInfo from '@/components/cluster/ClusterHostRegionInfo.vue'
+import ClusterHostSystemInfo from '@/components/cluster/ClusterHostSystemInfo.vue'
 import ClusterRemainingValue from '@/components/cluster/ClusterRemainingValue.vue'
 import ClusterTemporarySortMenu from '@/components/cluster/ClusterTemporarySortMenu.vue'
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -8,6 +10,7 @@ import { useRoute } from 'vue-router'
 import {
   Activity,
   ArrowDown,
+  ArrowDownUp,
   ArrowUp,
   Clock3,
   Gauge,
@@ -15,7 +18,6 @@ import {
   HardDrive,
   LayoutGrid,
   LayoutList,
-  MapPin,
   MemoryStick,
   Moon,
   RefreshCw,
@@ -24,13 +26,13 @@ import {
   Sun,
 } from '@lucide/vue'
 import LogoMark from '@/components/common/LogoMark.vue'
-import CountryFlagIcon from '@/components/overview/CountryFlagIcon.vue'
-import OperatingSystemIcon from '@/components/overview/OperatingSystemIcon.vue'
+import StatusBadge from '@/components/feedback/StatusBadge.vue'
 import { usePhraseCatalog } from '@/i18n/phrase'
 import { useI18n } from '@/i18n'
 import { sortPublicClusterHostsTemporarily, type ClusterHostTemporarySortKey, type ClusterHostTemporarySortDirection } from '@/lib/clusterHostTemporarySort'
 import { ApiError, api } from '@/lib/api'
 import { clusterTrafficCounters, formatNetworkTrafficCounter } from '@/lib/networkTraffic'
+import { formatCapacityPair, usageTone } from '@/lib/clusterHostIdentity'
 import ClusterTrafficHeading from '@/components/cluster/ClusterTrafficHeading.vue'
 import {
   clampPercent,
@@ -40,7 +42,6 @@ import {
   formatRate,
   relativeTime,
 } from '@/lib/format'
-import { detectOperatingSystemIdentity } from '@/lib/operatingSystem'
 import { useTheme } from '@/stores/theme'
 import type { PublicClusterShareHost, PublicClusterShareSnapshot } from '@/types/api'
 
@@ -93,10 +94,6 @@ let pollTimer: number | undefined
 const token = computed(() => String(route.params.token || ''))
 const tokenIsValid = computed(() => /^[a-f0-9]{64}$/.test(token.value))
 
-function operatingSystemIdentity(host: PublicClusterShareHost) {
-  return detectOperatingSystemIdentity({ os: host.os })
-}
-
 function setViewMode(mode: ShareViewMode): void {
   viewMode.value = mode
   try { window.localStorage.setItem(viewModeStorageKey, mode) } catch { /* Keep the current page choice. */ }
@@ -120,12 +117,6 @@ function stateLabel(state: PublicClusterShareHost['state']): string {
     offline: '离线',
     pending: '等待数据',
   }[state]
-}
-
-function locationLabel(host: PublicClusterShareHost): string {
-  return [host.location.country, host.location.region, host.location.city]
-    .filter((value, index, items) => value && items.indexOf(value) === index)
-    .join(' · ') || '地区未公开'
 }
 
 function friendlyError(reason: unknown): string {
@@ -311,35 +302,17 @@ onBeforeUnmount(() => {
         :class="`is-${viewMode}`"
         :aria-label="viewMode === 'list' ? '公开机器行列表' : '公开机器卡片列表'"
       >
-        <article v-for="host in filteredHosts" :key="host.id" class="share-card">
+        <article v-for="host in filteredHosts" :key="host.id" class="share-card" :class="`is-state-${host.state}`">
           <header class="share-card__header">
-            <OperatingSystemIcon
-              :distro="operatingSystemIdentity(host).key"
-              :label="operatingSystemIdentity(host).label"
-            />
+            <ClusterHostSystemInfo class="share-card__system" :system="host" />
             <div class="share-card__identity">
-              <h2>{{ host.name }}</h2>
-              <p class="share-card__system">
-                <span>{{ host.os || operatingSystemIdentity(host).label }}</span>
-                <small v-if="host.architecture">{{ host.architecture }}</small>
-              </p>
-              <p class="share-card__location">
-                <CountryFlagIcon
-                  v-if="host.location.countryCode"
-                  :country-code="host.location.countryCode"
-                  :label="host.location.country || '地区'"
-                />
-                <MapPin v-else :size="12" />
-                <span>{{ locationLabel(host) }}</span>
-                <em>{{ host.location.isp || '网络信息未公开' }}</em>
-              </p>
-              <ClusterHostDetails :details="host" />
-            </div>
-            <div class="share-card__aside">
-              <span class="share-status" :class="`is-${host.state}`">
-                <i /> {{ stateLabel(host.state) }}
+              <span class="share-card__title">
+                <ClusterHostRegionInfo class="share-card__region" :location="host.location" shared />
+                <h2>{{ host.name }}</h2>
+                <StatusBadge :status="host.state" :label="stateLabel(host.state)" subtle />
               </span>
-              <small>{{ host.collectedAt ? `采集于 ${relativeTime(host.collectedAt)}` : '尚无数据' }}</small>
+              <small class="share-card__collected">{{ host.collectedAt ? `采集于 ${relativeTime(host.collectedAt)}` : '尚无数据' }}</small>
+              <ClusterHostDetails :details="host" />
             </div>
           </header>
 
@@ -347,34 +320,34 @@ onBeforeUnmount(() => {
             <div>
               <span><Gauge :size="14" /> CPU</span>
               <strong>{{ formatPercent(host.cpu.usagePercent) }}</strong>
-              <i><b :style="{ width: `${clampPercent(host.cpu.usagePercent)}%` }" /></i>
+              <i :class="`is-${usageTone(host.cpu.usagePercent)}`"><b :style="{ width: `${clampPercent(host.cpu.usagePercent)}%` }" /></i>
               <small>{{ host.cpu.cores }} 核</small>
             </div>
             <div>
               <span><MemoryStick :size="14" /> 内存</span>
               <strong>{{ formatPercent(host.memory.usagePercent) }}</strong>
-              <i><b :style="{ width: `${clampPercent(host.memory.usagePercent)}%` }" /></i>
-              <small>{{ host.memory.totalBytes ? `${Math.round(host.memory.totalBytes / 1073741824)} GB` : '—' }}</small>
+              <i :class="`is-${usageTone(host.memory.usagePercent)}`"><b :style="{ width: `${clampPercent(host.memory.usagePercent)}%` }" /></i>
+              <small>{{ formatCapacityPair(host.memory.usedBytes, host.memory.totalBytes) }}</small>
             </div>
             <div>
               <span><HardDrive :size="14" /> 磁盘</span>
               <strong>{{ formatPercent(host.disk.usagePercent) }}</strong>
-              <i><b :style="{ width: `${clampPercent(host.disk.usagePercent)}%` }" /></i>
-              <small>{{ host.disk.totalBytes ? `${Math.round(host.disk.totalBytes / 1073741824)} GB` : '—' }}</small>
+              <i :class="`is-${usageTone(host.disk.usagePercent)}`"><b :style="{ width: `${clampPercent(host.disk.usagePercent)}%` }" /></i>
+              <small>{{ formatCapacityPair(host.disk.usedBytes, host.disk.totalBytes) }}</small>
             </div>
           </div>
           <div v-else class="share-card__empty">等待第一份状态数据</div>
 
           <dl class="share-details">
-            <div class="share-details__traffic">
-              <dt>实时流量</dt>
+            <div class="share-details__rate">
+              <dt><Activity :size="14" /> 实时网速</dt>
               <dd>
-                <span title="实时下行">
+                <span class="share-flow is-down" title="实时下行">
                   <ArrowDown :size="13" aria-hidden="true" />
                   <span class="sr-only">实时下行</span>
                   {{ formatRate(host.network.receiveBytesPerSecond || 0) }}
                 </span>
-                <span title="实时上行">
+                <span class="share-flow is-up" title="实时上行">
                   <ArrowUp :size="13" aria-hidden="true" />
                   <span class="sr-only">实时上行</span>
                   {{ formatRate(host.network.transmitBytesPerSecond || 0) }}
@@ -382,14 +355,14 @@ onBeforeUnmount(() => {
               </dd>
             </div>
             <div class="share-details__traffic">
-              <dt><ClusterTrafficHeading :period="host.trafficPeriod" :details="host" /></dt>
+              <dt><ArrowDownUp :size="14" /> <ClusterTrafficHeading :period="host.trafficPeriod" :details="host" /></dt>
               <dd>
-                <span title="累计接收">
+                <span class="share-flow is-down" title="累计接收">
                   <ArrowDown :size="13" aria-hidden="true" />
                   <span class="sr-only">累计接收</span>
                   {{ host.collectedAt ? formatNetworkTrafficCounter(clusterTrafficCounters(host), 'received') : '—' }}
                 </span>
-                <span title="累计传送">
+                <span class="share-flow is-up" title="累计传送">
                   <ArrowUp :size="13" aria-hidden="true" />
                   <span class="sr-only">累计传送</span>
                   {{ host.collectedAt ? formatNetworkTrafficCounter(clusterTrafficCounters(host), 'sent') : '—' }}
@@ -397,7 +370,7 @@ onBeforeUnmount(() => {
               </dd>
             </div>
             <div class="share-details__uptime">
-              <dt><Clock3 :size="13" /> 运行时间</dt>
+              <dt><Clock3 :size="14" /> 运行时间</dt>
               <dd>{{ host.uptimeSeconds ? formatDuration(host.uptimeSeconds) : '—' }}</dd>
             </div>
           </dl>
@@ -426,8 +399,8 @@ onBeforeUnmount(() => {
   overflow: hidden;
   color: var(--text);
   background:
-    radial-gradient(circle at 16% -8%, color-mix(in srgb, var(--brand) 18%, transparent), transparent 34%),
-    radial-gradient(circle at 92% 4%, color-mix(in srgb, var(--blue) 12%, transparent), transparent 30%),
+    radial-gradient(circle at 16% -8%, color-mix(in srgb, var(--brand) 14%, transparent), transparent 34%),
+    radial-gradient(circle at 92% 4%, color-mix(in srgb, var(--blue) 9%, transparent), transparent 30%),
     var(--bg);
   transition: color 0.2s ease, background 0.2s ease;
 }
@@ -438,7 +411,7 @@ onBeforeUnmount(() => {
   height: 440px;
   pointer-events: none;
   filter: blur(100px);
-  opacity: 0.14;
+  opacity: 0.1;
   border-radius: 50%;
 }
 
@@ -463,9 +436,6 @@ onBeforeUnmount(() => {
 .share-icon-button,
 .share-view-switch,
 .share-view-switch button,
-.share-card__header,
-.share-status,
-.share-details dt,
 .share-footer {
   display: flex;
   align-items: center;
@@ -495,7 +465,7 @@ onBeforeUnmount(() => {
   color: var(--text-soft);
   background: color-mix(in srgb, var(--surface) 92%, transparent);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   box-shadow: var(--shadow-sm);
   cursor: pointer;
 }
@@ -505,171 +475,228 @@ onBeforeUnmount(() => {
 .share-icon-button:hover { color: var(--brand-strong); border-color: var(--brand-muted); }
 .share-refresh:disabled { cursor: wait; opacity: 0.58; }
 
+/* The hero follows the cluster summary band: one tinted surface, a quiet ring, clear dividers. */
+.share-hero {
+  position: relative;
+  display: grid;
+  overflow: hidden;
+  isolation: isolate;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 20px;
+  padding: clamp(20px, 2vw, 26px);
+  margin-bottom: 16px;
+  background:
+    radial-gradient(circle at 86% 0%, color-mix(in srgb, var(--brand) 10%, transparent), transparent 34%),
+    linear-gradient(110deg, color-mix(in srgb, var(--brand) 6%, var(--surface)) 0%, var(--surface) 58%);
+  border: 1px solid color-mix(in srgb, var(--brand) 22%, var(--border));
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.share-hero::before {
+  position: absolute;
+  z-index: 0;
+  top: 50%;
+  right: 42px;
+  width: 200px;
+  height: 200px;
+  border: 30px solid color-mix(in srgb, var(--brand) 6%, transparent);
+  border-radius: 50%;
+  content: '';
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.share-hero > * { position: relative; z-index: 1; }
+
+.share-kicker { display: flex; align-items: center; gap: 7px; color: var(--brand-strong); font-size: 12px; font-weight: 700; letter-spacing: 0.16em; }
+.share-hero h1 { margin: 8px 0 6px; font-size: clamp(28px, 3vw, 36px); line-height: 1.15; }
+.share-hero p { max-width: 670px; margin: 0 0 8px; color: var(--text-soft); font-size: 14px; line-height: 1.6; }
+.share-hero small { color: var(--muted); font-size: .8125rem; }
+
+.share-stats { display: grid; grid-template-columns: repeat(3, minmax(80px, 1fr)); align-items: center; }
+.share-stats:has(> .cluster-value) { grid-template-columns: repeat(3, minmax(80px, 1fr)) minmax(150px, 1.6fr); }
+.share-stats > div { display: grid; gap: 4px; padding: 4px 18px; text-align: center; border-left: 1px solid var(--border); }
+.share-stats > div:first-child { border-left: 0; }
+.share-stats strong { font-size: 25px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.share-stats span { color: var(--muted); font-size: 12px; }
+.share-stats .is-online strong { color: var(--success); }
+.share-stats .is-attention strong { color: var(--warning); }
+
+.share-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px; margin-bottom: 16px; }
+.share-search { display: flex; align-items: center; gap: 10px; max-width: 520px; min-width: 0; padding: 0 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-soft); background: var(--surface); }
+.share-search input { min-width: 0; width: 100%; min-height: 40px; padding: 9px 0; font-size: .875rem; color: var(--text); background: transparent; border: 0; outline: none; box-shadow: none; }
+.share-search:focus-within { border-color: var(--brand); box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 16%, transparent); }
+.share-sort { display: flex; min-width: 0; min-height: 40px; align-items: stretch; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); }
+.share-sort:focus-within { border-color: var(--brand); box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 16%, transparent); }
+.share-sort__direction { display: grid; place-items: center; min-width: 40px; padding: 0; color: var(--muted); background: transparent; border: 0; border-left: 1px solid var(--border); cursor: pointer; }
+.share-sort__direction:hover:not(:disabled) { color: var(--brand); background: var(--brand-soft); }
+.share-sort__direction:disabled { opacity: .4; cursor: not-allowed; }
+.share-sort__direction:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+
 .share-view-switch {
+  gap: 3px;
   padding: 3px;
-  background: var(--surface-subtle);
+  background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 11px;
+  border-radius: var(--radius-sm);
 }
 
 .share-view-switch button {
-  min-height: 30px;
-  gap: 5px;
+  min-height: 32px;
+  gap: 6px;
   padding: 0 10px;
   color: var(--muted);
   background: transparent;
   border: 0;
-  border-radius: 8px;
+  border-radius: calc(var(--radius-sm) - 3px);
   cursor: pointer;
   font-size: .875rem;
   font-weight: 600;
 }
 
-.share-view-switch button.is-active {
-  color: var(--brand-strong);
-  background: var(--surface);
-  box-shadow: var(--shadow-sm);
-}
+.share-view-switch button:hover { color: var(--text); background: var(--interaction-hover); }
+.share-view-switch button.is-active { color: var(--brand); background: var(--brand-soft); }
 
-.share-hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
-  gap: 20px;
-  padding: clamp(20px, 2vw, 24px);
-  margin-bottom: 14px;
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--brand-soft) 46%, transparent), transparent 48%),
-    color-mix(in srgb, var(--surface) 96%, transparent);
-  border: 1px solid var(--border);
-  border-radius: 24px;
-  box-shadow: var(--shadow-md);
-  backdrop-filter: blur(18px);
-}
-
-.share-kicker { display: flex; align-items: center; gap: 7px; color: var(--brand-strong); font-size: 12px; font-weight: 700; letter-spacing: 0.16em; }
-.share-hero h1 { margin: 7px 0 4px; font-size: clamp(28px, 3vw, 38px); line-height: 1.05; }
-.share-hero p { max-width: 670px; margin: 0 0 7px; color: var(--text-soft); font-size: 14px; line-height: 1.5; }
-.share-hero small { color: var(--muted); }
-
-.share-stats { display: grid; grid-template-columns: repeat(3, minmax(70px, 1fr)); align-items: center; }
-.share-stats:has(> .cluster-value) { grid-template-columns: repeat(3, minmax(70px, 1fr)) minmax(150px, 1.6fr); }
-.share-stats > div { display: grid; gap: 3px; padding: 2px 16px; border-left: 1px solid var(--border); }
-.share-stats strong { font-size: 25px; line-height: 1; }
-.share-stats span { color: var(--muted); font-size: 12px; }
-.share-stats .is-online strong { color: var(--brand); }
-.share-stats .is-attention strong { color: var(--amber); }
-
-.share-grid { display: grid; gap: 12px; }
-.share-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 16px; margin-bottom: 16px; }
-.share-toolbar .share-view-switch { justify-self: end; }
-.share-sort { display: flex; min-width: 0; align-items: center; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); }
-.share-sort__direction { display: grid; place-items: center; min-width: 38px; min-height: 40px; padding: 0; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-soft); cursor: pointer; }
-.share-sort__direction:hover { background: var(--interaction-hover); }
-.share-sort__direction:disabled { opacity: .4; cursor: default; }
-.share-sort__direction:focus-visible { outline: 3px solid var(--brand); outline-offset: -3px; }
-.share-search { display: flex; align-items: center; gap: 10px; max-width: 520px; min-width: 0; padding: 0 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-soft); background: var(--surface); }
-.share-search input { min-width: 0; width: 100%; min-height: 42px; padding: 10px 0; font-size: .875rem; color: var(--text); background: transparent; border: 0; outline: none; box-shadow: none; }
-.share-search:focus-within { outline: 2px solid var(--brand); outline-offset: 2px; }
 @media (max-width: 900px) {
   .share-toolbar { grid-template-columns: minmax(0, 1fr) auto; }
   .share-search { grid-column: 1 / -1; max-width: none; }
 }
 @media (max-width: 560px) {
-  .share-toolbar { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .share-toolbar { grid-template-columns: minmax(0, 1fr); }
+  .share-view-switch button { flex: 1; justify-content: center; }
 }
-.share-grid.is-card { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 15px; }
-.share-grid.is-card .share-card { display: flex; flex-direction: column; }
-.share-grid.is-card .share-card__header { grid-template-columns: auto minmax(0, 1fr); align-items: start; flex: 1; }
-.share-grid.is-card .share-card__aside { grid-column: 1 / -1; display: flex; flex-wrap: wrap; justify-content: space-between; }
+
+/* Host cards mirror the cluster page: identity, metric tiles, then live and cumulative traffic. */
+.share-grid {
+  display: grid;
+  container: share-layout / inline-size;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 22.5rem), 1fr));
+  gap: 16px;
+}
+
+.share-grid.is-list { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+
 .share-card {
+  position: relative;
+  display: flex;
   min-width: 0;
+  flex-direction: column;
   overflow: hidden;
   background: color-mix(in srgb, var(--surface) 96%, transparent);
   border: 1px solid var(--border);
-  border-radius: 18px;
+  border-radius: var(--radius);
   box-shadow: var(--shadow-sm);
-  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
-}
-.share-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow-md); transform: translateY(-1px); }
-
-.share-grid.is-list .share-card {
-  display: grid;
-  grid-template-columns: minmax(300px, 1fr) minmax(300px, 0.95fr) 24rem;
-  grid-template-areas: "header metrics details";
-  align-items: stretch;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
 }
 
-.share-grid.is-list .share-card__header { grid-area: header; border-right: 1px solid var(--border); }
-.share-grid.is-list .share-card__aside { display: contents; }
-.share-grid.is-list .share-status { grid-column: 3; grid-row: 1; justify-self: end; }
-.share-grid.is-list .share-card__aside > small { grid-column: 2 / -1; grid-row: 2; }
-.share-grid.is-list .share-metrics { grid-area: metrics; border-block: 0; border-right: 1px solid var(--border); }
-.share-grid.is-list .share-details { grid-area: details; grid-template-columns: minmax(0, 13rem) minmax(0, 11rem); justify-content: start; gap: 0; padding: 0; }
-.share-grid.is-list .share-details__traffic { grid-column: 1; padding: 6px 14px 12px; }
-.share-grid.is-list .share-details__traffic:first-child { align-self: end; padding-top: 12px; padding-bottom: 6px; }
-.share-grid.is-list .share-details__uptime { grid-column: 2; grid-row: 1 / span 2; display: grid; align-content: center; align-self: stretch; padding: 14px; border-left: 1px solid var(--border); }
+/* The state accent mirrors the status badge tone; the badge text stays the primary signal. */
+.share-card::before {
+  position: absolute;
+  z-index: 1;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--share-card-accent, transparent);
+  content: '';
+  pointer-events: none;
+}
 
-.share-card__header { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 14px; }
-.share-card__header :deep(.os-identity__mark) { width: 40px; height: 40px; border-radius: 11px; }
-.share-card__header :deep(.os-identity__mark svg) { width: 23px; height: 23px; }
-.share-card h2 { margin: 0 0 6px; font-size: 1rem; line-height: 1.5; overflow-wrap: anywhere; }
-.share-card__identity { min-width: 0; }
-.share-card__system { display: flex; flex-wrap: wrap; min-width: 0; align-items: center; gap: 6px; margin: 0 0 7px; color: var(--text-soft); font-size: .8125rem; line-height: 1.5; overflow-wrap: anywhere; }
-.share-card__system small { flex: 0 0 auto; padding: 1px 4px; color: var(--text-soft); background: var(--neutral-soft); border-radius: var(--radius-sm); font-size: .75rem; }
-.share-card__location { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin: 0; color: var(--text-soft); font-size: .75rem; line-height: 1.5; overflow-wrap: anywhere; }
-.share-card__location em { color: var(--text-soft); font-size: .75rem; font-style: normal; }
-.share-card__location em::before { margin-right: 5px; content: "·"; }
-.share-card__location :deep(.country-flag) { width: 16px; height: 16px; }
-.share-card__aside { display: grid; min-width: 58px; justify-items: end; align-content: center; gap: 6px; }
-.share-card__aside > small { color: var(--text-soft); font-size: .75rem; line-height: 1.5; font-variant-numeric: tabular-nums; }
-.share-status { gap: 5px; color: var(--text-soft); font-size: .8125rem; white-space: nowrap; }
-.share-status i { width: 7px; height: 7px; background: currentColor; border-radius: 50%; box-shadow: 0 0 10px currentColor; }
-.share-status.is-online { color: var(--brand); }
-.share-status.is-degraded { color: var(--amber); }
-.share-status.is-offline { color: var(--danger); }
+.share-card.is-state-degraded { --share-card-accent: var(--warning); }
+.share-card.is-state-offline { --share-card-accent: var(--danger); }
+.share-card:hover { border-color: color-mix(in srgb, var(--brand) 24%, var(--border)); box-shadow: var(--shadow-md); }
 
-.share-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-block: 1px solid var(--border); }
-.share-metrics > div { display: grid; align-content: center; gap: 5px; padding: 11px 13px; border-left: 1px solid var(--border); }
-.share-metrics > div:first-child { border-left: 0; }
-.share-metrics span { display: flex; align-items: center; gap: 5px; color: var(--text-soft); font-size: .8125rem; }
-.share-metrics strong { font-size: 16px; }
-.share-metrics > div > i { height: 4px; overflow: hidden; background: var(--neutral-soft); border-radius: 10px; }
-.share-metrics b { display: block; height: 100%; background: linear-gradient(90deg, var(--blue), var(--brand)); border-radius: inherit; }
-.share-metrics small { color: var(--text-soft); font-size: .75rem; }
-.share-card__empty { padding: 29px; color: var(--muted); text-align: center; border-block: 1px solid var(--border); }
+/* Cards in one row share section tracks, so a wrapped name never shifts the meters. */
+@supports (grid-template-rows: subgrid) {
+  .share-grid.is-card { row-gap: 0; }
+  .share-grid.is-card .share-card { display: grid; grid-row: span 3; grid-template-rows: subgrid; row-gap: 0; margin-bottom: 16px; }
+}
 
-.share-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 14px; padding: 14px; margin: 0; font-variant-numeric: tabular-nums; }
-.share-details div { min-width: 0; }
-/* Each direction stays together; list traffic rows share a separate uptime column. */
-.share-details__traffic dd { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.share-details__traffic dd > span { display: flex; min-width: 0; align-items: center; gap: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.share-details__traffic dd svg { flex: 0 0 auto; color: var(--muted); }
-.share-details dt { gap: 4px; margin-bottom: 6px; color: var(--text-soft); font-size: .75rem; }
-.share-details dd { margin: 0; font-size: .875rem; font-weight: 500; line-height: 1.5; overflow-wrap: anywhere; }
+.share-card__header { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 12px; padding: 14px 14px 12px; }
+.share-card__header :deep(.os-identity__mark) { width: 40px; height: 40px; border-radius: var(--radius); }
+.share-card__header :deep(.os-identity__mark svg),
+.share-card__header :deep(.os-identity__mark img) { width: 22px; height: 22px; }
+.share-card__identity { display: grid; min-width: 0; gap: 3px; }
+.share-card__title { display: flex; flex-wrap: wrap; min-width: 0; align-items: center; gap: 6px 8px; }
+.share-card__title :deep(.country-flag) { width: 20px; height: 20px; }
+.share-card h2 { min-width: 0; margin: 0; font-size: 1rem; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+.share-card__collected { color: var(--muted); font-size: .8125rem; line-height: 1.45; font-variant-numeric: tabular-nums; }
+
+.share-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding: 0 14px 10px; }
+.share-metrics > div { display: grid; min-width: 0; align-content: start; gap: 6px; padding: 10px 11px; background: var(--surface-subtle); border: 1px solid color-mix(in srgb, var(--border) 70%, transparent); border-radius: var(--radius); }
+.share-metrics span { display: inline-flex; min-width: 0; align-items: center; gap: 5px; color: var(--text-soft); font-size: .8125rem; line-height: 1.4; }
+.share-metrics strong { font-size: 1.125rem; font-weight: 600; line-height: 1.25; font-variant-numeric: tabular-nums; }
+.share-metrics small { color: var(--text-soft); font-size: .75rem; line-height: 1.45; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.share-metrics > div > i { display: block; height: 4px; overflow: hidden; background: color-mix(in srgb, var(--text-soft) 14%, transparent); border-radius: 999px; }
+.share-metrics b { display: block; height: 100%; background: linear-gradient(90deg, var(--brand), #3bbfa3); border-radius: inherit; transition: width 300ms ease; }
+.share-metrics i.is-warning b { background: var(--warning); }
+.share-metrics i.is-danger b { background: var(--danger); }
+.share-card__empty { display: grid; min-height: 120px; place-items: center; padding: 16px 20px; color: var(--muted); text-align: center; }
+
+.share-details { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; gap: 8px; padding: 0 14px 14px; margin: 0; font-variant-numeric: tabular-nums; }
+.share-details > div { display: grid; min-width: 0; align-content: start; gap: 3px; padding: 6px 11px; }
+.share-details dt { display: inline-flex; min-width: 0; align-items: center; gap: 5px; margin: 0; color: var(--text-soft); font-size: .8125rem; line-height: 1.4; }
+.share-details dd { display: grid; gap: 3px; margin: 0; font-size: .875rem; font-weight: 500; line-height: 1.45; overflow-wrap: anywhere; }
+.share-details__rate dd { font-weight: 600; }
+.share-flow { display: flex; min-width: 0; align-items: center; gap: 4px; }
+.share-flow > svg { flex: 0 0 auto; }
+.share-flow.is-down > svg { color: var(--blue); }
+.share-flow.is-up > svg { color: var(--success); }
+
+/* Rows: identity above the data while mid-width, one line once every group fits. */
+@container share-layout (min-width: 42.5rem) {
+  .share-grid.is-list .share-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+    grid-template-areas:
+      "header header"
+      "metrics details";
+    align-items: stretch;
+  }
+
+  .share-grid.is-list .share-card__header { grid-area: header; padding: 12px 14px; }
+  .share-grid.is-list .share-metrics { grid-area: metrics; gap: 0; padding: 0; border-top: 1px solid var(--border); border-right: 1px solid var(--border); }
+  .share-grid.is-list .share-metrics > div { align-content: center; padding: 12px 14px; background: transparent; border: 0; border-radius: 0; }
+  .share-grid.is-list .share-details { grid-area: details; align-content: stretch; gap: 0; padding: 0; border-top: 1px solid var(--border); }
+  .share-grid.is-list .share-details > div { align-content: center; padding: 12px 14px; }
+  .share-grid.is-list .share-card__empty { grid-column: 1 / -1; grid-row: 2; min-height: 92px; border-top: 1px solid var(--border); }
+}
+
+@container share-layout (min-width: 62rem) {
+  .share-grid.is-list .share-card {
+    grid-template-columns:
+      minmax(16rem, 1.1fr)
+      minmax(18rem, 1.15fr)
+      minmax(21rem, 1.35fr);
+    grid-template-areas: "header metrics details";
+  }
+
+  .share-grid.is-list .share-card__header { border-right: 1px solid var(--border); }
+  .share-grid.is-list .share-metrics,
+  .share-grid.is-list .share-details { border-top: 0; }
+  .share-grid.is-list .share-metrics > div,
+  .share-grid.is-list .share-details > div { padding: 12px 8px; }
+  .share-grid.is-list .share-metrics > div:first-child,
+  .share-grid.is-list .share-details > div:first-child { padding-left: 14px; }
+  .share-grid.is-list .share-card__empty { grid-area: 1 / 2 / 2 / 4; border-top: 0; }
+}
+
+@container share-layout (max-width: 30rem) {
+  .share-card__header { padding: 12px 12px 10px; }
+  .share-metrics,
+  .share-details { padding-inline: 10px; gap: 6px; }
+}
 
 .share-state { display: grid; min-height: 280px; place-items: center; align-content: center; gap: 12px; color: var(--muted); text-align: center; }
 .share-state p { margin: 0; }
 .share-state--error svg { color: var(--danger); }
-.share-warning { padding: 12px 15px; margin-bottom: 14px; color: var(--amber); background: var(--amber-soft); border: 1px solid color-mix(in srgb, var(--amber) 28%, var(--border)); border-radius: 12px; }
+.share-warning { padding: 12px 15px; margin-bottom: 14px; color: var(--amber); background: var(--amber-soft); border: 1px solid color-mix(in srgb, var(--amber) 28%, var(--border)); border-radius: var(--radius); }
 .share-footer { justify-content: space-between; gap: 20px; padding: 28px 4px 0; color: var(--muted); font-size: 12px; }
 .share-footer strong { color: var(--text-soft); }
 
-@media (max-width: 1100px) {
-  .share-grid.is-list .share-card {
-    grid-template-columns: minmax(300px, 0.95fr) minmax(0, 1.35fr);
-    grid-template-areas:
-      "header metrics"
-      "details details";
-  }
-  .share-grid.is-list .share-metrics { border-right: 0; }
-  .share-grid.is-list .share-details { border-top: 1px solid var(--border); }
-}
-
 @media (max-width: 1000px) {
-  .share-grid.is-card { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .share-hero { grid-template-columns: 1fr; align-items: start; gap: 16px; }
-  .share-stats div:first-child { border-left: 0; }
+  .share-hero::before { display: none; }
 }
 
 @media (max-width: 650px) {
@@ -678,31 +705,23 @@ onBeforeUnmount(() => {
   .share-header__actions { gap: 6px; }
   .share-view-switch button { padding-inline: 8px; }
   .share-refresh span { display: none; }
-  .share-hero { gap: 14px; padding: 18px 16px; border-radius: 18px; }
-  .share-hero h1 { font-size: 30px; }
+  .share-hero { gap: 14px; padding: 18px 16px; }
+  .share-hero h1 { font-size: 28px; }
   .share-stats, .share-stats:has(> .cluster-value) { width: 100%; grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .share-stats > .cluster-value { grid-column: 1 / -1; margin-top: .75rem; padding-top: .75rem; border-left: 0; border-top: 1px solid var(--border); }
-  .share-stats div { padding: 2px 13px; }
-  .share-stats div:first-child { border-left: 0; }
-  .share-grid { grid-template-columns: minmax(0, 1fr); }
-  .share-grid.is-card { grid-template-columns: minmax(0, 1fr); }
-  .share-grid.is-list .share-card { display: block; }
-  .share-grid.is-list .share-card__header { border-right: 0; }
-  .share-grid.is-list .share-details { border-top: 0; }
-  .share-grid.is-list .share-metrics { border-block: 1px solid var(--border); }
+  .share-stats > div { padding: 2px 12px; }
   .share-footer { align-items: flex-start; flex-direction: column; }
 }
 
 @media (max-width: 430px) {
   .share-header { align-items: center; flex-wrap: wrap; }
   .share-brand strong { display: none; }
-  .share-view-switch button { justify-content: center; }
-  .share-stats div { padding-inline: 10px; }
-  .share-details { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .share-grid.is-list .share-details { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); justify-content: stretch; }
+  .share-stats > div { padding-inline: 8px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .spin { animation: none; }
+  .share-card,
+  .share-metrics b { transition: none; }
 }
 </style>

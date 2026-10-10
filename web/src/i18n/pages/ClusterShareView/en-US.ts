@@ -34,7 +34,7 @@ export default [
   ['集群状态概览', 'Cluster status overview'],
   ['核', 'cores'],
   ['内存', 'Memory'],
-  ['实时流量', 'Live traffic'],
+  ['实时网速', 'Live throughput'],
   ['实时下行', 'Live download'],
   ['实时上行', 'Live upload'],
   ['尚无数据', 'No data yet'],

@@ -173,6 +173,7 @@ export default [
   ["远端不可达；可稍后在目标 KPanel 撤销残留授权。", "Remotely unattainable; residual authorization may be withdrawn later at target KPanel."],
   ["远端授权也已撤销。", "The remote authorization has also been withdrawn."],
   ["运行时间", "Run Time"],
+  ["实时网速", "Live throughput"],
   ["在目标 KPanel 的“集群 → 接入授权”复制接入凭据，然后在此整段粘贴。", "Copying the access certificate for the \"cluster access authorization\" for the target KPanel, then pasting the entire paragraph."],
   ["在目标 KPanel 一键复制，然后完整粘贴到这里", "Copy in target KPanel with one key and then paste here in its entirety"],
   ["在线", "Online"],
