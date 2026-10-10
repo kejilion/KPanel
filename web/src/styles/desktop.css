@@ -1949,6 +1949,18 @@ body.desktop-mode-open::-webkit-scrollbar {
   height: 100%;
 }
 
+.desktop__shortcut-artwork--file {
+  width: 100%;
+  height: 100%;
+  background: color-mix(in srgb, var(--desktop-file-color) 62%, #000);
+  border-radius: inherit;
+}
+
+.desktop__shortcut-artwork--file > svg {
+  width: 82%;
+  height: 82%;
+}
+
 .desktop__shortcut-artwork--directory {
   width: 58px;
   height: 58px;
