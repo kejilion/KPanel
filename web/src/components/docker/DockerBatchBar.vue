@@ -134,7 +134,9 @@ function actionTitle(action: DockerBatchBarAction, progress?: DockerBatchBarProg
   font-size: 14px;
   white-space: nowrap;
   cursor: pointer;
-  transition: background-color .14s ease, color .14s ease;
+  transition:
+    background-color var(--motion-duration-fast) var(--motion-ease-fade),
+    color var(--motion-duration-fast) var(--motion-ease-fade);
 }
 
 .docker-batch-bar button:hover:not(:disabled) {
