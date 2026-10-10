@@ -5,6 +5,7 @@ import { phraseCatalogVersion, translatePhrase, usePhraseCatalog } from '@/i18n/
 import { getLocale } from '@/i18n'
 import { ApiError, api } from '@/lib/api'
 import { desktopWindowVisibleKey } from '@/lib/desktopRouteKeys'
+import { markOffersSeen } from '@/lib/offersNotice'
 import type { OfferItem, OffersSnapshot } from '@/types/api'
 
 usePhraseCatalog((locale) => locale === 'en-US'
@@ -48,6 +49,7 @@ async function load(refresh = false): Promise<void> {
   loadError.value = ''
   try {
     snapshot.value = await api.offers.list({ refresh, signal: current.signal })
+    if (snapshot.value.state !== 'unavailable') markOffersSeen(snapshot.value.items)
   } catch (error) {
     if (current.signal.aborted) return
     loadError.value = error instanceof ApiError && error.message

@@ -324,6 +324,7 @@ export const zhTWMessages = {
   "route.apps": "應用市場",
   "route.files": "檔案",
   "route.gallery": "圖庫",
+  "route.offersNew": "廣告專欄（有新內容）",
   "route.offers": "廣告專欄",
   "route.terminal": "終端",
   "route.diagnostics": "體檢",

@@ -324,6 +324,7 @@ export const enUSMessages = {
   'route.apps': 'App marketplace',
   'route.files': 'Files',
   'route.gallery': 'Gallery',
+  'route.offersNew': 'Sponsored (new offers)',
   'route.offers': 'Sponsored',
   'route.terminal': 'Terminal',
   'route.diagnostics': 'Diagnostics',

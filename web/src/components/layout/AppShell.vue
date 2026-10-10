@@ -40,6 +40,7 @@ import AgentBanner from '@/components/layout/AgentBanner.vue'
 import LanguageSelector from '@/components/common/LanguageSelector.vue'
 import LogoMark from '@/components/common/LogoMark.vue'
 import StatusBadge from '@/components/feedback/StatusBadge.vue'
+import { hasNewOffers, refreshOffersNotice } from '@/lib/offersNotice'
 import { useSession } from '@/stores/session'
 import { usePanelState } from '@/stores/panel'
 import { useTheme } from '@/stores/theme'
@@ -291,6 +292,7 @@ watch([appearanceReady, wallpaperChoice.id], ([ready, id]) => {
   if (ready && customWallpaperFromID(id)) void wallpaperChoice.loadCustomWallpapers().catch(() => undefined)
 })
 onMounted(() => {
+  void refreshOffersNotice()
   void startAppearanceSync(session.takeAppearanceSnapshot(), session.state.user?.id)
   void refreshAgent()
   agentTimer = window.setInterval(refreshAgent, 30_000)
@@ -452,11 +454,14 @@ watch(
           <RouterLink
             class="icon-button offers-entry-button"
             to="/offers"
-            :aria-label="i18n.t('route.offers')"
+            :aria-label="hasNewOffers ? i18n.t('route.offersNew') : i18n.t('route.offers')"
             :title="i18n.t('route.offers')"
             :aria-current="route.path === '/offers' ? 'page' : undefined"
           >
-            <Megaphone :size="18" aria-hidden="true" />
+            <span class="offers-entry-button__glyph">
+              <Megaphone :size="18" aria-hidden="true" />
+              <i v-if="hasNewOffers" class="offers-entry-button__dot" aria-hidden="true" />
+            </span>
           </RouterLink>
           <button
             class="icon-button desktop-entry-button"

@@ -323,6 +323,7 @@ export const zhCNMessages = {
   'route.apps': '应用市场',
   'route.files': '文件',
   'route.gallery': '图库',
+  'route.offersNew': '广告专栏（有新内容）',
   'route.offers': '广告专栏',
   'route.terminal': '终端',
   'route.diagnostics': '体检',
