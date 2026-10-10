@@ -1235,6 +1235,18 @@ function entryGradient(entry: DesktopEntry): string {
   return `linear-gradient(145deg, #5b7a72 0%, #243b36 100%)`
 }
 
+function entryFallbackBackground(entry: DesktopEntry): string | undefined {
+  let colors: [string, string] | undefined
+  if (entry.kind === 'site') {
+    colors = SITE_GRADIENTS[stableSiteColorIndex(entry)] ?? SITE_GRADIENTS[0]
+  } else if (entry.kind === 'shortcut' && entry.launch === 'external') {
+    colors = ['#38bdf8', '#0369a1']
+  }
+  if (!colors) return undefined
+  const [start, end] = colors
+  return `color-mix(in srgb, ${start} 50%, ${end})`
+}
+
 function openApp(path: string): void {
   const app = findDesktopApp(path)
   if (!app) return
@@ -1394,6 +1406,12 @@ function confirmExternalOpen(): void {
 const externalOpenMonogram = computed(() =>
   externalOpenEntry.value?.name.trim().slice(0, 1).toLocaleUpperCase() || 'K',
 )
+const externalOpenFallbackBackground = computed(() => {
+  const entry = externalOpenEntry.value
+  return entry && (!entry.iconURL || externalOpenImageFailed.value)
+    ? entryFallbackBackground(entry)
+    : undefined
+})
 
 function openAppScriptEntry(entry: DesktopEntry): void {
   const path = `/app-script/${encodeURIComponent(entry.id)}`
@@ -3680,7 +3698,7 @@ const startMenuItems = computed<DesktopStartMenuItem[]>(() => [
       .filter((value): value is string => Boolean(value)),
     iconURL: entry.iconURL,
     icon: entry.icon,
-    gradient: entryGradient(entry),
+    gradient: entryFallbackBackground(entry) ?? entryGradient(entry),
     hidden: hiddenEntryKeys.value.has(entry.key),
   })),
   ...startMenuActions.value,
@@ -4624,6 +4642,7 @@ function onViewportResize(): void {
             :label="entry.name"
             :entry="entry"
             :gradient="entryGradient(entry)"
+            :fallback-background="entryFallbackBackground(entry)"
             :selected="selectedIcons.has(entry.key)"
             :order="visibleDesktopApps.length + index"
             :dragging="draggingIcons.has(entry.key)"
@@ -4665,6 +4684,7 @@ function onViewportResize(): void {
           :label="entry.name"
           :entry="entry"
           :gradient="entryGradient(entry)"
+          :fallback-background="entryFallbackBackground(entry)"
           :selected="selectedIcons.has(entry.key)"
           :order="visibleDesktopApps.length + visibleDynamicEntries.length + index"
           :dragging="draggingIcons.has(entry.key)"
@@ -4762,6 +4782,7 @@ function onViewportResize(): void {
                 :label="member.entry.name"
                 :entry="member.entry"
                 :gradient="entryGradient(member.entry)"
+                :fallback-background="entryFallbackBackground(member.entry)"
                 :selected="selectedIcons.has(member.key)"
                 :order="index"
                 @select="(event) => selectEntry(member.entry!, event)"
@@ -5292,7 +5313,8 @@ function onViewportResize(): void {
         <div class="desktop__external-confirm-entry">
           <span
             class="desktop__external-confirm-icon"
-            :style="{ background: entryGradient(externalOpenEntry) }"
+            :class="{ 'desktop__external-confirm-icon--web-fallback': externalOpenFallbackBackground }"
+            :style="{ background: externalOpenFallbackBackground ?? entryGradient(externalOpenEntry) }"
             aria-hidden="true"
           >
             <img

@@ -80,10 +80,37 @@ describe('DesktopEntryIcon touch interaction', () => {
     wrapper.unmount()
   })
 
+  it.each(['site', 'shortcut'] as const)('uses the solid %s fallback only until its image loads', async (kind) => {
+    const entry = { key: `${kind}:example`, id: 'example', kind, name: '文档', launch: 'external' as const }
+    const wrapper = mount(DesktopEntryIcon, {
+      props: {
+        label: '文档', entry,
+        gradient: 'linear-gradient(145deg, #38bdf8, #0369a1)',
+        fallbackBackground: '#1e93cd',
+      },
+    })
+    const glyph = () => wrapper.get('.desktop__icon-glyph')
+    expect(glyph().classes()).toContain('desktop__icon-glyph--web-fallback')
+    expect((glyph().element as HTMLElement).style.backgroundColor).toBe('rgb(30, 147, 205)')
+    await wrapper.setProps({ entry: { ...entry, iconURL: '/favicon.webp' } })
+    expect(glyph().classes()).toContain('desktop__icon-glyph--web-fallback')
+    await wrapper.get('img').trigger('load')
+    expect(glyph().classes()).not.toContain('desktop__icon-glyph--web-fallback')
+    expect(wrapper.find('.desktop__site-fallback-letter, .desktop__icon-monogram').exists()).toBe(false)
+    expect((glyph().element as HTMLElement).style.background).toContain('linear-gradient')
+    await wrapper.setProps({ entry: { ...entry, iconURL: '/other-favicon.webp' } })
+    expect(glyph().classes()).toContain('desktop__icon-glyph--web-fallback')
+    await wrapper.get('img').trigger('error')
+    expect(wrapper.find('img').exists()).toBe(false)
+    expect(glyph().classes()).toContain('desktop__icon-glyph--web-fallback')
+    expect((glyph().element as HTMLElement).style.backgroundColor).toBe('rgb(30, 147, 205)')
+    wrapper.unmount()
+  })
+
   it.each([
     ['file', FileText],
     ['directory', FolderOpen],
-  ] as const)('renders %s shortcuts with unified shortcut artwork', (launch, icon) => {
+  ] as const)('renders %s shortcuts with unified shortcut artwork', async (launch, icon) => {
     const wrapper = mount(DesktopEntryIcon, {
       props: {
         label: launch === 'file' ? 'README.md' : '项目',
@@ -92,7 +119,7 @@ describe('DesktopEntryIcon touch interaction', () => {
           key: `shortcut:${launch}`,
           id: launch,
           kind: 'shortcut',
-          name: launch,
+          name: launch === 'file' ? 'README.md' : '项目',
           launch,
           icon,
         },
@@ -104,9 +131,22 @@ describe('DesktopEntryIcon touch interaction', () => {
     expect(wrapper.find('.desktop__shortcut-link-badge').exists()).toBe(false)
     expect(wrapper.find('.desktop__shortcut-artwork > svg').exists()).toBe(launch === 'file')
     expect(wrapper.find('.desktop__shortcut-directory-image').exists()).toBe(launch === 'directory')
+    expect(wrapper.get('.desktop__icon-glyph').classes().includes('desktop__icon-glyph--file'))
+      .toBe(launch === 'file')
     if (launch === 'directory') {
       expect(wrapper.get('.desktop__shortcut-directory-image').attributes('src'))
         .toBe('/desktop-icons/folder-open-shortcut-kpanel-flat-v1.webp')
+    } else {
+      expect(wrapper.get('[data-file-icon-kind]').attributes('data-file-icon-kind')).toBe('document')
+      await wrapper.setProps({ label: '项目说明', entry: { ...wrapper.props('entry')!, iconURL: '/custom.webp' } })
+      expect(wrapper.get('[data-file-icon-kind]').attributes('data-file-icon-kind')).toBe('document')
+      const customImage = wrapper.get('.desktop__icon-img')
+      await customImage.trigger('load')
+      expect(wrapper.find('.desktop__shortcut-artwork').exists()).toBe(false)
+      expect(wrapper.get('.desktop__icon-glyph').classes()).not.toContain('desktop__icon-glyph--file')
+      await customImage.trigger('error')
+      expect(wrapper.get('[data-file-icon-kind]').attributes('data-file-icon-kind')).toBe('document')
+      expect(wrapper.get('.desktop__icon-glyph').classes()).toContain('desktop__icon-glyph--file')
     }
     wrapper.unmount()
   })

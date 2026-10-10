@@ -1926,47 +1926,39 @@ body.desktop-mode-open::-webkit-scrollbar {
   display: none;
 }
 
+.desktop__icon-glyph.desktop__icon-glyph--file,
+.desktop__icon:hover .desktop__icon-glyph--file {
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+  border-color: transparent;
+  box-shadow: none;
+}
+
 .desktop__shortcut-artwork {
   position: relative;
   z-index: 2;
   display: grid;
-  width: 48px;
-  height: 46px;
+  width: 54px;
+  height: 54px;
+  max-width: 100%;
+  max-height: 100%;
   place-items: center;
-  color: #334155;
-  filter: drop-shadow(0 4px 4px rgb(15 23 42 / 20%));
-}
-
-.desktop__shortcut-artwork--file::before,
-.desktop__shortcut-artwork--file::after {
-  position: absolute;
-  content: '';
 }
 
 .desktop__shortcut-artwork > svg {
-  position: relative;
-  z-index: 2;
-  transform: translate(-2px, -1px);
-  filter: drop-shadow(0 1px 0 rgb(255 255 255 / 70%));
+  width: 100%;
+  height: 100%;
 }
 
-.desktop__shortcut-artwork--file::before {
-  inset: 2px 6px;
-  background: linear-gradient(150deg, #fff 0%, #f5f7fa 72%, #dce4ec 100%);
-  border: 1px solid rgb(255 255 255 / 78%);
-  border-radius: var(--radius);
-  box-shadow: inset 0 1px 0 #fff, inset 0 -2px 5px rgb(51 65 85 / 12%);
-  clip-path: polygon(0 0, 70% 0, 100% 30%, 100% 100%, 0 100%);
+.desktop__shortcut-artwork--file {
+  width: 100%;
+  height: 100%;
+  background: color-mix(in srgb, var(--desktop-file-color) 85%, #fff);
+  border-radius: inherit;
 }
 
-.desktop__shortcut-artwork--file::after {
-  top: 3px;
-  right: 7px;
-  width: 12px;
-  height: 12px;
-  background: linear-gradient(135deg, #dbeafe, #fff);
-  border-radius: 0 var(--radius-sm) 0 4px;
-  box-shadow: -1px 1px 2px rgb(51 65 85 / 14%);
+.desktop__shortcut-artwork--file > svg {
+  width: 82%;
+  height: 82%;
 }
 
 .desktop__shortcut-artwork--directory {
@@ -2046,6 +2038,13 @@ body.desktop-mode-open::-webkit-scrollbar {
   line-height: 1;
   text-shadow: 0 1px 0 #fff;
   text-transform: uppercase;
+}
+
+.desktop__icon-glyph--web-fallback .desktop__site-fallback-letter,
+.desktop__icon-glyph--web-fallback .desktop__icon-monogram,
+.desktop__external-confirm-icon--web-fallback .desktop__site-fallback-letter,
+.desktop__external-confirm-icon--web-fallback .desktop__icon-monogram {
+  background: #f7f9fc;
 }
 
 .desktop__icon-label {
@@ -4231,7 +4230,8 @@ body.desktop-mode-open::-webkit-scrollbar {
 }
 
 .desktop-icon-manager__glyph .desktop__shortcut-artwork--file {
-  transform: translate(-7px, -4px) scale(.76);
+  width: 100%;
+  height: 100%;
 }
 
 .desktop-icon-manager__glyph .desktop__shortcut-artwork--directory {
@@ -4240,7 +4240,9 @@ body.desktop-mode-open::-webkit-scrollbar {
 }
 
 .desktop-icon-manager__glyph:has(.desktop__shortcut-artwork--file) {
-  background: var(--neutral-soft);
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+  background: transparent;
+  border-color: transparent;
 }
 
 .desktop-shortcut-form__icon-actions {

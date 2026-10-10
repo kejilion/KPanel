@@ -20,6 +20,7 @@ const props = defineProps<{
   navIconURL?: string
   entry?: DesktopEntry
   gradient: string
+  fallbackBackground?: string
   active?: boolean
   selected?: boolean
   order?: number
@@ -67,6 +68,16 @@ const fileShortcutKind = computed<'file' | 'directory' | undefined>(() => {
   return props.entry.launch === 'file' || props.entry.launch === 'directory'
     ? props.entry.launch
     : undefined
+})
+const fileArtworkVisible = computed(() => fileShortcutKind.value === 'file'
+  && (!imageLoaded.value || imageFailed.value))
+const webFallbackVisible = computed(() => (props.entry?.kind === 'site'
+  || (props.entry?.kind === 'shortcut' && props.entry.launch === 'external'))
+  && !props.navIcon && !props.entry?.icon && (!imageLoaded.value || imageFailed.value))
+const artworkBackground = computed(() => {
+  if (fileArtworkVisible.value) return 'transparent'
+  if (webFallbackVisible.value) return props.fallbackBackground ?? props.gradient
+  return props.gradient
 })
 const accessibleLabel = computed(() => {
   const domain = props.entry?.kind === 'site' ? props.entry.site?.primaryDomain : undefined
@@ -251,8 +262,10 @@ onBeforeUnmount(clearLongPress)
       :class="{
         'desktop__icon-glyph--dynamic': Boolean(entry),
         'desktop__icon-glyph--shortcut': Boolean(fileShortcutKind),
+        'desktop__icon-glyph--file': fileArtworkVisible,
+        'desktop__icon-glyph--web-fallback': webFallbackVisible,
       }"
-      :style="{ background: gradient }"
+      :style="{ background: artworkBackground }"
     >
       <img
         v-if="(navIconURL || entry?.iconURL) && !imageFailed"
@@ -271,9 +284,9 @@ onBeforeUnmount(clearLongPress)
       />
       <template v-if="!imageLoaded || imageFailed">
         <DesktopShortcutArtwork
-          v-if="fileShortcutKind && (navIcon || entry?.icon)"
+          v-if="fileShortcutKind"
           :kind="fileShortcutKind"
-          :icon="navIcon || entry?.icon"
+          :name="entry?.name || label"
         />
         <component
           v-else-if="navIcon || entry?.icon"
