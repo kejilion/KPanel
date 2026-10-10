@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -216,8 +217,10 @@ func TestEngineRecoversZeroPayloadStartup(t *testing.T) {
 	}
 	select {
 	case err := <-stalledDone:
-		if err != nil {
-			t.Fatalf("first peer did not close cleanly: %v", err)
+		// Closing a peer with unread protocol bytes may send a TCP reset.
+		// EOF and ECONNRESET both prove closure; a deadline still fails.
+		if err != nil && !errors.Is(err, syscall.ECONNRESET) {
+			t.Fatalf("first peer did not close: %v", err)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("stalled startup connection remained open")
