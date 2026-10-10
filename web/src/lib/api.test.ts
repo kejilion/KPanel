@@ -31,6 +31,27 @@ describe('API client', () => {
     await rejected
   })
 
+  it('counts network members from the containers because Docker lists networks without them', async () => {
+    const routes: Record<string, unknown> = {
+      '/api/v1/docker/summary': { available: true, collectedAt: '2026-10-09T00:00:00Z' },
+      '/api/v1/docker/containers': { items: [
+        { id: 'a', name: 'web', image: 'nginx', state: 'running', networks: ['web_default', 'bridge'] },
+        { id: 'b', name: 'db', image: 'mysql', state: 'exited', networks: ['web_default'] },
+      ] },
+      '/api/v1/docker/compose-projects': { items: [] },
+      '/api/v1/docker/images': { items: [] },
+      '/api/v1/docker/volumes': { items: [] },
+      '/api/v1/docker/networks': { items: [
+        { id: 'n1', name: 'web_default', driver: 'bridge', containerCount: 0 },
+        { id: 'n2', name: 'spare', driver: 'bridge', containerCount: 0 },
+        { id: 'n3', name: 'reported', driver: 'bridge', containerCount: 4 },
+      ] },
+    }
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => jsonResponse(routes[new URL(url, 'http://localhost').pathname])))
+    const inventory = await api.docker.inventory()
+    expect(inventory.networks.map((item) => [item.name, item.containers])).toEqual([['web_default', 2], ['spare', 0], ['reported', 4]])
+  })
+
   it('carries the authenticated appearance snapshot without a settings request', async () => {
     const appearance = { configured: true, resourceVersion: 'sha256:current', theme: 'dark', colors: null, wallpaper: 'rift', classicLevel: 'clear' }
     const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({ required: false }))

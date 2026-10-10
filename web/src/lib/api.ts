@@ -2441,12 +2441,18 @@ export const api = {
             }))
           } else if (key === 'networks') {
             const result = await request<ApiList<RawDockerNetwork> | RawDockerNetwork[]>(path, { signal })
+            // Docker's network list never fills in attached containers, so count
+            // them from the containers' own network membership instead.
+            const attached = new Map<string, number>()
+            for (const container of normalizeList(containersResult).items) {
+              for (const name of container.networks || []) attached.set(name, (attached.get(name) || 0) + 1)
+            }
             inventory.networks = normalizeList(result).items.map((item) => ({
               id: item.id,
               name: item.name,
               driver: item.driver,
               scope: item.scope,
-              containers: item.containerCount || 0,
+              containers: item.containerCount || attached.get(item.name) || 0,
               resourceVersion: item.resourceVersion,
             }))
           } else {
