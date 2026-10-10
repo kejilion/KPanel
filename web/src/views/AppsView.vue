@@ -2891,7 +2891,7 @@ watch(windowActive, syncJobPollingForWindow)
   font: 12px/1.65 var(--font-mono);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  background: var(--terminal-shell-background, #0b1214);
+  background: var(--terminal-wallpaper-background, var(--terminal-shell-background, #0b1214));
 }
 
 @media (max-width: 980px) {

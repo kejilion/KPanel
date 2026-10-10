@@ -68,7 +68,7 @@ describe('terminal and editor workspace theme', () => {
   })
 
   it('uses the same terminal surface before and after an interactive diagnostic starts', () => {
-    expect(diagnosticsSource).toContain('background: var(--terminal-shell-background, #0b1214)')
+    expect(diagnosticsSource).toContain('background: var(--terminal-wallpaper-background, var(--terminal-shell-background, #0b1214))')
     expect(diagnosticsSource).toContain('background: var(--terminal-shell-panel, #111a1d)')
     expect(terminalViewSource).toContain('background:var(--terminal-shell-background,#0b1214)')
     expect(hostTerminalSource).toContain('background:var(--terminal-shell-background,#0b1214)')

@@ -2390,7 +2390,7 @@ onBeforeUnmount(() => {
   overscroll-behavior: contain;
   margin: 0;
   padding: 18px 20px;
-  background: var(--terminal-shell-background, #0b1214);
+  background: var(--terminal-wallpaper-background, var(--terminal-shell-background, #0b1214));
   color: var(--terminal-shell-text, #d8dddc);
   font: 12.5px/1.65 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   white-space: pre-wrap;

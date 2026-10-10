@@ -500,6 +500,7 @@ onMounted(() => {
     fontSize: 13,
     lineHeight: 1.25,
     scrollback: 5000,
+    allowTransparency: true,
     theme: host.value ? readTerminalTheme(host.value) : undefined,
   })
   fitAddon = new FitAddon()
@@ -748,7 +749,7 @@ onBeforeUnmount(() => {
 .interactive-terminal__screen :deep(.xterm-viewport) {
   overflow-y: scroll !important;
   overscroll-behavior: contain;
-  background: var(--terminal-background);
+  background: transparent;
 }
 
 .interactive-terminal__screen :deep(.xterm-scrollable-element) {

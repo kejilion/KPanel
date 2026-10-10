@@ -2970,7 +2970,7 @@ onBeforeUnmount(() => {
 .repeat-row--environment { grid-template-columns: minmax(150px, .7fr) minmax(180px, 1.3fr) auto; }
 .repeat-row--compose-environment { grid-template-columns: minmax(150px, .7fr) minmax(180px, 1.3fr) auto auto; }
 .inline-check { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
-.log-viewer { margin: 0; min-height: 280px; max-height: 58vh; overflow: auto; border: 1px solid var(--terminal-shell-border, #29383a); border-radius: var(--terminal-shell-radius, 12px); background: var(--terminal-shell-background, #0b1214); color: var(--terminal-shell-text, #d8dddc); box-shadow: var(--terminal-shell-shadow, inset 0 1px 0 rgb(255 255 255 / 3%)); padding: 15px; font: 12.5px/1.65 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.log-viewer { margin: 0; min-height: 280px; max-height: 58vh; overflow: auto; border: 1px solid var(--terminal-shell-border, #29383a); border-radius: var(--terminal-shell-radius, 12px); background: var(--terminal-wallpaper-background, var(--terminal-shell-background, #0b1214)); color: var(--terminal-shell-text, #d8dddc); box-shadow: var(--terminal-shell-shadow, inset 0 1px 0 rgb(255 255 255 / 3%)); padding: 15px; font: 12.5px/1.65 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 /* Container logs run edge to edge in the workspace window. */
 .log-viewer--window { flex: 1 1 auto; min-height: 0; max-height: none; border: 0; border-radius: 0; box-shadow: none; }
 .log-window-state { padding: 16px; }

@@ -416,8 +416,6 @@ onBeforeUnmount(() => {
 <style scoped>
 .host-terminal { display:grid; height:100%; grid-template-rows:minmax(0,1fr) auto; min-height:0; overflow:hidden; border:1px solid var(--terminal-shell-border,#29383a); border-radius:var(--terminal-shell-radius,12px); background:var(--terminal-shell-background,#0b1214); box-shadow:var(--terminal-shell-shadow); }
 .host-terminal__screen { position:relative; min-width:0; min-height:0; overflow:hidden; overscroll-behavior:contain; padding:0; }
-.host-terminal__screen { --terminal-canvas-background:#00000000; --terminal-wallpaper-veil:color-mix(in srgb,var(--terminal-shell-background,#0b1214) 84%,transparent); background:linear-gradient(var(--terminal-wallpaper-veil),var(--terminal-wallpaper-veil)),var(--classic-wallpaper-image,url('/wallpapers/kpanel-desktop.webp')) var(--desktop-wallpaper-position,center) / cover no-repeat; }
-:global(:root[data-wallpaper-bright] .host-terminal__screen) { --terminal-wallpaper-veil:color-mix(in srgb,var(--terminal-shell-background,#0b1214) 94%,transparent); }
 .host-terminal__screen :deep(.xterm) { box-sizing:border-box; height:100%; padding:6px 8px 4px; touch-action:none; }
 .host-terminal__screen :deep(.xterm-viewport) { overflow-y:scroll !important; overscroll-behavior:contain; background:transparent; }
 .host-terminal__screen :deep(.xterm-scrollable-element) { overscroll-behavior:contain; }
@@ -427,7 +425,4 @@ onBeforeUnmount(() => {
 /* Workspace dialogs run the terminal to the window edges. */
 :global(.modal-panel--workspace .host-terminal) { border:0; border-radius:0; box-shadow:none; }
 .host-terminal :deep(.xterm-viewport) { scrollbar-color:var(--terminal-shell-scrollbar,#35474a) var(--terminal-shell-background,#0b1214); }
-@media (prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active) {
-  .host-terminal__screen { background:var(--terminal-shell-background,#0b1214); }
-}
 </style>
