@@ -137,8 +137,8 @@ describe('DesktopView', () => {
     const processes = wrapper.get('[data-icon-key="nav:/processes"]')
     expect(monitoring.get('button').attributes('aria-label')).toBe('历史监控')
     expect(processes.get('button').attributes('aria-label')).toBe('进程管理器')
-    expect(monitoring.get('img').attributes('src')).toBe('/desktop-icons/monitoring-kpanel-flat-v2.webp')
-    expect(processes.get('img').attributes('src')).toBe('/desktop-icons/processes-kpanel-flat-v2.webp')
+    expect(monitoring.get('img').attributes('src')).toBe('/desktop-icons/monitoring-kpanel-flat-v3.webp')
+    expect(processes.get('img').attributes('src')).toBe('/desktop-icons/processes-kpanel-flat-v3.webp')
 
     await monitoring.get('button').trigger('dblclick')
     await processes.get('button').trigger('dblclick')
