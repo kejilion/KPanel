@@ -129,7 +129,7 @@ linux/amd64 `sha256:ad14acc277c0209a7319e9ec2a87545a6d7e06a8b3d782e20f53df74e281
 <!-- kpanel-release-metrics:end -->
 
 <!-- kpanel-release-process-metrics:start -->
-- 已记录发布流程异常或无效证据拦截次数：17
+- 已记录发布流程异常或无效证据拦截次数：18
 - 其中生产写操作开始后异常次数：0
 <!-- kpanel-release-process-metrics:end -->
 
@@ -257,10 +257,18 @@ linux/amd64 `sha256:ad14acc277c0209a7319e9ec2a87545a6d7e06a8b3d782e20f53df74e281
   {
     "fingerprint": "documentation-validation/run-repo-bash/unsupported-env-base",
     "position": "before-production-write",
-    "phase": "post-publication-documentation",
     "count": 1,
     "impact": "After the immutable RC.2 publication, the first documentation L0 helper passed VERIFY_BASE_REF through --env. The canonical launcher rejected this unsupported key before Bash or any L0 verification. Native exit 1 and original documentation commit remain retained; this is not a product release failure or a successful validation.",
     "recoveryEvidence": "docs-l0-attempt1-result.json and docs-l0-attempt1.log preserve exact failure at57db809c. docs-l0-attempt1-failure-qualified.json binds both hashes and the inspected canonical source. The corrected fixed argv passes only VERIFY_LEVEL through --env and the exact frozen product base as script positional argument. docs-ready-r2.log confirms ready; the subsequent committed documentation must independently pass the canonical L0 and handoff before any documentation push. Its actual terminal is recorded in docs-l0-result.json, not predeclared by this incident.",
+    "permanentAction": "Owner: KPanel release tooling task. Review by 2026-10-16 or before the next L3 production write, whichever comes first. Current external helper recovery does not claim a permanent shared entry repair. Exit condition: canonical entry/fixture preflight covers the exact failure with retained regression evidence.",
+    "historicalReleases": []
+  },
+  {
+    "fingerprint": "documentation-validation/business-context/prerelease-baseline-field",
+    "position": "before-production-write",
+    "count": 1,
+    "impact": "The corrected documentation L0 invocation reached the canonical business-context checker, which rejected a prerelease value in its stable-only baselineVersion field. Native exit 1, exact documentation commit2dc86c27 and all preceding check output remain retained. Product release artifacts were already published and unchanged.",
+    "recoveryEvidence": "docs-l0-attempt2-result.json, docs-l0-r2.log and docs-l0-attempt2-failure-qualified.json preserve the rejection and source hashes. The document restores the existing v1.25.0 formal baseline convention while explicitly retaining RC.2 publication/SHA. Canonical incident fields were also inspected before retry. docs-ready-r3.log passed; a fresh committed documentation L0/handoff is still required and its actual result is recorded in docs-l0-result.json before pushing.",
     "permanentAction": "Owner: KPanel release tooling task. Review by 2026-10-16 or before the next L3 production write, whichever comes first. Current external helper recovery does not claim a permanent shared entry repair. Exit condition: canonical entry/fixture preflight covers the exact failure with retained regression evidence.",
     "historicalReleases": []
   }
@@ -268,6 +276,8 @@ linux/amd64 `sha256:ad14acc277c0209a7319e9ec2a87545a6d7e06a8b3d782e20f53df74e281
 <!-- kpanel-release-process-incidents:end -->
 
 发布后的文档L0首次在Bash启动前拒绝了不受支持的VERIFY_BASE_REF环境参数；失败提交57db809c、退出1与原始日志保留。已将基线改为规范脚本的位置参数，文档ready重新通过；新文档提交仍须取得实际L0及handoff通过后才推送，最终终态记外部closeout。产品标签、镜像和产品源码未改动。
+
+第二次文档L0在业务基线检查拒绝了预览版本后缀，失败提交2dc86c27与日志保留。机器字段沿用当前正式版本v1.25.0，实际公开预览仍明确为RC.2及其产品SHA；并在运行指标校验前恢复事件JSON的七个规范字段。文档ready再次通过；本提交的实际L0/handoff终态仍以外部回执为准。
 
 ## 遗留风险与后续准入
 
