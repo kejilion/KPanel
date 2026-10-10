@@ -542,6 +542,12 @@ func (c *Client) recoverContainerTerminals(ctx context.Context) error {
 				continue
 			}
 			if err := process.pin(ctx); err != nil {
+				// Once the nonce has fixed a pidfd, an incomplete PTY setup
+				// must not prevent terminating that already verified process.
+				if process.control != nil && process.Kill() == nil {
+					_ = process.Close()
+					continue
+				}
 				_ = process.Close()
 				return err
 			}

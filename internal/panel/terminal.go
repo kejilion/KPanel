@@ -139,6 +139,8 @@ func decodeTerminalAgentResponse(response AgentResponse, err error, target any) 
 				return dockerx.ErrResourceConflict
 			case "container_terminal_unavailable":
 				return dockerx.ErrActionUnsupported
+			case "terminal_cleanup_pending":
+				return terminal.ErrCleanupPending
 			case "terminal_input_sequence":
 				return terminal.ErrInputSequence
 			case "terminal_input_uncertain":

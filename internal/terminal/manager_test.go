@@ -224,6 +224,15 @@ func TestDisconnectedProcessRetainsOwnerAndQuotaUntilCleanupConfirmed(t *testing
 	if _, err := m.Open("other", 24, 80); !errors.Is(err, ErrLimit) {
 		t.Fatalf("pending capacity = %v", err)
 	}
+	if err := m.Resize("owner", s.ID, 30, 100); !errors.Is(err, ErrCleanupPending) {
+		t.Fatalf("pending resize = %v", err)
+	}
+	if err := m.Input("owner", s.ID, []byte("id\r")); !errors.Is(err, ErrCleanupPending) {
+		t.Fatalf("pending input = %v", err)
+	}
+	if err := m.InputSequenced("owner", s.ID, InputFrame{Stream: strings.Repeat("a", 32), Seq: 0}); !errors.Is(err, ErrCleanupPending) {
+		t.Fatalf("pending sequenced input = %v", err)
+	}
 	m.reap(time.Now()) // Retry even while the session has not reached idle timeout.
 	p.cleanupMu.Lock()
 	if p.closes != 0 {

@@ -135,6 +135,43 @@ func TestContainerTerminalRecoveryRejectsSymlink(t *testing.T) {
 	}
 }
 
+func TestContainerTerminalRecoveryStopsVerifiedProcessAfterPartialPinFailure(t *testing.T) {
+	token := strings.Repeat("d", 32)
+	child := exec.Command("/bin/sleep", "30")
+	child.Env = append(os.Environ(), "KPANEL_TERMINAL_ID="+token)
+	if err := child.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = child.Process.Kill(); _ = child.Wait() }()
+	execID, containerID := strings.Repeat("a", 64), strings.Repeat("b", 64)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/exec/"+execID+"/json" {
+			t.Errorf("unexpected recovery request: %s %s", r.Method, r.URL)
+			http.Error(w, "unexpected", 500)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(containerTerminalState{ID: execID, ContainerID: containerID, Running: true, PID: child.Process.Pid})
+	}))
+	defer server.Close()
+	c := testHTTPClient(server)
+	c.stateRoot = t.TempDir()
+	record := containerTerminalRecord{ExecID: execID, ContainerID: containerID, Token: token}
+	if err := c.writeContainerTerminalRecord(record); err != nil {
+		t.Fatal(err)
+	}
+	// The child has the verified nonce but fd0 is /dev/null, so pin stops
+	// after acquiring its pidfd. Recovery must still use that trusted handle.
+	if err := c.RecoverContainerTerminals(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := child.Wait(); err == nil {
+		t.Fatal("verified child was not terminated")
+	}
+	if _, err := os.Stat(filepath.Join(c.stateRoot, "docker-terminal-recovery", execID+".json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("cleanup retained record: %v", err)
+	}
+}
+
 // Opt-in integration tests only create and remove their own disposable
 // containers. Ordinary repository tests never contact a Docker daemon.
 func TestContainerTerminalDockerIntegration(t *testing.T) {

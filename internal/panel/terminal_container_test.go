@@ -10,12 +10,17 @@ import (
 
 type containerTerminalAgentStub struct {
 	terminalAgentStub
-	body        []byte
-	openStatus  int
-	openProblem string
+	body             []byte
+	openStatus       int
+	openProblem      string
+	operationProblem string
 }
 
 func (s *containerTerminalAgentStub) Do(ctx context.Context, method, path, contentType, requestID string, body []byte) (AgentResponse, error) {
+	if s.operationProblem != "" && (strings.HasSuffix(path, "/resize") || strings.HasSuffix(path, "/input")) {
+		data, _ := json.Marshal(map[string]any{"code": s.operationProblem, "status": 409, "title": "fixture"})
+		return AgentResponse{StatusCode: http.StatusConflict, ContentType: "application/json", Body: data}, nil
+	}
 	if method == http.MethodPost && path == "/v1/terminals" {
 		s.body = append([]byte(nil), body...)
 		if s.openStatus != 0 {
@@ -24,6 +29,36 @@ func (s *containerTerminalAgentStub) Do(ctx context.Context, method, path, conte
 		}
 	}
 	return s.terminalAgentStub.Do(ctx, method, path, contentType, requestID, body)
+}
+
+func TestCleanupPendingOperationsRetainPublicTerminalForClose(t *testing.T) {
+	s, tokenPath := newTestServer(t)
+	stub := &containerTerminalAgentStub{operationProblem: "terminal_cleanup_pending"}
+	s.agent = stub
+	sessionCookie, csrfCookie := bootstrapCookies(t, s, tokenPath)
+	headers := map[string]string{"Content-Type": "application/json", "Origin": "http://panel.test", "X-CSRF-Token": csrfCookie.Value}
+	opened := authenticatedRequest(s, http.MethodPost, "/api/v1/terminal-sessions", []byte(`{"hostId":"local","rows":24,"columns":80}`), sessionCookie, csrfCookie, headers)
+	if opened.Code != http.StatusCreated {
+		t.Fatalf("open = %d %s", opened.Code, opened.Body.String())
+	}
+	var public terminalOpenResponse
+	_ = json.Unmarshal(opened.Body.Bytes(), &public)
+	for _, operation := range []struct{ action, body string }{{"resize", `{"rows":30,"columns":100}`}, {"input", `{"data":"aWQ="}`}} {
+		response := authenticatedRequest(s, http.MethodPost, "/api/v1/terminal-sessions/"+public.SessionID+"/"+operation.action, []byte(operation.body), sessionCookie, csrfCookie, headers)
+		if response.Code == http.StatusNotFound || response.Code < 400 {
+			t.Fatalf("pending %s = %d %s", operation.action, response.Code, response.Body.String())
+		}
+		s.terminalMu.Lock()
+		_, retained := s.terminalSessions[public.SessionID]
+		s.terminalMu.Unlock()
+		if !retained {
+			t.Fatalf("pending %s deleted public ownership", operation.action)
+		}
+	}
+	closed := authenticatedRequest(s, http.MethodPost, "/api/v1/terminal-sessions/"+public.SessionID+"/close", []byte(`{}`), sessionCookie, csrfCookie, headers)
+	if closed.Code != http.StatusOK || stub.closed != 1 {
+		t.Fatalf("retry close = %d %s, backend closes=%d", closed.Code, closed.Body.String(), stub.closed)
+	}
 }
 
 func TestContainerTerminalPanelBindsTargetAndPreservesGuards(t *testing.T) {

@@ -457,7 +457,11 @@ func (m *Manager) InputContext(ctx context.Context, owner, id string, data []byt
 	}
 	defer func() { <-item.inputGate }()
 	item.mu.Lock()
-	if item.closed || item.exitedAt != nil || item.closeFailed {
+	if item.closeFailed && !item.closed {
+		item.mu.Unlock()
+		return ErrCleanupPending
+	}
+	if item.closed || item.exitedAt != nil {
 		item.mu.Unlock()
 		return ErrClosed
 	}
@@ -501,7 +505,10 @@ func (m *Manager) Resize(owner, id string, rows, columns uint16) error {
 	}
 	item.mu.Lock()
 	defer item.mu.Unlock()
-	if item.closed || item.exitedAt != nil || item.closeFailed {
+	if item.closeFailed && !item.closed {
+		return ErrCleanupPending
+	}
+	if item.closed || item.exitedAt != nil {
 		return ErrClosed
 	}
 	if err := item.process.Resize(rows, columns); err != nil {

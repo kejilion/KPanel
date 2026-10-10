@@ -56,7 +56,10 @@ func (m *Manager) InputSequencedContext(ctx context.Context, owner, id string, f
 	defer func() { <-item.inputGate }()
 	item.mu.Lock()
 	defer item.mu.Unlock()
-	if item.closed || item.exitedAt != nil || item.closeFailed {
+	if item.closeFailed && !item.closed {
+		return ErrCleanupPending
+	}
+	if item.closed || item.exitedAt != nil {
 		return ErrClosed
 	}
 	state := &item.inputState

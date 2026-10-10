@@ -226,6 +226,8 @@ func (s *Server) writeTerminalError(w http.ResponseWriter, requestID string, err
 		writeProblem(w, requestID, http.StatusNotFound, "terminal_not_found", "Terminal session not found", "")
 	case errors.Is(err, terminal.ErrLimit):
 		writeProblem(w, requestID, http.StatusTooManyRequests, "terminal_limit", "Terminal session limit reached", "")
+	case errors.Is(err, terminal.ErrCleanupPending):
+		writeProblem(w, requestID, http.StatusConflict, "terminal_cleanup_pending", "Terminal process cleanup is pending", "Retry closing this terminal")
 	case errors.Is(err, terminal.ErrClosed):
 		writeProblem(w, requestID, http.StatusConflict, "terminal_closed", "Terminal session is closed", "")
 	default:
