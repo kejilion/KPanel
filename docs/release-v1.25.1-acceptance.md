@@ -134,14 +134,14 @@
 <!-- kpanel-release-metrics:start -->
 - 首个纳入提交时间：2026-10-10T15:40:28+08:00
 - 候选冻结时间：2026-10-10T07:58:41.426Z
-- 生产完成时间：未验证（仅正式产物已发布，生产未部署）
-- 提交到生产用时：不适用（生产未部署）
+- 生产完成时间：未验证
+- 提交到生产用时：不适用
 - 是否回滚、紧急热修复或重复发布：否（未部署生产，仅发布正式产物）
 - 若发生失败，发现时间、恢复时间和逃逸门禁：不适用
 <!-- kpanel-release-metrics:end -->
 
 <!-- kpanel-release-process-metrics:start -->
-- 已记录发布流程异常或无效证据拦截次数：7
+- 已记录发布流程异常或无效证据拦截次数：8
 - 其中生产写操作开始后异常次数：0
 <!-- kpanel-release-process-metrics:end -->
 
@@ -211,6 +211,15 @@
     "fingerprint": "evidence/tool-output/truncated-json-capture",
     "impact": "A successful coverage command output was truncated by the tool output budget while being copied to a JSON artifact. The incomplete copy was not accepted as machine evidence.",
     "recoveryEvidence": "security-coverage-prepush-tool-output.log retains the truncated copy; security-coverage-prepush-r2.json is full original process stdout captured before display, with exact target and decision=ok."
+  },
+  {
+    "fingerprint": "release-docs/release-metrics/decorated-unverified-marker",
+    "position": "before-production-write",
+    "count": 1,
+    "impact": "The first documentation L0 rejected explanatory suffixes on the machine production-completion and lead-time markers. No production deployment had occurred; the record was not accepted.",
+    "recoveryEvidence": "docs-l0.log and docs-l0-result.json retain exact 7161f513 failure and SHA-256. The forward documentation correction uses exact 未验证 / 不适用 markers, preserves the explanation outside the machine block, and reruns the same canonical L0 argv.",
+    "permanentAction": "Owner: KPanel release tooling task; review by 2026-10-11 or before the next L3 production write. Require literal machine unverified markers in acceptance generation and retain this failed attempt; no shared canonical entry defect or permanent project tooling repair is claimed.",
+    "historicalReleases": []
   }
 ]
 <!-- kpanel-release-process-incidents:end -->
