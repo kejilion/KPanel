@@ -88,6 +88,9 @@ func (s *Server) Close() error {
 	if s.scenePacks != nil {
 		s.scenePacks.Close()
 	}
+	if s.offers != nil {
+		s.offers.Close()
+	}
 	if s.mcp != nil {
 		s.mcp.close()
 	}

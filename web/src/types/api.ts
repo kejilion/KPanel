@@ -2326,6 +2326,31 @@ export interface CustomWallpaper {
   imageDigest: string
 }
 
+/** 广告专栏 manifest state: live, cached after a failed refresh, or none yet. */
+export type OffersState = 'live' | 'stale' | 'unavailable'
+
+export interface OfferItem {
+  id: string
+  vendor: string
+  alt: string
+  featured: boolean
+  /** Sponsored target, always https. */
+  url: string
+  /** Target host shown under the banner, without a leading www. */
+  host: string
+  /** Same-origin 2:1 banner (960×480). */
+  card: string
+  /** Same-origin 4:1 carousel banner (1600×400), featured items only. */
+  wide?: string
+}
+
+export interface OffersSnapshot {
+  state: OffersState
+  updatedAt?: string
+  fetchedAt?: string
+  items: OfferItem[]
+}
+
 export interface CustomWallpaperList {
   wallpapers: CustomWallpaper[]
   usage: { count: number, bytes: number, maxCount: number, maxBytes: number }

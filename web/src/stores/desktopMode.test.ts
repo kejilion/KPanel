@@ -221,6 +221,20 @@ describe('desktop mode', () => {
     expect(window.localStorage.getItem('kpanel:desktop-window-sizes:v1')).toContain('1040')
   })
 
+  it('opens the sponsored page wide enough for its banner wall until resized', () => {
+    setupViewport(1920, 1080)
+    initializeDesktopMode(window.localStorage, { width: 1920, height: 1080 })
+    const desktop = useDesktopMode()
+    const first = desktop.openWindow('/offers', 'route.offers', false)
+    expect(desktop.windows.value.find((item) => item.id === first)?.geometry).toMatchObject({ width: 1200, height: 820 })
+
+    desktop.updateGeometry(first, { left: 40, top: 40, width: 960, height: 700 }, false)
+    desktop.commitGeometry(first)
+    desktop.closeWindow(first)
+    const reopened = desktop.openWindow('/offers', 'route.offers', false)
+    expect(desktop.windows.value.find((item) => item.id === reopened)?.geometry).toMatchObject({ width: 960, height: 700 })
+  })
+
   it('keeps monitoring window size preferences separate from Overview', () => {
     setupViewport(1440, 900)
     initializeDesktopMode(window.localStorage, { width: 1440, height: 900 })

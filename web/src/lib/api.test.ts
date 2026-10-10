@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, api, normalizeList, resetApiSecurityState } from './api'
+import { ApiError, api, normalizeList, normalizeOffers, resetApiSecurityState } from './api'
 import { fileAPIForHost } from './fileHostContext'
 import type { SystemOverview } from '@/types/api'
 
@@ -2232,5 +2232,28 @@ describe('API client', () => {
     expect(JSON.parse(String((fetchMock.mock.calls[1]?.[1] as RequestInit).body))).toEqual({
       namePrefix: 'edge', maxUses: 100, expiresInSeconds: 86_400,
     })
+  })
+
+  it('requests offers with an explicit refresh flag and keeps only safe items', async () => {
+    const digest = 'a'.repeat(64)
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+      schemaVersion: 1,
+      state: 'stale',
+      updatedAt: '2026-10-08T00:00:00Z',
+      items: [
+        { id: 'ok', vendor: 'RackNerd', alt: '年付', featured: true, url: 'https://my.racknerd.com/aff.php?aff=1', host: 'my.racknerd.com', card: `/api/v1/offers/media/${digest}`, wide: `/api/v1/offers/media/${'b'.repeat(64)}` },
+        { id: 'script', vendor: 'x', alt: 'x', url: 'javascript:alert(1)', host: 'x', card: `/api/v1/offers/media/${digest}` },
+        { id: 'offsite', vendor: 'x', alt: 'x', url: 'https://x.example/', host: 'x', card: 'https://cdn.example/x.webp' },
+        { id: 'badwide', vendor: 'x', alt: 'x', featured: true, url: 'https://x.example/', host: 'x', card: `/api/v1/offers/media/${digest}`, wide: '/api/v1/offers/media/../x' },
+      ],
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await api.offers.list({ refresh: true })
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe('/api/v1/offers?refresh=1')
+    expect(result.state).toBe('stale')
+    expect(result.items.map((item) => item.id)).toEqual(['ok'])
+    expect(result.items[0]).toMatchObject({ featured: true, card: `/api/v1/offers/media/${digest}` })
+    expect(normalizeOffers({ state: 'weird' }).state).toBe('unavailable')
   })
 })

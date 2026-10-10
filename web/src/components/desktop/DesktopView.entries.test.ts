@@ -497,6 +497,45 @@ describe('DesktopView dynamic entries', () => {
     wrapper.unmount()
   })
 
+  it('hides the sponsored page like an app while management pages stay pinned', async () => {
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await flushPromises()
+
+    await wrapper.find('button[title="概览"]').trigger('contextmenu', { clientX: 60, clientY: 60 })
+    await nextTick()
+    expect(wrapper.findAll('.desktop__context-menu [role="menuitem"]').map((item) => item.text()))
+      .not.toContain('从桌面移除')
+
+    await wrapper.find('button[title="广告专栏"]').trigger('contextmenu', { clientX: 80, clientY: 80 })
+    await nextTick()
+    const remove = wrapper.findAll('.desktop__context-menu [role="menuitem"]')
+      .find((item) => item.text().includes('从桌面移除'))
+    await remove?.trigger('click')
+    await nextTick()
+    expect(document.body.textContent).toContain('页面仍可从开始菜单打开')
+
+    document.body.querySelector<HTMLButtonElement>('.modal-panel--compact .button--primary')?.click()
+    await flushPromises()
+    expect(mockedWorkspaceUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      hiddenEntryKeys: ['nav:/offers'],
+    }))
+    expect(wrapper.find('button[title="广告专栏"]').exists()).toBe(false)
+
+    await wrapper.trigger('contextmenu', { clientX: 220, clientY: 160 })
+    await nextTick()
+    const manage = wrapper.findAll('.desktop__context-menu [role="menuitem"]')
+      .find((item) => item.text().includes('桌面布局管理'))
+    await manage?.trigger('click')
+    await nextTick()
+    const hidden = Array.from(document.body.querySelectorAll<HTMLElement>('.desktop-icon-manager article'))
+      .find((article) => article.textContent?.includes('广告专栏'))
+    hidden?.querySelector<HTMLButtonElement>('button')?.click()
+    await flushPromises()
+    expect(mockedWorkspaceUpdate).toHaveBeenLastCalledWith(expect.objectContaining({ hiddenEntryKeys: [] }))
+    expect(wrapper.find('button[title="广告专栏"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
   it('renders a persisted custom shortcut and deletes only that shortcut', async () => {
     mockedWorkspace.mockResolvedValueOnce(makeWorkspace({
       shortcuts: [{

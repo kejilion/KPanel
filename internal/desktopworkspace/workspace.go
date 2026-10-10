@@ -634,7 +634,7 @@ func validatePersistedWorkspace(state persistedWorkspace) error {
 	hidden := make(map[string]bool, len(state.HiddenEntryKeys))
 	for _, key := range state.HiddenEntryKeys {
 		if !validHideableKey(key) || hidden[key] {
-			return &ValidationError{Field: "hiddenEntryKeys", Detail: "hidden entry keys must be unique app: or site: keys"}
+			return &ValidationError{Field: "hiddenEntryKeys", Detail: "hidden entry keys must be unique app:, site: or hideable nav: keys"}
 		}
 		hidden[key] = true
 	}
@@ -742,8 +742,12 @@ func validateShortcutPath(value string, directory bool) error {
 	return nil
 }
 
+// hideableNavKeys lists the fixed desktop entries an administrator may hide.
+// Management pages stay pinned; the 广告专栏 page is optional content.
+var hideableNavKeys = map[string]bool{"nav:/offers": true}
+
 func validHideableKey(key string) bool {
-	return validAppKey(key) || validSiteKey(key)
+	return validAppKey(key) || validSiteKey(key) || hideableNavKeys[key]
 }
 
 func validPositionKey(key string) bool {

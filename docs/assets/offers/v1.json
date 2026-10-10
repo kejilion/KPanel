@@ -1,0 +1,202 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-10-10T05:33:06.171Z",
+  "items": [
+    {
+      "id": "lcayun",
+      "vendor": "莱卡云",
+      "alt": "香港特惠云，¥29.99/月，2核2G · 50GB硬盘 · 20Mbps，500GB月流量 · 本期至10月31日",
+      "featured": true,
+      "images": {
+        "card": {
+          "path": "offers/lcayun-card-v1.webp",
+          "sha256": "fd988222c231c60e8f967318d5fa78bb9ababc99c9a62735f44282fa3ee82a9e"
+        },
+        "wide": {
+          "path": "offers/lcayun-wide-v1.webp",
+          "sha256": "e05c7e890f03ab2852fa8fc7b8a802319d89fc4a135a3fd41b709bda6de01390"
+        }
+      },
+      "url": "https://www.lcayun.com/aff/ZEXUQBIM",
+      "validUntil": "2026-10-17T05:33:06.171Z"
+    },
+    {
+      "id": "hncloud",
+      "vendor": "华纳云",
+      "alt": "美国 CN2 云服务器，¥196/年，1核1G · 50GB SSD · 5M不限流，云机首单 · 限3台 · 同周期续费同价",
+      "featured": true,
+      "images": {
+        "card": {
+          "path": "offers/hncloud-card-v1.webp",
+          "sha256": "30418857c61cc6169883a915fd8d6c13c6f58508d2fef8c98327048e8d50be61"
+        },
+        "wide": {
+          "path": "offers/hncloud-wide-v1.webp",
+          "sha256": "3832e00525df30323a247a45d0996f5a4a619936c7ba8d888375f2d707c5c0b5"
+        }
+      },
+      "url": "https://www.hncloud.com/activity/activity_2025double.html?k=kejilion",
+      "validUntil": "2026-10-17T05:33:06.171Z"
+    },
+    {
+      "id": "colocrossing",
+      "vendor": "ColoCrossing",
+      "alt": "20TB月流量 VPS，$1.97/月，1核1G · 25GB SSD · 1Gbps端口，优惠码 LOWEND50 · 循环5折",
+      "featured": true,
+      "images": {
+        "card": {
+          "path": "offers/colocrossing-card-v1.webp",
+          "sha256": "24abc89aea3cc83283a9488745f1a7720e2f5dc8557c79aa98f8c7b1ed6083f8"
+        },
+        "wide": {
+          "path": "offers/colocrossing-wide-v1.webp",
+          "sha256": "0556369a1857308f14cb1d05b77ebfc0ec3f2b8225f00d7f90963c6e3113d3ff"
+        }
+      },
+      "url": "https://cloud.colocrossing.com/aff.php?aff=447",
+      "validUntil": "2026-10-17T05:33:06.171Z"
+    },
+    {
+      "id": "cloudcone",
+      "vendor": "CloudCone",
+      "alt": "洛杉矶存储 VPS，$14.24/年，1核1G · 55GB SSD缓存盘 · 4TB/月，年付 · 续费同价 · 每账号限3台",
+      "images": {
+        "card": {
+          "path": "offers/cloudcone-card-v1.webp",
+          "sha256": "8bf8f6548c1e38a16581e520b5294775cdbf024d0bc314ffa21f247be6b70977"
+        }
+      },
+      "url": "https://app.cloudcone.com/?ref=8355",
+      "validUntil": "2026-10-17T05:33:06.171Z"
+    },
+    {
+      "id": "racknerd",
+      "vendor": "RackNerd",
+      "alt": "年付 KVM VPS，$21.99/年，1核1G · 20GB SSD · 3TB/月，多机房可选 · 续费同价",
+      "images": {
+        "card": {
+          "path": "offers/racknerd-card-v1.webp",
+          "sha256": "64f1b3a7e4113060d593018f6f358be0778b4049b465c87b68ca5b5b54020787"
+        }
+      },
+      "url": "https://my.racknerd.com/aff.php?aff=5501",
+      "validUntil": "2026-10-17T05:33:06.171Z"
+    },
+    {
+      "id": "bandwagonhost",
+      "vendor": "搬瓦工",
+      "alt": "洛杉矶 CN2 GIA，$169.99/年，2核1G · 20GB存储 · 1TB/月，DC9 · KiwiVM自助管理",
+      "images": {
+        "card": {
+          "path": "offers/bandwagonhost-card-v1.webp",
+          "sha256": "efd3e975ebc1dfb10ce5f66c6288804b43adf883b72bdf2724624dab95ddec2a"
+        }
+      },
+      "url": "https://bandwagonhost.com/aff.php?aff=69004",
+      "validUntil": "2026-10-17T05:33:06.171Z"
+    },
+    {
+      "id": "vps",
+      "vendor": "V.PS",
+      "alt": "东京软银线路 VPS，€6.95/月，2核1G · 20GB NVMe · 1TB流量，Cloud KVM · IPv4 + IPv6",
+      "images": {
+        "card": {
+          "path": "offers/vps-card-v1.webp",
+          "sha256": "bdeef3d61b7466ac45d352db8474fa1402cc5dcf0e023a71379415dbee45aecd"
+        }
+      },
+      "url": "https://vps.hosting/?affid=1355",
+      "validUntil": "2026-10-17T05:33:06.171Z"
+    },
+    {
+      "id": "evoxt",
+      "vendor": "Evoxt",
+      "alt": "香港 / 大阪优化线路，$2.99/月，Premium入门款 · 每周异地备份，1核512M · 5GB · 250GB月流量",
+      "images": {
+        "card": {
+          "path": "offers/evoxt-card-v1.webp",
+          "sha256": "e8a8a5f44dfa7fac5447cc745fe35fd112a05cbaab299b25d74a04d41c5edd2a"
+        }
+      },
+      "url": "https://console.evoxt.com/aff.php?aff=2345",
+      "validUntil": "2026-10-17T05:33:06.171Z"
+    },
+    {
+      "id": "hostinger",
+      "vendor": "Hostinger",
+      "alt": "4GB内存 KVM VPS，折合$6.49/月，AMD EPYC · 50GB NVMe · 完整root，24个月预付$155.76 · 续费$11.99/月",
+      "images": {
+        "card": {
+          "path": "offers/hostinger-card-v1.webp",
+          "sha256": "1658ce50da287d54909e7b0d9776eb18ab4733aec6ce924b46d6ef011c8767d9"
+        }
+      },
+      "url": "https://hostinger.com/?REFERRALCODE=1712105",
+      "validUntil": "2026-10-17T05:33:06.171Z"
+    },
+    {
+      "id": "justhost",
+      "vendor": "JustHost",
+      "alt": "多地机房 VPS，首月 $1.99，1核512M · 5GB NVMe · 10Mbps共享，限无其他VPS账号 · 次月转常规套餐",
+      "images": {
+        "card": {
+          "path": "offers/justhost-card-v1.webp",
+          "sha256": "2514d19ceda1dee963f3820a7c177d57ea95711ff408e415553c2f99746afeb6"
+        }
+      },
+      "url": "https://justhost.asia/?ref=156869",
+      "validUntil": "2026-10-17T05:33:06.171Z"
+    },
+    {
+      "id": "jtti",
+      "vendor": "Jtti",
+      "alt": "香港 CN2 云服务器，$99/年，2核4G · 5M带宽 · 不限流量，循环折扣 · 高防IP另选",
+      "images": {
+        "card": {
+          "path": "offers/jtti-card-v1.webp",
+          "sha256": "f2a846d946db3dd7765b4c46da48e9f0a579a12f4b6730637367fba472949dce"
+        }
+      },
+      "url": "https://www.jtti.cc/zh/offers?k=kejilion",
+      "validUntil": "2026-10-17T05:33:06.171Z"
+    },
+    {
+      "id": "dmit",
+      "vendor": "DMIT",
+      "alt": "Premium CN2 GIA，洛杉矶回国优化，KVM虚拟化 · 面向中国优化网络，套餐价格与库存查看官网",
+      "images": {
+        "card": {
+          "path": "offers/dmit-card-v1.webp",
+          "sha256": "1e47c8bcf7bc5173677b8190dceeb0f024cdff4912abec361a041262c944f431"
+        }
+      },
+      "url": "https://www.dmit.io/aff.php?aff=4966"
+    },
+    {
+      "id": "gname",
+      "vendor": "GNAME",
+      "alt": ".COM 注册优惠券，10月域名活动，域名注册 · 批量管理 · DNS解析，券价按数量查看 · 10月31日前使用",
+      "images": {
+        "card": {
+          "path": "offers/gname-card-v1.webp",
+          "sha256": "1798849b51fc0281e0c140d1b5b13620da32dbc141d0fd3c211dcd2918688f9b"
+        }
+      },
+      "url": "https://www.gname.com/register?tt=86836&ttcode=KEJILION86836&ttbj=dh",
+      "validUntil": "2026-10-31T16:00:00Z"
+    },
+    {
+      "id": "brainhost",
+      "vendor": "BrainHost",
+      "alt": "美西 KVM + NVMe，$7.99/月，1核1G · 20GB NVMe · 1TB流量，Nano US-West · 共享vCPU",
+      "images": {
+        "card": {
+          "path": "offers/brainhost-card-v1.webp",
+          "sha256": "a36158c6d39bd1d468e13a8a25bb529070efcf7f531536a9d1a793a5a42f694e"
+        }
+      },
+      "url": "https://account.brainhost.ai/?affid=42",
+      "validUntil": "2026-10-17T05:33:06.171Z"
+    }
+  ]
+}
