@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.26.0-rc.6] - 2026-10-11
+
+### Fixed
+
+- 修复 Docker 持续终端在应用市场安装的 Agent 中因缺少 CAP_KILL 而启动失败；新安装及刷新生命周期脚本后的更新会补齐服务权限。
+- Docker 执行进程的身份标记尚未就绪时，在原有超时内等待后再校验；错误标记与读取失败仍拒绝，保留 pidfd、进程出生时间及终端身份检查。
+
+### Upgrade Notes
+
+- 旧 RC.5 安装仅替换镜像或直接点击面板更新，可能仍缺少服务权限。请用刷新后的应用市场生命周期脚本更新，或迁移 Agent 服务配置后执行 daemon-reload 并重启 Agent。
+- 本版继承 RC.5 全部功能与验收限制，仅更新 preview；GitHub Latest 和 Docker latest 保持 v1.25.1，CF 安全补审及其他稳定版前待办继续保留。
+
+### 发布边界
+
+- 仅发布 GitHub prerelease 与 Docker preview，保留 release/v1.26.0-candidate；历史标签及版本镜像保持不可变，预览版禁止生产部署。
+- scriptLinkageState=not-required：kejilion/sh 协议与内置脚本内容不变，继续配对 1800d955f216aebd2776674368a8e469a671c489；发布后同步 apps/kpanel.conf，应用市场默认入口仍为 latest。
+
 ## [1.26.0-rc.5] - 2026-10-11
 
 ### Changed
