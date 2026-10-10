@@ -1,9 +1,10 @@
-// Mock of the 广告专栏 offers API for local previews. Banners are generated
-// SVG placeholders with fictional vendors; the real Panel only serves cached
+// Mock of the 广告专栏 offers API. Uses archived artwork when available,
+// otherwise fictional SVG placeholders; the real Panel only serves cached
 // WebP/PNG/JPEG files pinned by the app.kejilion.sh manifest
 // (internal/offers, internal/panel/offers.go). A manual refresh switches the
 // view to the "stale" state so the refresh-failure notice can be inspected.
 import { createHash } from 'node:crypto'
+import { existsSync, readFileSync } from 'node:fs'
 
 const PATH = '/api/v1/offers'
 const MEDIA = `${PATH}/media/`
@@ -45,7 +46,7 @@ function store(svg) {
   return `${MEDIA}${digest}`
 }
 
-const items = vendors.map((item) => ({
+let items = vendors.map((item) => ({
   id: item.id,
   vendor: item.vendor,
   alt: `${item.title}（示意素材）`,
@@ -55,6 +56,24 @@ const items = vendors.map((item) => ({
   card: store(banner(item, 960, 480)),
   ...(item.featured ? { wide: store(banner(item, 1600, 400)) } : {}),
 }))
+
+// Repository artwork is only used by this local UI mock; production keeps its remote source.
+const artworkRoot = new URL('../docs/assets/', import.meta.url)
+const artworkManifest = new URL('offers/v1.json', artworkRoot)
+if (existsSync(artworkManifest)) {
+  const manifest = JSON.parse(readFileSync(artworkManifest, 'utf8'))
+  items = manifest.items.map(({ images, ...item }) => {
+    const slots = Object.fromEntries(Object.entries(images).map(([slot, image]) => {
+      if (!/^offers\/[a-z0-9-]+\.webp$/.test(image.path)) throw new Error('Invalid local artwork path')
+      const data = readFileSync(new URL(image.path, artworkRoot))
+      const digest = createHash('sha256').update(data).digest('hex')
+      if (digest !== image.sha256) throw new Error(`Local artwork checksum mismatch: ${image.path}`)
+      media.set(digest, data)
+      return [slot, `${MEDIA}${digest}`]
+    }))
+    return { ...item, host: new URL(item.url).hostname, ...slots }
+  })
+}
 
 let state = 'live'
 
@@ -81,7 +100,8 @@ export async function mockOffers(request, response, url, send) {
     send(response, 404, { code: 'offers_image_not_found', title: 'Offers image not found' })
     return true
   }
-  response.writeHead(200, { 'content-type': 'image/svg+xml', 'cache-control': 'no-store' })
+  const type = data.subarray(8, 12).toString() === 'WEBP' ? 'image/webp' : 'image/svg+xml'
+  response.writeHead(200, { 'content-type': type, 'cache-control': 'no-store' })
   response.end(data)
   return true
 }
