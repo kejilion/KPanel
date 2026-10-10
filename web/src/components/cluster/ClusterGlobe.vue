@@ -4,7 +4,10 @@ import { RouterLink } from 'vue-router'
 import { ArrowLeft, ArrowUpRight, ChevronLeft, ChevronRight, Globe2, MapPin, Minus, Pause, Pencil, Play, Plus, RotateCcw, Search, X } from '@lucide/vue'
 import StatusBadge from '@/components/feedback/StatusBadge.vue'
 import CountryFlagIcon from '@/components/overview/CountryFlagIcon.vue'
+import OperatingSystemIcon from '@/components/overview/OperatingSystemIcon.vue'
+import { usageTone } from '@/lib/clusterHostIdentity'
 import { desktopWindowActiveKey } from '@/lib/desktopRouteKeys'
+import { detectOperatingSystemIdentity } from '@/lib/operatingSystem'
 import { clusterHostMonitoringRoute } from '@/lib/clusterHostNavigation'
 import { clampPercent, formatBytes, formatDateTime, formatDuration, formatPercent, formatRate, relativeTime } from '@/lib/format'
 import { clusterTrafficCounters, formatNetworkTrafficCounter, trafficPeriodHint } from '@/lib/networkTraffic'
@@ -52,6 +55,7 @@ const telemetry = computed(() => managementHost.value?.lastSnapshot?.telemetry)
 const publicSample = computed(() => publicHost.value?.collectedAt ? publicHost.value : undefined)
 const sample = computed(() => publicSample.value || telemetry.value)
 const location = computed(() => selected.value ? globeHostLocation(selected.value) : undefined)
+const osIdentity = computed(() => detectOperatingSystemIdentity(sample.value))
 const collectedAt = computed(() => publicHost.value?.collectedAt || managementHost.value?.lastSnapshot?.receivedAt)
 const receiveRate = computed(() => publicSample.value?.network.receiveBytesPerSecond ?? managementHost.value?.lastSnapshot?.receiveBytesPerSecond)
 const transmitRate = computed(() => publicSample.value?.network.transmitBytesPerSecond ?? managementHost.value?.lastSnapshot?.transmitBytesPerSecond)
@@ -158,6 +162,11 @@ function hostSample(host: GlobeHost) {
 function nodeMetric(host: GlobeHost, key: 'cpu' | 'memory' | 'disk'): string {
   const value = hostSample(host)?.[key].usagePercent
   return typeof value === 'number' && Number.isFinite(value) ? formatPercent(value) : '—'
+}
+
+function nodeMeter(host: GlobeHost, key: 'cpu' | 'memory' | 'disk') {
+  const value = hostSample(host)?.[key].usagePercent
+  return { width: `${clampPercent(value)}%`, tone: usageTone(value) }
 }
 
 function clearFilters(): void {
@@ -372,7 +381,7 @@ onBeforeUnmount(() => {
             />
             <Globe2 v-else :size="19" />
             <span class="cluster-globe__node-body"><strong class="cluster-globe__node-name" data-i18n-ignore>{{ host.name }}</strong><span class="cluster-globe__node-meta"><StatusBadge :status="host.state" :label="stateLabel(host)" subtle /><span data-i18n-ignore>{{ globeHostLocation(host)?.city || phrase('位置未知') }}</span></span></span>
-            <span class="cluster-globe__node-metrics"><span>CPU <b>{{ nodeMetric(host, 'cpu') }}</b></span><span>{{ phrase('内存') }} <b>{{ nodeMetric(host, 'memory') }}</b></span><span>{{ phrase('磁盘') }} <b>{{ nodeMetric(host, 'disk') }}</b></span></span>
+            <span class="cluster-globe__node-metrics"><span v-for="metric in (['cpu', 'memory', 'disk'] as const)" :key="metric">{{ metric === 'cpu' ? 'CPU' : phrase(metric === 'memory' ? '内存' : '磁盘') }} <i class="cluster-globe__node-meter" aria-hidden="true" :class="`is-${nodeMeter(host, metric).tone}`"><span :style="{ width: nodeMeter(host, metric).width }" /></i><b>{{ nodeMetric(host, metric) }}</b></span></span>
           </button>
         </div>
         <div v-else class="cluster-globe__empty" role="status"><Search :size="24" /><strong>没有匹配的节点</strong><button class="button button--secondary button--small" type="button" @click="clearFilters">清除筛选</button></div>
@@ -383,8 +392,13 @@ onBeforeUnmount(() => {
           <span>当前节点</span>
           <StatusBadge :status="selected.state" :label="stateLabel(selected)" subtle />
         </div>
-        <h3 data-i18n-ignore>{{ selected.name }}</h3>
-        <p class="cluster-globe__location"><MapPin :size="14" /><span data-i18n-ignore>{{ [location?.country, location?.region, location?.city].filter((value, index, items) => value && items.indexOf(value) === index).join(' · ') || phrase(publicHost ? '地区未公开' : '位置未知') }}</span></p>
+        <div class="cluster-globe__identity">
+          <OperatingSystemIcon v-if="sample" :distro="osIdentity.key" :label="osIdentity.label" />
+          <div>
+            <h3 data-i18n-ignore>{{ selected.name }}</h3>
+            <p class="cluster-globe__location"><CountryFlagIcon v-if="location?.countryCode" :country-code="location.countryCode" :label="location.country || location.countryCode" /><MapPin v-else :size="14" /><span data-i18n-ignore>{{ [location?.country, location?.region, location?.city].filter((value, index, items) => value && items.indexOf(value) === index).join(' · ') || phrase(publicHost ? '地区未公开' : '位置未知') }}</span></p>
+          </div>
+        </div>
         <p v-if="!selectedLocated" class="cluster-globe__unknown">地理信息不足，暂未在地球上标点。</p>
         <div class="cluster-globe__metrics">
           <component
@@ -396,7 +410,7 @@ onBeforeUnmount(() => {
             :aria-label="managementHost ? `${phrase('查看历史趋势')} · ${managementHost.name} · ${phrase(metric.label)}` : undefined"
           >
             <span>{{ phrase(metric.label) }}</span><strong>{{ typeof metric.value === 'number' && Number.isFinite(metric.value) ? formatPercent(metric.value) : '--' }}</strong>
-            <div class="cluster-globe__meter" aria-hidden="true"><i :style="{ width: `${clampPercent(metric.value ?? 0)}%` }" /></div>
+            <div class="cluster-globe__meter" aria-hidden="true"><i :class="`is-${usageTone(metric.value)}`" :style="{ width: `${clampPercent(metric.value ?? 0)}%` }" /></div>
             <small v-if="sample"><span v-for="(detail, index) in metric.details" :key="index">{{ index ? ' / ' : '' }}{{ detail }}</span></small>
           </component>
         </div>
@@ -458,18 +472,25 @@ onBeforeUnmount(() => {
 .cluster-globe__sidebar { display: flex; flex-direction: column; min-width: 0; border-left: 1px solid var(--border); }
 .cluster-globe__detail { padding: 20px; }
 .cluster-globe__detail-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: .8125rem; color: var(--text-soft); }
-.cluster-globe__detail h3 { margin: 12px 0 8px; font-size: 1.25rem; line-height: 1.4; overflow-wrap: anywhere; }
+.cluster-globe__identity { display: flex; align-items: center; gap: 12px; margin-top: 14px; min-width: 0; }
+.cluster-globe__identity > div { min-width: 0; }
+.cluster-globe__identity :deep(.os-identity__mark) { width: 44px; height: 44px; border-radius: var(--radius); }
+.cluster-globe__identity :deep(.os-identity__mark svg), .cluster-globe__identity :deep(.os-identity__mark img) { width: 24px; height: 24px; }
+.cluster-globe__detail h3 { margin: 0 0 4px; font-size: 1.25rem; line-height: 1.4; overflow-wrap: anywhere; }
 .cluster-globe__location { display: flex; align-items: flex-start; gap: 6px; margin: 0; font-size: .8125rem; color: var(--text-soft); overflow-wrap: anywhere; }
 .cluster-globe__location svg { margin-top: 2px; flex-shrink: 0; }
+.cluster-globe__location :deep(.country-flag) { width: 16px; height: 16px; margin-top: 2px; }
 .cluster-globe__metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 6em), 1fr)); gap: 14px; margin: 20px 0 14px; }
 .cluster-globe__metrics > :is(div, a) { min-width: 0; overflow-wrap: anywhere; }
 .cluster-globe__metrics span { display: block; font-size: .8125rem; color: var(--text-soft); }
 .cluster-globe__metrics strong { display: block; margin: 4px 0 8px; font-size: 1.125rem; font-variant-numeric: tabular-nums; }
 .cluster-globe__metrics small { display: block; margin-top: 8px; color: var(--text-soft); font-size: .8125rem; line-height: 1.5; overflow-wrap: anywhere; }
 .cluster-globe__metrics small span { display: inline-block; max-width: 100%; font-size: inherit; white-space: normal; }
-.cluster-globe__meter { height: 3px; border-radius: var(--radius-sm); background: var(--surface-subtle); overflow: hidden; }
-.cluster-globe__meter i { display: block; height: 100%; background: var(--brand); }
-.cluster-globe__host-details { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 7rem), 1fr)); gap: 14px 16px; margin: 20px 0; padding-block: 16px; border-block: 1px solid var(--border); }
+.cluster-globe__meter { height: 4px; border-radius: 999px; background: color-mix(in srgb, var(--text-soft) 14%, transparent); overflow: hidden; }
+.cluster-globe__meter i { display: block; height: 100%; background: var(--brand); border-radius: inherit; }
+.cluster-globe__meter i.is-warning, .cluster-globe__node-meter.is-warning > span { background: var(--warning); }
+.cluster-globe__meter i.is-danger, .cluster-globe__node-meter.is-danger > span { background: var(--danger); }
+.cluster-globe__host-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 16px; margin: 20px 0; padding-block: 16px; border-block: 1px solid var(--border); }
 .cluster-globe__host-details > div { min-width: 0; }
 .cluster-globe__system, .cluster-globe__isp { grid-column: 1 / -1; }
 .cluster-globe__host-details dt { margin-bottom: 4px; color: var(--text-soft); font-size: .8125rem; }
@@ -503,9 +524,11 @@ onBeforeUnmount(() => {
 .cluster-globe__node-body { display: grid; min-width: 0; gap: 7px; }
 .cluster-globe__node-name { overflow-wrap: anywhere; font-weight: 600; line-height: 1.5; }
 .cluster-globe__node-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--text-soft); font-size: .75rem; overflow-wrap: anywhere; }
-.cluster-globe__node-metrics { display: grid; gap: 8px; color: var(--text-soft); font-size: .75rem; }
-.cluster-globe__node-metrics > span { display: flex; justify-content: space-between; gap: 8px; }
-.cluster-globe__node-metrics b { color: var(--text); font-size: .8125rem; font-weight: 500; font-variant-numeric: tabular-nums; }
+.cluster-globe__node-metrics { display: grid; gap: 7px; color: var(--text-soft); font-size: .75rem; }
+.cluster-globe__node-metrics > span { display: grid; grid-template-columns: minmax(2.2em, auto) 2.75rem minmax(3.2em, auto); align-items: center; gap: 8px; }
+.cluster-globe__node-meter { display: block; height: 4px; overflow: hidden; border-radius: 999px; background: color-mix(in srgb, var(--text-soft) 14%, transparent); }
+.cluster-globe__node-meter > span { display: block; height: 100%; border-radius: inherit; background: var(--brand); }
+.cluster-globe__node-metrics b { color: var(--text); font-size: .8125rem; font-weight: 500; font-variant-numeric: tabular-nums; text-align: right; }
 .cluster-globe__detail-nav { display: flex; align-items: center; gap: 6px; padding-bottom: 16px; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
 .cluster-globe__detail-nav > span { margin-left: auto; color: var(--text-soft); font-size: .8125rem; }
 .cluster-globe__back { display: inline-flex; gap: 6px; align-items: center; min-height: 36px; padding: 0; color: var(--brand-strong); background: transparent; border: 0; font-size: .875rem; cursor: pointer; }

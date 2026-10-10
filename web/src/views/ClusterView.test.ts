@@ -152,7 +152,7 @@ interface ClusterBindings {
   moveHost: (hostID: string, offset: number) => Promise<void>
   transportSecurityLabel: (host: ClusterHost) => string
   shortFingerprint: (value?: string) => string
-  hostOperatingSystemIdentity: (host: ClusterHost) => { key: string; label: string }
+  hostStateTone: (host: ClusterHost) => 'online' | 'warning' | 'danger' | 'neutral'
   formatHostLatency: (host: ClusterHost) => string
   lightNodeCapabilitySummary: (host: ClusterHost) => string
   controllerCapabilitySummary: (scope: string) => string
@@ -431,7 +431,7 @@ describe('ClusterView compact summary layout', () => {
     expect(source).not.toMatch(/class="icon-button icon-button--small"[\s\S]{0,200}aria-label="刷新集群状态"/)
     expect(source.indexOf('aria-label="刷新集群状态"')).toBeLessThan(source.indexOf('@click="openAccess"'))
     expect(source).toMatch(/\.cluster-grid\.is-list \.cluster-card__details\s*\{[^}]*align-content:\s*stretch;[^}]*gap:\s*0;[^}]*padding:\s*0;/)
-    expect(source).toMatch(/\.cluster-grid\.is-list \.cluster-card__details > :is\(div, a\)\s*\{[^}]*align-content:\s*center;[^}]*padding:\s*15px 8px;/)
+    expect(source).toMatch(/\.cluster-grid\.is-list \.cluster-card__details > :is\(div, a\)\s*\{[^}]*align-content:\s*center;[^}]*padding:\s*12px 14px;/)
     expect(source).toMatch(/\.cluster-grid\.is-list \.cluster-card__details > \.cluster-metric-link\s*\{[^}]*border-radius:\s*0;/)
     expect(source).toMatch(/\.cluster-metric-link:hover,\s*\.cluster-metric-link:focus-visible\s*\{[^}]*background:\s*var\(--brand-soft\);/)
     expect(source).toMatch(/\.cluster-metric-link:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--brand\);/)
@@ -480,25 +480,42 @@ describe('ClusterView inventory and navigation', () => {
     expect(view.formatHostLatency(host('remote', false, 'https://hk.example.com'))).toBe('42 ms')
   })
 
-  it('uses the overview operating-system identity mapping for host icons', () => {
-    const view = setupView()
-    const known = host('known', false, 'https://known.example.com')
-    known.lastSnapshot!.telemetry.os = 'AlmaLinux 9.6 (Sage Margay)'
-    known.lastSnapshot!.telemetry.osId = 'almalinux'
-    known.lastSnapshot!.telemetry.osLike = ['rhel', 'centos', 'fedora']
-    expect(view.hostOperatingSystemIdentity(known)).toEqual({
-      key: 'alma',
-      label: 'AlmaLinux',
-    })
+  it('moves system and region details behind the identity icons and leads the network cells with live rates', () => {
+    const source = readFileSync(new URL('./ClusterView.vue', import.meta.url), 'utf8')
+    const card = source.slice(source.indexOf('<article'), source.indexOf('</article>'))
+    expect(card).toContain('<ClusterHostSystemInfo class="cluster-card__system" :telemetry="host.lastSnapshot?.telemetry" />')
+    expect(card).toContain(':location="host.lastSnapshot.telemetry.publicNetwork"')
+    expect(card.indexOf('<ClusterHostRegionInfo')).toBeLessThan(card.indexOf('<strong>{{ host.name }}</strong>'))
+    expect(card).not.toContain('<span>系统</span>')
+    expect(card).not.toContain('<span>地区</span>')
+    expect(card).not.toContain('<CountryFlagIcon')
+    const live = card.indexOf('formatRate(host.lastSnapshot.receiveBytesPerSecond)')
+    expect(live).toBeGreaterThan(0)
+    expect(card.indexOf('formatRate(host.lastSnapshot.transmitBytesPerSecond)')).toBeGreaterThan(live)
+    expect(card.indexOf("formatNetworkTrafficCounter(clusterTrafficCounters(host), 'received')")).toBeGreaterThan(live)
+  })
 
-    const unknown = host('unknown', false, 'https://unknown.example.com')
-    unknown.lastSnapshot!.telemetry.os = 'Vendor Linux 1'
-    unknown.lastSnapshot!.telemetry.osId = 'vendorlinux'
-    unknown.lastSnapshot!.telemetry.osLike = ['ubuntu', 'debian']
-    expect(view.hostOperatingSystemIdentity(unknown)).toEqual({
-      key: 'linux',
-      label: 'Vendor Linux 1',
-    })
+  it('keeps list rows readable without horizontal scrolling at any window width', () => {
+    const source = readFileSync(new URL('./ClusterView.vue', import.meta.url), 'utf8')
+    const styles = source.slice(source.indexOf('<style scoped>'))
+    expect(styles).not.toMatch(/min-width:\s*1360px/)
+    expect(styles).toMatch(/\.cluster-grid\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fill, minmax\(min\(100%, 22\.5rem\), 1fr\)\);/)
+    const medium = styles.slice(
+      styles.indexOf('@container cluster-layout (min-width: 42.5rem)'),
+      styles.indexOf('@container cluster-layout (min-width: 74rem)'),
+    )
+    expect(medium).toMatch(/grid-template-areas:\s*"header header"\s*"metrics details"\s*"warning warning"\s*"footer footer";/)
+    const wide = styles.slice(styles.indexOf('@container cluster-layout (min-width: 74rem)'))
+    expect(wide).toMatch(/grid-template-areas:\s*"header metrics details footer"\s*"warning warning warning warning";/)
+  })
+
+  it('tints the row accent with the same tone as the status badge', () => {
+    const view = setupView()
+    const remote = host('remote', false, 'https://hk.example.com')
+    const states = ['online', 'stale', 'degraded', 'offline', 'tls_error', 'pairing', 'unknown'] as const
+    expect(states.map((state) => view.hostStateTone({ ...remote, state }))).toEqual([
+      'online', 'warning', 'warning', 'danger', 'danger', 'neutral', 'neutral',
+    ])
   })
 
   it('uses one cached host-list request and does not fan out into per-host requests', async () => {

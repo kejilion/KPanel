@@ -15,16 +15,20 @@ function phrase(value: string): string {
   return translatePhrase(value)
 }
 import {
+  Activity,
   ArrowDown,
+  ArrowDownUp,
   ArrowUp,
   ArrowUpRight,
   Bell,
   Check,
+  Clock3,
   Copy,
   EllipsisVertical,
   Gauge,
   Globe2,
   GripVertical,
+  HardDrive,
   KeyRound,
   LayoutGrid,
   LayoutList,
@@ -47,13 +51,13 @@ import ClusterHostContextMenu, { type ClusterHostMenuAction } from '@/components
 import LightNodeHealth from '@/components/cluster/LightNodeHealth.vue'
 import ClusterTrafficInterfaces from '@/components/cluster/ClusterTrafficInterfaces.vue'
 import ClusterHostDetails from '@/components/cluster/ClusterHostDetails.vue'
+import ClusterHostRegionInfo from '@/components/cluster/ClusterHostRegionInfo.vue'
+import ClusterHostSystemInfo from '@/components/cluster/ClusterHostSystemInfo.vue'
 import ClusterRemainingValue from '@/components/cluster/ClusterRemainingValue.vue'
 import EmptyState from '@/components/feedback/EmptyState.vue'
 import ErrorState from '@/components/feedback/ErrorState.vue'
 import LoadingState from '@/components/feedback/LoadingState.vue'
 import StatusBadge from '@/components/feedback/StatusBadge.vue'
-import CountryFlagIcon from '@/components/overview/CountryFlagIcon.vue'
-import OperatingSystemIcon from '@/components/overview/OperatingSystemIcon.vue'
 import { ApiError, api } from '@/lib/api'
 import {
   applyClusterHostOrderPreference,
@@ -75,17 +79,17 @@ import {
 } from '@/lib/clusterHostNavigation'
 import { contextMenuFocusOrigin, type ContextMenuFocusOrigin } from '@/lib/contextMenu'
 import { desktopWindowActiveKey } from '@/lib/desktopRouteKeys'
-import { detectOperatingSystemIdentity } from '@/lib/operatingSystem'
+import { formatCapacityPair, usageTone } from '@/lib/clusterHostIdentity'
 import { withoutUnsupportedLightNodes } from '@/lib/nodeFeatureHosts'
 import { clusterTrafficCounters, formatNetworkTrafficCounter } from '@/lib/networkTraffic'
 import ClusterTrafficHeading from '@/components/cluster/ClusterTrafficHeading.vue'
 import type { ClusterTrafficCalculation } from '@/types/api'
 import {
   clampPercent,
-  formatBytes,
   formatDateTime,
   formatDuration,
   formatPercent,
+  formatRate,
   relativeTime,
 } from '@/lib/format'
 import { useToast } from '@/stores/toast'
@@ -229,8 +233,15 @@ const shareURL = computed(() =>
     : '',
 )
 
-const hostOperatingSystemIdentity = (host: ClusterHost) =>
-  detectOperatingSystemIdentity(host.lastSnapshot?.telemetry)
+type HostStateTone = 'online' | 'warning' | 'danger' | 'neutral'
+
+/** Mirrors StatusBadge tones so the row accent never contradicts the badge text. */
+function hostStateTone(host: ClusterHost): HostStateTone {
+  if (host.state === 'online') return 'online'
+  if (['degraded', 'stale', 'revoking'].includes(host.state)) return 'warning'
+  if (['offline', 'auth_failed', 'tls_error', 'incompatible'].includes(host.state)) return 'danger'
+  return 'neutral'
+}
 
 function formatHostLatency(host: ClusterHost): string {
   const latency = host.lastSnapshot?.latencyMilliseconds
@@ -1612,7 +1623,7 @@ onBeforeUnmount(() => {
         v-for="host in filteredHosts"
         :key="host.id"
         class="cluster-card"
-        :class="{ 'is-drag-over': dragOverHostId === host.id }"
+        :class="[`is-state-${hostStateTone(host)}`, { 'is-drag-over': dragOverHostId === host.id }]"
         @dragenter.prevent="dragOverHostId = host.id"
         @dragover.prevent
         @drop.prevent="dropHost(host.id)"
@@ -1633,14 +1644,16 @@ onBeforeUnmount(() => {
           >
             <GripVertical :size="15" />
           </button>
-          <OperatingSystemIcon
-            :distro="hostOperatingSystemIdentity(host).key"
-            :label="hostOperatingSystemIdentity(host).label"
-          />
-          <div>
-            <span>
+          <ClusterHostSystemInfo class="cluster-card__system" :telemetry="host.lastSnapshot?.telemetry" />
+          <div class="cluster-card__identity">
+            <span class="cluster-card__title">
+              <ClusterHostRegionInfo
+                v-if="host.lastSnapshot"
+                class="cluster-card__region"
+                :location="host.lastSnapshot.telemetry.publicNetwork"
+              />
               <strong>{{ host.name }}</strong>
-            <em v-if="host.isLocal" class="cluster-card__local">本机</em>
+              <em v-if="host.isLocal" class="cluster-card__local">本机</em>
               <em v-else-if="host.kind === 'light_node'" class="cluster-card__transport is-light_node">
                 轻量节点
               </em>
@@ -1658,6 +1671,7 @@ onBeforeUnmount(() => {
               v-if="host.kind !== 'light_node' && (host.isLocal || host.transportSecurity === 'tls')"
               class="cluster-card__origin"
               :href="panelURL(host)"
+              :title="displayHostAddress(host)"
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -1715,6 +1729,7 @@ onBeforeUnmount(() => {
               aria-valuemin="0"
               aria-valuemax="100"
               :aria-valuenow="clampPercent(host.lastSnapshot.telemetry.cpu.usagePercent)"
+              :class="`is-${usageTone(host.lastSnapshot.telemetry.cpu.usagePercent)}`"
             >
               <b :style="{ width: `${clampPercent(host.lastSnapshot.telemetry.cpu.usagePercent)}%` }" />
             </i>
@@ -1729,16 +1744,14 @@ onBeforeUnmount(() => {
               aria-valuemin="0"
               aria-valuemax="100"
               :aria-valuenow="clampPercent(host.lastSnapshot.telemetry.memory.usagePercent)"
+              :class="`is-${usageTone(host.lastSnapshot.telemetry.memory.usagePercent)}`"
             >
               <b :style="{ width: `${clampPercent(host.lastSnapshot.telemetry.memory.usagePercent)}%` }" />
             </i>
-            <small>
-              {{ formatBytes(host.lastSnapshot.telemetry.memory.usedBytes) }} /
-              {{ formatBytes(host.lastSnapshot.telemetry.memory.totalBytes) }}
-            </small>
+            <small>{{ formatCapacityPair(host.lastSnapshot.telemetry.memory.usedBytes, host.lastSnapshot.telemetry.memory.totalBytes) }}</small>
           </RouterLink>
           <RouterLink class="cluster-metric-link" :to="clusterHostMonitoringRoute(host, 'disk')" :title="phrase('查看历史趋势')" :aria-label="`${phrase('查看历史趋势')} · ${host.name} · ${phrase('磁盘')}`">
-            <span><Server :size="14" /> 磁盘</span>
+            <span><HardDrive :size="14" /> 磁盘</span>
             <strong>{{ formatPercent(host.lastSnapshot.telemetry.disk.usagePercent) }}</strong>
             <i
               role="progressbar"
@@ -1746,55 +1759,45 @@ onBeforeUnmount(() => {
               aria-valuemin="0"
               aria-valuemax="100"
               :aria-valuenow="clampPercent(host.lastSnapshot.telemetry.disk.usagePercent)"
+              :class="`is-${usageTone(host.lastSnapshot.telemetry.disk.usagePercent)}`"
             >
               <b :style="{ width: `${clampPercent(host.lastSnapshot.telemetry.disk.usagePercent)}%` }" />
             </i>
-            <small>
-              {{ formatBytes(host.lastSnapshot.telemetry.disk.usedBytes) }} /
-              {{ formatBytes(host.lastSnapshot.telemetry.disk.totalBytes) }}
-            </small>
+            <small>{{ formatCapacityPair(host.lastSnapshot.telemetry.disk.usedBytes, host.lastSnapshot.telemetry.disk.totalBytes) }}</small>
           </RouterLink>
         </div>
 
         <div v-if="host.lastSnapshot" class="cluster-card__details">
-          <div>
-            <span>系统</span>
-            <strong>{{ host.lastSnapshot.telemetry.os }}</strong>
-            <small>{{ host.lastSnapshot.telemetry.architecture }} · {{ host.lastSnapshot.telemetry.kernel }}</small>
-          </div>
-          <div>
-            <span>地区</span>
-            <strong>
-              <CountryFlagIcon
-                v-if="host.lastSnapshot.telemetry.publicNetwork.countryCode"
-                :country-code="host.lastSnapshot.telemetry.publicNetwork.countryCode"
-                :label="host.lastSnapshot.telemetry.publicNetwork.country || '地区'"
-              />
-              {{
-                [
-                  host.lastSnapshot.telemetry.publicNetwork.country,
-                  host.lastSnapshot.telemetry.publicNetwork.city,
-                ].filter(Boolean).join(' · ') || '未获取'
-              }}
-            </strong>
-            <small>{{ host.lastSnapshot.telemetry.publicNetwork.isp || '运营商未知' }}</small>
-          </div>
-          <RouterLink class="cluster-metric-link" :to="clusterHostMonitoringRoute(host, 'network')" :title="phrase('查看历史趋势')">
+          <RouterLink class="cluster-metric-link cluster-card__rate" :to="clusterHostMonitoringRoute(host, 'network')" :title="phrase('查看历史趋势')">
             <span class="sr-only">{{ phrase('查看历史趋势') }} · {{ host.name }} · </span>
-            <ClusterTrafficHeading :period="host.trafficPeriod" :details="inventory?.hostDetails?.[host.id]" />
-            <strong :title="phrase('累计接收')">
-              <span aria-hidden="true">↓</span>
+            <span><Activity :size="14" /> 实时网速</span>
+            <strong class="cluster-card__flow is-down" :title="phrase('实时下行')">
+              <ArrowDown :size="13" aria-hidden="true" />
+              <span class="sr-only">{{ phrase('实时下行') }}</span>
+              {{ formatRate(host.lastSnapshot.receiveBytesPerSecond) }}
+            </strong>
+            <strong class="cluster-card__flow is-up" :title="phrase('实时上行')">
+              <ArrowUp :size="13" aria-hidden="true" />
+              <span class="sr-only">{{ phrase('实时上行') }}</span>
+              {{ formatRate(host.lastSnapshot.transmitBytesPerSecond) }}
+            </strong>
+          </RouterLink>
+          <RouterLink class="cluster-metric-link cluster-card__traffic" :to="clusterHostMonitoringRoute(host, 'network')" :title="phrase('查看历史趋势')">
+            <span class="sr-only">{{ phrase('查看历史趋势') }} · {{ host.name }} · </span>
+            <span><ArrowDownUp :size="14" /> <ClusterTrafficHeading :period="host.trafficPeriod" :details="inventory?.hostDetails?.[host.id]" /></span>
+            <small class="cluster-card__flow is-down" :title="phrase('累计接收')">
+              <ArrowDown :size="13" aria-hidden="true" />
               <span class="sr-only">{{ phrase('累计接收') }}</span>
               {{ formatNetworkTrafficCounter(clusterTrafficCounters(host), 'received') }}
-            </strong>
-            <small :title="phrase('累计传送')">
-              <span aria-hidden="true">↑</span>
+            </small>
+            <small class="cluster-card__flow is-up" :title="phrase('累计传送')">
+              <ArrowUp :size="13" aria-hidden="true" />
               <span class="sr-only">{{ phrase('累计传送') }}</span>
               {{ formatNetworkTrafficCounter(clusterTrafficCounters(host), 'sent') }}
             </small>
           </RouterLink>
-          <div>
-            <span>运行时间</span>
+          <div class="cluster-card__uptime">
+            <span><Clock3 :size="14" /> 运行时间</span>
             <strong>{{ formatDuration(host.lastSnapshot.telemetry.uptimeSeconds) }}</strong>
             <small>延迟 {{ formatHostLatency(host) }}</small>
           </div>
@@ -2678,15 +2681,13 @@ onBeforeUnmount(() => {
 .cluster-grid {
   display: grid;
   container: cluster-layout / inline-size;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 22.5rem), 1fr));
   gap: 16px;
 }
 
 .cluster-grid.is-list {
   grid-template-columns: minmax(0, 1fr);
-  gap: 8px;
-  overflow-x: auto;
-  overscroll-behavior-inline: contain;
+  gap: 10px;
 }
 
 .cluster-grid.is-list:focus-visible {
@@ -2695,13 +2696,40 @@ onBeforeUnmount(() => {
 }
 
 .cluster-card {
-  display: grid;
+  position: relative;
+  display: flex;
   min-width: 0;
+  flex-direction: column;
   overflow: hidden;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius);
   box-shadow: var(--shadow-sm);
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+/* State accent mirrors the status badge tone; the badge text stays the primary signal. */
+.cluster-card::before {
+  position: absolute;
+  z-index: 1;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--cluster-card-accent, transparent);
+  content: '';
+  pointer-events: none;
+}
+
+.cluster-card.is-state-warning {
+  --cluster-card-accent: var(--warning);
+}
+
+.cluster-card.is-state-danger {
+  --cluster-card-accent: var(--danger);
+}
+
+.cluster-card:hover {
+  border-color: color-mix(in srgb, var(--brand) 24%, var(--border));
+  box-shadow: var(--shadow-md);
 }
 
 .cluster-card.is-drag-over {
@@ -2709,121 +2737,69 @@ onBeforeUnmount(() => {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 14%, transparent);
 }
 
-.cluster-grid.is-card .cluster-card {
-  display: flex;
-  flex-direction: column;
-}
+/* Cards in one row share section tracks, so a wrapped title never pushes its
+   meters out of line with the neighbouring cards. */
+@supports (grid-template-rows: subgrid) {
+  .cluster-grid.is-card {
+    row-gap: 0;
+  }
 
-.cluster-grid.is-card .cluster-card__header {
-  flex: 1;
-}
+  .cluster-grid.is-card .cluster-card {
+    display: grid;
+    grid-row: span 5;
+    grid-template-rows: subgrid;
+    row-gap: 0;
+    margin-bottom: 16px;
+  }
 
-.cluster-grid.is-list .cluster-card {
-  min-width: 1360px;
-  grid-template-columns:
-    minmax(320px, 1.4fr)
-    minmax(300px, 1.1fr)
-    minmax(500px, 1.5fr)
-    minmax(240px, 0.8fr);
-  grid-template-areas:
-    "header metrics details footer"
-    "warning warning warning warning";
-  align-items: stretch;
-}
+  .cluster-grid.is-card .cluster-card__empty {
+    grid-row: 2 / span 2;
+  }
 
-.cluster-grid.is-list .cluster-card__header {
-  grid-area: header;
-  border-right: 1px solid var(--border);
-  border-bottom: 0;
-}
+  .cluster-grid.is-card .cluster-card__warning {
+    grid-row: 4;
+  }
 
-.cluster-grid.is-list .cluster-card__metrics {
-  grid-area: metrics;
-  border-right: 1px solid var(--border);
-  border-bottom: 0;
-}
-
-.cluster-grid.is-list .cluster-card__metrics > .cluster-metric-link {
-  place-content: center;
-}
-
-.cluster-grid.is-list .cluster-card__details {
-  grid-area: details;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  align-content: stretch;
-  gap: 0;
-  padding: 0;
-  border-right: 1px solid var(--border);
-}
-
-.cluster-grid.is-list .cluster-card__details > :is(div, a) {
-  align-content: center;
-  padding: 15px 8px;
-}
-
-.cluster-grid.is-list .cluster-card__details > :first-child {
-  padding-left: 16px;
-}
-
-.cluster-grid.is-list .cluster-card__details > :last-child {
-  padding-right: 16px;
-}
-
-.cluster-grid.is-list .cluster-card__details > .cluster-metric-link {
-  border-radius: 0;
-}
-
-.cluster-grid.is-list .cluster-card__empty {
-  grid-area: 1 / 2 / 2 / 4;
-  min-height: 92px;
-  border-right: 1px solid var(--border);
-}
-
-.cluster-grid.is-list .cluster-card__warning {
-  grid-area: warning;
-}
-
-.cluster-grid.is-list .cluster-card__footer {
-  grid-area: footer;
-  align-items: stretch;
-  justify-content: center;
-  flex-direction: column;
-  margin-top: 0;
-  border-top: 0;
-}
-
-.cluster-grid.is-list .cluster-card__footer > div,
-.cluster-grid.is-list .cluster-card__footer .button {
-  width: 100%;
-}
-
-.cluster-grid.is-list .cluster-card__footer .button {
-  justify-content: center;
+  .cluster-grid.is-card .cluster-card__footer {
+    grid-row: 5;
+  }
 }
 
 .cluster-card__header {
   display: grid;
   grid-template-columns: auto auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 12px;
-  padding: 16px;
-  border-bottom: 1px solid var(--border);
+  gap: 10px;
+  padding: 14px 14px 12px 8px;
+}
+
+.cluster-card__header :deep(.os-identity__mark) {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius);
+}
+
+.cluster-card__header :deep(.os-identity__mark svg),
+.cluster-card__header :deep(.os-identity__mark img) {
+  width: 22px;
+  height: 22px;
 }
 
 .cluster-card__actions {
   display: inline-flex;
+  align-self: start;
   align-items: center;
   gap: 4px;
 }
 
 .cluster-card__drag {
   display: grid;
-  width: 26px;
+  width: 24px;
   height: 34px;
   place-items: center;
   padding: 0;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   color: var(--text-tertiary);
   background: transparent;
   cursor: grab;
@@ -2844,32 +2820,41 @@ onBeforeUnmount(() => {
   cursor: not-allowed;
 }
 
-.cluster-card__header > div {
+.cluster-card__identity {
+  display: grid;
   min-width: 0;
+  gap: 3px;
 }
 
-.cluster-card__header > div > span {
+.cluster-card__title {
   display: flex;
   flex-wrap: wrap;
   min-width: 0;
   align-items: center;
-  gap: 8px;
+  gap: 6px 8px;
 }
 
-.cluster-card__header strong {
+.cluster-card__title strong {
   min-width: 0;
   font-size: 1rem;
-  line-height: 1.5;
+  font-weight: 600;
+  line-height: 1.4;
   overflow-wrap: anywhere;
+}
+
+.cluster-card__title :deep(.country-flag) {
+  width: 20px;
+  height: 20px;
 }
 
 .cluster-card__local,
 .cluster-card__transport {
   flex: 0 0 auto;
-  padding: 2px 7px;
+  padding: 1px 7px;
   font-size: .75rem;
   font-style: normal;
   font-weight: 700;
+  line-height: 1.5;
   border-radius: 999px;
 }
 
@@ -2895,12 +2880,12 @@ onBeforeUnmount(() => {
 .cluster-card__origin {
   display: inline-flex;
   max-width: 100%;
+  justify-self: start;
   align-items: center;
   gap: 4px;
-  margin-top: 4px;
   overflow: hidden;
   color: var(--muted);
-  font-size: .875rem;
+  font-size: .8125rem;
   text-decoration: none;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3108,44 +3093,53 @@ onBeforeUnmount(() => {
 .cluster-card__metrics {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  border-bottom: 1px solid var(--border);
+  gap: 8px;
+  padding: 0 14px 10px;
 }
 
 .cluster-card__metrics > .cluster-metric-link {
   display: grid;
-  gap: 5px;
-  padding: 12px;
+  min-width: 0;
+  align-content: start;
+  gap: 6px;
+  padding: 10px 11px;
+  background: var(--surface-subtle);
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-radius: var(--radius);
 }
 
-.cluster-card__metrics > .cluster-metric-link + .cluster-metric-link {
-  border-left: 1px solid var(--border);
-}
-
-.cluster-card__metrics span {
+.cluster-card__metrics span,
+.cluster-card__details > * > span:not(.sr-only) {
   display: inline-flex;
+  min-width: 0;
   align-items: center;
   gap: 5px;
   color: var(--text-soft);
   font-size: .8125rem;
+  line-height: 1.4;
 }
 
 .cluster-card__metrics strong {
-  font-size: 17px;
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
 }
 
 .cluster-card__metrics small {
   color: var(--text-soft);
   font-size: .75rem;
-  line-height: 1.5;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
 
 .cluster-card__metrics i {
   display: block;
-  height: 3px;
+  height: 4px;
   overflow: hidden;
-  background: var(--surface-muted);
-  border-radius: 99px;
+  background: color-mix(in srgb, var(--text-soft) 14%, transparent);
+  border-radius: 999px;
 }
 
 .cluster-card__metrics b {
@@ -3153,33 +3147,66 @@ onBeforeUnmount(() => {
   height: 100%;
   background: linear-gradient(90deg, var(--brand), #3bbfa3);
   border-radius: inherit;
+  transition: width 300ms ease;
+}
+
+.cluster-card__metrics i.is-warning b {
+  background: var(--warning);
+}
+
+.cluster-card__metrics i.is-danger b {
+  background: var(--danger);
 }
 
 .cluster-card__details {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px 16px;
-  padding: 15px 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 0 14px 12px;
 }
 
 .cluster-card__details > :is(div, a) {
   display: grid;
   min-width: 0;
+  align-content: start;
   gap: 3px;
+  padding: 6px 11px;
 }
 
-.cluster-card__details span {
-  color: var(--text-soft);
-  font-size: .75rem;
-}
-
-.cluster-card__details strong {
+.cluster-card__details strong,
+.cluster-card__details small {
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 6px;
-  overflow-wrap: anywhere;
+  gap: 4px;
   font-size: .875rem;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.cluster-card__details strong {
+  font-weight: 600;
+}
+
+.cluster-card__details small {
+  color: var(--text-soft);
+}
+
+.cluster-card__uptime small {
+  font-size: .8125rem;
+}
+
+.cluster-card__flow > svg {
+  flex: 0 0 auto;
+}
+
+.cluster-card__flow.is-down > svg {
+  color: var(--blue);
+}
+
+.cluster-card__flow.is-up > svg {
+  color: var(--success);
 }
 
 .cluster-metric-link {
@@ -3198,30 +3225,17 @@ onBeforeUnmount(() => {
   outline-offset: -2px;
 }
 
-.cluster-metric-link > span { font-size: .875rem; }
-.cluster-metric-link > small { font-size: .8125rem; }
-.cluster-card__details > .cluster-metric-link { border-radius: var(--radius-sm); }
-
-.cluster-card__details small {
-  overflow: hidden;
-  color: var(--muted);
-  font-size: .75rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* strong 是 flex 布局自带 gap，small 是单行块级，需要单独给箭头留间距 */
-.cluster-card__details small [aria-hidden='true'] {
-  margin-right: 5px;
+.cluster-card__details > .cluster-metric-link {
+  border-radius: var(--radius-sm);
 }
 
 .cluster-card__empty {
   display: flex;
-  min-height: 138px;
+  min-height: 120px;
   align-items: center;
   justify-content: center;
   gap: 11px;
-  padding: 20px;
+  padding: 16px 20px;
   color: var(--muted);
 }
 
@@ -3248,26 +3262,196 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 16px;
+  padding: 10px 14px;
   margin-top: auto;
+  background: color-mix(in srgb, var(--surface-subtle) 60%, var(--surface));
   border-top: 1px solid var(--border);
 }
 
 .cluster-card__footer > span {
   display: grid;
+  min-width: 0;
   color: var(--text-soft);
-  font-size: .75rem;
+  font-size: .8125rem;
+  line-height: 1.45;
 }
 
 .cluster-card__footer small {
   color: var(--muted);
-  font-size: 12px;
+  font-size: .75rem;
 }
 
 .cluster-card__footer > div {
   display: flex;
   flex: 0 0 auto;
   gap: 6px;
+}
+
+/* Rows: identity, data and actions as bands while the window is mid-width,
+   one line once every group fits. */
+@container cluster-layout (min-width: 42.5rem) {
+  .cluster-grid.is-list .cluster-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+    grid-template-areas:
+      "header header"
+      "metrics details"
+      "warning warning"
+      "footer footer";
+    align-items: stretch;
+  }
+
+  .cluster-grid.is-list .cluster-card__header {
+    grid-area: header;
+    padding: 12px 12px 12px 6px;
+  }
+
+  .cluster-grid.is-list .cluster-card__metrics {
+    grid-area: metrics;
+    gap: 0;
+    padding: 0;
+    border-top: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+  }
+
+  .cluster-grid.is-list .cluster-card__metrics > .cluster-metric-link {
+    align-content: center;
+    padding: 12px 14px;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .cluster-grid.is-list .cluster-card__details {
+    grid-area: details;
+    align-content: stretch;
+    gap: 0;
+    padding: 0;
+    border-top: 1px solid var(--border);
+  }
+
+  .cluster-grid.is-list .cluster-card__details > :is(div, a) {
+    align-content: center;
+    padding: 12px 14px;
+  }
+
+  .cluster-grid.is-list .cluster-card__details > .cluster-metric-link {
+    border-radius: 0;
+  }
+
+  .cluster-grid.is-list .cluster-card__empty {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    min-height: 92px;
+    border-top: 1px solid var(--border);
+  }
+
+  .cluster-grid.is-list .cluster-card__warning {
+    grid-area: warning;
+  }
+
+  .cluster-grid.is-list .cluster-card__footer {
+    grid-area: footer;
+    margin-top: 0;
+  }
+}
+
+@container cluster-layout (min-width: 74rem) {
+  .cluster-grid.is-list .cluster-card {
+    grid-template-columns:
+      minmax(18rem, 1.5fr)
+      minmax(18rem, 1.1fr)
+      minmax(21rem, 1.3fr)
+      minmax(13.5rem, .75fr);
+    grid-template-areas:
+      "header metrics details footer"
+      "warning warning warning warning";
+  }
+
+  .cluster-grid.is-list .cluster-card__header {
+    border-right: 1px solid var(--border);
+  }
+
+  .cluster-grid.is-list .cluster-card__actions {
+    align-self: center;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .cluster-grid.is-list .cluster-card__metrics,
+  .cluster-grid.is-list .cluster-card__details {
+    border-top: 0;
+  }
+
+  .cluster-grid.is-list .cluster-card__metrics > .cluster-metric-link {
+    padding: 12px 8px;
+  }
+
+  .cluster-grid.is-list .cluster-card__metrics > .cluster-metric-link:first-child {
+    padding-left: 14px;
+  }
+
+  .cluster-grid.is-list .cluster-card__details {
+    border-right: 1px solid var(--border);
+  }
+
+  .cluster-grid.is-list .cluster-card__details > :is(div, a) {
+    padding: 12px 8px;
+  }
+
+  .cluster-grid.is-list .cluster-card__details > :first-child {
+    padding-left: 14px;
+  }
+
+  .cluster-grid.is-list .cluster-card__empty {
+    grid-area: 1 / 2 / 2 / 4;
+    border-top: 0;
+    border-right: 1px solid var(--border);
+  }
+
+  .cluster-grid.is-list .cluster-card__footer {
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
+    padding: 12px 14px;
+    background: transparent;
+    border-top: 0;
+  }
+
+  .cluster-grid.is-list .cluster-card__footer > div {
+    width: 100%;
+  }
+
+  .cluster-grid.is-list .cluster-card__footer .button {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+}
+
+@container cluster-layout (max-width: 30rem) {
+  .cluster-card__header {
+    padding: 12px 12px 10px 6px;
+  }
+
+  .cluster-card__metrics,
+  .cluster-card__details {
+    padding-inline: 10px;
+    gap: 6px;
+  }
+
+  .cluster-card__footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .cluster-card__footer > div {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cluster-card__footer .button {
+    justify-content: center;
+  }
 }
 
 .cluster-access {
@@ -3501,17 +3685,7 @@ onBeforeUnmount(() => {
   width: fit-content;
 }
 
-@media (max-width: 1240px) {
-  .cluster-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
 @media (max-width: 680px) {
-  .cluster-grid {
-    grid-template-columns: 1fr;
-  }
-
   .cluster-hero {
     grid-template-columns: minmax(0, 1fr);
     gap: 10px;
@@ -3557,21 +3731,6 @@ onBeforeUnmount(() => {
     border-top: 1px solid var(--border);
   }
 
-  .cluster-card__footer {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .cluster-card__footer > div,
-  .cluster-card__footer .button {
-    width: 100%;
-  }
-
-  .cluster-card__footer > div {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .cluster-light-batch__fields {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -3579,16 +3738,18 @@ onBeforeUnmount(() => {
   .cluster-light-batch__fields .field:last-child {
     grid-column: auto;
   }
+}
 
-  .cluster-card__header {
-    grid-template-columns: 24px auto minmax(0, 1fr) auto;
-    gap: 8px;
-    padding: 12px;
+@container cluster-toolbar (max-width: 56rem) {
+  .cluster-search {
+    flex-basis: 100%;
+    max-width: none;
   }
 
-  .cluster-card__metrics > .cluster-metric-link,
-  .cluster-card__details {
-    padding: 11px;
+  .cluster-toolbar__controls {
+    width: 100%;
+    justify-content: space-between;
+    margin-left: 0;
   }
 }
 
@@ -3620,35 +3781,6 @@ onBeforeUnmount(() => {
   .cluster-view-switch button {
     flex: 1;
     justify-content: center;
-  }
-}
-
-@container cluster-layout (max-width: 680px) {
-  .cluster-grid.is-list .cluster-card {
-    min-width: 0;
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-areas:
-      "header"
-      "metrics"
-      "details"
-      "footer"
-      "warning";
-  }
-
-  .cluster-grid.is-list .cluster-card__footer {
-    align-items: flex-start;
-    border-top: 1px solid var(--border);
-    border-bottom: 0;
-  }
-
-  .cluster-grid.is-list .cluster-card__footer > div,
-  .cluster-grid.is-list .cluster-card__footer .button {
-    width: 100%;
-  }
-
-  .cluster-grid.is-list .cluster-card__footer > div {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 </style>

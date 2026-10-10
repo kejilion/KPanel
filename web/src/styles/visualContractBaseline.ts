@@ -169,8 +169,6 @@ export const VISUAL_CONTRACT_BASELINE: readonly VisualContractBaselineEntry[] = 
   legacy("src/views/ClusterShareView.vue", ".share-view-switch", "border-radius", "11px", "历史组件圆角，按层级迁移到语义 radius token"),
   legacy("src/views/ClusterShareView.vue", ".share-view-switch button", "border-radius", "8px", "历史组件圆角，按层级迁移到语义 radius token"),
   legacy("src/views/ClusterShareView.vue", ".share-warning", "border-radius", "12px", "历史组件圆角，按层级迁移到语义 radius token"),
-  legacy("src/views/ClusterView.vue", ".cluster-card__drag", "border-radius", "8px", "历史组件圆角，按层级迁移到语义 radius token"),
-  legacy("src/views/ClusterView.vue", ".cluster-card__metrics i", "border-radius", "99px", "历史组件圆角，按层级迁移到语义 radius token"),
   legacy("src/views/ClusterView.vue", ".cluster-hero", "border-radius", "14px", "历史组件圆角，按层级迁移到语义 radius token"),
   legacy("src/views/ClusterView.vue", ".cluster-hero", "border-radius", "15px", "历史组件圆角，按层级迁移到语义 radius token"),
   legacy("src/views/DiagnosticsView.vue", ".diagnostic-card__icon", "border-radius", "9px", "历史组件圆角，按层级迁移到语义 radius token"),
