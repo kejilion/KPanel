@@ -147,6 +147,116 @@ func TestManagerEnforcesSessionAndInputLimits(t *testing.T) {
 	}
 }
 
+func TestSelectedStarterSharesOwnershipAndCapacity(t *testing.T) {
+	m := New(Config{Starter: func(uint16, uint16) (Process, error) { return newFakeProcess(), nil }, MaxSessions: 2, MaxOwnerSessions: 2})
+	defer m.CloseAll()
+	if _, err := m.Open("owner", 24, 80); err != nil {
+		t.Fatal(err)
+	}
+	p := newFakeProcess()
+	s, err := m.OpenWithStarter("owner", 30, 120, func(rows, cols uint16) (Process, error) {
+		if rows != 30 || cols != 120 {
+			t.Fatalf("dimensions = %d x %d", rows, cols)
+		}
+		return p, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Input("other", s.ID, []byte("id\r")); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("cross-owner input = %v", err)
+	}
+	if _, err := m.Open("other", 24, 80); !errors.Is(err, ErrLimit) {
+		t.Fatalf("shared capacity = %v", err)
+	}
+}
+
+type pendingCleanupProcess struct {
+	*fakeProcess
+	cleanupMu sync.Mutex
+	fail      bool
+	closes    int
+}
+
+func (p *pendingCleanupProcess) Kill() error {
+	p.cleanupMu.Lock()
+	defer p.cleanupMu.Unlock()
+	if p.fail {
+		return errors.New("injected stop failure")
+	}
+	return p.fakeProcess.Kill()
+}
+func (p *pendingCleanupProcess) Close() error {
+	p.cleanupMu.Lock()
+	p.closes++
+	p.cleanupMu.Unlock()
+	return p.fakeProcess.Close()
+}
+func (p *pendingCleanupProcess) Wait() error { return ErrCleanupPending }
+
+func TestDisconnectedProcessRetainsOwnerAndQuotaUntilCleanupConfirmed(t *testing.T) {
+	p := &pendingCleanupProcess{fakeProcess: newFakeProcess(), fail: true}
+	m := New(Config{MaxSessions: 1, MaxOwnerSessions: 1})
+	defer m.CloseAll()
+	s, err := m.OpenWithStarter("owner", 24, 80, func(uint16, uint16) (Process, error) { return p, nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = p.writer.CloseWithError(errors.New("transport dropped"))
+	item, _ := m.lookup("owner", s.ID)
+	deadline := time.Now().Add(time.Second)
+	for {
+		item.mu.Lock()
+		pending := item.closeFailed
+		exited := item.exitedAt
+		item.mu.Unlock()
+		if exited != nil {
+			t.Fatal("unconfirmed cleanup published an exit")
+		}
+		if pending {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("capture did not retain cleanup")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if _, err := m.Open("other", 24, 80); !errors.Is(err, ErrLimit) {
+		t.Fatalf("pending capacity = %v", err)
+	}
+	m.reap(time.Now()) // Retry even while the session has not reached idle timeout.
+	p.cleanupMu.Lock()
+	if p.closes != 0 {
+		t.Fatal("released process handles before confirmed termination")
+	}
+	p.fail = false
+	p.cleanupMu.Unlock()
+	m.reap(time.Now())
+	if !item.snapshot().Closed {
+		t.Fatal("reaper did not retry pending cleanup")
+	}
+}
+
+func TestFailedStarterRetainsSharedAdmissionUntilCleanup(t *testing.T) {
+	p := &pendingCleanupProcess{fakeProcess: newFakeProcess(), fail: true}
+	m := New(Config{MaxSessions: 1, MaxOwnerSessions: 1})
+	defer m.CloseAll()
+	_, err := m.OpenWithStarter("owner", 24, 80, func(uint16, uint16) (Process, error) { return p, errors.New("resize failed after start") })
+	if err == nil {
+		t.Fatal("failed start succeeded")
+	}
+	if _, err := m.Open("other", 24, 80); !errors.Is(err, ErrLimit) {
+		t.Fatalf("failed start escaped capacity: %v", err)
+	}
+	p.cleanupMu.Lock()
+	p.fail = false
+	p.cleanupMu.Unlock()
+	m.reap(time.Now())
+	if _, err := m.OpenWithStarter("other", 24, 80, func(uint16, uint16) (Process, error) { return newFakeProcess(), nil }); err != nil {
+		t.Fatalf("confirmed cleanup did not release capacity: %v", err)
+	}
+}
+
 // Continuous forward polling must keep a silent session alive past the idle
 // timeout: batch executions poll output every second even while the command
 // produces nothing, and that polling itself is the liveness signal.

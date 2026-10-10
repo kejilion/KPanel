@@ -18,6 +18,7 @@ import (
 
 	"github.com/kejilion/kejilion-panel/internal/cluster"
 	"github.com/kejilion/kejilion-panel/internal/contract"
+	"github.com/kejilion/kejilion-panel/internal/dockerx"
 	"github.com/kejilion/kejilion-panel/internal/terminal"
 )
 
@@ -44,9 +45,11 @@ type panelTerminalSession struct {
 }
 
 type terminalOpenRequest struct {
-	HostID  string `json:"hostId"`
-	Rows    uint16 `json:"rows"`
-	Columns uint16 `json:"columns"`
+	HostID          string `json:"hostId"`
+	Rows            uint16 `json:"rows"`
+	Columns         uint16 `json:"columns"`
+	ContainerID     string `json:"containerId,omitempty"`
+	ResourceVersion string `json:"resourceVersion,omitempty"`
 }
 
 type terminalOpenResponse struct {
@@ -58,6 +61,13 @@ type terminalOpenResponse struct {
 
 func (s clusterTerminalSource) Open(ctx context.Context, owner string, rows, columns uint16) (terminal.Snapshot, error) {
 	body, _ := json.Marshal(map[string]any{"owner": owner, "rows": rows, "columns": columns})
+	response, err := s.agent.Do(ctx, http.MethodPost, "/v1/terminals", "", newRequestID(), body)
+	var result terminal.Snapshot
+	return result, decodeTerminalAgentResponse(response, err, &result)
+}
+
+func (s clusterTerminalSource) OpenContainer(ctx context.Context, owner string, input terminalOpenRequest) (terminal.Snapshot, error) {
+	body, _ := json.Marshal(map[string]any{"owner": owner, "rows": input.Rows, "columns": input.Columns, "containerId": input.ContainerID, "resourceVersion": input.ResourceVersion})
 	response, err := s.agent.Do(ctx, http.MethodPost, "/v1/terminals", "", newRequestID(), body)
 	var result terminal.Snapshot
 	return result, decodeTerminalAgentResponse(response, err, &result)
@@ -125,6 +135,10 @@ func decodeTerminalAgentResponse(response AgentResponse, err error, target any) 
 		var problem contract.Problem
 		if json.Unmarshal(response.Body, &problem) == nil {
 			switch problem.Code {
+			case "resource_conflict":
+				return dockerx.ErrResourceConflict
+			case "container_terminal_unavailable":
+				return dockerx.ErrActionUnsupported
 			case "terminal_input_sequence":
 				return terminal.ErrInputSequence
 			case "terminal_input_uncertain":
@@ -205,9 +219,18 @@ func (s *Server) openTerminalSession(w http.ResponseWriter, r *http.Request, use
 		s.writeValidationProblem(w, r, "dimensions", "valid terminal rows and columns are required")
 		return
 	}
+	if (input.ContainerID == "") != (input.ResourceVersion == "") ||
+		(input.ContainerID != "" && (!validContainerTerminalID(input.ContainerID) || len(input.ResourceVersion) > 256)) {
+		s.writeValidationProblem(w, r, "containerId", "a full container identity and resource version are required together")
+		return
+	}
 	host, err := s.cluster.Host(r.Context(), input.HostID)
 	if err != nil || !host.TerminalAvailable {
 		s.writeProblem(w, r, http.StatusConflict, "terminal_unavailable", "Terminal unavailable", "This host does not expose an authenticated terminal")
+		return
+	}
+	if input.ContainerID != "" && !host.IsLocal {
+		s.writeProblem(w, r, http.StatusConflict, "container_terminal_unavailable", "Container terminal unavailable", "Docker management targets the local Agent")
 		return
 	}
 	stale := s.pruneTerminalSessions(time.Now().UTC().Add(-panelTerminalIdleTTL))
@@ -221,16 +244,37 @@ func (s *Server) openTerminalSession(w http.ResponseWriter, r *http.Request, use
 	defer s.releaseTerminalOpen(userID)
 
 	owner := "panel:" + userID
+	auditType, auditTarget := "cluster_host", host.ID
+	if input.ContainerID != "" {
+		auditType, auditTarget = "docker_container", input.ContainerID
+	}
 	var opened cluster.TerminalOpenResponse
 	if host.IsLocal {
-		snapshot, openErr := clusterTerminalSource{agent: s.agent}.Open(r.Context(), owner, input.Rows, input.Columns)
+		var snapshot terminal.Snapshot
+		var openErr error
+		if input.ContainerID != "" {
+			snapshot, openErr = (clusterTerminalSource{agent: s.agent}).OpenContainer(r.Context(), owner, input)
+		} else {
+			snapshot, openErr = (clusterTerminalSource{agent: s.agent}).Open(r.Context(), owner, input.Rows, input.Columns)
+		}
 		err = openErr
 		opened = cluster.TerminalOpenResponse{SessionID: snapshot.ID, Offset: snapshot.Offset, CreatedAt: snapshot.CreatedAt}
 	} else {
 		opened, err = s.cluster.TerminalOpen(r.Context(), host.ID, cluster.TerminalOpenRequest{Rows: input.Rows, Columns: input.Columns})
 	}
 	if err != nil {
-		_ = s.audit(r, userID, "terminal.open", "cluster_host", host.ID, "failure", nil)
+		_ = s.audit(r, userID, "terminal.open", auditType, auditTarget, "failure", nil)
+		switch {
+		case errors.Is(err, terminal.ErrLimit):
+			s.writeProblem(w, r, http.StatusTooManyRequests, "terminal_limit", "Terminal session limit reached", "")
+			return
+		case errors.Is(err, dockerx.ErrResourceConflict):
+			s.writeProblem(w, r, http.StatusConflict, "resource_conflict", "Container state changed", "")
+			return
+		case errors.Is(err, dockerx.ErrActionUnsupported):
+			s.writeProblem(w, r, http.StatusConflict, "container_terminal_unavailable", "Container terminal unavailable", "")
+			return
+		}
 		s.writeProblem(w, r, http.StatusBadGateway, "terminal_open_failed", "Terminal open failed", "")
 		return
 	}
@@ -250,8 +294,16 @@ func (s *Server) openTerminalSession(w http.ResponseWriter, r *http.Request, use
 	s.terminalMu.Lock()
 	s.terminalSessions[publicID] = item
 	s.terminalMu.Unlock()
-	_ = s.audit(r, userID, "terminal.open", "cluster_host", host.ID, "success", nil)
+	_ = s.audit(r, userID, "terminal.open", auditType, auditTarget, "success", nil)
 	s.writeJSON(w, http.StatusCreated, terminalOpenResponse{SessionID: publicID, HostID: host.ID, Offset: opened.Offset, CreatedAt: opened.CreatedAt})
+}
+
+func validContainerTerminalID(id string) bool {
+	if len(id) != 64 {
+		return false
+	}
+	_, err := hex.DecodeString(id)
+	return err == nil
 }
 
 func (s *Server) reserveTerminalOpen(userID string) bool {

@@ -228,6 +228,14 @@ func NewServer(config Config) (*Server, error) {
 			return nil, fmt.Errorf("initialize backup jobs: %w", err)
 		}
 	}
+	// Reclaim only this Agent's recorded container terminal execs after a
+	// crash. Failed recovery is retried before a new container session opens;
+	// unrelated management remains available.
+	if config.Docker != nil {
+		recoveryCtx, cancelRecovery := context.WithTimeout(context.Background(), 10*time.Second)
+		_ = config.Docker.RecoverContainerTerminals(recoveryCtx)
+		cancelRecovery()
+	}
 	return &Server{
 		backups:           config.Backups,
 		selfUpdate:        config.SelfUpdate,

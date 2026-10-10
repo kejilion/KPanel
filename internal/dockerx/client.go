@@ -57,6 +57,8 @@ type Client struct {
 	imageUpdateCountry    func(context.Context) (string, error)
 	containersMu          sync.Mutex
 	containersCall        *containersCall
+	terminalRecoveryMu    sync.Mutex
+	terminalRecoveryDone  bool
 }
 
 type ImageSummary struct {

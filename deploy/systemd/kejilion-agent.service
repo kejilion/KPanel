@@ -22,8 +22,10 @@ NoNewPrivileges=true
 # remains bounded to this service and the explicit writable paths below.
 # CAP_SYS_PTRACE lets the fixed, read-only ss adapter resolve socket owners;
 # without it systemd strips users:((...)) metadata even when ss runs as root.
-CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SYS_MODULE CAP_NET_ADMIN CAP_SYS_RESOURCE CAP_DAC_OVERRIDE CAP_CHOWN CAP_LINUX_IMMUTABLE CAP_SYS_PTRACE
-AmbientCapabilities=CAP_SYS_ADMIN CAP_SYS_MODULE CAP_NET_ADMIN CAP_SYS_RESOURCE CAP_DAC_OVERRIDE CAP_CHOWN CAP_LINUX_IMMUTABLE CAP_SYS_PTRACE
+# CAP_KILL is used with pidfds to stop only the pinned Docker terminal shell,
+# including containers whose configured user differs from the Agent's UID.
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SYS_MODULE CAP_NET_ADMIN CAP_SYS_RESOURCE CAP_DAC_OVERRIDE CAP_CHOWN CAP_LINUX_IMMUTABLE CAP_SYS_PTRACE CAP_KILL
+AmbientCapabilities=CAP_SYS_ADMIN CAP_SYS_MODULE CAP_NET_ADMIN CAP_SYS_RESOURCE CAP_DAC_OVERRIDE CAP_CHOWN CAP_LINUX_IMMUTABLE CAP_SYS_PTRACE CAP_KILL
 PrivateTmp=true
 PrivateDevices=true
 ProtectClock=true

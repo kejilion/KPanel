@@ -9,13 +9,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kejilion/kejilion-panel/internal/dockerx"
 	"github.com/kejilion/kejilion-panel/internal/terminal"
 )
 
 type terminalOpenInput struct {
-	Owner   string `json:"owner"`
-	Rows    uint16 `json:"rows"`
-	Columns uint16 `json:"columns"`
+	Owner           string `json:"owner"`
+	Rows            uint16 `json:"rows"`
+	Columns         uint16 `json:"columns"`
+	ContainerID     string `json:"containerId,omitempty"`
+	ResourceVersion string `json:"resourceVersion,omitempty"`
 }
 
 type terminalInput struct {
@@ -43,8 +46,32 @@ func (s *Server) terminalOpen(w http.ResponseWriter, r *http.Request) {
 	if err := decodeJSON(w, r, &input); err != nil {
 		return
 	}
-	snapshot, err := s.terminals.Open(input.Owner, input.Rows, input.Columns)
+	if (input.ContainerID == "") != (input.ResourceVersion == "") {
+		writeProblem(w, requestID, http.StatusBadRequest, "terminal_invalid", "Container identity and resource version are required together", "")
+		return
+	}
+	var snapshot terminal.Snapshot
+	var err error
+	if input.ContainerID != "" {
+		if s.docker == nil {
+			writeProblem(w, requestID, http.StatusServiceUnavailable, "container_terminal_unavailable", "Container terminal unavailable", "")
+			return
+		}
+		snapshot, err = s.terminals.OpenWithStarter(input.Owner, input.Rows, input.Columns, func(rows, columns uint16) (terminal.Process, error) {
+			return s.docker.OpenContainerTerminal(r.Context(), input.ContainerID, input.ResourceVersion, rows, columns)
+		})
+	} else {
+		snapshot, err = s.terminals.Open(input.Owner, input.Rows, input.Columns)
+	}
 	if err != nil {
+		switch {
+		case errors.Is(err, dockerx.ErrResourceConflict):
+			writeProblem(w, requestID, http.StatusConflict, "resource_conflict", "Container state changed", "")
+			return
+		case errors.Is(err, dockerx.ErrActionUnsupported), errors.Is(err, dockerx.ErrContainerTerminalUnsupported):
+			writeProblem(w, requestID, http.StatusConflict, "container_terminal_unavailable", "Container terminal unavailable", "")
+			return
+		}
 		s.writeTerminalError(w, requestID, err)
 		return
 	}

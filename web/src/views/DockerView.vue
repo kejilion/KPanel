@@ -45,6 +45,7 @@ import EmptyState from '@/components/feedback/EmptyState.vue'
 import ErrorState from '@/components/feedback/ErrorState.vue'
 import LoadingState from '@/components/feedback/LoadingState.vue'
 import ModalDialog from '@/components/common/ModalDialog.vue'
+import HostTerminal from '@/components/terminal/HostTerminal.vue'
 import PageHeader from '@/components/common/PageHeader.vue'
 import StatusBadge from '@/components/feedback/StatusBadge.vue'
 import DockerBatchBar, { type DockerBatchBarAction, type DockerBatchBarProgress } from '@/components/docker/DockerBatchBar.vue'
@@ -114,6 +115,7 @@ import type {
   DockerInventory,
   DockerMaintenanceInput,
   DockerMaintenanceJob,
+  TerminalSession,
 } from '@/types/api'
 
 type DockerTab = 'environment' | 'containers' | 'images' | 'networks' | 'volumes'
@@ -277,10 +279,12 @@ const statsLoading = ref(false)
 const stats = ref<DockerContainerStats>()
 const statsError = ref('')
 const consoleOpen = ref(false)
-const consoleCommand = ref('')
-const consoleOutput = ref('')
-const consoleExitCode = ref<number>()
-const consoleRunning = ref(false)
+const consoleTarget = ref<DockerContainer>()
+const consoleOpening = ref(false)
+const consoleSession = ref<TerminalSession>()
+const consoleTerminal = ref<InstanceType<typeof HostTerminal>>()
+const consoleError = ref('')
+let consoleGeneration = 0
 const accessOpen = ref(false)
 const accessAllowedIP = ref('')
 const migrationOpen = ref(false)
@@ -1664,38 +1668,57 @@ function closeStats(): void {
   selectedContainer.value = undefined
 }
 
-function openConsole(container: DockerContainer): void {
+async function openConsole(container: DockerContainer): Promise<void> {
+  if (consoleOpen.value && consoleTarget.value?.id === container.id && (consoleOpening.value || consoleSession.value)) return
+  closeConsole()
   contextMenu.value = undefined
-  selectedContainer.value = container
-  consoleCommand.value = ''
-  consoleOutput.value = ''
-  consoleExitCode.value = undefined
+  consoleTarget.value = { ...container }
   consoleOpen.value = true
-}
-
-async function runConsoleCommand(): Promise<void> {
-  const container = selectedContainer.value
-  const command = consoleCommand.value.trim()
-  if (!container?.resourceVersion || !command || consoleRunning.value) return
-  consoleRunning.value = true
+  const generation = ++consoleGeneration
+  consoleOpening.value = true
+  let opened: TerminalSession | undefined
   try {
-    const result = await api.docker.exec(container.id, container.resourceVersion, command)
-    consoleOutput.value = result.output || '命令执行完成，没有输出。'
-    consoleExitCode.value = result.exitCode
+    if (!container.resourceVersion) throw new Error('missing resource version')
+    opened = await api.terminals.open('local', 30, 120, {
+      containerId: container.id,
+      resourceVersion: container.resourceVersion,
+    })
+    if (generation !== consoleGeneration || !consoleOpen.value) {
+      await api.terminals.close(opened.sessionId).catch(() => undefined)
+      return
+    }
+    consoleSession.value = opened
   } catch (reason) {
-    consoleOutput.value = reason instanceof ApiError ? reason.message : '容器控制台请求失败。'
-    consoleExitCode.value = -1
+    if (opened) await api.terminals.close(opened.sessionId).catch(() => undefined)
+    if (generation === consoleGeneration && consoleOpen.value) {
+      consoleError.value = reason instanceof ApiError && reason.code === 'terminal_limit'
+        ? '已达到终端会话上限，请先关闭不用的终端。'
+        : reason instanceof ApiError && reason.code === 'resource_conflict'
+          ? '容器状态已变化，请刷新列表后重新打开终端。'
+          : '容器终端启动失败，请检查容器状态与 Agent 终端服务。'
+    }
   } finally {
-    consoleRunning.value = false
+    if (generation === consoleGeneration) consoleOpening.value = false
   }
 }
 
 function closeConsole(): void {
+  const session = consoleSession.value
+  const mounted = consoleTerminal.value
+  if (session) {
+    // Reuse the child's deduplicated close when mounted, but also reclaim a
+    // session closed before Vue has rendered the terminal component.
+    const closing = mounted?.$props.sessionId === session.sessionId
+      ? mounted.closeSession()
+      : api.terminals.close(session.sessionId)
+    void closing.catch(() => undefined)
+  }
+  consoleGeneration += 1
   consoleOpen.value = false
-  consoleCommand.value = ''
-  consoleOutput.value = ''
-  consoleExitCode.value = undefined
-  selectedContainer.value = undefined
+  consoleOpening.value = false
+  consoleSession.value = undefined
+  consoleError.value = ''
+  consoleTarget.value = undefined
 }
 
 function openAccess(container: DockerContainer): void {
@@ -1790,6 +1813,7 @@ watch(windowActive, (active) => {
 })
 
 onBeforeUnmount(() => {
+  closeConsole()
   document.removeEventListener('visibilitychange', updateDocumentVisibility)
   window.removeEventListener('click', closeContextMenuOnOutsideClick)
   window.removeEventListener('resize', closeContextMenuOnViewportChange)
@@ -2615,12 +2639,21 @@ onBeforeUnmount(() => {
       <template #footer><button class="button button--secondary" type="button" @click="refreshStats()"><RefreshCw :size="15" /> {{ phrase('刷新') }}</button><button class="button button--secondary" type="button" @click="closeStats">{{ phrase('关闭') }}</button></template>
     </ModalDialog>
 
-    <ModalDialog :open="consoleOpen" :title="phrase(`${selectedContainer?.name || phrase('容器')} 控制台`)" :description="phrase('单次命令通过容器内 /bin/sh 执行，最长 20 秒；命令本身不写入审计或任务日志。')" size="large" @close="closeConsole">
-      <label class="field"><span>{{ phrase('命令') }}</span><div class="console-command"><span>$</span><input v-model="consoleCommand" class="text-input" type="text" maxlength="2048" placeholder="ls -la /app" @keyup.enter="runConsoleCommand" /><button class="button button--primary" type="button" :disabled="!consoleCommand.trim() || consoleRunning" @click="runConsoleCommand"><LoaderCircle v-if="consoleRunning" class="spin" :size="15" /><Play v-else :size="15" /> {{ phrase('执行') }}</button></div></label>
-      <p v-if="!consoleOutput" class="log-viewer log-viewer-empty">{{ phrase('输入命令后查看输出。') }}</p>
-      <pre v-else class="log-viewer console-output" data-i18n-ignore>{{ consoleOutput }}</pre>
-      <div v-if="consoleExitCode !== undefined" class="inline-alert" :class="consoleExitCode === 0 ? 'inline-alert--success' : 'inline-alert--warning'">{{ phrase('退出码：') }}{{ consoleExitCode }}{{ phrase(consoleExitCode === 0 ? '，执行成功' : '，请检查输出') }}</div>
-      <template #footer><button class="button button--secondary" type="button" @click="closeConsole">{{ phrase('关闭') }}</button></template>
+    <ModalDialog :open="consoleOpen" :title="phrase(`${consoleTarget?.name || phrase('容器')} 控制台`)" variant="workspace" allow-fullscreen @close="closeConsole">
+      <div class="docker-console-terminal">
+        <div v-if="consoleOpening" class="docker-console-terminal__state" role="status">
+          <LoaderCircle class="spin" :size="22" /> {{ phrase('正在连接容器终端…') }}
+        </div>
+        <div v-else-if="consoleError" class="inline-alert inline-alert--danger" role="alert">{{ phrase(consoleError) }}</div>
+        <HostTerminal
+          v-else-if="consoleSession"
+          ref="consoleTerminal"
+          :key="consoleSession.sessionId"
+          :session-id="consoleSession.sessionId"
+          :host-name="consoleTarget?.name || phrase('容器')"
+          :initial-offset="consoleSession.offset"
+        />
+      </div>
     </ModalDialog>
 
     <ModalDialog :open="accessOpen" :title="phrase(`${selectedContainer?.name || phrase('容器')} 外部访问`)" :description="phrase('规则与 kejilion.sh 的 DOCKER-USER 方案互通，按容器 Docker IPv4 生效。')" size="small" @close="accessOpen = false; selectedContainer = undefined">
@@ -2979,9 +3012,9 @@ onBeforeUnmount(() => {
 .stats-grid small, .stats-grid span { color: var(--muted); }
 .stats-grid strong { font-size: 1.3rem; }
 .stats-grid .stats-time { font-size: .9rem; line-height: 1.4; }
-.console-command { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; }
-.console-command > span { font-family: ui-monospace, monospace; color: var(--brand); font-weight: 600; }
-.console-output { min-height: 240px; margin-top: 14px; }
+.docker-console-terminal { display: flex; flex: 1 1 auto; min-height: 0; flex-direction: column; }
+.docker-console-terminal > .inline-alert { margin: 16px; }
+.docker-console-terminal__state { display: flex; flex: 1; align-items: center; justify-content: center; gap: 9px; color: var(--muted); font-size: 14px; }
 .modal-copy { color: var(--muted); line-height: 1.65; }
 @media (max-width: 1000px) {
   .action-grid { grid-template-columns: 1fr; }
