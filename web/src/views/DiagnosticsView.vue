@@ -259,6 +259,7 @@ function categoryName(id: string): string {
 }
 
 function checkNameLabel(value: string): string {
+  if (value === 'TCP 重传探测') return phrase('TcpQuality TCP 质量检测')
   const labels: Record<string, string> = i18n.locale.value === 'en-US'
     ? {
         'ChatGPT 解锁检测': 'ChatGPT access check',

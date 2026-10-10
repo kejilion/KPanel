@@ -37,6 +37,8 @@ KJ_TEST_NONINTERACTIVE=1 k test list
 KJ_TEST_NONINTERACTIVE=1 k test run <fixed-selector>
 ```
 
+网络测试包含 TcpQuality TCP 质量检测（`tcp-quality`），复用脚本目录中原名「TCP 重传探测」的入口；页面以 TcpQuality 名称展示，确认后沿用第三方终端运行官方 `runTcpQuality.sh`。
+
 `list` 输出 `KPANEL_TEST_CATEGORY` 和 `KPANEL_TEST_ITEM` 制表符记录。Agent 仍只接受：
 
 - `^[a-z0-9][a-z0-9-]{0,47}$` 形式的固定分类与 selector；

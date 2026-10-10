@@ -409,6 +409,15 @@ const diagnosticCatalog = {
       impact: 'network',
     },
     {
+      id: 'tcp-quality',
+      category: 'network',
+      name: 'TCP 重传探测',
+      description: '检测 TCP 重传和连接质量',
+      sourceUrl: 'https://raw.githubusercontent.com/ibsgss/TcpQuality/main/runTcpQuality.sh',
+      estimatedMinutes: 10,
+      impact: 'network',
+    },
+    {
       id: 'yabs',
       category: 'hardware',
       name: 'YABS 性能测试',
@@ -555,8 +564,7 @@ function materializeDiagnosticJob(job) {
       progress >= 65 && native ? '延迟：平均 38.24 ms · 抖动 7.81 ms · 丢包 0.0%' : '',
       progress >= 80 && native ? '测速：↓ 682.40 Mbps · ↑ 94.70 Mbps' : '',
       progress >= 90 && native ? '公网 IP：203.0.113.10 · ASN：AS64500 · IPv4 已连接 · IPv6 已连接' : '',
-      progress >= 40 && !native ? 'CPU benchmark score: 8241' : '',
-      progress >= 70 && !native ? 'Disk 4k read: 118.4 MB/s' : '',
+      progress >= 40 && !native ? '模拟数据：未执行第三方脚本或公网探测' : '',
       progress >= 100 && !native ? 'KPANEL_TEST_RESULT succeeded ' + job.check.id : '',
     ].filter((line) => line !== ''),
     ...(progress >= 100 && native
@@ -2361,8 +2369,11 @@ createServer(async (request, response) => {
     return
   }
   if (request.method === 'POST' && url.pathname === '/api/v1/diagnostic-jobs') {
+    const input = await readJSON(request)
+    const check = diagnosticCatalog.items.find((item) => item.id === input.checkId)
+    if (!check) return send(response, 400, { title: '体检项目不存在' })
     const id = `${Date.now().toString(16).padStart(16, '0')}${'d'.repeat(16)}`.slice(-32)
-    const job = { id, check: diagnosticCatalog.items.find((item) => item.id === 'native-comprehensive'), created: Date.now() }
+    const job = { id, check, created: Date.now() }
     diagnosticJobs.set(id, job)
     send(response, 202, materializeDiagnosticJob(job))
     return
