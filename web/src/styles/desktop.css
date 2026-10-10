@@ -1926,8 +1926,9 @@ body.desktop-mode-open::-webkit-scrollbar {
   display: none;
 }
 
-.desktop__icon-glyph--file,
+.desktop__icon-glyph.desktop__icon-glyph--file,
 .desktop__icon:hover .desktop__icon-glyph--file {
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
   border-color: transparent;
   box-shadow: none;
 }
@@ -4220,6 +4221,7 @@ body.desktop-mode-open::-webkit-scrollbar {
 }
 
 .desktop-icon-manager__glyph:has(.desktop__shortcut-artwork--file) {
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
   background: transparent;
   border-color: transparent;
 }
