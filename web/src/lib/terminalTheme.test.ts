@@ -5,6 +5,17 @@ import { readTerminalTheme } from './terminalTheme'
 import { contrastRatio, deriveThemeTokens, THEME_COLOR_PRESETS } from '../theme/colors'
 
 describe('readTerminalTheme', () => {
+  it('reveals wallpaper without making block cursor text transparent', () => {
+    const host = document.createElement('div')
+    host.style.setProperty('--terminal-shell-background', '#071426')
+    document.body.append(host)
+    const opaque = readTerminalTheme(host)
+    host.style.setProperty('--terminal-canvas-background', '#00000000')
+    expect(readTerminalTheme(host)).toEqual({ ...opaque, background: '#00000000' })
+    expect(opaque.cursorAccent).toBe('#071426')
+    host.remove()
+  })
+
   it('reads themed shell surfaces and keeps the ANSI palette independent', () => {
     const host = document.createElement('div')
     host.style.setProperty('--terminal-shell-background', '#071426')

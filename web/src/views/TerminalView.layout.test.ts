@@ -177,7 +177,7 @@ describe('multi-host terminal workspace layout', () => {
       /\.host-terminal__screen :deep\(\.xterm\)\s*\{[^}]*box-sizing:border-box;[^}]*height:100%;[^}]*padding:6px 8px 4px;[^}]*touch-action:none;/,
     )
     expect(hostTerminalSource).toMatch(
-      /\.host-terminal__screen :deep\(\.xterm-viewport\)\s*\{[^}]*background:var\(--terminal-shell-background,#0b1214\);/,
+      /\.host-terminal__screen :deep\(\.xterm-viewport\)\s*\{[^}]*background:transparent;/,
     )
   })
 
