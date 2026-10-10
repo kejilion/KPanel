@@ -243,6 +243,27 @@ const scoreTotalCaption = computed(() => {
   if (scoreState.value === 'failed') return '本次检测未完成'
   return '完成检测后生成'
 })
+const scoreMeterValue = computed(() => (scoreState.value === 'running' ? scoreProgress.value : overallScore.value))
+// Split "682.40 Mbps" into amount and unit so the number carries the weight;
+// anything that is not a leading number followed by a unit ("100+ Mbps") stays whole.
+const reportMetrics = computed(() => ({
+  cpu: metricParts(summaryValue('performance', 'cpu_score')),
+  memory: metricParts(summaryValue('performance', 'memory_score')),
+  diskRead: metricParts(summaryValue('performance', 'disk_read')),
+  diskWrite: metricParts(summaryValue('performance', 'disk_write')),
+  latency: metricParts(summaryValue('latency', 'average')),
+  download: metricParts(summaryValue('speed', 'download')),
+  upload: metricParts(summaryValue('speed', 'upload')),
+}))
+
+function metricParts(value: string): { amount: string; unit: string; pending: boolean } {
+  if (!value) return { amount: '等待检测', unit: '', pending: true }
+  const [, amount = value, unit = ''] = value.match(/^([-+]?\d[\d.,]*)\s*([^\d\s.,+-].*)$/) || []
+  return { amount, unit, pending: false }
+}
+function meterStyle(value: number | undefined): { width: string } {
+  return { width: `${Math.max(0, Math.min(100, value ?? 0))}%` }
+}
 
 function categoryName(id: string): string {
   if (i18n.locale.value === 'en-US') {
@@ -923,6 +944,7 @@ onBeforeUnmount(() => {
         />
         <aside id="diagnostic-command-drawer" class="diagnostic-command-panel">
           <div class="diagnostic-command-panel__toolbar">
+            <strong class="diagnostic-command-panel__title">体检项目</strong>
             <button
               class="diagnostic-command-panel__toggle diagnostic-command-panel__desktop-toggle"
               type="button"
@@ -1055,10 +1077,11 @@ onBeforeUnmount(() => {
                 </span>
               </header>
 
-              <section class="diagnostic-score-hero diagnostic-score-hero--simple" aria-labelledby="diagnostic-score-title">
+              <section class="diagnostic-score-hero" aria-labelledby="diagnostic-score-title">
                 <div class="diagnostic-score-total" :class="`is-${scoreState}`" aria-label="KPanel 综合评分">
                   <span>综合评分</span>
                   <div><strong>{{ scoreTotalValue }}</strong><em>/100</em></div>
+                  <i class="diagnostic-score-meter" aria-hidden="true"><b :style="meterStyle(scoreMeterValue)" /></i>
                   <small>{{ scoreTotalCaption }}</small>
                 </div>
 
@@ -1102,25 +1125,29 @@ onBeforeUnmount(() => {
                       <p><span>型号</span>{{ summaryValue('performance', 'cpu_model') || '等待检测' }}<b v-if="summaryValue('performance', 'cpu_cores')">{{ summaryValue('performance', 'cpu_cores') }} 核</b></p>
                     </div>
                   </div>
-                  <div class="diagnostic-report-section__score"><small>性能分</small><div><strong>{{ reportScoreLabel(performanceScore) }}</strong><span>/100</span></div></div>
+                  <div class="diagnostic-report-section__score">
+                    <small>性能分</small>
+                    <div><strong>{{ reportScoreLabel(performanceScore) }}</strong><span>/100</span></div>
+                    <i class="diagnostic-score-meter" aria-hidden="true"><b :style="meterStyle(performanceScore)" /></i>
+                  </div>
                 </header>
                 <div class="diagnostic-report-section__body">
                   <div class="diagnostic-report-card-grid diagnostic-report-card-grid--performance">
-                  <article class="diagnostic-report-card">
-                    <header><div class="diagnostic-report-card__heading"><span class="is-cpu"><Cpu :size="17" /></span><div><strong>CPU</strong><small>运算性能</small></div></div></header>
-                    <strong class="diagnostic-report-card__value">{{ summaryValue('performance', 'cpu_score') || '等待检测' }}</strong>
-                  </article>
-                  <article class="diagnostic-report-card">
-                    <header><div class="diagnostic-report-card__heading"><span class="is-memory"><MemoryStick :size="17" /></span><div><strong>内存</strong><small>复制吞吐</small></div></div></header>
-                    <strong class="diagnostic-report-card__value">{{ summaryValue('performance', 'memory_score') || '等待检测' }}</strong>
-                  </article>
-                  <article class="diagnostic-report-card">
-                    <header><div class="diagnostic-report-card__heading"><span class="is-disk"><HardDrive :size="17" /></span><div><strong>硬盘</strong><small>顺序读写</small></div></div></header>
-                    <div class="diagnostic-report-pair">
-                      <div><span>{{ summaryMetricLabel('disk_read') }}</span><strong>{{ summaryValue('performance', 'disk_read') || '等待检测' }}</strong></div>
-                      <div><span>{{ summaryMetricLabel('disk_write') }}</span><strong>{{ summaryValue('performance', 'disk_write') || '等待检测' }}</strong></div>
-                    </div>
-                  </article>
+                    <article class="diagnostic-report-card">
+                      <header><div class="diagnostic-report-card__heading"><span class="is-cpu"><Cpu :size="17" /></span><div><strong>CPU</strong><small>运算性能</small></div></div></header>
+                      <strong class="diagnostic-report-card__value" :class="{ 'is-pending': reportMetrics.cpu.pending }">{{ reportMetrics.cpu.amount }} <small v-if="reportMetrics.cpu.unit">{{ reportMetrics.cpu.unit }}</small></strong>
+                    </article>
+                    <article class="diagnostic-report-card">
+                      <header><div class="diagnostic-report-card__heading"><span class="is-memory"><MemoryStick :size="17" /></span><div><strong>内存</strong><small>复制吞吐</small></div></div></header>
+                      <strong class="diagnostic-report-card__value" :class="{ 'is-pending': reportMetrics.memory.pending }">{{ reportMetrics.memory.amount }} <small v-if="reportMetrics.memory.unit">{{ reportMetrics.memory.unit }}</small></strong>
+                    </article>
+                    <article class="diagnostic-report-card">
+                      <header><div class="diagnostic-report-card__heading"><span class="is-disk"><HardDrive :size="17" /></span><div><strong>硬盘</strong><small>顺序读写</small></div></div></header>
+                      <div class="diagnostic-report-pair">
+                        <div><span>{{ summaryMetricLabel('disk_read') }}</span><strong :class="{ 'is-pending': reportMetrics.diskRead.pending }">{{ reportMetrics.diskRead.amount }} <small v-if="reportMetrics.diskRead.unit">{{ reportMetrics.diskRead.unit }}</small></strong></div>
+                        <div><span>{{ summaryMetricLabel('disk_write') }}</span><strong :class="{ 'is-pending': reportMetrics.diskWrite.pending }">{{ reportMetrics.diskWrite.amount }} <small v-if="reportMetrics.diskWrite.unit">{{ reportMetrics.diskWrite.unit }}</small></strong></div>
+                      </div>
+                    </article>
                   </div>
                 </div>
               </section>
@@ -1131,63 +1158,70 @@ onBeforeUnmount(() => {
                     <span class="diagnostic-report-section__icon"><Network :size="18" /></span>
                     <div><h3 id="diagnostic-network-title">网络</h3><p>服务器出口 IP · 运营商 · 延迟 · 带宽 · IP 质量</p></div>
                   </div>
-                  <div class="diagnostic-report-section__score"><small>网络分</small><div><strong>{{ reportScoreLabel(networkScore) }}</strong><span>/100</span></div></div>
+                  <div class="diagnostic-report-section__score">
+                    <small>网络分</small>
+                    <div><strong>{{ reportScoreLabel(networkScore) }}</strong><span>/100</span></div>
+                    <i class="diagnostic-score-meter" aria-hidden="true"><b :style="meterStyle(networkScore)" /></i>
+                  </div>
                 </header>
-                  <div class="diagnostic-report-section__body">
-                    <div class="diagnostic-report-identity">
+                <div class="diagnostic-report-section__body">
+                  <div class="diagnostic-report-identity">
                     <div>
                       <div class="diagnostic-report-identity__heading">
                         <span class="is-ip"><Globe2 :size="17" /></span>
-                        <div><span>出口 IP</span><strong :title="summaryValue('ip', 'public_ip') || '等待检测'">{{ summaryValue('ip', 'public_ip') || '等待检测' }}</strong></div>
+                        <div><span>出口 IP</span></div>
                       </div>
+                      <strong :class="{ 'is-pending': !summaryValue('ip', 'public_ip') }" :title="summaryValue('ip', 'public_ip') || '等待检测'">{{ summaryValue('ip', 'public_ip') || '等待检测' }}</strong>
                     </div>
                     <div>
                       <div class="diagnostic-report-identity__heading">
                         <span><Network :size="17" /></span>
-                        <div><span>出口运营商 / ASN</span><strong :title="reportIPOperator()" :class="{ 'is-isp': hasIPISP() }">{{ reportIPOperator() }}</strong></div>
+                        <div><span>出口运营商 / ASN</span></div>
                       </div>
+                      <strong :title="reportIPOperator()" :class="{ 'is-isp': hasIPISP(), 'is-pending': !hasIPISP() && !summaryValue('ip', 'asn') }">{{ reportIPOperator() }}</strong>
                     </div>
                     <div>
                       <div class="diagnostic-report-identity__heading">
                         <span><MapPin :size="17" /></span>
-                        <div><span>出口地区</span><strong :title="reportIPLocation()">{{ reportIPLocation() }}</strong></div>
+                        <div><span>出口地区</span></div>
                       </div>
+                      <strong :class="{ 'is-pending': !summaryValue('ip', 'country') && !summaryValue('ip', 'location') }" :title="reportIPLocation()">{{ reportIPLocation() }}</strong>
                     </div>
                   </div>
                   <div class="diagnostic-report-card-grid diagnostic-report-card-grid--network">
-                  <article class="diagnostic-report-card">
-                    <header><div class="diagnostic-report-card__heading"><span class="is-latency"><Activity :size="17" /></span><div><strong>延迟</strong><small>服务器至探测节点</small></div></div></header>
-                    <div class="diagnostic-report-card__data-row">
-                      <strong class="diagnostic-report-card__value">{{ summaryValue('latency', 'average') || '等待检测' }}</strong>
-                      <div class="diagnostic-report-card__meta" v-if="summaryValue('latency', 'jitter') || summaryValue('latency', 'loss')">
-                        <span v-if="summaryValue('latency', 'jitter')"><b>抖动</b>{{ summaryValue('latency', 'jitter') }}</span>
-                        <span v-if="summaryValue('latency', 'loss')"><b>丢包</b>{{ summaryValue('latency', 'loss') }}</span>
+                    <article class="diagnostic-report-card">
+                      <header><div class="diagnostic-report-card__heading"><span class="is-latency"><Activity :size="17" /></span><div><strong>延迟</strong><small>服务器至探测节点</small></div></div></header>
+                      <div class="diagnostic-report-card__data-row">
+                        <strong class="diagnostic-report-card__value" :class="{ 'is-pending': reportMetrics.latency.pending }">{{ reportMetrics.latency.amount }} <small v-if="reportMetrics.latency.unit">{{ reportMetrics.latency.unit }}</small></strong>
+                        <div class="diagnostic-report-card__meta" v-if="summaryValue('latency', 'jitter') || summaryValue('latency', 'loss')">
+                          <span v-if="summaryValue('latency', 'jitter')"><b>抖动</b>{{ summaryValue('latency', 'jitter') }}</span>
+                          <span v-if="summaryValue('latency', 'loss')"><b>丢包</b>{{ summaryValue('latency', 'loss') }}</span>
+                        </div>
                       </div>
-                    </div>
-                  </article>
-                  <article class="diagnostic-report-card">
-                    <header><div class="diagnostic-report-card__heading"><span class="is-speed"><Gauge :size="17" /></span><div><strong>带宽</strong><small>服务器公网上下行带宽</small></div></div></header>
-                    <div class="diagnostic-report-pair diagnostic-report-pair--speed">
-                      <div><span>{{ summaryMetricLabel('download') }}</span><strong>{{ summaryValue('speed', 'download') || '等待检测' }}</strong></div>
-                      <div><span>{{ summaryMetricLabel('upload') }}</span><strong>{{ summaryValue('speed', 'upload') || '等待检测' }}</strong></div>
-                    </div>
-                  </article>
-                  <article class="diagnostic-report-card">
-                    <header><div class="diagnostic-report-card__heading"><span class="is-ip"><Globe2 :size="17" /></span><div><strong>IP 质量</strong><small>服务器出口风险</small></div></div></header>
-                    <div class="diagnostic-report-card__data-row">
-                      <div class="diagnostic-report-risk">
-                        <span v-if="summaryValue('ip', 'risk_level')" class="diagnostic-report-risk__level" :class="`is-${reportIPRiskTone()}`">{{ reportIPRiskLevel() }}</span>
-                        <span v-if="summaryValue('ip', 'risk_score')" class="diagnostic-report-risk__score"><b>风险分</b>{{ summaryValue('ip', 'risk_score') }}%</span>
-                        <strong v-if="!summaryValue('ip', 'risk_level') && !summaryValue('ip', 'risk_score')" class="diagnostic-report-card__value diagnostic-report-card__value--text">{{ reportIPQualitySummary() }}</strong>
-                        <template v-if="reportIPAttributeDetails().length">
-                          <template v-for="(detail, index) in reportIPAttributeDetails()" :key="`${detail.value}-${index}`">
-                            <span aria-hidden="true">·</span><span :class="{ 'is-native-ip': detail.isNativeIP }">{{ detail.value }}</span>
+                    </article>
+                    <article class="diagnostic-report-card">
+                      <header><div class="diagnostic-report-card__heading"><span class="is-speed"><Gauge :size="17" /></span><div><strong>带宽</strong><small>服务器公网上下行带宽</small></div></div></header>
+                      <div class="diagnostic-report-pair diagnostic-report-pair--speed">
+                        <div><span>{{ summaryMetricLabel('download') }}</span><strong :class="{ 'is-pending': reportMetrics.download.pending }">{{ reportMetrics.download.amount }} <small v-if="reportMetrics.download.unit">{{ reportMetrics.download.unit }}</small></strong></div>
+                        <div><span>{{ summaryMetricLabel('upload') }}</span><strong :class="{ 'is-pending': reportMetrics.upload.pending }">{{ reportMetrics.upload.amount }} <small v-if="reportMetrics.upload.unit">{{ reportMetrics.upload.unit }}</small></strong></div>
+                      </div>
+                    </article>
+                    <article class="diagnostic-report-card">
+                      <header><div class="diagnostic-report-card__heading"><span class="is-ip"><Globe2 :size="17" /></span><div><strong>IP 质量</strong><small>服务器出口风险</small></div></div></header>
+                      <div class="diagnostic-report-card__data-row">
+                        <div class="diagnostic-report-risk">
+                          <span v-if="summaryValue('ip', 'risk_level')" class="diagnostic-report-risk__level" :class="`is-${reportIPRiskTone()}`">{{ reportIPRiskLevel() }}</span>
+                          <span v-if="summaryValue('ip', 'risk_score')" class="diagnostic-report-risk__score"><b>风险分</b>{{ summaryValue('ip', 'risk_score') }}%</span>
+                          <strong v-if="!summaryValue('ip', 'risk_level') && !summaryValue('ip', 'risk_score')" class="diagnostic-report-card__value diagnostic-report-card__value--text" :class="{ 'is-pending': !summaryValue('ip', 'quality') }">{{ reportIPQualitySummary() }}</strong>
+                          <template v-if="reportIPAttributeDetails().length">
+                            <template v-for="(detail, index) in reportIPAttributeDetails()" :key="`${detail.value}-${index}`">
+                              <span aria-hidden="true">·</span><span :class="{ 'is-native-ip': detail.isNativeIP }">{{ detail.value }}</span>
+                            </template>
                           </template>
-                        </template>
-                        <span v-else-if="reportIPQualityDetail()">{{ reportIPQualityDetail() }}</span>
+                          <span v-else-if="reportIPQualityDetail()">{{ reportIPQualityDetail() }}</span>
+                        </div>
                       </div>
-                    </div>
-                  </article>
+                    </article>
                   </div>
                 </div>
               </section>
@@ -1201,12 +1235,12 @@ onBeforeUnmount(() => {
             </div>
           </template>
           <template v-else>
-            <div v-if="hasActiveJob" class="diagnostic-progress" aria-label="任务进度">
-              <span :style="{ width: `${activeJob?.progress || 0}%` }" />
+            <div v-if="hasActiveJob && activeJob" class="diagnostic-progress" aria-label="任务进度">
+              <span :style="{ width: `${activeJob.progress || 0}%` }" />
             </div>
-            <div v-if="!activeJob?.interactive" class="diagnostic-terminal-bar">
+            <div v-if="activeJob && !activeJob.interactive" class="diagnostic-terminal-bar">
               <span><i :class="{ 'is-live': hasActiveJob }" /> {{ hasActiveJob ? '实时输出' : '终端输出' }}</span>
-              <StatusBadge v-if="activeJob" :status="activeJob.status" />
+              <StatusBadge :status="activeJob.status" />
             </div>
             <AppInteractiveTerminal
               v-if="activeJob?.interactive"
@@ -1215,21 +1249,39 @@ onBeforeUnmount(() => {
               :input-open="activeJob.inputOpen"
               kind="diagnostic"
             />
-            <p v-else-if="!activeJob" class="diagnostic-log diagnostic-log-empty" @wheel="containLogWheel">选择左侧体检命令，点击“开始体检”后在这里查看实时输出。</p>
+            <div
+              v-else-if="!activeJob"
+              class="diagnostic-launch"
+              :class="selectedCheck ? `is-category-${selectedCheck.category}` : undefined"
+              @wheel="containLogWheel"
+            >
+              <div v-if="selectedCheck" class="diagnostic-launch__card">
+                <span class="diagnostic-launch__icon"><component :is="categoryIcon(selectedCheck.category)" :size="24" /></span>
+                <small>{{ categoryName(selectedCheck.category) }}</small>
+                <h2>{{ checkNameLabel(selectedCheck.name) }}</h2>
+                <div class="diagnostic-launch__meta">
+                  <span><Timer :size="14" /> 约 {{ selectedCheck.estimatedMinutes }} 分钟</span>
+                  <span class="impact-pill" :class="impactClass(selectedCheck.impact)">{{ impactLabel(selectedCheck.impact) }}</span>
+                  <a v-if="selectedCheck.sourceUrl" :href="selectedCheck.sourceUrl" target="_blank" rel="noopener noreferrer">
+                    {{ sourceHost(selectedCheck.sourceUrl) }} <ExternalLink :size="13" />
+                  </a>
+                  <span v-else class="diagnostic-source">KPanel 原生探针</span>
+                </div>
+                <button class="button button--primary" type="button" :disabled="hasActiveJob || starting" @click="requestCheck(selectedCheck)">
+                  <LoaderCircle v-if="starting && pendingCheck?.id === selectedCheck.id" :size="16" class="is-spinning" />
+                  <Play v-else :size="16" />
+                  开始体检
+                </button>
+                <p>{{ hasActiveJob ? '请先完成当前终端中的体检任务' : '开始后，实时终端输出会显示在这里。' }}</p>
+              </div>
+              <p v-else>选择左侧体检命令，点击“开始体检”后在这里查看实时输出。</p>
+            </div>
             <pre v-else class="diagnostic-log" aria-live="polite" data-i18n-ignore @wheel="containLogWheel">{{ activeLog }}</pre>
             <footer v-if="activeJob">
               <span><Activity :size="14" /> {{ activeJob.message }}</span>
               <span><Timer :size="14" /> {{ formatDateTime(activeJob.startedAt || activeJob.createdAt) }}</span>
               <a v-if="activeJob.sourceUrl" :href="activeJob.sourceUrl" target="_blank" rel="noopener noreferrer">
                 查看来源 <ExternalLink :size="13" />
-              </a>
-              <span v-else class="diagnostic-source">KPanel 原生探针</span>
-            </footer>
-            <footer v-else-if="selectedCheck">
-              <span><Timer :size="14" /> 约 {{ selectedCheck.estimatedMinutes }} 分钟</span>
-              <span class="impact-pill" :class="impactClass(selectedCheck.impact)">{{ impactLabel(selectedCheck.impact) }}</span>
-              <a v-if="selectedCheck.sourceUrl" :href="selectedCheck.sourceUrl" target="_blank" rel="noopener noreferrer">
-                {{ sourceHost(selectedCheck.sourceUrl) }} <ExternalLink :size="13" />
               </a>
               <span v-else class="diagnostic-source">KPanel 原生探针</span>
             </footer>
@@ -1290,7 +1342,6 @@ onBeforeUnmount(() => {
   min-height: 0;
 }
 
-.diagnostic-card p,
 .diagnostic-result p {
   margin: 0;
 }
@@ -1305,16 +1356,19 @@ onBeforeUnmount(() => {
   border-radius: var(--terminal-workspace-radius);
   background: var(--surface);
   box-shadow: var(--shadow-sm);
-  transition: grid-template-columns 180ms ease;
+  transition: grid-template-columns var(--motion-duration-base) var(--motion-ease-standard);
 }
 
 .diagnostic-workbench.is-command-panel-collapsed {
   grid-template-columns: 52px minmax(0, 1fr);
 }
 
-.diagnostic-workbench.is-command-panel-collapsed .diagnostic-command-overview {
+.diagnostic-workbench.is-command-panel-collapsed:not(.is-command-drawer-open) .diagnostic-command-overview,
+.diagnostic-workbench.is-command-panel-collapsed:not(.is-command-drawer-open) .diagnostic-command-panel__title {
   display: none;
 }
+
+/* ---- Command panel ---- */
 
 .diagnostic-command-panel {
   position: relative;
@@ -1328,10 +1382,25 @@ onBeforeUnmount(() => {
 
 .diagnostic-command-panel__toolbar {
   display: flex;
-  min-height: 42px;
+  min-height: 46px;
   align-items: center;
-  justify-content: flex-end;
-  padding: 6px 8px 0;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 8px 0 17px;
+}
+
+.diagnostic-workbench.is-command-panel-collapsed:not(.is-command-drawer-open) .diagnostic-command-panel__toolbar {
+  justify-content: center;
+  padding: 8px 0 0;
+}
+
+.diagnostic-command-panel__title {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .diagnostic-command-panel__toggle {
@@ -1340,12 +1409,14 @@ onBeforeUnmount(() => {
   display: grid;
   width: 30px;
   height: 30px;
+  flex: 0 0 auto;
   place-items: center;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   color: var(--text-muted);
   background: var(--surface);
   cursor: pointer;
+  transition: color var(--motion-duration-fast) var(--motion-ease-fade), border-color var(--motion-duration-fast) var(--motion-ease-fade);
 }
 
 .diagnostic-command-panel__toggle:hover,
@@ -1400,7 +1471,7 @@ onBeforeUnmount(() => {
 .diagnostic-command-overview {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr) auto;
-  gap: 9px;
+  gap: 10px;
   align-items: center;
   min-width: 0;
   min-height: 58px;
@@ -1412,7 +1483,10 @@ onBeforeUnmount(() => {
   background: color-mix(in srgb, var(--brand-soft) 42%, var(--surface));
   text-align: left;
   cursor: pointer;
-  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+  transition:
+    border-color var(--motion-duration-fast) var(--motion-ease-fade),
+    background-color var(--motion-duration-fast) var(--motion-ease-fade),
+    transform var(--motion-duration-instant) var(--motion-ease-standard);
 }
 
 .diagnostic-command-overview:hover,
@@ -1435,7 +1509,7 @@ onBeforeUnmount(() => {
   color: var(--brand-strong);
   background: var(--brand-soft);
   border: 1px solid var(--brand-muted);
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
 }
 
 .diagnostic-command-overview__copy {
@@ -1516,10 +1590,11 @@ onBeforeUnmount(() => {
   height: 36px;
   place-items: center;
   border: 1px solid color-mix(in srgb, var(--diagnostic-category) 26%, transparent);
-  border-radius: 9px;
+  border-radius: var(--radius-sm);
   color: var(--diagnostic-category);
   background: color-mix(in srgb, var(--diagnostic-category) 10%, var(--surface));
   cursor: pointer;
+  transition: border-color var(--motion-duration-fast) var(--motion-ease-fade), background-color var(--motion-duration-fast) var(--motion-ease-fade);
 }
 
 .diagnostic-command-rail__overview {
@@ -1556,8 +1631,13 @@ onBeforeUnmount(() => {
 }
 
 .diagnostic-command-group > header small {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
   color: var(--text-tertiary);
+  background: color-mix(in srgb, var(--diagnostic-category) 8%, transparent);
   font-size: 12px;
+  text-align: center;
 }
 
 .diagnostic-command-row {
@@ -1569,52 +1649,65 @@ onBeforeUnmount(() => {
   align-items: center;
   width: 100%;
   border: 1px solid transparent;
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   background: transparent;
+  transition: border-color var(--motion-duration-fast) var(--motion-ease-fade), background-color var(--motion-duration-fast) var(--motion-ease-fade);
 }
 
 .diagnostic-command-group.is-category-access,
 .diagnostic-command-row.is-category-access,
-.diagnostic-command-rail__item.is-category-access { --diagnostic-category: #087a72; }
+.diagnostic-command-rail__item.is-category-access,
+.diagnostic-launch.is-category-access { --diagnostic-category: #087a72; }
 .diagnostic-command-group.is-category-network,
 .diagnostic-command-row.is-category-network,
-.diagnostic-command-rail__item.is-category-network { --diagnostic-category: #2563c4; }
+.diagnostic-command-rail__item.is-category-network,
+.diagnostic-launch.is-category-network { --diagnostic-category: #2563c4; }
 .diagnostic-command-group.is-category-hardware,
 .diagnostic-command-row.is-category-hardware,
-.diagnostic-command-rail__item.is-category-hardware { --diagnostic-category: #965900; }
+.diagnostic-command-rail__item.is-category-hardware,
+.diagnostic-launch.is-category-hardware { --diagnostic-category: #965900; }
 .diagnostic-command-group.is-category-benchmark,
 .diagnostic-command-row.is-category-benchmark,
-.diagnostic-command-rail__item.is-category-benchmark { --diagnostic-category: #7546c8; }
+.diagnostic-command-rail__item.is-category-benchmark,
+.diagnostic-launch.is-category-benchmark { --diagnostic-category: #7546c8; }
 .diagnostic-command-group.is-category-comprehensive,
 .diagnostic-command-row.is-category-comprehensive,
-.diagnostic-command-rail__item.is-category-comprehensive { --diagnostic-category: #7546c8; }
+.diagnostic-command-rail__item.is-category-comprehensive,
+.diagnostic-launch.is-category-comprehensive { --diagnostic-category: #7546c8; }
 .diagnostic-command-group.is-category-core,
 .diagnostic-command-row.is-category-core,
-.diagnostic-command-rail__item.is-category-core { --diagnostic-category: #15b8a6; }
+.diagnostic-command-rail__item.is-category-core,
+.diagnostic-launch.is-category-core { --diagnostic-category: #15b8a6; }
 
 :global(:root[data-theme='dark'] .diagnostic-command-group.is-category-access),
 :global(:root[data-theme='dark'] .diagnostic-command-row.is-category-access),
-:global(:root[data-theme='dark'] .diagnostic-command-rail__item.is-category-access) { --diagnostic-category: #4ecdc4; }
+:global(:root[data-theme='dark'] .diagnostic-command-rail__item.is-category-access),
+:global(:root[data-theme='dark'] .diagnostic-launch.is-category-access) { --diagnostic-category: #4ecdc4; }
 :global(:root[data-theme='dark'] .diagnostic-command-group.is-category-network),
 :global(:root[data-theme='dark'] .diagnostic-command-row.is-category-network),
-:global(:root[data-theme='dark'] .diagnostic-command-rail__item.is-category-network) { --diagnostic-category: #6ea8fe; }
+:global(:root[data-theme='dark'] .diagnostic-command-rail__item.is-category-network),
+:global(:root[data-theme='dark'] .diagnostic-launch.is-category-network) { --diagnostic-category: #6ea8fe; }
 :global(:root[data-theme='dark'] .diagnostic-command-group.is-category-hardware),
 :global(:root[data-theme='dark'] .diagnostic-command-row.is-category-hardware),
-:global(:root[data-theme='dark'] .diagnostic-command-rail__item.is-category-hardware) { --diagnostic-category: #f5b942; }
+:global(:root[data-theme='dark'] .diagnostic-command-rail__item.is-category-hardware),
+:global(:root[data-theme='dark'] .diagnostic-launch.is-category-hardware) { --diagnostic-category: #f5b942; }
 :global(:root[data-theme='dark'] .diagnostic-command-group.is-category-benchmark),
 :global(:root[data-theme='dark'] .diagnostic-command-row.is-category-benchmark),
 :global(:root[data-theme='dark'] .diagnostic-command-rail__item.is-category-benchmark),
+:global(:root[data-theme='dark'] .diagnostic-launch.is-category-benchmark),
 :global(:root[data-theme='dark'] .diagnostic-command-group.is-category-comprehensive),
 :global(:root[data-theme='dark'] .diagnostic-command-row.is-category-comprehensive),
-:global(:root[data-theme='dark'] .diagnostic-command-rail__item.is-category-comprehensive) { --diagnostic-category: #b58cff; }
+:global(:root[data-theme='dark'] .diagnostic-command-rail__item.is-category-comprehensive),
+:global(:root[data-theme='dark'] .diagnostic-launch.is-category-comprehensive) { --diagnostic-category: #b58cff; }
 :global(:root[data-theme='dark'] .diagnostic-command-group.is-category-core),
 :global(:root[data-theme='dark'] .diagnostic-command-row.is-category-core),
-:global(:root[data-theme='dark'] .diagnostic-command-rail__item.is-category-core) { --diagnostic-category: #49d5c1; }
+:global(:root[data-theme='dark'] .diagnostic-command-rail__item.is-category-core),
+:global(:root[data-theme='dark'] .diagnostic-launch.is-category-core) { --diagnostic-category: #49d5c1; }
 
 .diagnostic-command-select {
   display: grid;
   grid-template-columns: 30px minmax(0, 1fr) auto;
-  gap: 9px;
+  gap: 10px;
   align-items: center;
   min-width: 0;
   padding: 7px 6px 7px 8px;
@@ -1637,6 +1730,7 @@ onBeforeUnmount(() => {
 .diagnostic-command-select strong {
   overflow: hidden;
   font-size: 14px;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1653,24 +1747,18 @@ onBeforeUnmount(() => {
 .diagnostic-command-tested {
   border-radius: 999px;
   padding: 2px 6px;
+  color: var(--diagnostic-category);
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
 }
 
 .diagnostic-command-native {
-  color: var(--diagnostic-category);
   background: color-mix(in srgb, var(--diagnostic-category) 14%, var(--surface));
 }
 
 .diagnostic-command-tested {
-  border-radius: 999px;
-  padding: 2px 6px;
-  color: var(--diagnostic-category);
   background: color-mix(in srgb, var(--diagnostic-category) 12%, var(--surface));
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
 }
 
 .diagnostic-card__icon {
@@ -1679,7 +1767,7 @@ onBeforeUnmount(() => {
   width: 30px;
   height: 30px;
   flex: 0 0 auto;
-  border-radius: 9px;
+  border-radius: var(--radius-sm);
   color: var(--diagnostic-category);
   background: color-mix(in srgb, var(--diagnostic-category) 12%, var(--surface));
 }
@@ -1690,15 +1778,20 @@ onBeforeUnmount(() => {
   height: 30px;
   place-items: center;
   border: 1px solid color-mix(in srgb, var(--diagnostic-category) 38%, var(--border));
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   color: var(--diagnostic-category);
   background: color-mix(in srgb, var(--diagnostic-category) 8%, var(--surface));
   cursor: pointer;
+  transition:
+    color var(--motion-duration-fast) var(--motion-ease-fade),
+    background-color var(--motion-duration-fast) var(--motion-ease-fade);
 }
 
-.diagnostic-command-run:hover:not(:disabled) {
+.diagnostic-command-run:hover:not(:disabled),
+.diagnostic-command-run:focus-visible:not(:disabled) {
   color: var(--surface);
   background: var(--diagnostic-category);
+  outline: none;
 }
 
 .diagnostic-command-run:disabled {
@@ -1706,9 +1799,22 @@ onBeforeUnmount(() => {
   opacity: .42;
 }
 
+/* ---- Result surface ---- */
+
+.diagnostic-result {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--surface);
+  container: diagnostic-result / inline-size;
+}
+
 .diagnostic-result.is-overview {
   overflow: auto;
   overscroll-behavior: contain;
+  background: color-mix(in srgb, var(--surface-subtle) 55%, var(--surface));
   scrollbar-gutter: stable;
   scrollbar-width: thin;
   scrollbar-color: var(--border-strong) transparent;
@@ -1725,13 +1831,14 @@ onBeforeUnmount(() => {
   background-clip: padding-box;
 }
 
+/* Report home: total score first, then performance and network groups. */
 .diagnostic-overview {
   display: grid;
+  grid-auto-rows: max-content;
   align-content: start;
-  gap: 18px;
+  gap: 16px;
   min-height: 100%;
-  padding: 22px;
-  background: color-mix(in srgb, var(--surface-subtle) 30%, var(--surface));
+  padding: 24px;
 }
 
 .diagnostic-overview__header {
@@ -1739,13 +1846,14 @@ onBeforeUnmount(() => {
   align-items: flex-start;
   justify-content: space-between;
   gap: 18px;
+  padding: 0 2px;
 }
 
 .diagnostic-overview__eyebrow {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  margin-bottom: 8px;
+  gap: 8px;
+  margin-bottom: 10px;
   color: var(--brand-strong);
   font-size: 13px;
   font-weight: 600;
@@ -1753,25 +1861,26 @@ onBeforeUnmount(() => {
 
 .diagnostic-overview__eyebrow > span {
   display: grid;
-  width: 25px;
-  height: 25px;
+  width: 26px;
+  height: 26px;
   place-items: center;
   color: var(--brand-strong);
   background: var(--brand-soft);
   border: 1px solid var(--brand-muted);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
 }
 
 .diagnostic-overview__header h2 {
   margin: 0;
   color: var(--text);
-  font-size: clamp(20px, 2.4vw, 27px);
-  line-height: 1.2;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.25;
 }
 
 .diagnostic-overview__header p {
-  max-width: 600px;
-  margin: 7px 0 0;
+  max-width: 620px;
+  margin: 6px 0 0;
   color: var(--muted);
   font-size: 14px;
   line-height: 1.6;
@@ -1783,9 +1892,9 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 7px;
   min-height: 32px;
-  padding: 0 10px;
+  padding: 0 12px;
   color: var(--text-soft);
-  background: var(--surface);
+  background: var(--surface-raised);
   border: 1px solid var(--border);
   border-radius: 999px;
   font-size: 13px;
@@ -1839,83 +1948,102 @@ onBeforeUnmount(() => {
   background: var(--amber);
 }
 
+/* Shared score bar: the hero total, and each section score in its accent. */
+.diagnostic-score-meter {
+  --diagnostic-meter-fill: var(--brand);
+
+  display: block;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--diagnostic-meter-fill) 16%, var(--border));
+}
+
+.diagnostic-score-meter b {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--diagnostic-meter-fill);
+  transition: width var(--motion-duration-base) var(--motion-ease-standard);
+}
+
 .diagnostic-score-hero {
   display: grid;
-  grid-template-columns: minmax(145px, .4fr) minmax(0, 1fr);
-  gap: 20px;
+  grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
   align-items: center;
-  padding: 18px;
-  background: color-mix(in srgb, var(--brand-soft) 38%, var(--surface));
-  border: 1px solid color-mix(in srgb, var(--brand) 18%, var(--border));
+  gap: 28px;
+  padding: 22px 24px;
+  background: color-mix(in srgb, var(--brand-soft) 40%, var(--surface-raised));
+  border: 1px solid color-mix(in srgb, var(--brand) 20%, var(--border));
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
 }
 
-.diagnostic-score-ring {
-  position: relative;
+.diagnostic-score-total {
   display: grid;
-  width: 148px;
-  height: 148px;
-  place-items: center;
-  justify-self: center;
+  align-content: center;
+  gap: 8px;
+  min-width: 0;
+  padding-right: 28px;
+  border-right: 1px solid color-mix(in srgb, var(--brand) 16%, var(--border));
 }
 
-.diagnostic-score-ring svg {
-  width: 148px;
-  height: 148px;
-  overflow: visible;
-  transform: rotate(-90deg);
-}
-
-.diagnostic-score-ring circle {
-  fill: none;
-  stroke-width: 7;
-}
-
-.diagnostic-score-ring__track {
-  stroke: color-mix(in srgb, var(--brand) 13%, var(--border));
-}
-
-.diagnostic-score-ring__progress {
-  stroke: var(--brand);
-  stroke-linecap: round;
-  stroke-dasharray: 351.86;
-  transition: stroke-dashoffset 300ms ease, stroke 160ms ease;
-}
-
-.diagnostic-score-ring.is-failed .diagnostic-score-ring__progress {
-  stroke: var(--danger);
-}
-
-.diagnostic-score-ring.is-busy .diagnostic-score-ring__progress {
-  stroke: var(--amber);
-}
-
-.diagnostic-score-ring.is-unavailable .diagnostic-score-ring__progress {
-  stroke: var(--border-strong);
-}
-
-.diagnostic-score-ring__center {
-  position: absolute;
-  display: grid;
-  place-items: center;
-  gap: 4px;
-}
-
-.diagnostic-score-ring__center strong {
-  color: var(--text);
-  font-size: 24px;
-  font-weight: 700;
-  line-height: 1.1;
-}
-
-.diagnostic-score-ring__center span {
+.diagnostic-score-total > span {
   color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.diagnostic-score-total > div {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.diagnostic-score-total strong {
+  color: var(--text);
+  font-size: clamp(48px, 5vw, 60px);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.diagnostic-score-total em {
+  color: var(--muted);
+  font-size: 16px;
+  font-style: normal;
+  font-weight: 600;
+}
+
+.diagnostic-score-total small {
+  color: var(--brand-strong);
   font-size: 12px;
+  font-weight: 600;
+}
+
+.diagnostic-score-total.is-running strong {
+  color: var(--brand);
+}
+
+.diagnostic-score-total.is-failed strong {
+  color: var(--danger);
+}
+
+.diagnostic-score-total.is-failed .diagnostic-score-meter {
+  --diagnostic-meter-fill: var(--danger);
 }
 
 .diagnostic-score-hero__copy {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 24px;
   min-width: 0;
+}
+
+.diagnostic-score-hero__copy > * {
+  grid-column: 1;
 }
 
 .diagnostic-score-hero__label {
@@ -1925,13 +2053,13 @@ onBeforeUnmount(() => {
   gap: 8px;
   color: var(--brand-strong);
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .diagnostic-score-hero__label span {
-  padding: 3px 7px;
+  padding: 2px 8px;
   color: var(--muted);
-  background: var(--surface);
+  background: var(--surface-raised);
   border: 1px solid var(--border);
   border-radius: 999px;
   font-size: 12px;
@@ -1939,28 +2067,16 @@ onBeforeUnmount(() => {
   letter-spacing: .04em;
 }
 
-.diagnostic-score-hero__label em {
-  padding: 3px 7px;
-  color: var(--brand-strong);
-  background: var(--brand-soft);
-  border: 1px solid var(--brand-muted);
-  border-radius: 999px;
-  font-size: 12px;
-  font-style: normal;
-  font-weight: 600;
-  letter-spacing: 0;
-}
-
 .diagnostic-score-hero__copy h3 {
-  margin: 9px 0 0;
+  margin: 8px 0 0;
   color: var(--text);
-  font-size: 21px;
+  font-size: 20px;
+  font-weight: 700;
   line-height: 1.3;
 }
 
 .diagnostic-score-hero__copy p {
-  max-width: 560px;
-  margin: 7px 0 0;
+  margin: 4px 0 0;
   color: var(--text-soft);
   font-size: 14px;
   line-height: 1.6;
@@ -1969,8 +2085,8 @@ onBeforeUnmount(() => {
 .diagnostic-score-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px 18px;
-  margin-top: 15px;
+  gap: 8px 18px;
+  margin-top: 12px;
   color: var(--muted);
   font-size: 13px;
 }
@@ -1984,271 +2100,196 @@ onBeforeUnmount(() => {
 .diagnostic-score-actions {
   display: flex;
   flex-wrap: wrap;
+  grid-row: 1 / span 4;
+  grid-column: 2;
+  justify-content: flex-end;
   gap: 9px;
-  margin-top: 18px;
 }
 
 .diagnostic-score-actions .button {
   min-height: 40px;
 }
 
-.diagnostic-score-route {
+/* ---- Report sections ---- */
+
+.diagnostic-report-section {
+  --diagnostic-section-accent: var(--brand);
+
   display: grid;
-  grid-column: 1 / -1;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  align-content: start;
-  gap: 1px;
-  padding: 11px 12px;
-  background: color-mix(in srgb, var(--surface) 74%, transparent);
+  overflow: hidden;
+  background: var(--surface-raised);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
 }
 
-.diagnostic-score-route__header {
+.diagnostic-report-section.is-performance {
+  --diagnostic-section-accent: var(--amber);
+}
+
+.diagnostic-report-section.is-network {
+  --diagnostic-section-accent: var(--primary);
+}
+
+.diagnostic-report-section__header {
   display: flex;
-  grid-column: 1 / -1;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding-bottom: 6px;
-  margin-bottom: 2px;
+  gap: 16px;
+  padding: 16px 18px;
+  background: color-mix(in srgb, var(--diagnostic-section-accent) 5%, var(--surface-raised));
   border-bottom: 1px solid var(--border);
 }
 
-.diagnostic-score-route__header strong {
-  font-size: 14px;
-}
-
-.diagnostic-score-route__header span {
-  color: var(--brand-strong);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.diagnostic-score-route__item {
-  display: grid;
-  grid-template-columns: 25px minmax(0, 1fr) 8px;
-  gap: 7px;
-  align-items: center;
-  min-height: 26px;
-  color: var(--text-soft);
-  font-size: 12px;
-}
-
-.diagnostic-score-route__index {
-  color: var(--muted);
-  font: 650 12px/1 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-}
-
-.diagnostic-score-route__item i {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--border-strong);
-}
-
-.diagnostic-score-route__item i.is-running {
-  background: var(--brand);
-  box-shadow: 0 0 0 3px var(--brand-soft);
-}
-
-.diagnostic-score-route__item i.is-completed {
-  background: var(--brand-strong);
-}
-
-.diagnostic-score-route__item i.is-failed {
-  background: var(--danger);
-}
-
-.diagnostic-score-route__item i.is-covered {
-  background: var(--brand-muted);
-}
-
-.diagnostic-score-dimensions {
-  display: grid;
-  gap: 12px;
-}
-
-.diagnostic-score-dimensions > header {
+.diagnostic-report-section__title {
   display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
+  min-width: 0;
+  align-items: center;
   gap: 12px;
 }
 
-.diagnostic-score-dimensions h3 {
+.diagnostic-report-section__icon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  place-items: center;
+  color: var(--diagnostic-section-accent);
+  background: color-mix(in srgb, var(--diagnostic-section-accent) 12%, var(--surface-raised));
+  border: 1px solid color-mix(in srgb, var(--diagnostic-section-accent) 28%, var(--border));
+  border-radius: var(--radius-sm);
+}
+
+.diagnostic-report-section__title h3 {
   margin: 0;
   color: var(--text);
   font-size: 17px;
+  font-weight: 700;
+  line-height: 1.25;
 }
 
-.diagnostic-score-dimensions p {
-  margin: 5px 0 0;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.diagnostic-score-dimensions > header > span {
-  flex: 0 0 auto;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.diagnostic-score-dimension-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.diagnostic-score-dimension {
-  --dimension-color: var(--brand-strong);
-
-  display: grid;
-  grid-template-columns: 42px minmax(0, 1fr);
-  gap: 11px;
+.diagnostic-report-section__title p {
+  display: flex;
   align-items: center;
-  min-width: 0;
-  min-height: 86px;
-  padding: 13px;
-  color: var(--text);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  text-align: left;
-  cursor: pointer;
-  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
-}
-
-.diagnostic-score-dimension:hover:not(:disabled),
-.diagnostic-score-dimension:focus-visible {
-  border-color: color-mix(in srgb, var(--dimension-color) 62%, var(--border));
-  background: color-mix(in srgb, var(--dimension-color) 7%, var(--surface));
-  outline: none;
-  transform: translateY(-1px);
-}
-
-.diagnostic-score-dimension:disabled {
-  cursor: not-allowed;
-  opacity: .68;
-}
-
-.diagnostic-score-dimension.is-covered:disabled {
-  border-style: dashed;
-  opacity: .84;
-}
-
-.diagnostic-score-dimension.is-tone-performance { --dimension-color: #965900; }
-.diagnostic-score-dimension.is-tone-route { --dimension-color: #2563c4; }
-.diagnostic-score-dimension.is-tone-latency { --dimension-color: #087a72; }
-.diagnostic-score-dimension.is-tone-speed { --dimension-color: #7546c8; }
-.diagnostic-score-dimension.is-tone-ip { --dimension-color: #0c9b78; }
-
-.diagnostic-score-dimension__icon {
-  display: grid;
-  width: 42px;
-  height: 42px;
-  place-items: center;
-  color: var(--dimension-color);
-  background: color-mix(in srgb, var(--dimension-color) 10%, var(--surface));
-  border: 1px solid color-mix(in srgb, var(--dimension-color) 22%, var(--border));
-  border-radius: 12px;
-}
-
-.diagnostic-score-dimension__copy {
-  display: grid;
-  min-width: 0;
-  gap: 4px;
-}
-
-.diagnostic-score-dimension__copy strong {
-  font-size: 15px;
-}
-
-.diagnostic-score-dimension__copy > span {
+  gap: 7px;
   overflow: hidden;
+  margin: 4px 0 0;
   color: var(--muted);
   font-size: 13px;
+  line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.diagnostic-score-dimension__copy > span.is-summary {
-  display: -webkit-box;
-  overflow: hidden;
-  color: var(--text-soft);
+.diagnostic-report-section__title p span {
+  color: var(--diagnostic-section-accent);
+  font-size: 12px;
   font-weight: 600;
-  white-space: normal;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  line-height: 1.35;
+  letter-spacing: .04em;
 }
 
-.diagnostic-score-dimension__state {
-  display: inline-flex;
-  grid-column: 2;
-  align-items: center;
-  gap: 6px;
+.diagnostic-report-section__title p b {
+  padding-left: 7px;
+  border-left: 1px solid var(--border);
+  color: var(--text-soft);
+  font-weight: 600;
+}
+
+.diagnostic-report-section__score {
+  display: grid;
+  flex: 0 0 auto;
+  justify-items: end;
+  gap: 4px;
   color: var(--muted);
+}
+
+.diagnostic-report-section__score > small {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .04em;
+}
+
+.diagnostic-report-section__score > div {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+}
+
+.diagnostic-report-section__score strong {
+  color: var(--text);
+  font-size: 26px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.diagnostic-report-section__score span {
   font-size: 12px;
 }
 
-.diagnostic-score-dimension__state i {
-  width: 7px;
-  height: 7px;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  background: var(--border-strong);
+.diagnostic-report-section__score .diagnostic-score-meter {
+  --diagnostic-meter-fill: var(--diagnostic-section-accent);
+
+  width: 96px;
+  height: 4px;
+  margin-top: 4px;
 }
 
-.diagnostic-score-dimension.is-running .diagnostic-score-dimension__state,
-.diagnostic-score-dimension.is-running .diagnostic-score-dimension__state i {
-  color: var(--brand-strong);
+.diagnostic-report-section__body {
+  min-width: 0;
 }
 
-.diagnostic-score-dimension.is-running .diagnostic-score-dimension__state i {
-  background: var(--brand);
-  box-shadow: 0 0 0 3px var(--brand-soft);
+.diagnostic-report-section.is-network .diagnostic-report-section__body {
+  display: grid;
+  gap: 1px;
+  background: var(--border);
 }
 
-.diagnostic-score-dimension.is-completed .diagnostic-score-dimension__state,
-.diagnostic-score-dimension.is-completed .diagnostic-score-dimension__state i {
-  color: var(--brand-strong);
+/* Tiles sit flush in the section; the 1px grid gap draws the dividers. */
+.diagnostic-report-card-grid,
+.diagnostic-report-identity {
+  display: grid;
+  gap: 1px;
+  background: var(--border);
 }
 
-.diagnostic-score-dimension.is-completed .diagnostic-score-dimension__state i {
-  background: var(--brand-strong);
+.diagnostic-report-card-grid--performance,
+.diagnostic-report-card-grid--network,
+.diagnostic-report-identity {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.diagnostic-score-dimension.is-failed .diagnostic-score-dimension__state,
-.diagnostic-score-dimension.is-failed .diagnostic-score-dimension__state i {
-  color: var(--danger);
+.diagnostic-report-card,
+.diagnostic-report-identity > div {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  padding: 16px 18px;
+  background: var(--surface-raised);
 }
 
-.diagnostic-score-dimension.is-failed .diagnostic-score-dimension__state i {
-  background: var(--danger);
+.diagnostic-report-card {
+  min-height: 96px;
 }
 
-.diagnostic-score-dimension.is-covered .diagnostic-score-dimension__state,
-.diagnostic-score-dimension.is-covered .diagnostic-score-dimension__state i {
-  color: var(--brand-strong);
-}
-
-.diagnostic-score-dimension.is-covered .diagnostic-score-dimension__state i {
-  background: var(--brand-muted);
-}
-
-.diagnostic-score-note {
+.diagnostic-report-card > header {
   display: flex;
   align-items: flex-start;
-  gap: 11px;
-  padding: 13px 14px;
-  background: color-mix(in srgb, var(--surface) 65%, var(--surface-subtle));
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  justify-content: space-between;
+  gap: 8px;
 }
 
-.diagnostic-score-note__icon {
+.diagnostic-report-card__heading,
+.diagnostic-report-identity__heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.diagnostic-report-card__heading > span,
+.diagnostic-report-identity__heading > span {
   display: grid;
   width: 30px;
   height: 30px;
@@ -2256,86 +2297,269 @@ onBeforeUnmount(() => {
   place-items: center;
   color: var(--brand-strong);
   background: var(--brand-soft);
-  border-radius: 9px;
+  border: 1px solid var(--brand-muted);
+  border-radius: var(--radius-sm);
 }
 
-.diagnostic-score-note strong {
-  display: block;
-  color: var(--text-soft);
+.diagnostic-report-card__heading > span.is-cpu,
+.diagnostic-report-card__heading > span.is-disk {
+  color: var(--amber);
+  background: var(--amber-soft);
+  border-color: color-mix(in srgb, var(--amber) 28%, var(--border));
+}
+
+.diagnostic-report-card__heading > span.is-memory,
+.diagnostic-report-card__heading > span.is-ip,
+.diagnostic-report-identity__heading > span.is-ip {
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 12%, var(--surface-raised));
+  border-color: color-mix(in srgb, var(--primary) 28%, var(--border));
+}
+
+.diagnostic-report-card__heading > span.is-speed {
+  color: #8c62de;
+  background: color-mix(in srgb, #8c62de 12%, var(--surface-raised));
+  border-color: color-mix(in srgb, #8c62de 28%, var(--border));
+}
+
+/* Top-align the icon so a wrapped subtitle grows downward; the text block keeps
+   the icon height so a lone title still centres against it. */
+.diagnostic-report-card__heading {
+  align-items: flex-start;
+}
+
+.diagnostic-report-card__heading > div {
+  display: grid;
+  align-content: center;
+  min-width: 0;
+  min-height: 30px;
+  gap: 2px;
+}
+
+.diagnostic-report-card__heading strong,
+.diagnostic-report-identity__heading > div > span {
+  color: var(--text);
   font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
-.diagnostic-score-note p {
-  max-width: 680px;
-  margin: 4px 0 0;
+.diagnostic-report-card__heading small {
   color: var(--muted);
   font-size: 13px;
-  line-height: 1.55;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
-.diagnostic-score-note__link {
+/* Values sit on the tile floor so a row of tiles shares one baseline. */
+.diagnostic-report-card__value,
+.diagnostic-report-pair,
+.diagnostic-report-card__data-row,
+.diagnostic-report-identity strong {
+  margin-top: auto;
+}
+
+.diagnostic-report-card__value,
+.diagnostic-report-pair strong,
+.diagnostic-report-identity strong {
+  display: block;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.diagnostic-report-card__value small,
+.diagnostic-report-pair strong small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.diagnostic-report-card__value--text {
+  font-size: 16px;
+  line-height: 1.35;
+}
+
+.diagnostic-report-card__value.is-pending,
+.diagnostic-report-pair strong.is-pending,
+.diagnostic-report-identity strong.is-pending {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.diagnostic-report-identity strong.is-isp {
+  color: var(--brand-strong);
+}
+
+.diagnostic-report-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.diagnostic-report-pair > div {
+  min-width: 0;
+}
+
+.diagnostic-report-pair > div:first-child {
+  padding-right: 10px;
+}
+
+.diagnostic-report-pair > div + div {
+  padding-left: 14px;
+  border-left: 1px solid var(--border);
+}
+
+.diagnostic-report-pair span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Latency and IP quality keep their details beside the value when there is room.
+   When there is not, wrap-reverse lifts the details above the value, so the value
+   stays on the shared tile floor beside the bandwidth pair and is never truncated. */
+.diagnostic-report-card__data-row {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap-reverse;
+  align-content: flex-start;
+  align-items: baseline;
+  gap: 4px 12px;
+}
+
+.diagnostic-report-card__data-row > .diagnostic-report-card__value {
+  flex: 0 0 auto;
+  margin-top: 0;
+}
+
+.diagnostic-report-card__data-row > .diagnostic-report-risk {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+
+.diagnostic-report-card__meta {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.diagnostic-report-card__meta b {
+  margin-right: 4px;
+  color: var(--text-soft);
+  font-weight: 600;
+}
+
+.diagnostic-report-risk {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.diagnostic-report-risk > .diagnostic-report-card__value {
+  margin-top: 0;
+}
+
+.diagnostic-report-risk .is-native-ip {
+  color: var(--brand-strong);
+  font-weight: 700;
+}
+
+.diagnostic-report-risk__score b {
+  margin-right: 4px;
+  color: var(--text-soft);
+  font-weight: 600;
+}
+
+.diagnostic-report-risk__level {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.diagnostic-report-risk__level.is-low {
+  color: var(--brand-strong);
+  background: var(--brand-soft);
+  border-color: var(--brand-muted);
+}
+
+.diagnostic-report-risk__level.is-medium {
+  color: var(--amber);
+  background: var(--amber-soft);
+  border-color: color-mix(in srgb, var(--amber) 34%, var(--border));
+}
+
+.diagnostic-report-risk__level.is-high {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-color: color-mix(in srgb, var(--danger) 34%, var(--border));
+}
+
+.diagnostic-report-risk__level.is-neutral {
+  color: var(--text-soft);
+  background: var(--surface-subtle);
+}
+
+.diagnostic-report-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 0 4px 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.diagnostic-report-note > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--brand-strong);
+}
+
+.diagnostic-report-note p {
+  flex: 1 1 auto;
+  margin: 0;
+  line-height: 1.6;
+}
+
+.diagnostic-report-note a,
+.diagnostic-report-note button {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 5px;
-  margin-left: auto;
-  padding: 5px 0;
+  gap: 4px;
   color: var(--brand-strong);
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   white-space: nowrap;
 }
 
-.diagnostic-score-note__link:hover,
-.diagnostic-score-note__link:focus-visible {
-  color: var(--brand);
-  outline: none;
-  text-decoration: underline;
-  text-underline-offset: 3px;
+.diagnostic-report-note button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
 }
 
-.diagnostic-result h2 {
-  margin: 2px 0 0;
-  font-size: 17px;
-}
-
-.diagnostic-result footer span,
-.diagnostic-result footer a,
-.diagnostic-source {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.impact-pill {
-  padding: 4px 7px;
-  border-radius: 999px;
-  background: var(--surface-muted);
-}
-
-.impact-pill.is-network {
-  color: var(--warning);
-}
-
-.impact-pill.is-intensive {
-  color: var(--danger);
-}
-
-.diagnostic-result {
-  overflow: hidden;
-}
-
-.diagnostic-result {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-  background: var(--surface);
-  container: diagnostic-result / inline-size;
-}
+/* ---- Terminal view ---- */
 
 .diagnostic-progress {
   flex: 0 0 auto;
@@ -2349,7 +2573,7 @@ onBeforeUnmount(() => {
   min-width: 3%;
   border-radius: 999px;
   background: var(--primary);
-  transition: width 220ms ease;
+  transition: width var(--motion-duration-base) var(--motion-ease-standard);
 }
 
 .diagnostic-terminal-bar {
@@ -2398,6 +2622,97 @@ onBeforeUnmount(() => {
   overflow-wrap: anywhere;
 }
 
+/* Before a check has run, the pane introduces it on the page surface instead of
+   showing an empty terminal. */
+.diagnostic-launch {
+  --diagnostic-category: var(--brand);
+
+  display: grid;
+  flex: 1 1 auto;
+  min-height: 0;
+  place-items: center;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 32px 24px;
+  background: color-mix(in srgb, var(--surface-subtle) 55%, var(--surface));
+}
+
+.diagnostic-launch > p {
+  max-width: 360px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.diagnostic-launch__card {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  width: min(100%, 440px);
+  text-align: center;
+}
+
+.diagnostic-launch__icon {
+  display: grid;
+  width: 56px;
+  height: 56px;
+  place-items: center;
+  margin-bottom: 8px;
+  color: var(--diagnostic-category);
+  background: color-mix(in srgb, var(--diagnostic-category) 12%, var(--surface-raised));
+  border: 1px solid color-mix(in srgb, var(--diagnostic-category) 28%, var(--border));
+  border-radius: var(--radius);
+}
+
+.diagnostic-launch__card > small {
+  color: var(--diagnostic-category);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.diagnostic-launch__card h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.diagnostic-launch__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 16px;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.diagnostic-launch__meta span,
+.diagnostic-launch__meta a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.diagnostic-launch__meta a {
+  color: var(--primary);
+}
+
+.diagnostic-launch__card .button {
+  min-height: 40px;
+  margin-top: 16px;
+}
+
+.diagnostic-launch__card p {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 .diagnostic-interactive-terminal {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
@@ -2425,9 +2740,38 @@ onBeforeUnmount(() => {
   font-size: 13px;
 }
 
+.diagnostic-result footer span,
+.diagnostic-result footer a,
+.diagnostic-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
 .diagnostic-result footer a {
   color: var(--primary);
 }
+
+.impact-pill {
+  padding: 3px 9px;
+  border-radius: 999px;
+  color: var(--text-soft);
+  background: var(--surface-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.impact-pill.is-network {
+  color: var(--warning);
+  background: var(--amber-soft);
+}
+
+.impact-pill.is-intensive {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+/* ---- Confirmation dialog ---- */
 
 .diagnostic-confirm {
   display: flex;
@@ -2486,85 +2830,7 @@ onBeforeUnmount(() => {
   }
 }
 
-@media (max-width: 1120px) {
-  .diagnostic-score-hero {
-    grid-template-columns: minmax(145px, .4fr) minmax(0, 1fr);
-  }
-
-  .diagnostic-score-route {
-    gap: 8px;
-  }
-
-  .diagnostic-score-route__header {
-    grid-column: 1 / -1;
-  }
-
-  .diagnostic-score-route__item {
-    grid-template-columns: 25px minmax(0, 1fr) 8px;
-  }
-}
-
-@media (max-width: 900px) {
-  .diagnostic-score-dimension-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@container diagnostic-result (max-width: 760px) {
-  .diagnostic-score-route {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .diagnostic-score-dimension-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@container diagnostic-result (max-width: 560px) {
-  .diagnostic-score-route {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .diagnostic-score-dimension-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-@container diagnostic-result (min-width: 860px) {
-  .diagnostic-score-dimension-grid {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-  }
-
-  .diagnostic-score-dimension {
-    grid-template-columns: 34px minmax(0, 1fr);
-    gap: 8px;
-    min-height: 96px;
-    padding: 11px;
-  }
-
-  .diagnostic-score-dimension__icon {
-    width: 34px;
-    height: 34px;
-    border-radius: 10px;
-  }
-
-  .diagnostic-score-dimension__copy strong {
-    font-size: 14px;
-  }
-
-  .diagnostic-score-dimension__copy > span {
-    display: -webkit-box;
-    overflow: hidden;
-    white-space: normal;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    line-height: 1.35;
-  }
-
-  .diagnostic-score-dimension__copy > span.is-summary {
-    -webkit-line-clamp: 3;
-  }
-}
+/* ---- Bounded surfaces ---- */
 
 /* A desktop window can be narrower than the browser viewport. Keep the
    diagnostic drawer responsive to that bounded surface, not only to the
@@ -2588,7 +2854,7 @@ onBeforeUnmount(() => {
     border-bottom: 0;
     box-shadow: var(--shadow-md);
     transform: translateX(-105%);
-    transition: transform .2s ease;
+    transition: transform var(--motion-duration-base) var(--motion-ease-standard);
   }
 
   .diagnostic-workbench.is-command-drawer-open .diagnostic-command-panel {
@@ -2624,11 +2890,6 @@ onBeforeUnmount(() => {
     display: flex;
   }
 
-  .diagnostic-overview {
-    gap: 15px;
-    padding: 15px;
-  }
-
   .diagnostic-overview__header {
     flex-direction: column;
     gap: 10px;
@@ -2636,43 +2897,6 @@ onBeforeUnmount(() => {
 
   .diagnostic-overview__status {
     align-self: flex-start;
-  }
-
-  .diagnostic-score-hero:not(.diagnostic-score-hero--simple) {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 18px;
-    padding: 16px;
-  }
-
-  .diagnostic-score-ring {
-    width: 144px;
-    height: 144px;
-  }
-
-  .diagnostic-score-ring svg {
-    width: 144px;
-    height: 144px;
-  }
-
-  .diagnostic-score-route {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  }
-
-  .diagnostic-score-route__header {
-    grid-column: 1 / -1;
-  }
-
-  .diagnostic-score-dimension-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .diagnostic-score-note {
-    flex-wrap: wrap;
-  }
-
-  .diagnostic-score-note__link {
-    width: 100%;
-    margin-left: 41px;
   }
 
   .diagnostic-log,
@@ -2693,7 +2917,7 @@ onBeforeUnmount(() => {
     grid-template-columns: minmax(0, 1fr);
     height: auto;
     min-height: min(580px, calc(100dvh - 110px));
-    border-radius: 14px;
+    border-radius: var(--radius);
   }
 
   /* Classic mode should use the document as its only vertical scroll surface.
@@ -2724,7 +2948,7 @@ onBeforeUnmount(() => {
     border-bottom: 0;
     box-shadow: var(--shadow-md);
     transform: translateX(-105%);
-    transition: transform .2s ease;
+    transition: transform var(--motion-duration-base) var(--motion-ease-standard);
   }
 
   .diagnostic-workbench.is-command-drawer-open .diagnostic-command-panel {
@@ -2757,11 +2981,6 @@ onBeforeUnmount(() => {
     margin-top: 8px;
   }
 
-  .diagnostic-overview {
-    gap: 15px;
-    padding: 15px;
-  }
-
   .diagnostic-overview__header {
     flex-direction: column;
     gap: 10px;
@@ -2769,43 +2988,6 @@ onBeforeUnmount(() => {
 
   .diagnostic-overview__status {
     align-self: flex-start;
-  }
-
-  .diagnostic-score-hero {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 18px;
-    padding: 16px;
-  }
-
-  .diagnostic-score-ring {
-    width: 144px;
-    height: 144px;
-  }
-
-  .diagnostic-score-ring svg {
-    width: 144px;
-    height: 144px;
-  }
-
-  .diagnostic-score-route {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  }
-
-  .diagnostic-score-route__header {
-    grid-column: 1 / -1;
-  }
-
-  .diagnostic-score-dimension-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .diagnostic-score-note {
-    flex-wrap: wrap;
-  }
-
-  .diagnostic-score-note__link {
-    width: 100%;
-    margin-left: 41px;
   }
 
   .diagnostic-mobile-selector {
@@ -2830,595 +3012,7 @@ onBeforeUnmount(() => {
   }
 }
 
-/* Compact report home: total score first, then two readable result groups. */
-.diagnostic-score-hero--simple {
-  grid-template-columns: minmax(150px, 170px) minmax(280px, 360px);
-  justify-content: center;
-  min-height: 150px;
-  gap: 28px;
-  padding: 18px 20px;
-}
-
-.diagnostic-overview {
-  grid-auto-rows: max-content;
-}
-
-.diagnostic-score-total {
-  display: grid;
-  align-content: center;
-  min-height: 116px;
-  padding: 14px 0 14px 50px;
-  border-right: 1px solid var(--border);
-}
-
-.diagnostic-score-total > span {
-  color: var(--muted);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.diagnostic-score-total > div {
-  display: flex;
-  align-items: baseline;
-  gap: 5px;
-  margin-top: 3px;
-}
-
-.diagnostic-score-total strong {
-  color: var(--text);
-  font-size: clamp(46px, 6vw, 72px);
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-
-  line-height: .95;
-}
-
-.diagnostic-score-total em {
-  color: var(--muted);
-  font-size: 16px;
-  font-style: normal;
-}
-
-.diagnostic-score-total small {
-  margin-top: 9px;
-  color: var(--brand-strong);
-  font-size: 12px;
-}
-
-.diagnostic-score-total.is-running strong {
-  color: var(--brand);
-}
-
-.diagnostic-score-total.is-failed strong {
-  color: var(--danger);
-}
-
-.diagnostic-report-section {
-  --diagnostic-section-accent: var(--brand);
-  display: grid;
-  gap: 0;
-  overflow: hidden;
-  background: color-mix(in srgb, var(--surface-raised) 78%, var(--surface));
-  border: 1px solid color-mix(in srgb, var(--diagnostic-section-accent) 24%, var(--border-strong));
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm), inset 0 1px 0 color-mix(in srgb, var(--surface) 72%, transparent);
-}
-
-.diagnostic-report-section.is-performance {
-  --diagnostic-section-accent: var(--amber);
-}
-
-.diagnostic-report-section.is-network {
-  --diagnostic-section-accent: var(--primary);
-}
-
-.diagnostic-report-section__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 14px 10px;
-  background: color-mix(in srgb, var(--surface-subtle) 56%, var(--surface));
-  border-bottom: 1px solid var(--border-strong);
-  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--diagnostic-section-accent) 72%, transparent);
-}
-
-.diagnostic-report-section__body {
-  min-width: 0;
-  padding: 0 14px 14px;
-  background: color-mix(in srgb, var(--surface) 92%, var(--surface-subtle));
-}
-
-.diagnostic-report-section__title {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 10px;
-}
-
-.diagnostic-report-section__icon {
-  display: grid;
-  width: 32px;
-  height: 32px;
-  flex: 0 0 auto;
-  place-items: center;
-  color: var(--brand-strong);
-  background: var(--brand-soft);
-  border: 1px solid var(--brand-muted);
-  border-radius: 10px;
-}
-
-.diagnostic-report-section.is-performance .diagnostic-report-section__icon {
-  color: var(--amber);
-  background: var(--amber-soft);
-  border-color: color-mix(in srgb, var(--amber) 28%, var(--border));
-}
-
-.diagnostic-report-section.is-network .diagnostic-report-section__icon {
-  color: var(--primary);
-  background: color-mix(in srgb, var(--primary) 12%, var(--surface));
-  border-color: color-mix(in srgb, var(--primary) 28%, var(--border));
-}
-
-.diagnostic-report-section__title h3 {
-  margin: 0;
-  color: var(--text);
-  font-size: 17px;
-  line-height: 1.2;
-}
-
-.diagnostic-report-section__title p {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  overflow: hidden;
-  margin: 4px 0 0;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.diagnostic-report-section__title p span {
-  color: var(--brand-strong);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: .04em;
-}
-
-.diagnostic-report-section__title p b {
-  padding-left: 7px;
-  border-left: 1px solid var(--border);
-  color: var(--text-soft);
-  font-weight: 600;
-}
-
-.diagnostic-report-section__score {
-  display: grid;
-  flex: 0 0 auto;
-  justify-items: end;
-  gap: 3px;
-  color: var(--muted);
-}
-
-.diagnostic-report-section__score > small {
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: .04em;
-}
-
-.diagnostic-report-section__score > div {
-  display: flex;
-  align-items: baseline;
-  gap: 3px;
-}
-
-.diagnostic-report-section__score strong {
-  color: var(--text);
-  font-size: 24px;
-  font-weight: 700;
-  line-height: 1;
-}
-
-.diagnostic-report-section__score span {
-  font-size: 12px;
-}
-
-.diagnostic-report-card-grid {
-  display: grid;
-  gap: 1px;
-  overflow: hidden;
-  background: var(--border-strong);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-}
-
-.diagnostic-report-card-grid--performance,
-.diagnostic-report-card-grid--network {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.diagnostic-report-card {
-  min-width: 0;
-  min-height: 96px;
-  padding: 11px 12px;
-  background: color-mix(in srgb, var(--surface-subtle) 32%, var(--surface));
-}
-
-.diagnostic-report-card > header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.diagnostic-report-card__heading {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 8px;
-}
-
-.diagnostic-report-card__heading > span,
-.diagnostic-report-identity__heading > span {
-  display: grid;
-  width: 30px;
-  height: 30px;
-  flex: 0 0 auto;
-  place-items: center;
-  color: var(--brand-strong);
-  background: var(--brand-soft);
-  border: 1px solid var(--brand-muted);
-  border-radius: 9px;
-}
-
-.diagnostic-report-identity__heading {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 8px;
-}
-
-.diagnostic-report-identity__heading > div {
-  display: grid;
-  min-width: 0;
-  gap: 2px;
-}
-
-.diagnostic-report-identity__heading > div > span {
-  display: block;
-  margin-bottom: 4px;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.diagnostic-report-card__heading > span.is-cpu,
-.diagnostic-report-card__heading > span.is-disk {
-  color: var(--amber);
-  background: var(--amber-soft);
-  border-color: color-mix(in srgb, var(--amber) 28%, var(--border));
-}
-
-.diagnostic-report-card__heading > span.is-memory {
-  color: var(--primary);
-  background: color-mix(in srgb, var(--primary) 12%, var(--surface));
-  border-color: color-mix(in srgb, var(--primary) 28%, var(--border));
-}
-
-.diagnostic-report-card__heading > span.is-latency {
-  color: var(--brand-strong);
-}
-
-.diagnostic-report-card__heading > span.is-speed {
-  color: #8c62de;
-  background: color-mix(in srgb, #8c62de 12%, var(--surface));
-  border-color: color-mix(in srgb, #8c62de 28%, var(--border));
-}
-
-.diagnostic-report-card__heading > span.is-ip,
-.diagnostic-report-identity__heading > span.is-ip {
-  color: var(--primary);
-  background: color-mix(in srgb, var(--primary) 12%, var(--surface));
-  border-color: color-mix(in srgb, var(--primary) 28%, var(--border));
-}
-
-.diagnostic-report-card__heading > div {
-  display: grid;
-  min-width: 0;
-  gap: 2px;
-}
-
-.diagnostic-report-card__heading strong {
-  overflow: hidden;
-  color: var(--text);
-  font-size: 14px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.diagnostic-report-card__heading small {
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 13px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.diagnostic-report-card__value {
-  display: block;
-  margin-top: 12px;
-  color: var(--text-soft);
-  font-size: 16px;
-  font-weight: 700;
-  line-height: 1.3;
-  overflow-wrap: anywhere;
-}
-
-.diagnostic-report-card__value--text {
-  font-size: 16px;
-  line-height: 1.35;
-}
-
-.diagnostic-report-card__meta {
-  display: flex;
-  min-height: 16px;
-  flex-wrap: wrap;
-  gap: 5px 12px;
-  margin-top: 7px;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.4;
-  overflow-wrap: anywhere;
-}
-
-.diagnostic-report-card__meta b {
-  margin-right: 4px;
-  color: var(--text-soft);
-  font-weight: 600;
-}
-
-.diagnostic-report-risk .is-native-ip {
-  color: var(--brand-strong);
-  font-weight: 700;
-}
-
-.diagnostic-report-pair {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin-top: 11px;
-}
-
-.diagnostic-report-pair > div {
-  min-width: 0;
-}
-
-.diagnostic-report-pair > div + div {
-  padding-left: 12px;
-  border-left: 1px solid var(--border);
-}
-
-.diagnostic-report-pair span {
-  display: block;
-  margin-bottom: 4px;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.diagnostic-report-pair strong {
-  display: block;
-  color: var(--text-soft);
-  font-size: 16px;
-  font-weight: 700;
-  line-height: 1.3;
-  overflow-wrap: anywhere;
-}
-
-.diagnostic-report-pair--speed strong {
-  font-size: 16px;
-}
-
-.diagnostic-report-card-grid--performance .diagnostic-report-card__value,
-.diagnostic-report-card-grid--performance .diagnostic-report-pair {
-  min-height: 41px;
-  margin-top: 11px;
-}
-
-.diagnostic-report-card-grid--performance .diagnostic-report-card__value {
-  display: grid;
-  align-content: end;
-}
-
-.diagnostic-report-card-grid--network .diagnostic-report-card__value,
-.diagnostic-report-card-grid--network .diagnostic-report-pair,
-.diagnostic-report-card-grid--network .diagnostic-report-risk {
-  min-height: 41px;
-  margin-top: 11px;
-}
-
-.diagnostic-report-card-grid--network .diagnostic-report-card__value {
-  display: grid;
-  align-content: end;
-}
-
-.diagnostic-report-card__data-row {
-  display: flex;
-  min-width: 0;
-  min-height: 41px;
-  align-items: flex-end;
-  gap: 10px;
-  margin-top: 11px;
-  overflow: hidden;
-}
-
-.diagnostic-report-card__data-row > .diagnostic-report-card__value,
-.diagnostic-report-card__data-row > .diagnostic-report-risk,
-.diagnostic-report-card__data-row > .diagnostic-report-card__meta {
-  min-width: 0;
-  min-height: 0;
-  margin-top: 0;
-}
-
-.diagnostic-report-card__data-row > .diagnostic-report-card__value {
-  display: block;
-  flex: 0 1 auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.diagnostic-report-card__data-row > .diagnostic-report-risk {
-  flex: 1 1 auto;
-  flex-wrap: nowrap;
-  overflow: hidden;
-  white-space: nowrap;
-}
-
-.diagnostic-report-card__data-row > .diagnostic-report-card__meta {
-  display: flex;
-  flex: 1 1 auto;
-  flex-wrap: nowrap;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.diagnostic-report-card__data-row > .diagnostic-report-card__meta > span {
-  flex: 0 0 auto;
-}
-
-.diagnostic-report-identity {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin-bottom: 10px;
-  border-top: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
-}
-
-.diagnostic-report-identity > div {
-  min-width: 0;
-  padding: 11px 12px;
-}
-
-.diagnostic-report-identity > div + div {
-  border-left: 1px solid var(--border);
-}
-
-.diagnostic-report-identity strong {
-  display: block;
-  overflow: hidden;
-  color: var(--text-soft);
-  font-size: 16px;
-  font-weight: 700;
-  line-height: 1.3;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.diagnostic-report-identity strong.is-isp {
-  color: var(--brand-strong);
-}
-
-.diagnostic-report-risk {
-  display: flex;
-  min-height: 34px;
-  align-items: center;
-  gap: 10px;
-  margin-top: 11px;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.diagnostic-report-risk > .diagnostic-report-card__value {
-  display: block;
-  flex: 0 1 auto;
-  min-width: 0;
-  min-height: 0;
-  margin-top: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.diagnostic-report-risk__score b {
-  margin-right: 4px;
-  font-weight: 600;
-}
-
-.diagnostic-report-risk__level {
-  display: inline-flex;
-  align-items: center;
-  min-height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.diagnostic-report-risk__level.is-low {
-  color: var(--brand-strong);
-  background: var(--brand-soft);
-  border-color: var(--brand-muted);
-}
-
-.diagnostic-report-risk__level.is-medium {
-  color: var(--amber);
-  background: var(--amber-soft);
-  border-color: color-mix(in srgb, var(--amber) 34%, var(--border));
-}
-
-.diagnostic-report-risk__level.is-high {
-  color: var(--danger);
-  background: color-mix(in srgb, var(--danger) 11%, var(--surface));
-  border-color: color-mix(in srgb, var(--danger) 34%, var(--border));
-}
-
-.diagnostic-report-risk__level.is-neutral {
-  color: var(--text-soft);
-  background: var(--surface-subtle);
-}
-
-.diagnostic-report-note {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 2px 2px 5px;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.diagnostic-report-note > svg {
-  flex: 0 0 auto;
-  color: var(--brand-strong);
-}
-
-.diagnostic-report-note p {
-  flex: 1 1 auto;
-  margin: 0;
-  line-height: 1.4;
-}
-
-.diagnostic-report-note a,
-.diagnostic-report-note button {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 4px;
-  color: var(--brand-strong);
-  font-size: 14px;
-  white-space: nowrap;
-}
-
-.diagnostic-report-note button {
-  border: 0;
-  padding: 0;
-  background: transparent;
-  cursor: pointer;
-}
+/* ---- Result-width layouts ---- */
 
 @container diagnostic-result (min-width: 1040px) {
   .diagnostic-report-section {
@@ -3428,10 +3022,10 @@ onBeforeUnmount(() => {
   .diagnostic-report-section__header {
     flex-direction: column;
     align-items: flex-start;
-    justify-content: center;
-    border-right: 1px solid var(--border-strong);
+    justify-content: space-between;
+    border-right: 1px solid var(--border);
     border-bottom: 0;
-    padding: 14px;
+    padding: 18px;
   }
 
   .diagnostic-report-section__title {
@@ -3445,34 +3039,52 @@ onBeforeUnmount(() => {
   }
 
   .diagnostic-report-section__score {
-    grid-template-columns: auto auto;
-    align-items: baseline;
     justify-items: start;
-    gap: 7px;
-  }
-
-  .diagnostic-report-section__body {
-    padding: 12px 14px;
   }
 }
 
 @container diagnostic-result (min-width: 521px) {
+  /* Identity and metric layers share one row height so their values line up. */
   .diagnostic-report-section.is-network .diagnostic-report-section__body {
-    display: grid;
-    grid-template-rows: repeat(2, minmax(120px, auto));
-    gap: 10px;
+    grid-template-rows: repeat(2, minmax(120px, 1fr));
     min-height: 0;
   }
 
-  .diagnostic-report-section.is-network .diagnostic-report-identity {
-    height: 100%;
-    min-height: 0;
-    margin-bottom: 0;
-  }
-
+  .diagnostic-report-section.is-network .diagnostic-report-identity,
   .diagnostic-report-section.is-network .diagnostic-report-card-grid--network {
     height: 100%;
     min-height: 0;
+  }
+}
+
+/* Three tiles across leave each pair column too narrow for "486.00 MiB/s";
+   list the pair as aligned label/value rows until the tiles widen again. */
+@container diagnostic-result (min-width: 521px) and (max-width: 860px) {
+  .diagnostic-report-pair {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: baseline;
+    gap: 4px 10px;
+  }
+
+  .diagnostic-report-pair > div {
+    display: contents;
+  }
+
+  .diagnostic-report-pair span {
+    margin-bottom: 0;
+  }
+}
+
+@container diagnostic-result (max-width: 700px) {
+  .diagnostic-score-hero__copy {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .diagnostic-score-actions {
+    grid-row: auto;
+    grid-column: 1;
+    justify-content: flex-start;
+    margin-top: 16px;
   }
 }
 
@@ -3483,47 +3095,29 @@ onBeforeUnmount(() => {
 }
 
 @container diagnostic-result (max-width: 560px) {
-  .diagnostic-score-hero--simple {
-    display: grid;
-    grid-template-columns: minmax(170px, .42fr) minmax(0, .58fr);
-    height: auto;
-    min-height: 150px;
-    gap: 14px;
-    padding: 16px;
-    justify-content: stretch;
-    align-items: stretch;
-    align-self: stretch;
+  .diagnostic-score-hero {
+    grid-template-columns: minmax(150px, .42fr) minmax(0, .58fr);
+    gap: 18px;
+    padding: 18px;
   }
 
   .diagnostic-score-total {
-    min-height: 116px;
-    padding: 14px 0 14px 42px;
-    border-right: 1px solid var(--border);
-    border-bottom: 0;
-  }
-}
-
-@container diagnostic-result (max-width: 420px) {
-  .diagnostic-score-hero--simple {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .diagnostic-score-total {
-    min-height: 0;
-    padding: 0 0 12px;
-    border-right: 0;
-    border-bottom: 1px solid var(--border);
+    padding-right: 18px;
   }
 }
 
 @container diagnostic-result (max-width: 520px) {
   .diagnostic-overview {
-    gap: 16px;
-    padding: 16px;
+    gap: 14px;
+    padding: 14px;
   }
 
   .diagnostic-overview > * {
     min-width: 0;
+  }
+
+  .diagnostic-overview__header h2 {
+    font-size: 20px;
   }
 
   .diagnostic-report-section__header,
@@ -3538,12 +3132,15 @@ onBeforeUnmount(() => {
 
   .diagnostic-report-section__header {
     align-items: flex-start;
-    gap: 10px;
-    padding: 10px 11px 9px;
+    gap: 12px;
+    padding: 14px;
   }
 
   .diagnostic-report-section__title p {
-    align-items: flex-start;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: 7px;
+    row-gap: 2px;
     overflow: visible;
     line-height: 1.45;
     overflow-wrap: anywhere;
@@ -3551,128 +3148,55 @@ onBeforeUnmount(() => {
     white-space: normal;
   }
 
+  .diagnostic-report-section__title p span,
+  .diagnostic-report-section__title p b {
+    flex: 0 0 auto;
+  }
+
   .diagnostic-report-section__title > div {
     overflow-wrap: anywhere;
   }
 
-  .diagnostic-report-section__body {
-    padding: 0 10px 10px;
+  .diagnostic-report-section__score .diagnostic-score-meter {
+    width: 72px;
   }
 
   .diagnostic-report-card-grid--performance,
-  .diagnostic-report-card-grid--network {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .diagnostic-report-card {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    min-height: 92px;
-    align-items: center;
-    gap: 9px 12px;
-    padding: 13px 12px;
-  }
-
-  .diagnostic-report-card-grid--performance > .diagnostic-report-card {
-    min-height: 106px;
-  }
-
-  .diagnostic-report-card-grid--performance .diagnostic-report-card__value,
-  .diagnostic-report-card-grid--performance .diagnostic-report-pair {
-    margin-top: 0;
-  }
-
-  .diagnostic-report-card-grid--network .diagnostic-report-card__value,
-  .diagnostic-report-card-grid--network .diagnostic-report-pair,
-  .diagnostic-report-card-grid--network .diagnostic-report-risk {
-    margin-top: 0;
-  }
-
-  .diagnostic-report-card__data-row {
-    grid-column: 1 / -1;
-    min-height: 41px;
-    margin-top: 0;
-  }
-
-  .diagnostic-report-card > header {
-    min-width: 0;
-    grid-column: 1 / -1;
-    align-items: center;
-  }
-
-  .diagnostic-report-card__value,
-  .diagnostic-report-pair,
-  .diagnostic-report-risk,
-  .diagnostic-report-card__meta {
-    grid-column: 1 / -1;
-    margin-top: 0;
-  }
-
-  .diagnostic-report-pair {
-    gap: 12px;
-  }
-
-  .diagnostic-report-pair > div + div {
-    padding-left: 12px;
-  }
-
-  .diagnostic-report-risk {
-    min-height: 0;
-    flex-wrap: wrap;
-    gap: 8px 10px;
-  }
-
-  .diagnostic-report-card__meta {
-    min-height: 0;
-  }
-
+  .diagnostic-report-card-grid--network,
   .diagnostic-report-identity {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .diagnostic-report-section.is-network .diagnostic-report-identity > div,
-  .diagnostic-report-section.is-network .diagnostic-report-card-grid--network > .diagnostic-report-card {
-    min-height: 106px;
-  }
-
-  .diagnostic-report-identity > div + div {
-    border-left: 0;
-    border-top: 1px solid var(--border);
-  }
-
+  .diagnostic-report-card,
   .diagnostic-report-identity > div {
-    padding-top: 10px;
-    padding-bottom: 10px;
+    gap: 12px;
+    min-height: 92px;
+    padding: 14px;
+  }
+}
+
+@container diagnostic-result (max-width: 420px) {
+  .diagnostic-score-hero {
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .diagnostic-report-identity strong {
-    overflow: visible;
-    line-height: 1.35;
-    overflow-wrap: anywhere;
-    text-overflow: clip;
-    white-space: normal;
-  }
-
-  /* Keep the identity grid on the same content guide as the metric cards. */
-  .diagnostic-report-identity > div,
-  .diagnostic-report-identity > div:first-child {
-    padding-right: 12px;
-    padding-left: 12px;
+  .diagnostic-score-total {
+    padding: 0 0 16px;
+    border-right: 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--brand) 16%, var(--border));
   }
 
   .diagnostic-report-note {
-    align-items: flex-start;
     flex-wrap: wrap;
   }
 
   .diagnostic-report-note p {
-    min-width: calc(100% - 28px);
-    line-height: 1.5;
+    min-width: calc(100% - 26px);
   }
 
   .diagnostic-report-note a,
   .diagnostic-report-note button {
-    margin-left: 24px;
+    margin-left: 26px;
   }
 }
 </style>

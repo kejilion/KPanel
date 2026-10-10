@@ -196,4 +196,7 @@ export default [
   ["确认开始一键跑分？", "Start the one-click benchmark?"],
   ["{0} · 预计 {1} 分钟", "{0} · about {1} min"],
   ["综合评测", "Overall benchmark"],
+  ["体检项目", "Diagnostics"],
+  ["开始体检", "Start diagnostics"],
+  ["开始后，实时终端输出会显示在这里。", "Live terminal output appears here once it starts."],
 ] as const satisfies PhraseCatalog
