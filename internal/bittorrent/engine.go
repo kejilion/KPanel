@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"runtime"
+	"slices"
 	"time"
 
 	"github.com/anacrolix/dht/v2"
@@ -69,6 +70,15 @@ func (r *startupPeerRecovery) shouldRetry(now time.Time, metadataReady bool, act
 	}
 	r.attempts++
 	r.connectedSince = time.Time{}
+	return true
+}
+
+func startupPeersRemoved(closed, current []*torrent.PeerConn) bool {
+	for _, peer := range closed {
+		if slices.Contains(current, peer) {
+			return false
+		}
+	}
 	return true
 }
 
@@ -217,6 +227,7 @@ func (e *Engine) Download(ctx context.Context, source Source, smart bool, progre
 	policy := peerPolicy{limit: 4}
 	recovery := startupPeerRecovery{}
 	var retryPeers []torrent.PeerInfo
+	var retryClosed []*torrent.PeerConn
 	mode := "bt-standard"
 	if smart {
 		mode = "bt-adaptive"
@@ -261,16 +272,20 @@ func (e *Engine) Download(ctx context.Context, source Source, smart bool, progre
 			p := Progress{Mode: mode, Peers: stats.ActivePeers}
 			received := stats.ConnStats.BytesReadData.Int64()
 			if len(retryPeers) != 0 {
-				// Closing peers removes connections asynchronously. Requeue on the
-				// next tick through the existing public dialer and dial limits.
-				if received == 0 {
+				// Wait until the exact closed connections leave the client's set;
+				// otherwise AddPeers can discard a still-connected address. Newly
+				// discovered connections do not delay this bounded recovery.
+				if received > 0 {
+					retryPeers, retryClosed = nil, nil
+				} else if startupPeersRemoved(retryClosed, t.PeerConns()) {
 					t.AddPeers(retryPeers)
+					retryPeers, retryClosed = nil, nil
 				}
-				retryPeers = nil
 			}
 			knownPeers := remembered.peers()
-			if recovery.shouldRetry(now, metadata != nil, stats.ActivePeers, len(knownPeers), received) {
-				for _, peer := range t.PeerConns() {
+			if len(retryPeers) == 0 && recovery.shouldRetry(now, metadata != nil, stats.ActivePeers, len(knownPeers), received) {
+				retryClosed = t.PeerConns()
+				for _, peer := range retryClosed {
 					_ = peer.Close()
 				}
 				retryPeers = knownPeers

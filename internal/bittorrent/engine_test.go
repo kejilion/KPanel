@@ -107,6 +107,10 @@ func TestStartupPeerRecovery(t *testing.T) {
 	if progressing.shouldRetry(now.Add(30*time.Second), true, 1, 1, 1) || progressing.shouldRetry(now.Add(time.Hour), true, 1, 1, 0) {
 		t.Fatal("a connection that delivered payload was recovered")
 	}
+	oldPeer, newPeer := new(torrent.PeerConn), new(torrent.PeerConn)
+	if startupPeersRemoved([]*torrent.PeerConn{oldPeer}, []*torrent.PeerConn{oldPeer, newPeer}) || !startupPeersRemoved([]*torrent.PeerConn{oldPeer}, []*torrent.PeerConn{newPeer}) {
+		t.Fatal("redial did not wait for the exact closed connection to leave")
+	}
 }
 
 func TestEngineRecoversZeroPayloadStartup(t *testing.T) {
