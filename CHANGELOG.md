@@ -20,7 +20,7 @@
 
 ### Security
 
-- 更新 BT 依赖链中的 WebSocket、DTLS 和 STUN 组件，修复上游披露的安全问题；保留公网地址限制，拒绝种子路径穿越和符号链接。
+- 更新 WebSocket、DTLS、STUN 与 OpenTelemetry 依赖，修复上游披露的安全问题；保留公网地址限制，拒绝种子路径穿越和符号链接。
 
 ### Upgrade Notes
 
