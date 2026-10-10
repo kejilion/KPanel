@@ -136,6 +136,15 @@ body:has(.classic-backdrop) {
   --border: color-mix(in srgb, var(--classic-border-base) 78%, transparent);
 }
 
+/* Keep one page fill beneath nested workspaces; retain cards and interactive row fills. */
+:root[data-classic-wallpaper='clear'] .app-shell:has(.classic-backdrop) .page-content :where(
+  .diagnostic-result.is-overview,
+  .diagnostic-overview,
+  .file-row--entry:not(:hover, :focus-visible, .file-row--selected, .file-row--drop-target)
+) {
+  background: transparent;
+}
+
 /* The base colours are captured before the scoped override shadows them. */
 :root[data-classic-wallpaper='clear'] .app-shell:has(.classic-backdrop) {
   --classic-surface-base: var(--surface);
