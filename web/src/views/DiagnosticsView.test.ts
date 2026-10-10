@@ -246,6 +246,7 @@ describe('DiagnosticsView report values', () => {
             { key: 'cpu_score', value: '1842 KPS' },
             { key: 'memory_score', value: 'N/A' },
             { key: 'disk_write', value: '486.00 MiB/s' },
+            { key: 'disk_read', value: '100+ MiB/s' },
           ] },
           latency: { metrics: [{ key: 'average', value: '38.24ms' }] },
         },
@@ -256,6 +257,7 @@ describe('DiagnosticsView report values', () => {
     expect(view.reportMetrics.value.diskWrite).toEqual({ amount: '486.00', unit: 'MiB/s', pending: false })
     expect(view.reportMetrics.value.latency).toEqual({ amount: '38.24', unit: 'ms', pending: false })
     expect(view.reportMetrics.value.memory).toEqual({ amount: 'N/A', unit: '', pending: false })
+    expect(view.reportMetrics.value.diskRead).toEqual({ amount: '100+ MiB/s', unit: '', pending: false })
     expect(view.reportMetrics.value.upload).toEqual({ amount: '等待检测', unit: '', pending: true })
   })
 

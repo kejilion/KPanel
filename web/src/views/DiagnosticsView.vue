@@ -245,7 +245,7 @@ const scoreTotalCaption = computed(() => {
 })
 const scoreMeterValue = computed(() => (scoreState.value === 'running' ? scoreProgress.value : overallScore.value))
 // Split "682.40 Mbps" into amount and unit so the number carries the weight;
-// anything that is not a leading number stays whole.
+// anything that is not a leading number followed by a unit ("100+ Mbps") stays whole.
 const reportMetrics = computed(() => ({
   cpu: metricParts(summaryValue('performance', 'cpu_score')),
   memory: metricParts(summaryValue('performance', 'memory_score')),
@@ -258,7 +258,7 @@ const reportMetrics = computed(() => ({
 
 function metricParts(value: string): { amount: string; unit: string; pending: boolean } {
   if (!value) return { amount: '等待检测', unit: '', pending: true }
-  const [, amount = value, unit = ''] = value.match(/^([-+]?\d[\d.,]*)\s*([^\d\s].*)$/) || []
+  const [, amount = value, unit = ''] = value.match(/^([-+]?\d[\d.,]*)\s*([^\d\s.,+-].*)$/) || []
   return { amount, unit, pending: false }
 }
 function meterStyle(value: number | undefined): { width: string } {
@@ -1177,14 +1177,14 @@ onBeforeUnmount(() => {
                         <span><Network :size="17" /></span>
                         <div><span>出口运营商 / ASN</span></div>
                       </div>
-                      <strong :title="reportIPOperator()" :class="{ 'is-isp': hasIPISP(), 'is-pending': reportIPOperator() === '等待检测' }">{{ reportIPOperator() }}</strong>
+                      <strong :title="reportIPOperator()" :class="{ 'is-isp': hasIPISP(), 'is-pending': !hasIPISP() && !summaryValue('ip', 'asn') }">{{ reportIPOperator() }}</strong>
                     </div>
                     <div>
                       <div class="diagnostic-report-identity__heading">
                         <span><MapPin :size="17" /></span>
                         <div><span>出口地区</span></div>
                       </div>
-                      <strong :class="{ 'is-pending': reportIPLocation() === '等待检测' }" :title="reportIPLocation()">{{ reportIPLocation() }}</strong>
+                      <strong :class="{ 'is-pending': !summaryValue('ip', 'country') && !summaryValue('ip', 'location') }" :title="reportIPLocation()">{{ reportIPLocation() }}</strong>
                     </div>
                   </div>
                   <div class="diagnostic-report-card-grid diagnostic-report-card-grid--network">
