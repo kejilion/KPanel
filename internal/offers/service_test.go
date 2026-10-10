@@ -205,6 +205,66 @@ func TestRefreshIsAllOrNothingAndKeepsPreviousPublication(t *testing.T) {
 	}
 }
 
+func TestFailedRefreshPrunesUnadoptedImages(t *testing.T) {
+	for _, cached := range []bool{false, true} {
+		name := "without-cache"
+		if cached {
+			name = "with-cache"
+		}
+		t.Run(name, func(t *testing.T) {
+			origin := newFakeOrigin()
+			first := publish(t, origin, 10)
+			now := time.Date(2026, 10, 10, 8, 0, 0, 0, time.UTC)
+			service, root := openTestService(t, origin, &now)
+			keep := make(map[string]bool)
+			if cached {
+				if view := service.Snapshot(context.Background(), false); view.State != StateLive {
+					t.Fatalf("initial state = %q", view.State)
+				}
+				for _, item := range first.manifest.Items {
+					keep[item.Images.Card.SHA256] = true
+					if item.Images.Wide != nil {
+						keep[item.Images.Wide.SHA256] = true
+					}
+				}
+			}
+			origin.failures["https://app.kejilion.sh/offers/lcayun-wide.png"] = errors.New("incomplete publication")
+			for shade := uint8(20); shade < 23; shade++ {
+				rejected := publish(t, origin, shade)
+				now = now.Add(ForcedRefreshInterval)
+				view := service.Snapshot(context.Background(), true)
+				wantState := StateUnavailable
+				if cached {
+					wantState = StateStale
+					if len(view.Items) != 2 || view.Items[0].Card != MediaPrefix+digestOf(first.card) {
+						t.Fatalf("rejected publication changed the adopted view: %+v", view)
+					}
+				}
+				if view.State != wantState {
+					t.Fatalf("state = %q, want %q", view.State, wantState)
+				}
+				objects, err := os.ReadDir(filepath.Join(root, objectsDirName))
+				if err != nil || len(objects) != len(keep) {
+					t.Fatalf("failed refresh retained %d objects, want %d: %v", len(objects), len(keep), err)
+				}
+				for _, object := range objects {
+					if !keep[object.Name()] {
+						t.Fatalf("unadopted object survived: %s", object.Name())
+					}
+				}
+				if _, _, err := service.OpenImage(digestOf(rejected.card)); !errors.Is(err, ErrNotFound) {
+					t.Fatalf("rejected image is accessible: %v", err)
+				}
+			}
+			if cached {
+				if _, _, err := service.OpenImage(digestOf(first.wide)); err != nil {
+					t.Fatalf("adopted image was lost: %v", err)
+				}
+			}
+		})
+	}
+}
+
 func TestSnapshotWithoutCacheReportsUnavailableAndBacksOff(t *testing.T) {
 	origin := newFakeOrigin()
 	origin.failures["https://app.kejilion.sh/offers/v1.json"] = errors.New("network down")

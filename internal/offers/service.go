@@ -179,12 +179,14 @@ func (s *Service) refresh(done chan struct{}) {
 	} else {
 		s.lastFailed = true
 	}
+	adopted := s.cached
 	s.mu.Unlock()
-	if err == nil {
-		// Prune while this refresh still owns the in-flight slot, so a later
-		// refresh can never write objects that this prune then deletes.
-		s.pruneObjects(state)
-	} else if !errors.Is(err, context.Canceled) {
+	// A rejected publication may already have written some new objects. Keep
+	// only the adopted publication after every attempt, including failures.
+	// Retain the in-flight slot until pruning finishes so a later refresh
+	// cannot write objects that this attempt then deletes.
+	s.pruneObjects(adopted)
+	if err != nil && !errors.Is(err, context.Canceled) {
 		slog.Warn("offers manifest refresh failed", "source", ManifestURL, "error", err)
 	}
 	s.mu.Lock()

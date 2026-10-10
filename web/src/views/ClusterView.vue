@@ -2705,7 +2705,7 @@ onBeforeUnmount(() => {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-sm);
-  transition: border-color 160ms ease, box-shadow 160ms ease;
+  transition: border-color var(--motion-duration-fast) var(--motion-ease-fade), box-shadow var(--motion-duration-fast) var(--motion-ease-fade);
 }
 
 /* State accent mirrors the status badge tone; the badge text stays the primary signal. */
@@ -3147,7 +3147,7 @@ onBeforeUnmount(() => {
   height: 100%;
   background: linear-gradient(90deg, var(--brand), #3bbfa3);
   border-radius: inherit;
-  transition: width 300ms ease;
+  transition: width var(--motion-duration-layout) var(--motion-ease-fade);
 }
 
 .cluster-card__metrics i.is-warning b {

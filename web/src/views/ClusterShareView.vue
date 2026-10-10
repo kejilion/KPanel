@@ -588,7 +588,7 @@ onBeforeUnmount(() => {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-sm);
-  transition: border-color 160ms ease, box-shadow 160ms ease;
+  transition: border-color var(--motion-duration-fast) var(--motion-ease-fade), box-shadow var(--motion-duration-fast) var(--motion-ease-fade);
 }
 
 /* The state accent mirrors the status badge tone; the badge text stays the primary signal. */
@@ -628,7 +628,7 @@ onBeforeUnmount(() => {
 .share-metrics strong { font-size: 1.125rem; font-weight: 600; line-height: 1.25; font-variant-numeric: tabular-nums; }
 .share-metrics small { color: var(--text-soft); font-size: .75rem; line-height: 1.45; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .share-metrics > div > i { display: block; height: 4px; overflow: hidden; background: color-mix(in srgb, var(--text-soft) 14%, transparent); border-radius: 999px; }
-.share-metrics b { display: block; height: 100%; background: linear-gradient(90deg, var(--brand), #3bbfa3); border-radius: inherit; transition: width 300ms ease; }
+.share-metrics b { display: block; height: 100%; background: linear-gradient(90deg, var(--brand), #3bbfa3); border-radius: inherit; transition: width var(--motion-duration-layout) var(--motion-ease-fade); }
 .share-metrics i.is-warning b { background: var(--warning); }
 .share-metrics i.is-danger b { background: var(--danger); }
 .share-card__empty { display: grid; min-height: 120px; place-items: center; padding: 16px 20px; color: var(--muted); text-align: center; }

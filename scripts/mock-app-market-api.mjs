@@ -102,14 +102,93 @@ const mockDockerComposeProjects = new Map([...new Set(mockDockerContainers.map(i
 }))
 const mockDockerJobs = new Map()
 let mockDockerJobCounter = 0
-function materializeMockDockerJob(record) {
-  if (record.job.status === 'queued' && Date.now() - record.created >= 600) {
-    for (let index = mockDockerContainers.length - 1; index >= 0; index--) {
-      if (mockDockerContainers[index].composeProject === record.job.target) mockDockerContainers.splice(index, 1)
+// Named volumes the demo containers mount, so volume batch deletion has
+// in-use entries to skip (mounted by a running and by a stopped container).
+const mockDockerVolumeMounts = { mysql: 'web_mysql-data', redis: 'web_redis-data', 'legacy-worker': 'legacy-cache' }
+for (const item of mockDockerMonitorContainers) {
+  const volume = mockDockerVolumeMounts[item.name]
+  if (volume) item.mounts = [{ type: 'volume', name: volume, source: `/var/lib/docker/volumes/${volume}/_data`, destination: '/data' }]
+}
+// One explicit failure per resource kind so a batch shows partial success.
+const mockDockerContainerFailures = new Map([['legacy-worker', { action: 'start', title: 'Mock · 容器启动失败：宿主机端口 8080 已被占用' }]])
+const mockDockerImageCreated = Math.floor(Date.parse('2026-09-20T08:00:00Z') / 1000)
+let mockDockerResourceRevision = 900
+const mockDockerImages = [
+  ['ghcr.io/kjlion/kejilion-panel:1.25.0', 'ghcr.io/kjlion/kejilion-panel@sha256:b4e1', 41_943_040],
+  ['mysql:8.4', '', 602_931_200], ['nginx:alpine', '', 52_428_800], ['kjlion/php:fpm-alpine', '', 141_557_760],
+  ['kjlion/php:7.4-fpm-alpine', '', 133_169_152], ['redis:7-alpine', '', 41_943_040],
+  ['registry.example.com/legacy/worker:2.1', '', 214_958_080], ['redis:5', '', 115_343_360], ['redis:6', '', 117_440_512],
+  ['redis:7', '', 121_634_816], ['redis:8', '', 125_829_120], ['node:20-alpine', '', 136_314_880],
+  ['postgres:16', '', 451_936_256], ['busybox:latest', '', 4_404_019], ['', '', 98_566_144],
+].map(([tag, digest, sizeBytes], index) => ({
+  id: `sha256:${(index + 10).toString(16).padStart(2, '0').repeat(32)}`,
+  repoTags: tag ? [tag] : [], repoDigests: digest ? [digest] : [], createdAt: mockDockerImageCreated - index * 86_400,
+  sizeBytes, containers: -1, resourceVersion: mockRevision(++mockDockerResourceRevision),
+}))
+const mockDockerNetworks = ['bridge', 'host', 'none', 'web_default', 'kpanel_default', 'old-app_default', 'staging_default', 'test-net']
+  .map((name, index) => ({
+    id: (index + 160).toString(16).repeat(22).slice(0, 64), name,
+    driver: name === 'host' ? 'host' : name === 'none' ? 'null' : 'bridge', scope: 'local',
+    createdAt: '2026-09-01T00:00:00Z', containerCount: 0, resourceVersion: mockRevision(++mockDockerResourceRevision),
+  }))
+const mockDockerVolumes = ['web_mysql-data', 'web_redis-data', 'legacy-cache', 'old-app_data', 'tmp-build-cache', 'n8n_data', '3f2a9c'.repeat(10) + '4e1d']
+  .map(name => ({ name, driver: 'local', mountpoint: `/var/lib/docker/volumes/${name}/_data`, scope: 'local',
+    createdAt: '2026-09-01T00:00:00Z', resourceVersion: mockRevision(++mockDockerResourceRevision) }))
+function mockImageUsers(image, states = ['running', 'paused', 'restarting']) {
+  return mockDockerContainers.filter(item => states.includes(item.state) &&
+    (image.repoTags.includes(item.image) || image.repoDigests.includes(item.image)))
+}
+// Mirrors Docker's own refusals; anything else succeeds after a short delay.
+function mockDockerTaskEffect(input) {
+  if (input.action === 'image_remove') {
+    const index = mockDockerImages.findIndex(item => item.id === input.target)
+    const users = index >= 0 ? mockImageUsers(mockDockerImages[index]) : []
+    if (users.length) return { failure: `Mock · conflict: unable to delete image (cannot be forced) - image is being used by running container ${users[0].name}` }
+    if (index >= 0) mockDockerImages.splice(index, 1)
+    return { message: 'Mock · 镜像已删除' }
+  }
+  if (input.action === 'image_pull') {
+    if (input.image.startsWith('registry.example.com/')) return { failure: 'Mock · 拉取失败：registry.example.com 连接超时' }
+    const image = mockDockerImages.find(item => item.repoTags.includes(input.image))
+    if (image) Object.assign(image, { createdAt: Math.floor(Date.now() / 1000), resourceVersion: mockRevision(++mockDockerResourceRevision) })
+    return { message: `Mock · 已拉取 ${input.image}` }
+  }
+  if (input.action === 'network_remove') {
+    const index = mockDockerNetworks.findIndex(item => item.id === input.target)
+    const network = mockDockerNetworks[index]
+    if (network && ['bridge', 'host', 'none'].includes(network.name)) return { failure: `Mock · ${network.name} is a pre-defined network and cannot be removed` }
+    if (network && mockDockerContainers.some(item => item.state === 'running' && item.networks.includes(network.name))) {
+      return { failure: `Mock · error while removing network: network ${network.name} has active endpoints` }
     }
-    if (record.removeComposeFiles) mockDockerComposeProjects.delete(record.job.target)
-    Object.assign(record.job, { status: 'succeeded', stage: 'completed', progress: 100,
-      message: 'Mock · Compose 项目部署已删除；数据处理按确认选项模拟', finishedAt: new Date().toISOString() })
+    if (index >= 0) mockDockerNetworks.splice(index, 1)
+    return { message: 'Mock · 网络已删除' }
+  }
+  if (input.action === 'volume_remove') {
+    const index = mockDockerVolumes.findIndex(item => item.name === input.target)
+    if (mockDockerContainers.some(item => item.mounts.some(mount => mount.name === input.target))) return { failure: 'Mock · volume is in use' }
+    if (index >= 0) mockDockerVolumes.splice(index, 1)
+    return { message: 'Mock · 存储卷已删除' }
+  }
+  return { failure: 'Mock · 未模拟的 Docker 任务' }
+}
+function mockDockerTaskVersionMatches(input) {
+  const list = input.action === 'image_remove' ? mockDockerImages : input.action === 'network_remove' ? mockDockerNetworks
+    : input.action === 'volume_remove' ? mockDockerVolumes : undefined
+  if (!list) return true
+  const item = list.find(candidate => (candidate.id || candidate.name) === input.target || candidate.name === input.target)
+  return Boolean(item) && item.resourceVersion === input.expectedResourceVersion
+}
+const mockContainerAllowedActions = {
+  running: mockRunningActions,
+  paused: ['logs', 'stats', 'access', 'unpause', 'restart', 'stop', 'remove'],
+  exited: ['logs', 'start', 'remove'],
+}
+function materializeMockDockerJob(record) {
+  if (record.job.status === 'queued' && Date.now() - record.created >= (record.delay || 600)) {
+    const outcome = record.apply()
+    Object.assign(record.job, outcome.failure
+      ? { status: 'failed', stage: 'failed', progress: 100, message: outcome.failure, finishedAt: new Date().toISOString() }
+      : { status: 'succeeded', stage: 'completed', progress: 100, message: outcome.message, finishedAt: new Date().toISOString() })
   }
   return record.job
 }
@@ -1536,11 +1615,21 @@ function startMockRemoteDownloadJob(id, input, rawURL) {
     const directory = typeof input.targetDirectory === 'string' ? input.targetDirectory : '/home'
     const name = mockRemoteDownloadName(directory, input.name)
     const totalBytes = 8 * 1024 * 1024
-    updateMockRemoteDownloadJob(id, { state: 'transferring', name, totalBytes })
+    const isTorrent = mockRemoteDownloadJobs.get(id)?.sourceKind === 'bittorrent'
+    const transferMode = isTorrent ? (input.acceleration === 'off' ? 'bt-standard' : 'bt-adaptive') : 'single'
+    updateMockRemoteDownloadJob(id, { state: 'transferring', name, totalBytes, transferMode })
     for (const loadedBytes of [512 * 1024, 2 * 1024 * 1024, 5 * 1024 * 1024, totalBytes]) {
       await wait(520)
       if (!mockRemoteDownloadJobActive(mockRemoteDownloadJobs.get(id))) return
-      updateMockRemoteDownloadJob(id, { state: 'transferring', name, loadedBytes, totalBytes })
+      updateMockRemoteDownloadJob(id, {
+        state: 'transferring', name, totalBytes,
+        ...(isTorrent ? { sourceBytes: loadedBytes, loadedBytes: 0, peers: 4, speedBytes: 2 * 1024 * 1024 } : { loadedBytes }),
+      })
+    }
+    if (isTorrent) {
+      updateMockRemoteDownloadJob(id, { transferMode: 'bt-publish', peers: 0, speedBytes: 0 })
+      await wait(520)
+      if (!mockRemoteDownloadJobActive(mockRemoteDownloadJobs.get(id))) return
     }
     updateMockRemoteDownloadJob(id, { state: 'confirming', name, loadedBytes: totalBytes, totalBytes })
     await wait(620)
@@ -1569,12 +1658,12 @@ function fileShareAdminView(record, token = '') {
   }
 }
 
-async function readJSON(request) {
+async function readJSON(request, maxBytes = 65_536) {
   const chunks = []
   let size = 0
   for await (const chunk of request) {
     size += chunk.length
-    if (size > 65_536) throw new Error('request body exceeds visual mock limit')
+    if (size > maxBytes) throw new Error('request body exceeds visual mock limit')
     chunks.push(chunk)
   }
   return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
@@ -2047,11 +2136,15 @@ createServer(async (request, response) => {
     return
   }
   if (request.method === 'POST' && url.pathname === '/api/v1/files/remote-downloads') {
-    const input = await readJSON(request)
+    const input = await readJSON(request, 768 * 1024)
     if (input.background === true) {
       let source
+      let sourceKind = 'http'
       try {
-        source = new URL(String(input.url || '')).origin
+        const isTorrent = typeof input.torrent === 'string' && input.torrent.length > 0
+          || input.sourceKind === 'torrent' || String(input.url || '').startsWith('magnet:')
+        sourceKind = isTorrent ? 'bittorrent' : 'http'
+        source = isTorrent ? 'bittorrent' : new URL(String(input.url || '')).origin
       } catch {
         send(response, 422, { title: '请检查下载地址', status: 422, code: 'remote_download_invalid' })
         return
@@ -2060,7 +2153,7 @@ createServer(async (request, response) => {
       const id = mockRemoteDownloadJobCounter.toString(16).padStart(32, '0')
       const now = new Date().toISOString()
       const job = {
-        id, state: 'queued', source,
+        id, state: 'queued', source, sourceKind,
         targetDirectory: typeof input.targetDirectory === 'string' ? input.targetDirectory : '/home',
         ...(typeof input.name === 'string' && input.name.trim() ? { name: input.name.trim() } : {}),
         createdAt: now, updatedAt: now,
@@ -2896,15 +2989,35 @@ createServer(async (request, response) => {
   }
   if (request.method === 'POST' && url.pathname === '/api/v1/docker/tasks') {
     const input = await readJSON(request)
+    // The Agent runs one Docker maintenance job at a time.
+    if ([...mockDockerJobs.values()].some(record => materializeMockDockerJob(record).status === 'queued')) {
+      send(response, 409, { code: 'docker_task_conflict', title: 'Mock · 另一个 Docker 后台任务正在执行' })
+      return
+    }
+    const newJob = (target, message, apply, delay) => {
+      const id = `d${(++mockDockerJobCounter).toString(16).padStart(31, '0')}`
+      const job = { id, action: input.action, target, status: 'queued', stage: 'queued', progress: 0, message, createdAt: new Date().toISOString() }
+      if (mockDockerJobs.size >= 50) mockDockerJobs.delete(mockDockerJobs.keys().next().value)
+      mockDockerJobs.set(id, { job, created: Date.now(), apply, delay })
+      send(response, 202, job)
+    }
+    if (['image_remove', 'image_pull', 'network_remove', 'volume_remove'].includes(input?.action)) {
+      const subject = input.action === 'image_pull' ? input.image : input.target
+      if (typeof subject !== 'string' || !subject) { send(response, 400, { code: 'invalid_docker_job', title: 'Mock · Docker 任务输入无效' }); return }
+      if (!mockDockerTaskVersionMatches(input)) { send(response, 409, { code: 'resource_conflict', title: 'Mock · 资源已变化，请刷新后重试' }); return }
+      newJob(input.target || input.image, 'Mock · Docker 任务已进入后台队列', () => mockDockerTaskEffect(input), input.action === 'image_pull' ? 1_600 : 700)
+      return
+    }
     const project = mockDockerComposeProjects.get(input?.name)
     if (input?.action !== 'compose_remove' || !project) { send(response, 400, { title: 'Mock · 删除项目输入无效' }); return }
     if (input.expectedResourceVersion !== project.resourceVersion) { send(response, 409, { title: 'Mock · 项目配置已变化，请刷新后重试' }); return }
-    const id = `d${(++mockDockerJobCounter).toString(16).padStart(31, '0')}`
-    const job = { id, action: input.action, target: input.name, status: 'queued', stage: 'queued', progress: 0,
-      message: 'Mock · 正在删除 Compose 项目', createdAt: new Date().toISOString() }
-    if (mockDockerJobs.size >= 50) mockDockerJobs.delete(mockDockerJobs.keys().next().value)
-    mockDockerJobs.set(id, { job, created: Date.now(), removeComposeFiles: input.removeComposeFiles === true })
-    send(response, 202, job)
+    newJob(input.name, 'Mock · 正在删除 Compose 项目', () => {
+      for (let index = mockDockerContainers.length - 1; index >= 0; index--) {
+        if (mockDockerContainers[index].composeProject === input.name) mockDockerContainers.splice(index, 1)
+      }
+      if (input.removeComposeFiles === true) mockDockerComposeProjects.delete(input.name)
+      return { message: 'Mock · Compose 项目部署已删除；数据处理按确认选项模拟' }
+    })
     return
   }
   if (request.method === 'GET' && url.pathname === '/api/v1/docker/jobs') {
@@ -2917,7 +3030,48 @@ createServer(async (request, response) => {
     send(response, record ? 200 : 404, record ? materializeMockDockerJob(record) : { title: 'Mock · Docker 任务不存在' })
     return
   }
-  if (request.method === 'GET' && /^\/api\/v1\/docker\/(images|networks|volumes|backups)$/.test(url.pathname)) {
+  if (request.method === 'GET' && url.pathname === '/api/v1/docker/images') {
+    send(response, 200, { items: mockDockerImages, total: mockDockerImages.length })
+    return
+  }
+  if (request.method === 'GET' && url.pathname === '/api/v1/docker/networks') {
+    send(response, 200, { items: mockDockerNetworks, total: mockDockerNetworks.length })
+    return
+  }
+  if (request.method === 'GET' && url.pathname === '/api/v1/docker/volumes') {
+    send(response, 200, { items: mockDockerVolumes, total: mockDockerVolumes.length })
+    return
+  }
+  const mockContainerActionMatch = request.method === 'POST' &&
+    url.pathname.match(/^\/api\/v1\/docker\/containers\/([1-4]{64})\/(start|stop|restart|pause|unpause|remove)$/)
+  if (mockContainerActionMatch) {
+    const [, id, action] = mockContainerActionMatch
+    const input = await readJSON(request)
+    // stop and restart wait for the process to exit in Docker; keep them visibly slower.
+    await new Promise(resolve => setTimeout(resolve, (action === 'stop' || action === 'restart' ? 900 : 350) + Math.round(Math.random() * 400)))
+    const index = mockDockerContainers.findIndex(item => item.id === id)
+    const item = mockDockerContainers[index]
+    if (!item) { send(response, 404, { code: 'docker_resource_not_found', title: 'Docker 资源不存在' }); return }
+    if (!item.allowedActions.includes(action)) { send(response, 409, { code: 'docker_action_unsupported', title: 'Mock · 容器当前状态不支持该操作' }); return }
+    if (input?.resourceVersion !== item.resourceVersion) { send(response, 409, { code: 'resource_conflict', title: 'Mock · 容器状态已变化，请刷新后重试' }); return }
+    const failure = mockDockerContainerFailures.get(item.name)
+    if (failure?.action === action) { send(response, 500, { code: 'docker_action_failed', title: failure.title }); return }
+    if (action === 'remove') {
+      mockDockerContainers.splice(index, 1)
+      send(response, 200, { containerId: id, action, status: 'completed', resourceVersion: '' })
+      return
+    }
+    const state = action === 'stop' ? 'exited' : action === 'pause' ? 'paused' : 'running'
+    Object.assign(item, {
+      state,
+      status: state === 'exited' ? 'Exited (0) Less than a second ago' : state === 'paused' ? 'Up (Paused)' : 'Up Less than a second',
+      allowedActions: mockContainerAllowedActions[state],
+      resourceVersion: mockRevision(++mockDockerResourceRevision),
+    })
+    send(response, 200, { containerId: id, action, status: 'completed', resourceVersion: item.resourceVersion })
+    return
+  }
+  if (request.method === 'GET' && url.pathname === '/api/v1/docker/backups') {
     send(response, 200, { items: [], total: 0 })
     return
   }

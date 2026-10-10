@@ -222,7 +222,7 @@ onBeforeUnmount(() => {
   background: transparent;
   border: 0;
   border-radius: var(--radius-sm);
-  transition: transform 150ms ease, box-shadow 150ms ease;
+  transition: transform var(--motion-duration-fast) var(--motion-ease-standard), box-shadow var(--motion-duration-fast) var(--motion-ease-fade);
 }
 
 .cluster-hover-info:hover,
@@ -253,7 +253,7 @@ onBeforeUnmount(() => {
   font-size: 14px;
   line-height: 1.5;
   cursor: default;
-  animation: cluster-hover-info-in 140ms ease-out;
+  animation: cluster-hover-info-in var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 .cluster-hover-info__header {
