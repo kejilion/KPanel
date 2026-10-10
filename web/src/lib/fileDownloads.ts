@@ -41,13 +41,8 @@ async function downloadSingleFile(
   entry: FileDownloadEntry,
   fileHostId?: string | null,
 ): Promise<void> {
-  if (fileHostId) {
-    const url = api.files.contentUrl(entry.path, 'attachment', fileHostId)
-    triggerDownload(url, entry.name)
-    return
-  }
-  const ticket = await api.files.createDownloadTicket(entry.path)
-  triggerDownload(ticket.downloadUrl, entry.name)
+  const url = api.files.contentUrl(entry.path, 'attachment', fileHostId)
+  triggerDownload(url, entry.name)
 }
 
 export async function downloadFileEntries(
@@ -66,12 +61,6 @@ export async function downloadFileEntries(
   const archiveName = archiveDownloadName(entries, batchName)
   if (!archiveName) throw new TypeError('download archive name is unavailable')
 
-  if (fileHostId) {
-    const url = api.files.archiveUrl(entries, archiveName, fileHostId)
-    triggerDownload(url, archiveName)
-    return
-  }
-
-  const ticket = await api.files.createArchiveDownloadTicket(entries, archiveName)
-  triggerDownload(ticket.downloadUrl, archiveName)
+  const url = api.files.archiveUrl(entries, archiveName, fileHostId)
+  triggerDownload(url, archiveName)
 }

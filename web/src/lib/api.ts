@@ -62,7 +62,6 @@ import type {
   FileActionResult,
   FileTrashDirectory,
   FileDirectory,
-  FileDownloadTicket,
   FileEntry,
   OfficeDocument,
   OfficeEdit,
@@ -2229,25 +2228,6 @@ export const api = {
       request<FileArchiveJob>('/files/archive-jobs', { method: 'POST', body: { operation: 'create', input }, fileHostId }),
     changeArchiveJob: (id: string, operation: 'cancel' | 'clear', fileHostId?: string | null): Promise<{ ok: boolean }> =>
       request<{ ok: boolean }>('/files/archive-jobs', { method: 'POST', body: { operation, id }, fileHostId }),
-    createDownloadTicket: (path: string): Promise<FileDownloadTicket> =>
-      request<FileDownloadTicket>('/files/download-tickets', {
-        method: 'POST',
-        body: { path },
-      }),
-    createArchiveDownloadTicket: (
-      entries: readonly Pick<FileEntry, 'path' | 'resourceVersion'>[],
-      name: string,
-    ): Promise<FileDownloadTicket> =>
-      request<FileDownloadTicket>('/files/archive-download-tickets', {
-        method: 'POST',
-        body: {
-          sources: entries.map((entry) => entry.path),
-          expectedResourceVersions: Object.fromEntries(
-            entries.map((entry) => [entry.path, entry.resourceVersion]),
-          ),
-          name,
-        },
-      }),
     share: (
       path: string,
       resourceVersion: string,

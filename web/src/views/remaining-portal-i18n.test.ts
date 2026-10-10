@@ -58,8 +58,6 @@ vi.mock('@/lib/api', () => ({
       upload: vi.fn(),
       contentUrl: vi.fn(() => ''),
       archiveUrl: vi.fn(() => ''),
-      createDownloadTicket: vi.fn(),
-      createArchiveDownloadTicket: vi.fn(),
       thumbnailUrl: vi.fn(() => ''),
       createRemoteDownloadJob: vi.fn(),
       remoteDownloadJob: vi.fn(),
