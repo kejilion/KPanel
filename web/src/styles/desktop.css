@@ -2041,7 +2041,9 @@ body.desktop-mode-open::-webkit-scrollbar {
 }
 
 .desktop__icon-glyph--web-fallback .desktop__site-fallback-letter,
-.desktop__icon-glyph--web-fallback .desktop__icon-monogram {
+.desktop__icon-glyph--web-fallback .desktop__icon-monogram,
+.desktop__external-confirm-icon--web-fallback .desktop__site-fallback-letter,
+.desktop__external-confirm-icon--web-fallback .desktop__icon-monogram {
   background: #f7f9fc;
 }
 

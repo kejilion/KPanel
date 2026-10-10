@@ -251,6 +251,9 @@ describe('DesktopView dynamic entries', () => {
       '.desktop__external-confirm-icon-image',
     )
     expect(confirmIcon?.getAttribute('src')).toBe('/api/v1/sites/blog/icon')
+    confirmIcon?.dispatchEvent(new Event('load'))
+    await nextTick()
+    expect(document.body.querySelector('.desktop__external-confirm-icon--web-fallback')).toBeNull()
     expect(window.open).not.toHaveBeenCalled()
 
     document.body.querySelector<HTMLButtonElement>('.modal-panel__footer .button--primary')?.click()
@@ -300,7 +303,9 @@ describe('DesktopView dynamic entries', () => {
     await nextTick()
     await nextTick()
 
-    await wrapper.find('button[title="blog.example.com"]').trigger('dblclick')
+    const desktopIcon = wrapper.find('button[title="blog.example.com"]')
+    await desktopIcon.find('.desktop__icon-img').trigger('error')
+    await desktopIcon.trigger('dblclick')
     await nextTick()
     document.body.querySelector<HTMLImageElement>('.desktop__external-confirm-icon-image')
       ?.dispatchEvent(new Event('error'))
@@ -310,6 +315,10 @@ describe('DesktopView dynamic entries', () => {
       ?.textContent).toBe('B')
     expect(document.body.querySelector('.desktop__external-confirm .desktop__site-fallback-badge'))
       .toBeNull()
+    const confirmTile = document.body.querySelector<HTMLElement>('.desktop__external-confirm-icon')
+    expect(confirmTile?.classList.contains('desktop__external-confirm-icon--web-fallback')).toBe(true)
+    expect(confirmTile?.style.background).toBe((desktopIcon.get('.desktop__icon-glyph').element as HTMLElement).style.background)
+    expect(confirmTile?.style.background).toContain('color-mix')
     wrapper.unmount()
   })
 
@@ -519,6 +528,14 @@ describe('DesktopView dynamic entries', () => {
     await shortcut.trigger('dblclick')
     await nextTick()
     expect(document.body.querySelector('.desktop__external-confirm')?.textContent).toContain('内部文档')
+    await shortcut.find('.desktop__icon-img').trigger('error')
+    document.body.querySelector<HTMLImageElement>('.desktop__external-confirm-icon-image')
+      ?.dispatchEvent(new Event('error'))
+    await nextTick()
+    const confirmTile = document.body.querySelector<HTMLElement>('.desktop__external-confirm-icon')
+    expect(confirmTile?.classList.contains('desktop__external-confirm-icon--web-fallback')).toBe(true)
+    expect(confirmTile?.style.background).toContain('color-mix')
+    expect(confirmTile?.style.background).toBe((shortcut.get('.desktop__icon-glyph').element as HTMLElement).style.background)
     document.body.querySelector<HTMLButtonElement>('.modal-panel__close')?.click()
     await nextTick()
 

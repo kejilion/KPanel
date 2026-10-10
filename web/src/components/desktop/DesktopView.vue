@@ -1394,6 +1394,12 @@ function confirmExternalOpen(): void {
 const externalOpenMonogram = computed(() =>
   externalOpenEntry.value?.name.trim().slice(0, 1).toLocaleUpperCase() || 'K',
 )
+const externalOpenFallbackBackground = computed(() => {
+  const entry = externalOpenEntry.value
+  return entry && (!entry.iconURL || externalOpenImageFailed.value)
+    ? entryFallbackBackground(entry)
+    : undefined
+})
 
 function openAppScriptEntry(entry: DesktopEntry): void {
   const path = `/app-script/${encodeURIComponent(entry.id)}`
@@ -3679,7 +3685,7 @@ const startMenuItems = computed<DesktopStartMenuItem[]>(() => [
       .filter((value): value is string => Boolean(value)),
     iconURL: entry.iconURL,
     icon: entry.icon,
-    gradient: entryGradient(entry),
+    gradient: entryFallbackBackground(entry) ?? entryGradient(entry),
     hidden: hiddenEntryKeys.value.has(entry.key),
   })),
   ...startMenuActions.value,
@@ -5270,7 +5276,8 @@ function onViewportResize(): void {
         <div class="desktop__external-confirm-entry">
           <span
             class="desktop__external-confirm-icon"
-            :style="{ background: entryGradient(externalOpenEntry) }"
+            :class="{ 'desktop__external-confirm-icon--web-fallback': externalOpenFallbackBackground }"
+            :style="{ background: externalOpenFallbackBackground ?? entryGradient(externalOpenEntry) }"
             aria-hidden="true"
           >
             <img
