@@ -225,10 +225,11 @@ func (p *containerTerminalProcess) pin(ctx context.Context) error {
 	}
 	// A per-exec nonce prevents a stale/recycled daemon PID from granting
 	// control of a different host process, even if it owns another PTY.
-	environment, readErr := os.ReadFile(fmt.Sprintf("/proc/%d/environ", state.PID))
-	if readErr != nil || !strings.Contains("\x00"+string(environment), "\x00KPANEL_TERMINAL_ID="+p.record.Token+"\x00") {
+	if err := verifyContainerTerminalEnvironment(ctx, p.record.Token, func() ([]byte, error) {
+		return os.ReadFile(fmt.Sprintf("/proc/%d/environ", state.PID))
+	}); err != nil {
 		_ = unix.Close(fd)
-		return errors.New("Docker terminal process identity could not be verified")
+		return err
 	}
 	p.control = &containerTerminalControl{pidfd: fd}
 	start, ttyDevice, err := containerTerminalProcIdentity(state.PID)
@@ -261,6 +262,29 @@ func (p *containerTerminalProcess) pin(ctx context.Context) error {
 	// original pidfd agree, so recovery cannot trust a recycled PID's birth.
 	p.record.PID, p.record.StartTime, p.record.BootID = state.PID, start, strings.TrimSpace(string(boot))
 	return p.client.writeContainerTerminalRecord(p.record)
+}
+
+func verifyContainerTerminalEnvironment(ctx context.Context, token string, readEnvironment func() ([]byte, error)) error {
+	for {
+		environment, err := readEnvironment()
+		if err != nil {
+			return errors.New("Docker terminal process identity could not be verified")
+		}
+		if strings.Contains("\x00"+string(environment), "\x00KPANEL_TERMINAL_ID="+token+"\x00") {
+			return nil
+		}
+		// Docker may report a running exec before execve installs its
+		// environment. Wait for the nonce within the caller's deadline;
+		// an explicitly different nonce remains a hard failure.
+		if strings.Contains("\x00"+string(environment), "\x00KPANEL_TERMINAL_ID=") {
+			return errors.New("Docker terminal process identity could not be verified")
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
 }
 
 func containerTerminalProcIdentity(pid int) (string, uint64, error) {
