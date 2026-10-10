@@ -7,6 +7,7 @@ import { mockShareThemes, activeShareTheme } from './mock-share-themes.mjs'
 import { mockScenePacks } from './mock-scene-packs.mjs'
 import { mockDesktopWallpapers } from './mock-desktop-wallpapers.mjs'
 import { mockGallery, mockGalleryRootEntries } from './mock-gallery.mjs'
+import { mockOffers } from './mock-offers.mjs'
 import { readFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -1645,6 +1646,7 @@ createServer(async (request, response) => {
   if (await mockScenePacks(request, response, url, send, readJSON)) return
   if (await mockDesktopWallpapers(request, response, url, send)) return
   if (await mockGallery(request, response, url, send, readJSON)) return
+  if (await mockOffers(request, response, url, send)) return
   // Appearance sync reads this on every page; without it previews show a load failure toast.
   if (url.pathname === '/api/v1/settings/appearance' && request.method === 'GET') {
     send(response, 200, mockAppearance)
