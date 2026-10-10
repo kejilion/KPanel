@@ -40,6 +40,38 @@ type peerPolicy struct {
 	finished bool
 }
 
+// Recover only startup connections that never deliver a payload byte. A live
+// peer can stop making progress before its first request; keep recovery bounded
+// and leave the existing overall deadline and progressing downloads alone.
+type startupPeerRecovery struct {
+	connectedSince time.Time
+	attempts       int
+	finished       bool
+}
+
+func (r *startupPeerRecovery) shouldRetry(now time.Time, metadataReady bool, active, remembered int, received int64) bool {
+	if received > 0 {
+		r.finished = true
+	}
+	if r.finished || r.attempts >= 2 {
+		return false
+	}
+	if !metadataReady || active == 0 || remembered == 0 {
+		r.connectedSince = time.Time{}
+		return false
+	}
+	if r.connectedSince.IsZero() {
+		r.connectedSince = now
+		return false
+	}
+	if now.Sub(r.connectedSince) < 30*time.Second {
+		return false
+	}
+	r.attempts++
+	r.connectedSince = time.Time{}
+	return true
+}
+
 func (p *peerPolicy) observe(speed float64, remaining int64, pressure bool) int {
 	if p.limit == 0 {
 		p.limit = 4
@@ -183,6 +215,8 @@ func (e *Engine) Download(ctx context.Context, source Source, smart bool, progre
 	window := lastProgress
 	windowBytes := int64(0)
 	policy := peerPolicy{limit: 4}
+	recovery := startupPeerRecovery{}
+	var retryPeers []torrent.PeerInfo
 	mode := "bt-standard"
 	if smart {
 		mode = "bt-adaptive"
@@ -220,7 +254,27 @@ func (e *Engine) Download(ctx context.Context, source Source, smart bool, progre
 			keep = true
 			return &Result{Metadata: *metadata, stage: stage}, nil
 		case now := <-ticker.C:
-			p := Progress{Mode: mode, Peers: t.Stats().ActivePeers}
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			stats := t.Stats()
+			p := Progress{Mode: mode, Peers: stats.ActivePeers}
+			received := stats.ConnStats.BytesReadData.Int64()
+			if len(retryPeers) != 0 {
+				// Closing peers removes connections asynchronously. Requeue on the
+				// next tick through the existing public dialer and dial limits.
+				if received == 0 {
+					t.AddPeers(retryPeers)
+				}
+				retryPeers = nil
+			}
+			knownPeers := remembered.peers()
+			if recovery.shouldRetry(now, metadata != nil, stats.ActivePeers, len(knownPeers), received) {
+				for _, peer := range t.PeerConns() {
+					_ = peer.Close()
+				}
+				retryPeers = knownPeers
+			}
 			if metadata != nil {
 				p.Name = metadata.Name
 				p.Total = metadata.Size
