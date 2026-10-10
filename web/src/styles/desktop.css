@@ -1952,7 +1952,7 @@ body.desktop-mode-open::-webkit-scrollbar {
 .desktop__shortcut-artwork--file {
   width: 100%;
   height: 100%;
-  background: color-mix(in srgb, var(--desktop-file-color) 85%, #fff);
+  background: color-mix(in srgb, var(--desktop-file-color) 55%, #fff);
   border-radius: inherit;
 }
 
