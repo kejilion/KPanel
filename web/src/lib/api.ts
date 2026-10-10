@@ -51,6 +51,8 @@ import type {
   DockerMaintenanceJob,
   CustomWallpaper,
   CustomWallpaperList,
+  OfferItem,
+  OffersSnapshot,
   CustomWallpaperUpload,
   DesktopShortcutIconResult,
   DesktopWorkspace,
@@ -715,6 +717,50 @@ async function parsePayload(response: Response): Promise<unknown> {
     return text || undefined
   }
   return response.json()
+}
+
+const OFFERS_MEDIA_PATH = /^\/api\/v1\/offers\/media\/([0-9a-f]{64})$/
+
+function offersMediaURL(value: unknown): string | undefined {
+  const match = typeof value === 'string' ? OFFERS_MEDIA_PATH.exec(value) : null
+  return match ? buildUrl(`/offers/media/${match[1]}`) : undefined
+}
+
+function offersTargetURL(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  try {
+    const parsed = new URL(value)
+    return parsed.protocol === 'https:' && !parsed.username && !parsed.password ? parsed.href : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** Keeps only well-formed items so a bad payload can never yield a script or off-origin image link. */
+export function normalizeOffers(payload: unknown): OffersSnapshot {
+  const raw = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {}
+  const state = raw.state === 'live' || raw.state === 'stale' ? raw.state : 'unavailable'
+  const items: OfferItem[] = []
+  for (const value of Array.isArray(raw.items) ? raw.items : []) {
+    if (!value || typeof value !== 'object') continue
+    const item = value as Record<string, unknown>
+    const url = offersTargetURL(item.url)
+    const card = offersMediaURL(item.card)
+    const wide = item.wide === undefined ? undefined : offersMediaURL(item.wide)
+    if (!url || !card || typeof item.id !== 'string' || typeof item.vendor !== 'string' ||
+      typeof item.alt !== 'string' || typeof item.host !== 'string' || (item.wide !== undefined && !wide)) continue
+    items.push({
+      id: item.id, vendor: item.vendor, alt: item.alt, host: item.host, url, card,
+      featured: item.featured === true && Boolean(wide),
+      ...(wide ? { wide } : {}),
+    })
+  }
+  return {
+    state,
+    updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : undefined,
+    fetchedAt: typeof raw.fetchedAt === 'string' ? raw.fetchedAt : undefined,
+    items,
+  }
 }
 
 async function request<T>(
@@ -1395,6 +1441,13 @@ export const api = {
       buildUrl(`/desktop/wallpapers/${encodeURIComponent(id)}/image`),
     wallpaperThumbURL: (id: string): string =>
       buildUrl(`/desktop/wallpapers/${encodeURIComponent(id)}/thumb`),
+  },
+  offers: {
+    list: async (options: { refresh?: boolean; signal?: AbortSignal } = {}): Promise<OffersSnapshot> =>
+      normalizeOffers(await request<unknown>('/offers', {
+        query: options.refresh ? { refresh: 1 } : undefined,
+        signal: options.signal,
+      })),
   },
   agent: {
     health: async (signal?: AbortSignal) => normalizeAgent(await request<RawAgentHealth>('/agent/health', { signal })),

@@ -63,7 +63,7 @@ import LogoMark from '@/components/common/LogoMark.vue'
 import { useSiteBranding } from '@/stores/branding'
 
 const siteBranding = useSiteBranding()
-import { DEFAULT_WINDOW_GRADIENT, desktopApps, desktopRoutePath, findDesktopApp } from '@/lib/desktopApps'
+import { DEFAULT_WINDOW_GRADIENT, desktopApps, desktopRoutePath, findDesktopApp, removableDesktopAppKeys, type DesktopApp } from '@/lib/desktopApps'
 import {
   getCachedDesktopEntries,
   loadDesktopEntries,
@@ -360,9 +360,20 @@ const visibleDesktopWidgets = computed(() => desktopWidgets.filter((widget) => !
 const visibleDynamicEntries = computed(() =>
   (entries.value?.visible || []).filter((entry) => !hiddenEntryKeys.value.has(entry.key)),
 )
-const hiddenEntries = computed(() =>
-  (entries.value?.visible || []).filter((entry) => hiddenEntryKeys.value.has(entry.key)),
+// Optional fixed pages (the sponsored page) can be hidden like apps and sites.
+const visibleDesktopApps = computed(() =>
+  desktopApps.filter((app) => !removableDesktopAppKeys.has(`nav:${app.path}`) || !hiddenEntryKeys.value.has(`nav:${app.path}`)),
 )
+function removableNavEntry(app: DesktopApp): DesktopEntry {
+  return { key: `nav:${app.path}`, kind: 'app', id: app.path, name: i18n.t(app.labelKey), launch: 'external', iconURL: app.desktopIconURL }
+}
+const visibleRemovableNavEntries = computed(() =>
+  visibleDesktopApps.value.filter((app) => app.removable).map(removableNavEntry),
+)
+const hiddenEntries = computed(() => [
+  ...desktopApps.filter((app) => app.removable && hiddenEntryKeys.value.has(`nav:${app.path}`)).map(removableNavEntry),
+  ...(entries.value?.visible || []).filter((entry) => hiddenEntryKeys.value.has(entry.key)),
+])
 const shortcuts = computed<DesktopShortcut[]>(() => workspace.value.shortcuts.map((shortcut) => ({
   ...shortcut,
   iconURL: shortcut.iconURL
@@ -495,7 +506,7 @@ let pendingPositionWrites = 0
 let latestPositionWrite = 0
 
 const allIconKeys = computed(() => [
-  ...desktopApps.map((app) => `nav:${app.path}`),
+  ...visibleDesktopApps.value.map((app) => `nav:${app.path}`),
   ...visibleDynamicEntries.value.map((entry) => entry.key),
   ...shortcutEntries.value.map((entry) => entry.key),
 ])
@@ -1073,7 +1084,7 @@ const NEW_ITEM_LABELS = DESKTOP_NEW_ITEM_LABELS
 const menuSelectionKeys = ref<string[]>([])
 const menuRemovableCount = computed(() => {
   const selected = new Set(menuSelectionKeys.value)
-  return [...visibleDynamicEntries.value, ...shortcutEntries.value]
+  return [...visibleRemovableNavEntries.value, ...visibleDynamicEntries.value, ...shortcutEntries.value]
     .filter((entry) => selected.has(entry.key)).length
 })
 const menuWindowId = ref<number>()
@@ -1166,7 +1177,8 @@ watch(desktopShortcutPathSignature, () => {
   void refreshDesktopFileMetadata(desktopShortcutPaths.value, true)
 }, { immediate: true })
 
-const removableSelectedCount = computed(() => selectedEntries.value.length)
+const removableSelectedCount = computed(() => selectedEntries.value.length
+  + visibleRemovableNavEntries.value.filter((entry) => selectedIcons.value.has(entry.key)).length)
 watch(allIconKeys, (keys) => {
   const visible = new Set(keys)
   const next = [...selectedIcons.value].filter((key) => visible.has(key))
@@ -3650,6 +3662,7 @@ const startMenuActions = computed<DesktopStartMenuItem[]>(() => {
 
 const startMenuItems = computed<DesktopStartMenuItem[]>(() => [
   ...desktopApps.map((app) => ({
+    hidden: removableDesktopAppKeys.has(`nav:${app.path}`) && hiddenEntryKeys.value.has(`nav:${app.path}`),
     key: `nav:${app.path}`,
     section: 'system' as const,
     label: i18n.t(app.labelKey),
@@ -3884,6 +3897,12 @@ async function resetRename(): Promise<void> {
   }
 }
 
+function requestRemoveNavApp(): void {
+  const app = desktopApps.find((candidate) => candidate.removable && candidate.path === menuNavPath.value)
+  closeContextMenu()
+  if (app) removingEntry.value = removableNavEntry(app)
+}
+
 function requestRemoveEntry(): void {
   const entry = menuEntry.value
   closeContextMenu()
@@ -3907,7 +3926,7 @@ async function confirmRemoveEntry(): Promise<void> {
 
 function requestBatchRemoveSelected(keys: readonly string[] = [...selectedIcons.value]): void {
   const selected = new Set(keys)
-  const removable = [...visibleDynamicEntries.value, ...shortcutEntries.value]
+  const removable = [...visibleRemovableNavEntries.value, ...visibleDynamicEntries.value, ...shortcutEntries.value]
     .filter((entry) => selected.has(entry.key))
   closeContextMenu()
   if (removable.length) {
@@ -4544,7 +4563,7 @@ function onViewportResize(): void {
       </p>
       <!-- Static navigation apps -->
       <div
-        v-for="(app, index) in desktopApps"
+        v-for="(app, index) in visibleDesktopApps"
         :key="app.path"
         class="desktop__icon-slot"
         :class="{ 'desktop__icon-slot--dragging': draggingIcons.has(`nav:${app.path}`), 'desktop__icon-slot--group-candidate': autoGroupTarget === `nav:${app.path}`, 'desktop__icon-slot--group-ready': autoGroupReady && autoGroupTarget === `nav:${app.path}` }"
@@ -4601,7 +4620,7 @@ function onViewportResize(): void {
             :entry="entry"
             :gradient="entryGradient(entry)"
             :selected="selectedIcons.has(entry.key)"
-            :order="desktopApps.length + index"
+            :order="visibleDesktopApps.length + index"
             :dragging="draggingIcons.has(entry.key)"
             @select="(event) => selectEntry(entry, event)"
             @open="(event) => onEntryOpen(event, entry)"
@@ -4642,7 +4661,7 @@ function onViewportResize(): void {
           :entry="entry"
           :gradient="entryGradient(entry)"
           :selected="selectedIcons.has(entry.key)"
-          :order="desktopApps.length + visibleDynamicEntries.length + index"
+          :order="visibleDesktopApps.length + visibleDynamicEntries.length + index"
           :dragging="draggingIcons.has(entry.key)"
           :transfer-hint="desktopShortcutTransferHint(entry)"
           :transfer-ready="desktopShortcutTransferReady(entry)"
@@ -4905,6 +4924,19 @@ function onViewportResize(): void {
             <AppWindow :size="15" aria-hidden="true" />
             {{ i18n.t('desktop.entryOpen') }}
           </button>
+          <template v-if="removableDesktopAppKeys.has(`nav:${menuNavPath}`)">
+            <div class="desktop__context-separator" role="separator" />
+            <button
+              type="button"
+              role="menuitem"
+              class="desktop__context-danger k-context-menu__item--danger"
+              :disabled="!workspace.available || desktopIcons.saving.value"
+              @click="requestRemoveNavApp"
+            >
+              <EyeOff :size="15" aria-hidden="true" />
+              {{ i18n.t('desktop.removeFromDesktop') }}
+            </button>
+          </template>
         </template>
         <template v-else-if="contextMenuTarget === 'taskbar'">
           <button
@@ -5482,9 +5514,11 @@ function onViewportResize(): void {
     >
       <div v-if="removingEntry" class="desktop__confirm-copy">
         <strong>{{ removingEntry.name }}</strong>
-        <p>{{ removingEntry.kind === 'app'
-          ? i18n.t('desktop.removeAppFromDesktopMessage')
-          : i18n.t('desktop.removeSiteFromDesktopMessage') }}</p>
+        <p>{{ removingEntry.key.startsWith('nav:')
+          ? i18n.t('desktop.removeNavFromDesktopMessage')
+          : removingEntry.kind === 'app'
+            ? i18n.t('desktop.removeAppFromDesktopMessage')
+            : i18n.t('desktop.removeSiteFromDesktopMessage') }}</p>
       </div>
       <template #footer>
         <button class="button button--ghost" type="button" @click="removingEntry = undefined">

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_WINDOW_GRADIENT, desktopApps, findDesktopApp } from './desktopApps'
+import { DEFAULT_WINDOW_GRADIENT, desktopApps, findDesktopApp, removableDesktopAppKeys } from './desktopApps'
 
 function webpDimensions(image: Buffer): { width: number; height: number } {
   expect(image.toString('ascii', 0, 4)).toBe('RIFF')
@@ -48,9 +48,14 @@ describe('desktop app catalogue', () => {
         '/cluster',
         '/activity',
         '/settings',
+        '/offers',
       ]),
     )
-    expect(desktopApps).toHaveLength(15)
+    expect(desktopApps).toHaveLength(16)
+  })
+
+  it('lets only the optional sponsored page be hidden from the desktop', () => {
+    expect([...removableDesktopAppKeys]).toEqual(['nav:/offers'])
   })
 
   it('gives every app a distinct gradient', () => {

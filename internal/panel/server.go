@@ -34,6 +34,7 @@ import (
 	"github.com/kejilion/kejilion-panel/internal/desktopworkspace"
 	"github.com/kejilion/kejilion-panel/internal/dockerx"
 	"github.com/kejilion/kejilion-panel/internal/notification"
+	"github.com/kejilion/kejilion-panel/internal/offers"
 	"github.com/kejilion/kejilion-panel/internal/remotedownload"
 	"github.com/kejilion/kejilion-panel/internal/scenepacks"
 	"github.com/kejilion/kejilion-panel/internal/store"
@@ -107,6 +108,7 @@ type Server struct {
 	remoteDownloadRangeOpen func(context.Context, string, remotedownload.ResumeRequest) (*http.Response, error)
 	remoteDownloadGate      chan struct{}
 	remoteDownloadJobs      *remotedownload.JobStore
+	offers                  *offers.Service
 	remoteDownloadMu        sync.Mutex
 	remoteDownloadCancels   map[string]context.CancelCauseFunc
 	remoteDownloadPending   int
@@ -254,6 +256,7 @@ func NewServer(config Config, authService *auth.Service, storage *store.Store, a
 		remoteDownloadGate:      make(chan struct{}, maxPanelRemoteDownloads),
 		remoteDownloadJobs:      remoteDownloadJobs,
 		remoteDownloadCancels:   make(map[string]context.CancelCauseFunc),
+		offers:                  offers.Open(filepath.Join(config.DataDir, "offers"), nil),
 	}
 	server.hostOps = newHostOperationService(server)
 	downloadClient := remotedownload.NewClient(remotedownload.Config{})
@@ -466,6 +469,8 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		s.handleJobs(w, r)
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/jobs/"):
 		s.handleJobDetail(w, r)
+	case isOffersRequest(r.URL.Path):
+		s.handleOffers(w, r)
 	case r.URL.Path == "/api/v1/desktop/workspace":
 		s.handleDesktopWorkspace(w, r)
 	case r.URL.Path == desktopWallpapersPath || strings.HasPrefix(r.URL.Path, desktopWallpapersPath+"/"):

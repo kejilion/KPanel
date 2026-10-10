@@ -130,8 +130,8 @@ describe('DesktopView start menu', () => {
     await mountDesktop()
     await openMenu()
     const keys = wrapper.findAll('#desktop-start-menu [role="option"]').map((option) => option.attributes('data-start-menu-key'))
-    expect(keys.slice(0, 15).every((key) => key?.startsWith('nav:'))).toBe(true)
-    expect(keys.slice(15)).toEqual(['app:nginx', 'app:kuma', 'site:blog'])
+    expect(keys.slice(0, 16).every((key) => key?.startsWith('nav:'))).toBe(true)
+    expect(keys.slice(16)).toEqual(['app:nginx', 'app:kuma', 'site:blog'])
     expect(wrapper.get('[data-start-menu-key="app:kuma"]').text()).toContain('桌面已隐藏')
     // The desktop itself still hides the app.
     expect(wrapper.find('.desktop__icons [aria-label="Uptime Kuma"]').exists()).toBe(false)

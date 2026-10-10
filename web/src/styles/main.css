@@ -2336,6 +2336,17 @@ textarea:focus-visible,
   gap: 10px;
 }
 
+/* 广告专栏 entry: a neutral icon button; the desktop switch stays the only brand-filled topbar action. */
+.offers-entry-button {
+  text-decoration: none;
+}
+
+.offers-entry-button[aria-current="page"] {
+  color: var(--brand);
+  border-color: color-mix(in srgb, var(--brand) 30%, var(--border-strong));
+  background: var(--interaction-hover-surface);
+}
+
 .desktop-entry-button {
   position: relative;
   display: inline-flex;

@@ -129,6 +129,12 @@ export const router = createRouter({
           meta: { titleKey: 'route.gallery' },
         },
         {
+          path: 'offers',
+          name: 'offers',
+          component: () => loadNavigationRoute('/offers'),
+          meta: { titleKey: 'route.offers' },
+        },
+        {
           path: 'terminal',
           name: 'terminal',
           component: () => loadNavigationRoute('/terminal'),

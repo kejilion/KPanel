@@ -207,6 +207,11 @@ export function windowRouteRecords(): RouteRecordRaw[] {
       component: WINDOW_ROUTE_PLACEHOLDER,
     },
     {
+      path: '/offers',
+      name: 'offers',
+      component: WINDOW_ROUTE_PLACEHOLDER,
+    },
+    {
       path: '/terminal',
       name: 'terminal',
       component: WINDOW_ROUTE_PLACEHOLDER,

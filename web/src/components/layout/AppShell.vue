@@ -23,6 +23,7 @@ import {
   LayoutDashboard,
   LogOut,
   LoaderCircle,
+  Megaphone,
   Menu,
   Monitor,
   Moon,
@@ -448,6 +449,15 @@ watch(
         <div class="topbar__actions">
           <StatusBadge :status="agentStatus.status" :label="agentStatus.label" subtle />
           <LanguageSelector compact />
+          <RouterLink
+            class="icon-button offers-entry-button"
+            to="/offers"
+            :aria-label="i18n.t('route.offers')"
+            :title="i18n.t('route.offers')"
+            :aria-current="route.path === '/offers' ? 'page' : undefined"
+          >
+            <Megaphone :size="18" aria-hidden="true" />
+          </RouterLink>
           <button
             class="icon-button desktop-entry-button"
             :class="{ 'desktop-entry-button--unseen': !desktopEntrySeen }"

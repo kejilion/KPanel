@@ -601,20 +601,23 @@ describe('DesktopView icon layout interaction', () => {
     wrapper.unmount()
   })
 
-  it('selects all icons from the keyboard and never removes fixed system entries', async () => {
+  it('selects all icons from the keyboard and only offers the optional page for removal', async () => {
     const wrapper = mount(DesktopView, { attachTo: document.body })
     await flushPromises()
     const desktop = wrapper.get<HTMLElement>('.desktop')
     desktop.element.focus()
 
     await desktop.trigger('keydown', { key: 'a', ctrlKey: true })
-    expect(wrapper.findAll('.desktop__icon--selected')).toHaveLength(15)
-    expect(wrapper.find('.desktop__selection-actions').text()).toContain('已选 15 项')
+    expect(wrapper.findAll('.desktop__icon--selected')).toHaveLength(16)
+    expect(wrapper.find('.desktop__selection-actions').text()).toContain('已选 16 项')
 
     await desktop.trigger('keydown', { key: 'Delete' })
     await flushPromises()
+    // Management pages stay pinned; only the sponsored page joins the confirmation.
+    const dialog = Array.from(document.body.querySelectorAll<HTMLElement>('.modal-panel'))
+      .find((panel) => panel.textContent?.includes('确认从桌面移除 1 项'))
+    expect(dialog).toBeDefined()
     expect(updateWorkspace).not.toHaveBeenCalled()
-    expect(document.body.textContent).toContain('固定系统入口不能从桌面移除')
     wrapper.unmount()
   })
 
@@ -1073,7 +1076,8 @@ describe('DesktopView icon layout interaction', () => {
   }, 10_000)
 
   it('keeps icons beyond the 512-position limit separate and refuses false auto-arrange success', async () => {
-    const extras: DesktopEntry[] = Array.from({ length: 498 }, (_, index) => ({
+    // Sixteen fixed entries plus 497 apps leave exactly one icon past the limit.
+    const extras: DesktopEntry[] = Array.from({ length: 497 }, (_, index) => ({
       key: `app:extra-${index}`,
       kind: 'app',
       id: `extra-${index}`,
@@ -1087,8 +1091,8 @@ describe('DesktopView icon layout interaction', () => {
 
     const wrapper = mount(DesktopView, { attachTo: document.body })
     await flushPromises()
-    const supported = wrapper.find('[data-icon-key="app:extra-496"]')
-    const overflow = wrapper.find('[data-icon-key="app:extra-497"]')
+    const supported = wrapper.find('[data-icon-key="app:extra-495"]')
+    const overflow = wrapper.find('[data-icon-key="app:extra-496"]')
 
     expect(overflow.attributes('style')).not.toBe(supported.attributes('style'))
     expect(overflow.attributes('style')).not.toContain('display: none')

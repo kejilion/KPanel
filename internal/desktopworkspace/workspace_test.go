@@ -11,6 +11,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"sync"
@@ -86,6 +87,15 @@ func TestReplaceValidatesWorkspaceContract(t *testing.T) {
 			input: func() ReplaceInput {
 				input := validReplaceInput(base.ResourceVersion)
 				input.HiddenEntryKeys = []string{"nav:/overview"}
+				return input
+			},
+			field: "hiddenEntryKeys",
+		},
+		{
+			name: "hidden unknown navigation entry",
+			input: func() ReplaceInput {
+				input := validReplaceInput(base.ResourceVersion)
+				input.HiddenEntryKeys = []string{"nav:/offers-extra"}
 				return input
 			},
 			field: "hiddenEntryKeys",
@@ -341,6 +351,20 @@ func TestReplaceAllowsPagedVerticalPosition(t *testing.T) {
 	}
 	if got := saved.Positions["nav:/overview"]; got != (Position{X: 1, Y: MaxPositions}) {
 		t.Fatalf("paged vertical position = %#v", got)
+	}
+}
+
+func TestReplaceAllowsHidingOptionalOffersEntry(t *testing.T) {
+	store := openTestStore(t)
+	input := validReplaceInput(store.Workspace().ResourceVersion)
+	input.HiddenEntryKeys = []string{"nav:/offers", "app:builtin-1"}
+
+	saved, err := store.Replace(input)
+	if err != nil {
+		t.Fatalf("hiding the offers entry was rejected: %v", err)
+	}
+	if want := []string{"app:builtin-1", "nav:/offers"}; !reflect.DeepEqual(saved.HiddenEntryKeys, want) {
+		t.Fatalf("hidden entry keys = %#v, want %#v", saved.HiddenEntryKeys, want)
 	}
 }
 
