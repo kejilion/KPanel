@@ -75,6 +75,7 @@ type jobTerminalChunk struct {
 }
 
 type terminalStreamEvent struct {
+	ctx    context.Context
 	Key    string            `json:"key"`
 	Output *terminal.Output  `json:"output,omitempty"`
 	Job    *jobTerminalChunk `json:"job,omitempty"`
@@ -158,10 +159,16 @@ func (h *terminalStreamHub) closeAll() {
 	}
 }
 
-func (t *terminalStream) emit(event terminalStreamEvent) bool {
+func (t *terminalStream) emit(ctx context.Context, event terminalStreamEvent) bool {
+	if ctx.Err() != nil || t.ctx.Err() != nil {
+		return false
+	}
+	event.ctx = ctx
 	select {
 	case t.events <- event:
 		return true
+	case <-ctx.Done():
+		return false
 	case <-t.ctx.Done():
 		return false
 	}
@@ -252,6 +259,10 @@ func (s *Server) handleTerminalStream(w http.ResponseWriter, r *http.Request) {
 			_ = write("auth.expired", map[string]string{"message": "Session expired"})
 			return
 		case event := <-stream.events:
+			// Replacing a subscription also invalidates its queued output.
+			if event.ctx != nil && event.ctx.Err() != nil {
+				continue
+			}
 			// Recheck busy streams independently of the keepalive. Never write
 			// the dequeued event after a failed check, including buffered output.
 			if !checkSession() || !write("output", event) {
@@ -380,7 +391,7 @@ func (s *Server) pumpHostTerminal(ctx context.Context, stream *terminalStream, k
 	for ctx.Err() == nil {
 		session, ok := s.touchTerminalSession(item.ID, stream.userID)
 		if !ok {
-			stream.emit(terminalStreamEvent{Key: key, Error: "terminal_not_found"})
+			stream.emit(ctx, terminalStreamEvent{Key: key, Error: "terminal_not_found"})
 			return
 		}
 		output, err := s.outputTerminalBackend(ctx, session, offset, time.Second)
@@ -390,11 +401,11 @@ func (s *Server) pumpHostTerminal(ctx context.Context, stream *terminalStream, k
 			}
 			if errors.Is(err, terminal.ErrNotFound) || errors.Is(err, terminal.ErrClosed) {
 				s.deleteFinishedTerminalSession(item.ID)
-				stream.emit(terminalStreamEvent{Key: key, Error: "terminal_not_found"})
+				stream.emit(ctx, terminalStreamEvent{Key: key, Error: "terminal_not_found"})
 				return
 			}
 			failures++
-			if failures == 1 && !stream.emit(terminalStreamEvent{Key: key, Error: "terminal_output_failed"}) {
+			if failures == 1 && !stream.emit(ctx, terminalStreamEvent{Key: key, Error: "terminal_output_failed"}) {
 				return
 			}
 			if !waitTerminalStreamBackoff(ctx, failures) {
@@ -427,7 +438,7 @@ func (s *Server) pumpHostTerminal(ctx context.Context, stream *terminalStream, k
 			(output.ExitedAt != nil && !sentExit) || (output.Closed && !sentClosed)
 		if changed {
 			value := output
-			if !stream.emit(terminalStreamEvent{Key: key, Output: &value}) {
+			if !stream.emit(ctx, terminalStreamEvent{Key: key, Output: &value}) {
 				return
 			}
 			sentExit = sentExit || output.ExitedAt != nil
@@ -498,7 +509,7 @@ func (s *Server) pumpJobTerminal(ctx context.Context, stream *terminalStream, ke
 	for ctx.Err() == nil {
 		chunk, found, err := s.fetchJobTerminal(ctx, prefix, item.ID, offset, inputOpen, "1000")
 		if err == nil && !found {
-			stream.emit(terminalStreamEvent{Key: key, Error: "terminal_not_found"})
+			stream.emit(ctx, terminalStreamEvent{Key: key, Error: "terminal_not_found"})
 			return
 		}
 		if err != nil {
@@ -506,7 +517,7 @@ func (s *Server) pumpJobTerminal(ctx context.Context, stream *terminalStream, ke
 				return
 			}
 			failures++
-			if failures == 1 && !stream.emit(terminalStreamEvent{Key: key, Error: "terminal_output_failed"}) {
+			if failures == 1 && !stream.emit(ctx, terminalStreamEvent{Key: key, Error: "terminal_output_failed"}) {
 				return
 			}
 			if !waitTerminalStreamBackoff(ctx, failures) {
@@ -520,7 +531,7 @@ func (s *Server) pumpJobTerminal(ctx context.Context, stream *terminalStream, ke
 		}
 		if first || chunk.DataBase64 != "" || chunk.InputOpen != inputOpen || chunk.Finished || chunk.NextOffset != offset {
 			value := chunk
-			if !stream.emit(terminalStreamEvent{Key: key, Job: &value}) {
+			if !stream.emit(ctx, terminalStreamEvent{Key: key, Job: &value}) {
 				return
 			}
 		}
