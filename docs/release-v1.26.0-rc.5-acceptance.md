@@ -121,14 +121,16 @@
 <!-- kpanel-release-metrics:start -->
 - 首个纳入提交时间：2026-10-10T19:47:48+08:00
 - 候选冻结时间：2026-10-10T17:33:49.545Z
-- 生产完成时间：不适用（preview 未部署生产）
-- 提交到生产用时：不适用（preview 未部署生产）
+- 生产完成时间：未验证
+- 提交到生产用时：不适用
 - 是否回滚、紧急热修复或重复发布：否
-- 若发生失败，发现时间、恢复时间和逃逸门禁：发现时间：2026-10-10T16:27:53Z；恢复时间：2026-10-10T18:09:25Z；逃逸门禁：未逃逸：候选 CI 拦截撤回的 RC4，未推 main、tag 或公开产物
+- 若发生失败，发现时间、恢复时间和逃逸门禁：不适用
 <!-- kpanel-release-metrics:end -->
 
+本版 preview 未部署生产，生产时间未验证、生产用时及生产变更失败恢复不适用。候选产品质量事件另记：RC4 候选 CI 发现时间 2026-10-10T16:27:53Z；修复后 RC5 候选 CI 恢复时间 2026-10-10T18:09:25Z；未逃逸候选 CI，RC4 未推 main/tag/公开产物。此事件不计生产回滚、紧急热修复或重复发布。
+
 <!-- kpanel-release-process-metrics:start -->
-- 已记录发布流程异常或无效证据拦截次数：37
+- 已记录发布流程异常或无效证据拦截次数：38
 - 其中生产写操作开始后异常次数：0
 <!-- kpanel-release-process-metrics:end -->
 
@@ -432,11 +434,20 @@
     "recoveryEvidence": "Native partial read 07e8ab; SCP completion 08ab74 exit0; authoritative completed read 061e0c. Full raw hash verification is recorded in public-browser-r4-diagnosis.json; subsequent dependent reads wait for transport completion.",
     "permanentAction": "Release evidence maintainer; review 2026-10-17 or before next L3 production write. Require successful terminal transport result before dependent local reads in the shared recovery entry; this execution correction is recovery only.",
     "historicalReleases": []
+  },
+  {
+    "fingerprint": "documentation/release-metrics/preview-field-format",
+    "position": "before-production-write",
+    "count": 1,
+    "impact": "Required docs L0 r1 rejected custom 不适用（preview） timestamp/duration values and candidate-CI recovery details in a production change-failure field while the change-failure flag was 否. Product publication and public acceptance were unaffected; no production writes.",
+    "recoveryEvidence": "docs-l0-result.json and docs-l0.log retain exact original docs commit and all three errors. docs metrics r2 uses existing accepted preview markers 未验证/不适用, keeps candidate quality event times separately outside production metrics, and retains original failed docs commit as ancestor.",
+    "permanentAction": "Release acceptance maintainer; review 2026-10-17 or before next L3 production write. Generate metrics using the authoritative allowed marker set and separate candidate quality events from production change-failure metrics; task correction is recovery only.",
+    "historicalReleases": []
   }
 ]
 <!-- kpanel-release-process-incidents:end -->
 
-原产品 CI 失败单独保留为质量证据，不自动计为流程异常。公开浏览器 r1 因全文12/4与既有8/3展示限额混淆失败，原始哈希/清理保留；r2修正投影后在目录下载观察器出现未捕获等待异常；r3改为同时等待点击/事件并保存菜单、响应和trace，确认实际英文Download ZIP与中文locator不符，尚未发起目录下载；r4显式zh-CN后8项浏览器/界面下载全部通过，末尾单目录ZIP路径预期错误；r5按既有ExportZIP去掉所选目录外层语义，严格断言nested.txt唯一条目与完整字节，混合选择仍校验logs/nested.txt。恢复取证曾先于SCP完成读取一次，完成后重读并核验全部原始哈希。见public-browser-r1/r2/r3/r4-diagnosis.json与最终公开旅程证据。原流程账本及其一个两段指纹的三段格式映射均保留，计数/事实不变。最近五个正式版本逐文件哈希核对，重复根因与历史关联见 process-history-verified.json；现场恢复不冒充唯一入口永久修复。流程维护者在 2026-10-17 或下次 L3 生产写入前复核。
+文档 L0 r1 的指标格式拒绝及其修正作为一次流程异常保留，原始 docs commit/log/receipt 不覆盖；生产指标采用既有模板允许的精确标记，候选质量事件单独记录。原产品 CI 失败单独保留为质量证据，不自动计为流程异常。公开浏览器 r1 因全文12/4与既有8/3展示限额混淆失败，原始哈希/清理保留；r2修正投影后在目录下载观察器出现未捕获等待异常；r3改为同时等待点击/事件并保存菜单、响应和trace，确认实际英文Download ZIP与中文locator不符，尚未发起目录下载；r4显式zh-CN后8项浏览器/界面下载全部通过，末尾单目录ZIP路径预期错误；r5按既有ExportZIP去掉所选目录外层语义，严格断言nested.txt唯一条目与完整字节，混合选择仍校验logs/nested.txt。恢复取证曾先于SCP完成读取一次，完成后重读并核验全部原始哈希。见public-browser-r1/r2/r3/r4-diagnosis.json与最终公开旅程证据。原流程账本及其一个两段指纹的三段格式映射均保留，计数/事实不变。最近五个正式版本逐文件哈希核对，重复根因与历史关联见 process-history-verified.json；现场恢复不冒充唯一入口永久修复。流程维护者在 2026-10-17 或下次 L3 生产写入前复核。
 
 ## 遗留风险、资源回收与后续准入
 
