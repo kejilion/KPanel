@@ -35,6 +35,8 @@ export default [
   ['IP 质量体检', 'IP quality check'],
   ['SuperSpeed 三网测速', 'SuperSpeed network test'],
   ['网络质量体检', 'Network quality check'],
+  ['TCP 重传探测', 'TCP retransmission check'],
+  ['TcpQuality TCP 质量检测', 'TcpQuality TCP quality check'],
   ['YABS 性能测试', 'YABS benchmark'],
   ['NodeQuality 综合测评', 'Server health check'],
   ['服务器综合体检', 'Server health check'],
