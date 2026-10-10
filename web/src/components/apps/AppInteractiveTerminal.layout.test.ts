@@ -108,7 +108,7 @@ describe('interactive task terminal layout', () => {
     expect(terminalSource).toMatch(
       /\.interactive-terminal\.is-fullscreen\s*\{[^}]*position: fixed;[^}]*inset: 0;[^}]*height: 100dvh;/,
     )
-    expect(diagnosticsSource).toContain('v-if="!activeJob?.interactive"')
+    expect(diagnosticsSource).toContain('v-if="activeJob && !activeJob.interactive" class="diagnostic-terminal-bar"')
     // In a workspace window the dialog owns full screen; the terminal does not
     // offer a second, competing full-screen toggle.
     expect(environmentSource).toMatch(/variant="workspace"\s+allow-fullscreen/)
