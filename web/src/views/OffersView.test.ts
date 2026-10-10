@@ -106,6 +106,31 @@ describe('OffersView', () => {
     expect(view.findAll('.offers-showcase__slide')[0]!.classes()).toContain('is-active')
   })
 
+  it('lays out the wall by page width and swaps the carousel to 2:1 art when narrow', async () => {
+    let report: ((width: number) => void) | undefined
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: ResizeObserverCallback) {
+        report = (width) => callback([{ contentRect: { width } } as ResizeObserverEntry], this as unknown as ResizeObserver)
+      }
+      observe() {}
+      disconnect() {}
+    })
+    const view = await mountOffers(snapshot([offer('a', true), offer('c'), offer('d')]))
+    const wall = () => view.get('.offers-wall').classes()
+
+    report?.(1100)
+    await flushPromises()
+    expect(wall()).toContain('offers-wall--cols-3')
+    report?.(1000)
+    await flushPromises()
+    expect(wall()).toContain('offers-wall--cols-2')
+    report?.(600)
+    await flushPromises()
+    expect(wall()).toContain('offers-wall--cols-1')
+    expect(view.get('.offers-showcase__slide img').attributes('src')).toBe(offer('a', true).card)
+    vi.unstubAllGlobals()
+  })
+
   it('hides carousel controls for a single featured banner', async () => {
     const view = await mountOffers(snapshot([offer('a', true), offer('c')]))
     expect(view.find('.offers-controls').exists()).toBe(false)

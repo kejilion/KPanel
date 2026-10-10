@@ -25,9 +25,11 @@ const MORE_OFFERS_URL = 'https://kejilion.pro/topvps/'
 const AUTOPLAY_MS = 6000
 const MAX_FEATURED = 3
 // Breakpoints follow the page container, not the viewport, so a desktop
-// window lays out like a classic page of the same width.
+// window lays out like a classic page of the same width. Both keep every wall
+// banner at least 352px wide (2×352+16 and 3×352+2×16), which keeps 36px
+// source text near 13px.
 const WIDE_LAYOUT_MIN = 720
-const THREE_COLUMN_MIN = 1120
+const THREE_COLUMN_MIN = 1088
 
 const root = ref<HTMLElement>()
 const snapshot = ref<OffersSnapshot>()
