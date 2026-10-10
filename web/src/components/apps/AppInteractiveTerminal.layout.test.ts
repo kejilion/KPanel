@@ -33,7 +33,7 @@ describe('interactive task terminal layout', () => {
       /\.interactive-terminal__screen :deep\(\.xterm\)\s*\{[^}]*box-sizing:\s*border-box;[^}]*height:\s*100%;[^}]*padding:\s*6px 8px 4px;[^}]*touch-action:\s*none;/,
     )
     expect(terminalSource).toMatch(
-      /\.interactive-terminal__screen :deep\(\.xterm-viewport\)\s*\{[^}]*background:\s*var\(--terminal-background\);/,
+      /\.interactive-terminal__screen :deep\(\.xterm-viewport\)\s*\{[^}]*background:\s*transparent;/,
     )
   })
 

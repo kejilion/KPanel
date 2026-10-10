@@ -500,6 +500,7 @@ onMounted(() => {
     fontSize: 13,
     lineHeight: 1.25,
     scrollback: 5000,
+    allowTransparency: true,
     theme: host.value ? readTerminalTheme(host.value) : undefined,
   })
   fitAddon = new FitAddon()
@@ -738,6 +739,9 @@ onBeforeUnmount(() => {
   padding: 0;
 }
 
+.interactive-terminal__screen { --terminal-canvas-background:#00000000; --terminal-wallpaper-veil:color-mix(in srgb,var(--terminal-shell-background,#0b1214) 84%,transparent); background:linear-gradient(var(--terminal-wallpaper-veil),var(--terminal-wallpaper-veil)),var(--classic-wallpaper-image,url('/wallpapers/kpanel-desktop.webp')) var(--desktop-wallpaper-position,center) / cover no-repeat; }
+:global(:root[data-wallpaper-bright] .interactive-terminal__screen) { --terminal-wallpaper-veil:color-mix(in srgb,var(--terminal-shell-background,#0b1214) 94%,transparent); }
+
 .interactive-terminal__screen :deep(.xterm) {
   box-sizing: border-box;
   height: 100%;
@@ -748,11 +752,15 @@ onBeforeUnmount(() => {
 .interactive-terminal__screen :deep(.xterm-viewport) {
   overflow-y: scroll !important;
   overscroll-behavior: contain;
-  background: var(--terminal-background);
+  background: transparent;
 }
 
 .interactive-terminal__screen :deep(.xterm-scrollable-element) {
   overscroll-behavior: contain;
+}
+
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active) {
+  .interactive-terminal__screen { background:var(--terminal-shell-background,#0b1214); }
 }
 
 .interactive-terminal.is-compact .interactive-terminal__screen {
