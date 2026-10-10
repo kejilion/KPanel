@@ -1926,10 +1926,10 @@ export const api = {
       request<TerminalQuickCommands>('/terminal-commands', { signal }),
     updateCommands: (body: TerminalQuickCommandsUpdate): Promise<TerminalQuickCommands> =>
       request<TerminalQuickCommands>('/terminal-commands', { method: 'PUT', body }),
-    open: (hostId: string, rows: number, columns: number): Promise<TerminalSession> =>
+    open: (hostId: string, rows: number, columns: number, container?: { containerId: string; resourceVersion: string }): Promise<TerminalSession> =>
       request<TerminalSession>('/terminal-sessions', {
         method: 'POST',
-        body: { hostId, rows, columns },
+        body: { hostId, rows, columns, ...container },
       }),
     output: (
       sessionId: string,

@@ -26,10 +26,11 @@ const (
 )
 
 var (
-	ErrNotFound = errors.New("terminal session not found")
-	ErrLimit    = errors.New("terminal session limit reached")
-	ErrClosed   = errors.New("terminal session is closed")
-	ErrOffset   = errors.New("terminal output offset is invalid")
+	ErrNotFound       = errors.New("terminal session not found")
+	ErrLimit          = errors.New("terminal session limit reached")
+	ErrClosed         = errors.New("terminal session is closed")
+	ErrOffset         = errors.New("terminal output offset is invalid")
+	ErrCleanupPending = errors.New("terminal process cleanup is pending")
 )
 
 type Process interface {
@@ -279,6 +280,15 @@ func (process *transientTerminalProcess) Kill() error {
 }
 
 func (m *Manager) Open(owner string, rows, columns uint16) (Snapshot, error) {
+	return m.OpenWithStarter(owner, rows, columns, m.config.Starter)
+}
+
+// OpenWithStarter uses the same ownership, quotas and lifecycle for a fixed
+// backend-selected terminal process. The starter is never supplied over HTTP.
+func (m *Manager) OpenWithStarter(owner string, rows, columns uint16, start Starter) (Snapshot, error) {
+	if start == nil {
+		return Snapshot{}, errors.New("terminal starter is required")
+	}
 	owner = strings.TrimSpace(owner)
 	if owner == "" || rows == 0 || columns == 0 || rows > 500 || columns > 1000 {
 		return Snapshot{}, errors.New("invalid terminal session request")
@@ -304,45 +314,43 @@ func (m *Manager) Open(owner string, rows, columns uint16) (Snapshot, error) {
 		m.mu.Unlock()
 		return Snapshot{}, ErrLimit
 	}
+	id, err := randomID()
+	if err != nil {
+		m.mu.Unlock()
+		return Snapshot{}, err
+	}
 	// The spawn (fork + systemd-run) can take tens of milliseconds; run it
 	// without mu so every other session's Input/Output/Resize stays live.
 	// busy-visibility is preserved through m.spawning below.
 	m.spawning = true
 	m.mu.Unlock()
-	process, spawnErr := m.config.Starter(rows, columns)
+	process, spawnErr := start(rows, columns)
 	m.mu.Lock()
 	m.spawning = false
 	closed := m.closed
 	m.mu.Unlock()
-	if spawnErr != nil {
-		if process != nil {
-			_ = process.Close()
-			_ = process.Kill()
-		}
-		return Snapshot{}, spawnErr
-	}
-	if closed {
-		_ = process.Close()
-		_ = process.Kill()
-		return Snapshot{}, ErrClosed
-	}
-	id, err := randomID()
-	if err != nil {
-		_ = process.Close()
-		_ = process.Kill()
-		return Snapshot{}, err
-	}
 	now := m.config.Now().UTC()
 	item := &session{id: id, owner: owner, process: process, notify: make(chan struct{}), inputGate: make(chan struct{}, 1), createdAt: now, updatedAt: now}
 	m.mu.Lock()
-	if m.closed {
+	closed = closed || m.closed
+	if spawnErr == nil && closed {
+		spawnErr = ErrClosed
+	}
+	if process == nil {
 		m.mu.Unlock()
-		_ = process.Close()
-		_ = process.Kill()
-		return Snapshot{}, ErrClosed
+		if spawnErr == nil {
+			spawnErr = errors.New("terminal starter returned no process")
+		}
+		return Snapshot{}, spawnErr
 	}
 	m.sessions[id] = item
 	m.mu.Unlock()
+	if spawnErr != nil {
+		// A started process whose cleanup fails still occupies the same owner
+		// and global capacity. The reaper retries it even though Open failed.
+		_ = m.Close(owner, id)
+		return Snapshot{}, spawnErr
+	}
 	go m.capture(item)
 	return item.snapshot(), nil
 }
@@ -370,6 +378,7 @@ func (m *Manager) Busy() bool {
 
 func (m *Manager) capture(item *session) {
 	buffer := make([]byte, 32<<10)
+	var readErr error
 	for {
 		read, err := item.process.Read(buffer)
 		if read > 0 {
@@ -377,12 +386,27 @@ func (m *Manager) capture(item *session) {
 		}
 		if err != nil {
 			if !hostpty.IsEnd(err) && !errors.Is(err, os.ErrClosed) {
-				item.setExit(err, m.config.Now().UTC())
+				readErr = err
 			}
 			break
 		}
 	}
 	err := item.process.Wait()
+	if errors.Is(err, ErrCleanupPending) {
+		item.mu.Lock()
+		pending := !item.closed
+		if pending {
+			item.closeFailed = true
+		}
+		item.mu.Unlock()
+		if pending {
+			item.append([]byte("\r\nTerminal disconnected; process cleanup will be retried.\r\n"), m.config.BufferBytes, m.config.Now().UTC())
+		}
+		return
+	}
+	if err == nil {
+		err = readErr
+	}
 	item.setExit(err, m.config.Now().UTC())
 }
 
@@ -433,7 +457,11 @@ func (m *Manager) InputContext(ctx context.Context, owner, id string, data []byt
 	}
 	defer func() { <-item.inputGate }()
 	item.mu.Lock()
-	if item.closed || item.exitedAt != nil || item.closeFailed {
+	if item.closeFailed && !item.closed {
+		item.mu.Unlock()
+		return ErrCleanupPending
+	}
+	if item.closed || item.exitedAt != nil {
 		item.mu.Unlock()
 		return ErrClosed
 	}
@@ -477,6 +505,9 @@ func (m *Manager) Resize(owner, id string, rows, columns uint16) error {
 	}
 	item.mu.Lock()
 	defer item.mu.Unlock()
+	if item.closeFailed && !item.closed {
+		return ErrCleanupPending
+	}
 	if item.closed || item.exitedAt != nil {
 		return ErrClosed
 	}
@@ -560,7 +591,7 @@ func (m *Manager) reap(now time.Time) {
 		finished := item.closed || (item.exitedAt != nil && !item.closeFailed)
 		if finished && now.Sub(item.updatedAt) >= 5*time.Minute {
 			delete(m.sessions, id)
-		} else if inactive && !finished {
+		} else if (inactive || item.closeFailed) && !finished {
 			stale = append(stale, staleSession{owner: item.owner, id: id})
 		}
 		item.mu.Unlock()
