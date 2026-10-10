@@ -33,7 +33,7 @@ export function readTerminalTheme(element: Element): ITheme {
   const selectionBackground = terminalColor(style, '--brand-soft', terminalColorFallbacks.selection)
 
   return {
-    background,
+    background: terminalColor(style, '--terminal-canvas-background', background),
     foreground: terminalColor(style, '--terminal-shell-text', terminalColorFallbacks.foreground),
     cursor: terminalColor(style, '--brand', terminalColorFallbacks.cursor),
     cursorAccent: background,
