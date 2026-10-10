@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 1,
+  "run_id": "run-33",
+  "run_status": "incomplete",
+  "profile": "quick",
+  "scope_mode": "scoped",
+  "scope_complete": false,
+  "global_coverage_complete": false,
+  "risk_acceptance": null,
+  "risk_closed": false,
+  "repo": "KPanel",
+  "source_ref": "4884b5afa78a311b76dc243986292a58ddba3ff8",
+  "source_tree": "5bf89b98c73e1b0e2edfec2ca184a2c64326ae9b",
+  "source_dirty": false,
+  "comparison_base": "4c0694aa8e02e46145a775707b8d5a0355f7ce10",
+  "selected_scope_commits": [
+    "f9ab879482cf3f9cc2f8fdfd499de8c91f3f4372",
+    "223255f5d44d048135d5f5c0931300cb0067307d"
+  ],
+  "scope_paths": [
+    "internal/offers",
+    "internal/panel/offers.go",
+    "internal/panel/server.go",
+    "internal/panel/cluster.go",
+    "internal/desktopworkspace/workspace.go",
+    "internal/remotedownload/client.go"
+  ],
+  "governance_ref": "d11b1aca7989e50a0ed49ad5bda6d40262d358ff",
+  "skill_source": "https://github.com/cloudflare/security-audit-skill",
+  "skill_commit": "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8",
+  "validation_mode": "source-only",
+  "execution_policy": "source-only-no-target-execution",
+  "target_code_execution": false,
+  "production": false,
+  "production_connections": false,
+  "execution_configuration": {
+    "model": "gpt-6-luna",
+    "reasoning_effort": "max",
+    "applies_to": "Dedicated audit parent and all delegated audit agents; discovery and validation require different agents"
+  },
+  "budget": {
+    "max_wall_seconds": 2100,
+    "max_agent_invocations": 20,
+    "unique_agents": 9,
+    "agent_invocations": 10,
+    "started_at_utc": null,
+    "earliest_reliable_checkpoint_utc": "2026-10-10T10:41:44Z",
+    "budget_deadline_utc": "2026-10-10T11:16:44Z",
+    "measured_wall_seconds_from_checkpoint": 2100,
+    "actual_total_wall_seconds": null,
+    "tokens": null,
+    "cost": null
+  },
+  "completion_scope": "Partial source-only hunter summaries for fixed-origin egress, manifest/image validation, authenticated Panel/media and cache lifecycle. Browser consumer and desktop state units interrupted. No completed scoped or global coverage is claimed.",
+  "unfinished": [
+    "browser consumer hunter",
+    "desktop hidden-state hunter",
+    "post-wave coverage critic",
+    "independent candidate verifier",
+    "Phase-5 record review",
+    "final findings validation",
+    "terminal coverage validation",
+    "comparison against parent repair commit"
+  ],
+  "pending_candidates": [
+    {
+      "fingerprint": "offers.cache.orphan-growth-on-failed-refresh",
+      "status": "needs_validation",
+      "severity": null,
+      "independently_validated": false,
+      "prerequisites_verified": false,
+      "repair_verified_by_this_audit": false
+    }
+  ],
+  "parent_repair": {
+    "commit": "080cb99f6d1907b1f92c62f187e4436616631d9b",
+    "disposition": "Independent release source review added failed-refresh object cleanup and a regression test. This audit did not compare or validate that repair; no security finding is closed."
+  },
+  "validators": {
+    "assignment_ledger": "passed: seven units before hunter outcomes; structural validation only",
+    "terminal_coverage": "not_run",
+    "findings": "not_run",
+    "runner_image": "sha256:20667a9f1fad6590219ba8d8acdabc09a49f8683d4a877b847df17d28b83f8fb",
+    "network": "none",
+    "uid": 65534,
+    "memory_bytes": 134217728,
+    "cpu_limit": 1,
+    "root_readonly": true,
+    "capabilities": "dropped"
+  },
+  "evidence": {
+    "raw_metadata_sha256": "b1fe64542957134b501cf72b50259811af4d70b403a6f423897f8fd9ccf5edc4",
+    "terminal_status_sha256": "f818b318755cdbb98f992ab94439438b485584f3acfe2bf94d2e02fa0f95beb7",
+    "retention_summary_sha256": "578f55feea7745935e38a5006314cebfc2763cbf12f588e79788dde3e15542f6",
+    "retained_snapshot_sha256": "a62fe10a59bbc696884988f2d9d267694e07ecc8a08e02b5bb0604c1b6884d53",
+    "hunter_originals": "not exported; completed task returns are summaries, not verbatim original captures",
+    "first_failed_validator_raw": "not captured; recovery note and task transcript retained",
+    "disclosure": "Minimal interruption and provenance metadata only. Private paths, detailed unconfirmed attack instructions and agent identifiers excluded."
+  },
+  "follow_up": {
+    "owner": "KPanel security audit maintainer",
+    "review_by": "2026-10-15",
+    "exit_conditions": "Separately budgeted completion of unfinished units, independent validation, critic and Phase-5 records with pinned restricted validators before stable promotion. Existing run-31/32 and out-of-scope needs_validation leads remain unchanged."
+  }
+}
