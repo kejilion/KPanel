@@ -565,7 +565,7 @@ describe('visual rhythm contract', () => {
       'src/views/AppsView.vue': 5,
       'src/views/ClusterShareView.vue': 5,
       'src/views/ClusterView.vue': 1,
-      'src/views/DiagnosticsView.vue': 13,
+      'src/views/DiagnosticsView.vue': 1,
       'src/views/DockerView.vue': 15,
       'src/views/EnvironmentView.vue': 1,
       'src/views/FileShareView.vue': 1,

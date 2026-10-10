@@ -140,6 +140,7 @@ body:has(.classic-backdrop) {
 :root[data-classic-wallpaper='clear'] .app-shell:has(.classic-backdrop) .page-content :where(
   .diagnostic-result.is-overview,
   .diagnostic-overview,
+  .diagnostic-launch,
   .file-row--entry:not(:hover, :focus-visible, .file-row--selected, .file-row--drop-target)
 ) {
   background: transparent;

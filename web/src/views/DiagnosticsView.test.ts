@@ -3,7 +3,7 @@ import { createSSRApp, nextTick, ref, ssrContextKey, type ComputedRef, type Ref 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import DiagnosticsView from './DiagnosticsView.vue'
 import { desktopWindowActiveKey } from '@/lib/desktopRouteKeys'
-import type { DiagnosticCheck, DiagnosticJob } from '@/types/api'
+import type { DiagnosticCatalog, DiagnosticCheck, DiagnosticJob } from '@/types/api'
 
 const mocks = vi.hoisted(() => ({
   job: vi.fn(),
@@ -29,7 +29,14 @@ vi.mock('@/stores/toast', () => ({
   }),
 }))
 
+interface MetricParts {
+  amount: string
+  unit: string
+  pending: boolean
+}
+
 interface DiagnosticBindings {
+  catalog: Ref<DiagnosticCatalog | undefined>
   jobs: Ref<DiagnosticJob[]>
   activeJob: Ref<DiagnosticJob | undefined>
   runningJob: Ref<DiagnosticJob | undefined>
@@ -39,6 +46,8 @@ interface DiagnosticBindings {
   refreshJob: (id: string) => Promise<void>
   startPolling: (job: DiagnosticJob) => void
   selectCheck: (check: DiagnosticCheck) => void
+  reportMetrics: ComputedRef<Record<'cpu' | 'memory' | 'diskRead' | 'diskWrite' | 'latency' | 'download' | 'upload', MetricParts>>
+  scoreMeterValue: ComputedRef<number | undefined>
 }
 
 function setupView(windowActive?: Ref<boolean>): DiagnosticBindings {
@@ -197,5 +206,67 @@ describe('DiagnosticsView polling', () => {
     await nextTick()
 
     expect(mocks.job).toHaveBeenCalledOnce()
+  })
+})
+
+describe('DiagnosticsView report values', () => {
+  const nativeCheck: DiagnosticCheck = {
+    id: 'native-comprehensive',
+    category: 'core',
+    name: 'KPanel 核心综合体检',
+    description: '原生综合体检',
+    sourceUrl: '',
+    provider: 'native',
+    estimatedMinutes: 3,
+    impact: 'network',
+  }
+
+  function nativeJob(overrides: Partial<DiagnosticJob> = {}): DiagnosticJob {
+    return {
+      ...runningJob(),
+      checkId: nativeCheck.id,
+      checkName: nativeCheck.name,
+      category: nativeCheck.category,
+      sourceUrl: '',
+      provider: 'native',
+      ...overrides,
+    }
+  }
+
+  it('splits amounts from units, keeps non-numeric values whole and marks missing values pending', () => {
+    const view = setupView()
+    view.catalog.value = { categories: [], items: [nativeCheck] }
+    view.jobs.value = [nativeJob({
+      status: 'succeeded',
+      progress: 100,
+      summary: {
+        parser: 'kpanel-native-v1',
+        dimensions: {
+          performance: { metrics: [
+            { key: 'cpu_score', value: '1842 KPS' },
+            { key: 'memory_score', value: 'N/A' },
+            { key: 'disk_write', value: '486.00 MiB/s' },
+          ] },
+          latency: { metrics: [{ key: 'average', value: '38.24ms' }] },
+        },
+      },
+    })]
+
+    expect(view.reportMetrics.value.cpu).toEqual({ amount: '1842', unit: 'KPS', pending: false })
+    expect(view.reportMetrics.value.diskWrite).toEqual({ amount: '486.00', unit: 'MiB/s', pending: false })
+    expect(view.reportMetrics.value.latency).toEqual({ amount: '38.24', unit: 'ms', pending: false })
+    expect(view.reportMetrics.value.memory).toEqual({ amount: 'N/A', unit: '', pending: false })
+    expect(view.reportMetrics.value.upload).toEqual({ amount: '等待检测', unit: '', pending: true })
+  })
+
+  it('fills the total score bar with live progress while the benchmark runs', () => {
+    const view = setupView()
+    view.catalog.value = { categories: [], items: [nativeCheck] }
+    view.jobs.value = [nativeJob({ status: 'running', progress: 42 })]
+
+    expect(view.scoreMeterValue.value).toBe(42)
+
+    view.jobs.value = [nativeJob({ status: 'failed', progress: 60 })]
+    expect(view.scoreMeterValue.value).toBeUndefined()
   })
 })

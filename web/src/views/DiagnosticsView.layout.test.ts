@@ -121,52 +121,52 @@ describe('diagnostics workspace layout', () => {
     expect(diagnosticsSource).not.toContain('class="diagnostic-score-route"')
     expect(diagnosticsSource).not.toContain('class="diagnostic-score-dimensions"')
     expect(diagnosticsSource).toMatch(
-      /\.diagnostic-score-hero--simple\s*\{[^}]*grid-template-columns:\s*minmax\(150px, 170px\) minmax\(280px, 360px\);[^}]*justify-content:\s*center;/,
+      /\.diagnostic-score-hero\s*\{[^}]*grid-template-columns:\s*minmax\(180px, 220px\) minmax\(0, 1fr\);/,
     )
     expect(diagnosticsSource).toContain('class="diagnostic-report-section__body"')
     expect(diagnosticsSource).toMatch(/\.diagnostic-report-card\s*\{[^}]*min-height:\s*96px;/)
   })
 
-  it('keeps scores at section level instead of repeating them on metric cards', () => {
-    expect(diagnosticsSource).toContain('class="diagnostic-report-section__score"')
-    expect(diagnosticsSource).not.toContain('class="diagnostic-report-card__score"')
+  it('draws the total and each section score as a bar beside the number', () => {
+    expect(diagnosticsSource).toContain('<b :style="meterStyle(scoreMeterValue)" />')
+    expect(diagnosticsSource).toContain('<b :style="meterStyle(performanceScore)" />')
+    expect(diagnosticsSource).toContain('<b :style="meterStyle(networkScore)" />')
+    expect(diagnosticsSource.match(/class="diagnostic-score-meter" aria-hidden="true"/g)).toHaveLength(3)
+    expect(diagnosticsSource).toMatch(
+      /\.diagnostic-score-meter b\s*\{[^}]*transition:\s*width var\(--motion-duration-base\) var\(--motion-ease-standard\);/,
+    )
+    expect(diagnosticsSource).toMatch(
+      /\.diagnostic-report-section__score \.diagnostic-score-meter\s*\{[^}]*--diagnostic-meter-fill:\s*var\(--diagnostic-section-accent\);/,
+    )
   })
 
   it('keeps three metrics in one scan line and gives phone cards a readable stack', () => {
     expect(diagnosticsSource).toMatch(
-      /\.diagnostic-report-card-grid--performance,[\s\S]*?\.diagnostic-report-card-grid--network\s*\{[^}]*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\);/,
+      /\.diagnostic-report-card-grid--performance,\s*\.diagnostic-report-card-grid--network,\s*\.diagnostic-report-identity\s*\{[^}]*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\);/,
     )
     expect(diagnosticsSource).toMatch(
-      /@container diagnostic-result \(max-width: 520px\)[\s\S]*?\.diagnostic-report-card-grid--performance,[\s\S]*?\.diagnostic-report-card-grid--network\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);/,
-    )
-    expect(diagnosticsSource).toMatch(
-      /@container diagnostic-result \(max-width: 520px\)[\s\S]*?\.diagnostic-report-card\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto;[^}]*min-height:\s*92px;/,
-    )
-    expect(diagnosticsSource).toMatch(
-      /@container diagnostic-result \(max-width: 520px\)[\s\S]*?\.diagnostic-report-card > header\s*\{[^}]*grid-column:\s*1 \/ -1;/,
+      /@container diagnostic-result \(max-width: 520px\)[\s\S]*?\.diagnostic-report-card-grid--performance,\s*\.diagnostic-report-card-grid--network,\s*\.diagnostic-report-identity\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);/,
     )
   })
 
-  it('uses a section rail on wide reports and switches identity data to one row per item on phones', () => {
+  it('uses a section rail on wide reports', () => {
     expect(diagnosticsSource).toMatch(
       /@container diagnostic-result \(min-width: 1040px\)[\s\S]*?\.diagnostic-report-section\s*\{[^}]*grid-template-columns:\s*minmax\(176px, \.2fr\) minmax\(0, \.8fr\);/,
     )
     expect(diagnosticsSource).toMatch(
-      /@container diagnostic-result \(max-width: 520px\)[\s\S]*?\.diagnostic-report-identity\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);/,
-    )
-    expect(diagnosticsSource).toMatch(
-      /@container diagnostic-result \(max-width: 520px\)[\s\S]*?\.diagnostic-report-identity > div \+ div\s*\{[^}]*border-left:\s*0;[^}]*border-top:\s*1px solid var\(--border\);/,
+      /@container diagnostic-result \(min-width: 1040px\)[\s\S]*?\.diagnostic-report-section__header\s*\{[^}]*border-right: 1px solid var\(--border\);[^}]*border-bottom: 0;/,
     )
   })
 
-  it('uses three equal network identity columns aligned with the three metric cards', () => {
+  it('sets report tiles flush in each section with grid-gap dividers instead of nested boxes', () => {
     expect(diagnosticsSource).not.toContain('<span>出口线路</span>')
     expect(diagnosticsSource).toMatch(
-      /\.diagnostic-report-identity\s*\{[^}]*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\);/,
+      /\.diagnostic-report-card-grid,\s*\.diagnostic-report-identity\s*\{[^}]*gap:\s*1px;[^}]*background:\s*var\(--border\);/,
     )
     expect(diagnosticsSource).toMatch(
-      /\.diagnostic-report-card-grid--network\s*\{[^}]*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\);/,
+      /\.diagnostic-report-section\.is-network \.diagnostic-report-section__body\s*\{[^}]*gap:\s*1px;[^}]*background:\s*var\(--border\);/,
     )
+    expect(diagnosticsSource).not.toMatch(/\.diagnostic-report-card-grid\s*\{[^}]*border:/)
   })
 
   it('makes performance and network report blocks visibly distinct', () => {
@@ -176,75 +176,53 @@ describe('diagnostics workspace layout', () => {
     expect(diagnosticsSource).toContain('.diagnostic-report-section.is-network {')
     expect(diagnosticsSource).toContain('--diagnostic-section-accent: var(--primary);')
     expect(diagnosticsSource).toMatch(
-      /\.diagnostic-report-section__header\s*\{[^}]*background: color-mix\(in srgb, var\(--surface-subtle\) 56%, var\(--surface\)\);[^}]*border-bottom: 1px solid var\(--border-strong\);/,
+      /\.diagnostic-report-section__header\s*\{[^}]*background: color-mix\(in srgb, var\(--diagnostic-section-accent\) 5%, var\(--surface-raised\)\);[^}]*border-bottom: 1px solid var\(--border\);/,
     )
     expect(diagnosticsSource).toMatch(
-      /\.diagnostic-report-card-grid\s*\{[^}]*background: var\(--border-strong\);[^}]*border: 1px solid var\(--border-strong\);/,
-    )
-    expect(diagnosticsSource).toMatch(
-      /@container diagnostic-result \(min-width: 1040px\)[\s\S]*?\.diagnostic-report-section__header\s*\{[^}]*border-right: 1px solid var\(--border-strong\);[^}]*border-bottom: 0;/,
+      /\.diagnostic-report-section__icon\s*\{[^}]*color:\s*var\(--diagnostic-section-accent\);/,
     )
   })
 
   it('gives wide network reports equal-height identity and metric layers', () => {
     expect(diagnosticsSource).toMatch(
-      /@container diagnostic-result \(min-width: 521px\)[\s\S]*?\.diagnostic-report-section\.is-network \.diagnostic-report-section__body\s*\{[^}]*grid-template-rows:\s*repeat\(2, minmax\(120px, auto\)\);/,
+      /@container diagnostic-result \(min-width: 521px\)[\s\S]*?\.diagnostic-report-section\.is-network \.diagnostic-report-section__body\s*\{[^}]*grid-template-rows:\s*repeat\(2, minmax\(120px, 1fr\)\);/,
     )
     expect(diagnosticsSource).toMatch(
-      /@container diagnostic-result \(min-width: 521px\)[\s\S]*?\.diagnostic-report-section\.is-network \.diagnostic-report-identity\s*\{[^}]*height:\s*100%;[^}]*margin-bottom:\s*0;/,
-    )
-    expect(diagnosticsSource).toMatch(
-      /@container diagnostic-result \(min-width: 521px\)[\s\S]*?\.diagnostic-report-section\.is-network \.diagnostic-report-card-grid--network\s*\{[^}]*height:\s*100%;/,
+      /@container diagnostic-result \(min-width: 521px\)[\s\S]*?\.diagnostic-report-section\.is-network \.diagnostic-report-identity,\s*\.diagnostic-report-section\.is-network \.diagnostic-report-card-grid--network\s*\{[^}]*height:\s*100%;/,
     )
   })
 
-  it('keeps phone network identity rows and metric cards on one common height', () => {
+  it('gives identity data the same tile anatomy, padding and phone height as metric cards', () => {
     expect(diagnosticsSource).toMatch(
-      /@container diagnostic-result \(max-width: 520px\)[\s\S]*?\.diagnostic-report-section\.is-network \.diagnostic-report-identity > div,[\s\S]*?\.diagnostic-report-section\.is-network \.diagnostic-report-card-grid--network > \.diagnostic-report-card\s*\{[^}]*min-height:\s*106px;/,
+      /\.diagnostic-report-card,\s*\.diagnostic-report-identity > div\s*\{[^}]*display:\s*flex;[^}]*flex-direction:\s*column;[^}]*padding:\s*16px 18px;/,
+    )
+    expect(diagnosticsSource).toMatch(
+      /@container diagnostic-result \(max-width: 520px\)[\s\S]*?\.diagnostic-report-card,\s*\.diagnostic-report-identity > div\s*\{[^}]*min-height:\s*92px;[^}]*padding:\s*14px;/,
     )
   })
 
-  it('gives performance single values the same data slot as disk pairs', () => {
+  it('rests every value on the tile floor so a row of tiles shares one baseline', () => {
     expect(diagnosticsSource).toMatch(
-      /\.diagnostic-report-card-grid--performance \.diagnostic-report-card__value,[\s\S]*?\.diagnostic-report-card-grid--performance \.diagnostic-report-pair\s*\{[^}]*min-height:\s*41px;[^}]*margin-top:\s*11px;/,
-    )
-    expect(diagnosticsSource).toMatch(
-      /\.diagnostic-report-card-grid--performance \.diagnostic-report-card__value\s*\{[^}]*display:\s*grid;[^}]*align-content:\s*end;/,
-    )
-    expect(diagnosticsSource).toMatch(
-      /@container diagnostic-result \(max-width: 520px\)[\s\S]*?\.diagnostic-report-card-grid--performance > \.diagnostic-report-card\s*\{[^}]*min-height:\s*106px;/,
-    )
-    expect(diagnosticsSource).toMatch(
-      /@container diagnostic-result \(max-width: 520px\)[\s\S]*?\.diagnostic-report-card-grid--performance \.diagnostic-report-card__value,[\s\S]*?\.diagnostic-report-card-grid--performance \.diagnostic-report-pair\s*\{[^}]*margin-top:\s*0;/,
+      /\.diagnostic-report-card__value,\s*\.diagnostic-report-pair,\s*\.diagnostic-report-card__data-row,\s*\.diagnostic-report-identity strong\s*\{[^}]*margin-top:\s*auto;/,
     )
   })
 
-  it('gives network single values the same data slot as bandwidth pairs', () => {
+  it('lists pairs as label/value rows while three tiles are too narrow for two columns', () => {
     expect(diagnosticsSource).toMatch(
-      /\.diagnostic-report-card-grid--network \.diagnostic-report-card__value,[\s\S]*?\.diagnostic-report-card-grid--network \.diagnostic-report-pair,[\s\S]*?\.diagnostic-report-card-grid--network \.diagnostic-report-risk\s*\{[^}]*min-height:\s*41px;[^}]*margin-top:\s*11px;/,
-    )
-    expect(diagnosticsSource).toMatch(
-      /\.diagnostic-report-card-grid--network \.diagnostic-report-card__value\s*\{[^}]*display:\s*grid;[^}]*align-content:\s*end;/,
-    )
-    expect(diagnosticsSource).toMatch(
-      /@container diagnostic-result \(max-width: 520px\)[\s\S]*?\.diagnostic-report-card-grid--network \.diagnostic-report-card__value,[\s\S]*?\.diagnostic-report-card-grid--network \.diagnostic-report-pair,[\s\S]*?\.diagnostic-report-card-grid--network \.diagnostic-report-risk\s*\{[^}]*margin-top:\s*0;/,
+      /@container diagnostic-result \(min-width: 521px\) and \(max-width: 860px\)[\s\S]*?\.diagnostic-report-pair\s*\{[^}]*grid-template-columns:\s*auto minmax\(0, 1fr\);[\s\S]*?\.diagnostic-report-pair > div\s*\{[^}]*display:\s*contents;/,
     )
   })
 
-  it('keeps latency and IP quality data on one line', () => {
+  it('keeps latency and IP quality values whole and lifts their details above when space runs out', () => {
     expect(diagnosticsSource.match(/class="diagnostic-report-card__data-row"/g)?.length).toBe(2)
     expect(diagnosticsSource).toMatch(
-      /\.diagnostic-report-card__data-row\s*\{[^}]*display:\s*flex;[^}]*min-height:\s*41px;[^}]*align-items:\s*flex-end;/,
+      /\.diagnostic-report-card__data-row\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*wrap-reverse;[^}]*align-items:\s*baseline;/,
     )
     expect(diagnosticsSource).toMatch(
-      /\.diagnostic-report-card__data-row > \.diagnostic-report-card__meta\s*\{[^}]*flex-wrap:\s*nowrap;[^}]*overflow:\s*hidden;/,
+      /\.diagnostic-report-card__data-row > \.diagnostic-report-card__value\s*\{[^}]*flex:\s*0 0 auto;/,
     )
-    expect(diagnosticsSource).toMatch(
-      /\.diagnostic-report-card__data-row > \.diagnostic-report-risk\s*\{[^}]*flex:\s*1 1 auto;[^}]*flex-wrap:\s*nowrap;[^}]*overflow:\s*hidden;/,
-    )
-    expect(diagnosticsSource).toMatch(
-      /@container diagnostic-result \(max-width: 520px\)[\s\S]*?\.diagnostic-report-card__data-row\s*\{[^}]*grid-column:\s*1 \/ -1;[^}]*margin-top:\s*0;/,
-    )
+    expect(diagnosticsSource).toMatch(/\.diagnostic-report-risk\s*\{[^}]*flex-wrap:\s*wrap;/)
+    expect(diagnosticsSource).not.toMatch(/\.diagnostic-report-card__data-row[^{]*\{[^}]*text-overflow:\s*ellipsis;/)
   })
 
   it('merges IP quality details into one group and omits risk tags', () => {
@@ -265,22 +243,19 @@ describe('diagnostics workspace layout', () => {
     expect(diagnosticsSource).toContain('<Network :size="17" />')
     expect(diagnosticsSource).toContain('<MapPin :size="17" />')
     expect(diagnosticsSource).toMatch(
-      /\.diagnostic-report-card__heading > span,[\s\S]*?\.diagnostic-report-identity__heading > span\s*\{[^}]*width:\s*30px;[^}]*height:\s*30px;[^}]*border-radius:\s*9px;/,
+      /\.diagnostic-report-card__heading > span,[\s\S]*?\.diagnostic-report-identity__heading > span\s*\{[^}]*width:\s*30px;[^}]*height:\s*30px;[^}]*border-radius:\s*var\(--radius-sm\);/,
     )
   })
 
   it('keeps score and copy side by side on narrow result surfaces', () => {
     expect(diagnosticsSource).toMatch(
-      /@container diagnostic-result \(max-width: 560px\)[\s\S]*?\.diagnostic-score-hero--simple\s*\{[\s\S]*?grid-template-columns:\s*minmax\(170px, \.42fr\) minmax\(0, \.58fr\);[\s\S]*?justify-content:\s*stretch;/,
+      /@container diagnostic-result \(max-width: 700px\)[\s\S]*?\.diagnostic-score-actions\s*\{[^}]*grid-row:\s*auto;[^}]*grid-column:\s*1;/,
     )
     expect(diagnosticsSource).toMatch(
-      /\.diagnostic-score-total\s*\{[^}]*padding:\s*14px 0 14px 50px;/,
+      /@container diagnostic-result \(max-width: 560px\)[\s\S]*?\.diagnostic-score-hero\s*\{[^}]*grid-template-columns:\s*minmax\(150px, \.42fr\) minmax\(0, \.58fr\);/,
     )
     expect(diagnosticsSource).toMatch(
-      /@container diagnostic-result \(max-width: 560px\)[\s\S]*?\.diagnostic-score-total\s*\{[\s\S]*?padding:\s*14px 0 14px 42px;/,
-    )
-    expect(diagnosticsSource).toMatch(
-      /@container diagnostic-result \(max-width: 420px\)[\s\S]*?\.diagnostic-score-hero--simple\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/,
+      /@container diagnostic-result \(max-width: 420px\)[\s\S]*?\.diagnostic-score-hero\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);/,
     )
   })
 
@@ -311,19 +286,34 @@ describe('diagnostics workspace layout', () => {
     expect(diagnosticsSource).toContain('.diagnostic-report-risk__level.is-medium')
     expect(diagnosticsSource).toContain('.diagnostic-report-risk__level.is-high')
     expect(diagnosticsSource).toMatch(
-      /\.diagnostic-report-identity strong\s*\{[^}]*font-size:\s*16px;[^}]*font-weight:\s*700;/,
+      /\.diagnostic-report-card__value,\s*\.diagnostic-report-pair strong,\s*\.diagnostic-report-identity strong\s*\{[^}]*font-size:\s*18px;[^}]*font-weight:\s*700;[^}]*font-variant-numeric:\s*tabular-nums;/,
     )
-    expect(diagnosticsSource).toMatch(/\.diagnostic-report-card__value\s*\{[^}]*font-size:\s*16px;/)
-    expect(diagnosticsSource).toMatch(/\.diagnostic-report-pair strong\s*\{[^}]*font-size:\s*16px;/)
+    expect(diagnosticsSource).toMatch(
+      /\.diagnostic-report-card__value small,\s*\.diagnostic-report-pair strong small\s*\{[^}]*font-size:\s*12px;/,
+    )
     expect(diagnosticsSource).toMatch(/\.diagnostic-report-pair span\s*\{[^}]*font-size: 12px;/)
     expect(diagnosticsSource).toMatch(/\.diagnostic-report-card__meta\s*\{[^}]*font-size: 13px;/)
     expect(diagnosticsSource).toMatch(/\.diagnostic-report-note\s*\{[^}]*font-size: 13px;/)
   })
 
-  it('uses one phone content guide for network identity and metric cards', () => {
+  it('shows missing values as quiet pending text instead of bold data', () => {
+    expect(diagnosticsSource).toContain("{ 'is-pending': reportMetrics.cpu.pending }")
+    expect(diagnosticsSource).toContain("'is-pending': !summaryValue('ip', 'public_ip')")
     expect(diagnosticsSource).toMatch(
-      /@container diagnostic-result \(max-width: 520px\)[\s\S]*?\.diagnostic-report-identity > div,[\s\S]*?\.diagnostic-report-identity > div:first-child\s*\{[^}]*padding-right:\s*12px;[^}]*padding-left:\s*12px;/,
+      /\.diagnostic-report-card__value\.is-pending,\s*\.diagnostic-report-pair strong\.is-pending,\s*\.diagnostic-report-identity strong\.is-pending\s*\{[^}]*color:\s*var\(--muted\);[^}]*font-size:\s*14px;/,
     )
+  })
+
+  it('introduces a selected check with a start action before any terminal output exists', () => {
+    expect(diagnosticsSource).toContain('class="diagnostic-launch"')
+    expect(diagnosticsSource).toContain('v-if="activeJob && !activeJob.interactive" class="diagnostic-terminal-bar"')
+    expect(diagnosticsSource).toMatch(
+      /class="diagnostic-launch__card"[\s\S]*?@click="requestCheck\(selectedCheck\)"[\s\S]*?开始体检/,
+    )
+    expect(diagnosticsSource).toMatch(
+      /\.diagnostic-launch\s*\{[^}]*overflow:\s*auto;[^}]*overscroll-behavior:\s*contain;/,
+    )
+    expect(diagnosticsSource).not.toContain('<footer v-else-if="selectedCheck">')
   })
 
   it('states that native network scores measure the server rather than the browser link', () => {
