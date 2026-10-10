@@ -31,7 +31,7 @@ func (fixtureResolver) LookupNetIP(context.Context, string, string) ([]netip.Add
 	return []netip.Addr{netip.MustParseAddr("93.184.216.34")}, nil
 }
 
-func newFixtureSeeder(t *testing.T, data []byte, info metainfo.Info) *torrent.Client {
+func newFixtureSeeder(t *testing.T, data []byte, info metainfo.Info, configure ...func(*torrent.ClientConfig)) *torrent.Client {
 	t.Helper()
 	directory := t.TempDir()
 	if err := os.WriteFile(filepath.Join(directory, info.Name), data, 0600); err != nil {
@@ -52,6 +52,9 @@ func newFixtureSeeder(t *testing.T, data []byte, info metainfo.Info) *torrent.Cl
 	cfg.MaxAllocPeerRequestDataPerConn = 64 << 10
 	cfg.PieceHashersPerTorrent = 1
 	cfg.Slogger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	for _, apply := range configure {
+		apply(cfg)
+	}
 	client, err := torrent.NewClient(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -122,7 +125,11 @@ func TestEngineRecoversZeroPayloadStartup(t *testing.T) {
 	info := testInfo(data)
 	private := true
 	info.Private = &private
-	seeder := newFixtureSeeder(t, data, info)
+	// Match the pinned library's TestingConfig writer backstop. The test
+	// isolates our 30-second recovery from an independent fixture writer stall;
+	// the first peer still withholds all payload until we actively close it.
+	fixtureWriter := func(cfg *torrent.ClientConfig) { cfg.KeepAliveTimeout = time.Millisecond }
+	seeder := newFixtureSeeder(t, data, info, fixtureWriter)
 	stalled, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -196,6 +203,7 @@ func TestEngineRecoversZeroPayloadStartup(t *testing.T) {
 	engine := NewEngine(cache, client)
 	engine.noDHT = true
 	engine.configure = func(cfg *torrent.ClientConfig) {
+		fixtureWriter(cfg)
 		cfg.HeaderObfuscationPolicy.Preferred = false
 		cfg.HeaderObfuscationPolicy.RequirePreferred = true
 	}
