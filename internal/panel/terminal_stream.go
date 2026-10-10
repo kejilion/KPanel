@@ -411,7 +411,12 @@ func (s *Server) pumpHostTerminal(ctx context.Context, stream *terminalStream, k
 			timer := time.NewTimer(terminalStreamCoalesceDelay)
 			select {
 			case <-ctx.Done():
-				timer.Stop()
+				if !timer.Stop() {
+					select {
+					case <-timer.C:
+					default:
+					}
+				}
 				return
 			case <-timer.C:
 			}
@@ -471,7 +476,12 @@ func (s *Server) coalesceJobTerminal(ctx context.Context, prefix, id string, chu
 	timer := time.NewTimer(terminalStreamCoalesceDelay)
 	select {
 	case <-ctx.Done():
-		timer.Stop()
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
 		return chunk
 	case <-timer.C:
 	}
