@@ -3897,6 +3897,11 @@ async function resetRename(): Promise<void> {
   }
 }
 
+function removeEntryMessage(entry: DesktopEntry): string {
+  if (entry.key.startsWith('nav:')) return i18n.t('desktop.removeNavFromDesktopMessage')
+  return i18n.t(entry.kind === 'app' ? 'desktop.removeAppFromDesktopMessage' : 'desktop.removeSiteFromDesktopMessage')
+}
+
 function requestRemoveNavApp(): void {
   const app = desktopApps.find((candidate) => candidate.removable && candidate.path === menuNavPath.value)
   closeContextMenu()
@@ -5514,11 +5519,7 @@ function onViewportResize(): void {
     >
       <div v-if="removingEntry" class="desktop__confirm-copy">
         <strong>{{ removingEntry.name }}</strong>
-        <p>{{ removingEntry.key.startsWith('nav:')
-          ? i18n.t('desktop.removeNavFromDesktopMessage')
-          : removingEntry.kind === 'app'
-            ? i18n.t('desktop.removeAppFromDesktopMessage')
-            : i18n.t('desktop.removeSiteFromDesktopMessage') }}</p>
+        <p>{{ removeEntryMessage(removingEntry) }}</p>
       </div>
       <template #footer>
         <button class="button button--ghost" type="button" @click="removingEntry = undefined">

@@ -137,7 +137,9 @@ func (s *Service) Snapshot(ctx context.Context, force bool) View {
 	if force && (s.forcedAt.IsZero() || now.Sub(s.forcedAt) >= ForcedRefreshInterval) {
 		s.forcedAt = now
 		wait = true
-	} else if s.cached == nil && retryDue {
+	} else if s.cached == nil && (retryDue || s.inflight != nil) {
+		// Concurrent first loads share the one download instead of
+		// reporting "unavailable" while it is still running.
 		wait = true
 	}
 	stale := s.cached != nil && now.Sub(s.cached.FetchedAt) >= RefreshInterval && retryDue
@@ -177,17 +179,18 @@ func (s *Service) refresh(done chan struct{}) {
 	} else {
 		s.lastFailed = true
 	}
+	s.mu.Unlock()
+	if err == nil {
+		// Prune while this refresh still owns the in-flight slot, so a later
+		// refresh can never write objects that this prune then deletes.
+		s.pruneObjects(state)
+	} else if !errors.Is(err, context.Canceled) {
+		slog.Warn("offers manifest refresh failed", "source", ManifestURL, "error", err)
+	}
+	s.mu.Lock()
 	s.inflight = nil
 	close(done)
-	current := s.cached
 	s.mu.Unlock()
-	if err != nil {
-		if !errors.Is(err, context.Canceled) {
-			slog.Warn("offers manifest refresh failed", "source", ManifestURL, "error", err)
-		}
-		return
-	}
-	s.pruneObjects(current)
 }
 
 // download is all-or-nothing: a manifest is adopted only after every image

@@ -226,6 +226,41 @@ func TestSnapshotWithoutCacheReportsUnavailableAndBacksOff(t *testing.T) {
 	}
 }
 
+func TestConcurrentFirstLoadsShareTheDownload(t *testing.T) {
+	origin := newFakeOrigin()
+	publish(t, origin, 10)
+	release := make(chan struct{})
+	started := make(chan struct{}, 1)
+	fetch := func(ctx context.Context, address string, limit int64) ([]byte, string, error) {
+		if address == ManifestURL {
+			select {
+			case started <- struct{}{}:
+			default:
+			}
+			<-release
+		}
+		return origin.fetch(ctx, address, limit)
+	}
+	service := Open(filepath.Join(t.TempDir(), "offers"), fetch)
+	defer service.Close()
+
+	results := make(chan View, 2)
+	go func() { results <- service.Snapshot(context.Background(), false) }()
+	<-started
+	go func() { results <- service.Snapshot(context.Background(), false) }()
+	// The second request arrives while the first download is still running.
+	time.Sleep(50 * time.Millisecond)
+	close(release)
+	for range 2 {
+		if view := <-results; view.State != StateLive || len(view.Items) != 2 {
+			t.Fatalf("concurrent first load view = %+v", view)
+		}
+	}
+	if attempts := origin.count(ManifestURL); attempts != 1 {
+		t.Fatalf("manifest downloads = %d", attempts)
+	}
+}
+
 func TestForcedRefreshIsRateLimited(t *testing.T) {
 	origin := newFakeOrigin()
 	publish(t, origin, 10)

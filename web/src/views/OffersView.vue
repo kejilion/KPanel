@@ -65,7 +65,10 @@ const wall = computed(() => items.value.filter((item) => !featured.value.include
 
 const width = ref(1200)
 const narrow = computed(() => width.value < WIDE_LAYOUT_MIN)
-const columns = computed(() => width.value >= THREE_COLUMN_MIN ? 3 : narrow.value ? 1 : 2)
+const columns = computed(() => {
+  if (width.value >= THREE_COLUMN_MIN) return 3
+  return narrow.value ? 1 : 2
+})
 /** The "more offers" tile fills the last wall row instead of leaving a hole. */
 const moreLayout = computed<'tile' | 'span' | 'bar'>(() => {
   if (columns.value === 1) return 'bar'
