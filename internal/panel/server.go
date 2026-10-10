@@ -28,7 +28,6 @@ import (
 	"github.com/kejilion/kejilion-panel/internal/auth"
 	"github.com/kejilion/kejilion-panel/internal/backup"
 	"github.com/kejilion/kejilion-panel/internal/backupremote"
-	"github.com/kejilion/kejilion-panel/internal/bittorrent"
 	"github.com/kejilion/kejilion-panel/internal/cluster"
 	"github.com/kejilion/kejilion-panel/internal/contract"
 	"github.com/kejilion/kejilion-panel/internal/desktopwallpapers"
@@ -106,12 +105,6 @@ type Server struct {
 	downloadTickets         map[[32]byte]fileDownloadTicket
 	remoteDownloadOpen      func(context.Context, string) (*http.Response, error)
 	remoteDownloadRangeOpen func(context.Context, string, remotedownload.ResumeRequest) (*http.Response, error)
-	remoteDownloadAdaptive  func(context.Context, string, *http.Response) io.ReadCloser
-	btCache                 *bittorrent.Cache
-	btDownload              func(context.Context, bittorrent.Source, bool, func(bittorrent.Progress) bool) (*bittorrent.Result, error)
-	btGate                  chan struct{}
-	// Experiment opt-in. Keep production defaults until resource/benefit gates pass.
-	fileTransferPrefetch    bool
 	remoteDownloadGate      chan struct{}
 	remoteDownloadJobs      *remotedownload.JobStore
 	remoteDownloadMu        sync.Mutex
@@ -263,12 +256,8 @@ func NewServer(config Config, authService *auth.Service, storage *store.Store, a
 		remoteDownloadCancels:   make(map[string]context.CancelCauseFunc),
 	}
 	server.hostOps = newHostOperationService(server)
-	downloadClient := remotedownload.NewClient(remotedownload.Config{MaxConnections: 4})
+	downloadClient := remotedownload.NewClient(remotedownload.Config{})
 	server.remoteDownloadOpen, server.remoteDownloadRangeOpen = downloadClient.Open, downloadClient.OpenRange
-	accelerationBudget := make(chan struct{}, 2)
-	server.remoteDownloadAdaptive = func(ctx context.Context, raw string, response *http.Response) io.ReadCloser {
-		return downloadClient.Adaptive(ctx, raw, response, accelerationBudget)
-	}
 	server.mcp = newMCPService(config.DataDir)
 	server.cluster.SetManagedOperationHandler(server.handleManagedClusterOperation, func() bool { access := server.mcp.access.Snapshot(); return access.Available && access.Enabled })
 	server.backups, err = backup.OpenManager(filepath.Join(config.DataDir, "backups"))
@@ -294,11 +283,6 @@ func NewServer(config Config, authService *auth.Service, storage *store.Store, a
 		}
 	}
 	clusterService.SetFileRelayHandler(server.federatedFileHandler())
-	server.btGate = make(chan struct{}, 1)
-	server.btCache, _ = bittorrent.OpenCache(filepath.Join(config.DataDir, "file-transfers", "bt-cache"))
-	if server.btCache != nil {
-		server.btDownload = bittorrent.NewEngine(server.btCache, downloadClient).Download
-	}
 	return server, nil
 }
 
@@ -495,9 +479,6 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		s.handleSiteIcon(w, r)
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/apps/icons/"):
 		s.handleAppIcon(w, r)
-	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/v1/sites/") &&
-		strings.HasSuffix(r.URL.Path, "/certificate-renewal"):
-		s.handleSiteCertificateRenew(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/sites":
 		s.handleSiteCreate(w, r)
 	case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/api/v1/sites/"):

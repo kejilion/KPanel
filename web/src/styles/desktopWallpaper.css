@@ -68,7 +68,7 @@ html[data-desktop-wallpaper-scene='live'] [data-desktop-loading] .desktop__auror
   inset: 0;
   content: '';
   pointer-events: none;
-  transition: opacity var(--motion-duration-ambient) var(--motion-ease-standard);
+  transition: opacity .42s cubic-bezier(.22, 1, .36, 1);
 }
 
 .desktop__wallpaper-veil::before {

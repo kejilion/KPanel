@@ -277,6 +277,11 @@ defineExpose({ open, handlePaste, handleKeyEvent, handleSelectionPointerDown })
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 6px;
+  border: 1px solid var(--border-strong, #3a4b4e);
+  border-radius: 10px;
+  color: var(--text, #e8eeee);
+  background: var(--surface, #152023);
+  box-shadow: 0 14px 36px rgb(0 0 0 / 32%);
 }
 
 .terminal-context-menu button {

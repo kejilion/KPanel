@@ -19,8 +19,8 @@
 :root.desktop-theme-transitioning .desktop__taskbar *,
 :root.desktop-theme-transitioning .desktop__icon-label {
   transition-property: color, background-color, border-color, box-shadow, opacity;
-  transition-duration: var(--motion-duration-ambient);
-  transition-timing-function: var(--motion-ease-standard);
+  transition-duration: .42s;
+  transition-timing-function: cubic-bezier(.22, 1, .36, 1);
 }
 
 html.desktop-mode-open,
@@ -42,21 +42,12 @@ body.desktop-mode-open::-webkit-scrollbar {
 }
 
 .desktop {
-  --desktop-group-surface: var(--material-panel-fill);
-  --desktop-group-border: var(--material-panel-edge);
+  --desktop-group-surface: var(--desktop-glass-strong);
+  --desktop-group-border: var(--desktop-glass-border);
   --desktop-group-text: var(--text);
   --desktop-group-muted: var(--text-soft);
   --desktop-group-hover: var(--interaction-hover);
   --desktop-group-focus: var(--brand);
-  /* Window frame (ui-visual-language 3.5): opaque, no live blur. The active
-     title bar lifts and takes a trace of the wallpaper-derived brand colour;
-     inactive frames recede to the surface step and muted ink. */
-  --desktop-titlebar-active: color-mix(in srgb, var(--surface-raised) 94%, var(--brand) 6%);
-  --desktop-titlebar-inactive: var(--surface);
-  --desktop-window-shadow-active:
-    0 2px 6px color-mix(in srgb, var(--desktop-shadow) 50%, transparent),
-    0 22px 56px var(--desktop-shadow),
-    0 0 0 1px color-mix(in srgb, var(--brand) 10%, transparent);
   position: fixed;
   z-index: 1000;
   inset: 0;
@@ -91,12 +82,12 @@ body.desktop-mode-open::-webkit-scrollbar {
   gap: 16px;
   padding: 0 8px 0 14px;
   color: var(--desktop-label);
-  background: var(--material-chrome-fill);
-  border: 1px solid var(--material-chrome-edge);
+  background: var(--desktop-glass);
+  border: 1px solid var(--desktop-glass-border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-md);
-  -webkit-backdrop-filter: var(--material-chrome-filter);
-  backdrop-filter: var(--material-chrome-filter);
+  backdrop-filter: blur(12px) saturate(120%);
+  -webkit-backdrop-filter: blur(12px) saturate(120%);
 }
 
 .desktop__identity,
@@ -354,15 +345,13 @@ body.desktop-mode-open::-webkit-scrollbar {
   color: var(--desktop-label);
 }
 
-/* Widgets rest on the wallpaper only (windows stack above them), so they take
-   the panel material: the translucent fill without a resident live blur. */
 .desktop-clock,
 .desktop-monitor,
 .desktop-service-status {
   min-width: 0;
   color: var(--desktop-label);
-  background: var(--material-panel-fill);
-  border: 1px solid var(--material-panel-edge);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-md);
 }
@@ -370,7 +359,7 @@ body.desktop-mode-open::-webkit-scrollbar {
 .desktop-clock {
   display: block;
   padding: 14px 17px 13px;
-  border-right: 1px solid var(--material-panel-edge);
+  border-right: 1px solid var(--desktop-glass-border);
 }
 
 .desktop-clock__header,
@@ -1484,7 +1473,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   height: 96px;
   place-items: start center;
   /* One coordinate space keeps first-group creation / last-group dissolution continuous. */
-  transition: transform var(--motion-duration-layout) var(--motion-ease-standard), opacity var(--motion-duration-fast) var(--motion-ease-fade), visibility var(--motion-duration-fast);
+  transition: transform 280ms cubic-bezier(.22, 1, .36, 1), opacity 160ms ease, visibility 160ms;
 }
 
 /* Keep the measurable work area mounted while its first snapshot is restored. */
@@ -1507,7 +1496,7 @@ body.desktop-mode-open::-webkit-scrollbar {
 
 /* Reveal the settled workspace together; never animate its placement or stagger icons. */
 .desktop__icons:not(.desktop__icons--restoring) {
-  animation: desktop-workspace-reveal var(--motion-duration-fast) var(--motion-ease-fade);
+  animation: desktop-workspace-reveal 180ms ease-out;
 }
 
 @keyframes desktop-workspace-reveal {
@@ -1516,10 +1505,10 @@ body.desktop-mode-open::-webkit-scrollbar {
 }
 
 .desktop-group-surface-enter-active {
-  transition: opacity var(--motion-duration-fast) var(--motion-ease-fade), scale var(--motion-duration-base) var(--motion-ease-standard) !important;
+  transition: opacity 220ms ease-out, scale 280ms cubic-bezier(.22, 1, .36, 1) !important;
 }
 .desktop-group-surface-leave-active {
-  transition: opacity var(--motion-duration-instant) var(--motion-ease-exit), scale var(--motion-duration-fast) var(--motion-ease-exit) !important;
+  transition: opacity 180ms ease-in, scale 200ms ease-in !important;
   pointer-events: none;
 }
 .desktop-group-surface-enter-from, .desktop-group-surface-leave-to { opacity: 0; scale: .97; }
@@ -1534,7 +1523,7 @@ body.desktop-mode-open::-webkit-scrollbar {
 }
 :root .desktop__icon-slot[data-group-member] {
   transform-origin: center 28px;
-  transition: transform var(--motion-duration-layout) var(--motion-ease-standard), opacity var(--motion-duration-base) var(--motion-ease-fade), visibility var(--motion-duration-layout);
+  transition: transform 280ms cubic-bezier(.22, 1, .36, 1), opacity 220ms ease, visibility 280ms;
 }
 :root .desktop__icon-slot[data-group-member] .desktop__icon {
   width: 100%; height: 100%; padding: 1px; gap: 2px;
@@ -2071,8 +2060,8 @@ body.desktop-mode-open::-webkit-scrollbar {
 
 :root:not([data-theme='dark']) .desktop__icon-label {
   color: var(--desktop-label);
-  background: var(--material-panel-fill);
-  border: 1px solid var(--material-panel-edge);
+  background: var(--desktop-glass-strong);
+  border: 1px solid var(--desktop-glass-border);
   box-shadow: 0 1px 4px var(--desktop-shadow);
   text-shadow: none;
 }
@@ -2124,15 +2113,14 @@ body.desktop-mode-open::-webkit-scrollbar {
   transform: translateY(12px) scale(.965);
   transform-origin: center 62%;
   transition:
-    left var(--motion-duration-layout) var(--motion-ease-standard),
-    top var(--motion-duration-layout) var(--motion-ease-standard),
-    width var(--motion-duration-layout) var(--motion-ease-standard),
-    height var(--motion-duration-layout) var(--motion-ease-standard),
-    border-radius var(--motion-duration-base) var(--motion-ease-fade),
-    border-color var(--motion-duration-fast) var(--motion-ease-fade),
-    box-shadow var(--motion-duration-fast) var(--motion-ease-fade),
-    opacity var(--motion-duration-fast) var(--motion-ease-fade),
-    transform var(--motion-duration-base) var(--motion-ease-standard);
+    left .25s cubic-bezier(.22, 1, .36, 1),
+    top .25s cubic-bezier(.22, 1, .36, 1),
+    width .25s cubic-bezier(.22, 1, .36, 1),
+    height .25s cubic-bezier(.22, 1, .36, 1),
+    border-radius .22s ease,
+    box-shadow .18s ease,
+    opacity .18s ease,
+    transform .22s cubic-bezier(.22, 1, .36, 1);
 }
 
 .desktop-window--open {
@@ -2149,20 +2137,16 @@ body.desktop-mode-open::-webkit-scrollbar {
   outline-offset: 2px;
 }
 
-/*
- * Focus state (ui-visual-language 3.5.6): the active window is told apart by
- * its title bar tone, title colour, border and shadow together, never by the
- * shadow alone, which vanishes against light wallpapers.
- */
 .desktop-window--focused {
   border-color: color-mix(in srgb, var(--brand) 38%, var(--border-strong));
-  box-shadow: var(--desktop-window-shadow-active);
+  box-shadow:
+    0 34px 86px var(--desktop-shadow),
+    0 10px 26px color-mix(in srgb, var(--desktop-shadow) 62%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--brand) 10%, transparent);
 }
 
 .desktop-window--gesturing {
-  transition:
-    box-shadow var(--motion-duration-fast) var(--motion-ease-fade),
-    opacity var(--motion-duration-fast) var(--motion-ease-fade);
+  transition: box-shadow .15s ease, opacity .15s ease;
   will-change: left, top, width, height;
 }
 
@@ -2257,13 +2241,9 @@ body.desktop-mode-open::-webkit-scrollbar {
   opacity: 0;
   transform: translateY(10px) scale(.965);
   pointer-events: none;
-  transition:
-    opacity var(--motion-duration-instant) var(--motion-ease-exit),
-    transform var(--motion-duration-fast) var(--motion-ease-exit);
   will-change: opacity, transform;
 }
 
-/* Inactive by default; the focused window lifts its title bar (see above). */
 .desktop-window__titlebar {
   display: grid;
   height: 42px;
@@ -2271,23 +2251,11 @@ body.desktop-mode-open::-webkit-scrollbar {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   padding: 0 0 0 13px;
-  color: var(--muted);
-  background: var(--desktop-titlebar-inactive);
+  color: var(--text-soft);
+  background: color-mix(in srgb, var(--surface-raised) 92%, var(--bg));
   border-bottom: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
   cursor: grab;
   touch-action: none;
-  transition:
-    background-color var(--motion-duration-fast) var(--motion-ease-fade),
-    color var(--motion-duration-fast) var(--motion-ease-fade);
-}
-
-.desktop-window--focused .desktop-window__titlebar {
-  color: var(--text);
-  background: var(--desktop-titlebar-active);
-}
-
-.desktop-window:not(.desktop-window--focused) .desktop-window__app-glyph {
-  opacity: .72;
 }
 
 .desktop-window__titlebar:active {
@@ -2310,8 +2278,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   height: 42px;
   place-items: center;
   padding: 0;
-  /* Follows the title bar: full ink when focused, muted when inactive. */
-  color: color-mix(in srgb, currentColor 82%, transparent);
+  color: color-mix(in srgb, var(--text) 78%, transparent);
   background: transparent;
   border: 0;
   border-radius: 0;
@@ -2368,7 +2335,6 @@ body.desktop-mode-open::-webkit-scrollbar {
   border: 1px solid rgb(255 255 255 / 13%);
   border-radius: var(--radius-sm);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 20%);
-  transition: opacity var(--motion-duration-fast) var(--motion-ease-fade);
 }
 
 .desktop-window__app-glyph--image {
@@ -2652,12 +2618,12 @@ body.desktop-mode-open::-webkit-scrollbar {
   gap: 10px;
   padding: 5px 7px;
   color: var(--desktop-label);
-  background: var(--material-chrome-fill);
-  border: 1px solid var(--material-chrome-edge);
+  background: var(--desktop-glass-strong);
+  border: 1px solid var(--desktop-glass-border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-md);
-  -webkit-backdrop-filter: var(--material-chrome-filter);
-  backdrop-filter: var(--material-chrome-filter);
+  backdrop-filter: blur(12px) saturate(120%);
+  -webkit-backdrop-filter: blur(12px) saturate(120%);
 }
 
 .desktop__taskbar-brand,
@@ -2863,12 +2829,10 @@ body.desktop-mode-open::-webkit-scrollbar {
   flex-direction: column;
   overflow: hidden;
   color: var(--text);
-  background: var(--material-overlay-fill);
-  border: 1px solid var(--material-overlay-edge);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-md);
-  -webkit-backdrop-filter: var(--material-overlay-filter);
-  backdrop-filter: var(--material-overlay-filter);
 }
 
 .desktop-start-menu__search {
@@ -3211,17 +3175,9 @@ body.desktop-mode-open::-webkit-scrollbar {
   bottom: calc(100% + 8px);
 }
 
-.desktop-start-menu-enter-active {
-  transition:
-    opacity var(--motion-duration-fast) var(--motion-ease-fade),
-    transform var(--motion-duration-fast) var(--motion-ease-standard);
-  transform-origin: bottom left;
-}
-
+.desktop-start-menu-enter-active,
 .desktop-start-menu-leave-active {
-  transition:
-    opacity var(--motion-duration-instant) var(--motion-ease-exit),
-    transform var(--motion-duration-instant) var(--motion-ease-exit);
+  transition: opacity .14s ease, transform .16s cubic-bezier(.22, 1, .36, 1);
   transform-origin: bottom left;
 }
 
@@ -3252,6 +3208,11 @@ body.desktop-mode-open::-webkit-scrollbar {
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 6px;
+  color: var(--text);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
 }
 
 .desktop__context-menu button {
@@ -3887,17 +3848,9 @@ body.desktop-mode-open::-webkit-scrollbar {
   }
 }
 
-.desktop-menu-enter-active {
-  transition:
-    opacity var(--motion-duration-fast) var(--motion-ease-fade),
-    transform var(--motion-duration-fast) var(--motion-ease-standard);
-  transform-origin: top left;
-}
-
+.desktop-menu-enter-active,
 .desktop-menu-leave-active {
-  transition:
-    opacity var(--motion-duration-instant) var(--motion-ease-exit),
-    transform var(--motion-duration-instant) var(--motion-ease-exit);
+  transition: opacity .14s ease, transform .14s ease;
   transform-origin: top left;
 }
 
@@ -5472,6 +5425,17 @@ body.desktop-mode-open::-webkit-scrollbar {
   }
 }
 
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .desktop__menubar,
+  .desktop-widget-slot,
+  .desktop-clock,
+  .desktop-monitor,
+  .desktop__taskbar,
+  .desktop__context-menu {
+    background: var(--surface-raised);
+  }
+}
+
 /* Global teleports must sit above the desktop root (z-index: 1000). */
 .desktop-mode-open .modal-backdrop {
   z-index: 5000 !important;
@@ -5645,8 +5609,8 @@ body.desktop-mode-open::-webkit-scrollbar {
   align-items: center;
   padding: 0 4px;
   overflow-x: auto;
-  background: var(--material-panel-fill);
-  border: 1px solid var(--material-panel-edge);
+  background: color-mix(in srgb, var(--desktop-glass-strong) 88%, transparent);
+  border: 1px solid var(--desktop-glass-border);
   border-radius: 999px;
   box-shadow: 0 2px 10px var(--desktop-shadow);
   scrollbar-width: none;
@@ -5736,8 +5700,8 @@ body.desktop-mode-open::-webkit-scrollbar {
   flex: 0 0 auto;
   padding: 0 18px;
   color: var(--desktop-label);
-  background: var(--material-panel-fill);
-  border: 1px solid var(--material-panel-edge);
+  background: color-mix(in srgb, var(--desktop-glass-strong) 88%, transparent);
+  border: 1px solid var(--desktop-glass-border);
   border-radius: 999px;
   box-shadow: 0 2px 10px var(--desktop-shadow);
   font-size: 14px;
@@ -5763,8 +5727,8 @@ body.desktop-mode-open::-webkit-scrollbar {
   gap: 4px;
   place-content: center;
   color: var(--desktop-group-text);
-  background: var(--material-panel-fill);
-  border-color: var(--material-panel-edge);
+  background: var(--desktop-glass-strong);
+  border-color: var(--desktop-glass-border);
 }
 
 .desktop-folder-tile .desktop-folder-tile__glyph .desktop-group-preview-icon {
@@ -5802,10 +5766,8 @@ body.desktop-mode-open::-webkit-scrollbar {
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
   color: var(--desktop-group-text);
-  /* Panel material: the shared .modal-scrim behind it is already blurred, and
-     blurring a blur only costs (ui-visual-language 3.5.4). */
-  background: var(--material-panel-fill);
-  border: 1px solid var(--material-panel-edge);
+  background: var(--desktop-glass-strong);
+  border: 1px solid var(--desktop-glass-border);
   border-radius: var(--radius-lg);
   box-shadow: 0 18px 48px var(--desktop-shadow);
 }
@@ -5871,25 +5833,14 @@ body.desktop-mode-open::-webkit-scrollbar {
   touch-action: pan-y;
 }
 
-.desktop-folder-enter-active {
-  /* Vue waits for the root transition; keep it as long as the sheet transform. */
-  transition: opacity var(--motion-duration-base) var(--motion-ease-fade);
-}
-
+.desktop-folder-enter-active,
 .desktop-folder-leave-active {
-  transition: opacity var(--motion-duration-fast) var(--motion-ease-exit);
+  transition: opacity 180ms ease;
 }
 
-.desktop-folder-enter-active .desktop-folder__sheet {
-  transition:
-    transform var(--motion-duration-base) var(--motion-ease-standard),
-    opacity var(--motion-duration-fast) var(--motion-ease-fade);
-}
-
+.desktop-folder-enter-active .desktop-folder__sheet,
 .desktop-folder-leave-active .desktop-folder__sheet {
-  transition:
-    transform var(--motion-duration-fast) var(--motion-ease-exit),
-    opacity var(--motion-duration-instant) var(--motion-ease-exit);
+  transition: transform 220ms cubic-bezier(.22, 1, .36, 1), opacity 180ms ease;
 }
 
 .desktop-folder-enter-from,
@@ -5900,7 +5851,7 @@ body.desktop-mode-open::-webkit-scrollbar {
 .desktop-folder-enter-from .desktop-folder__sheet,
 .desktop-folder-leave-to .desktop-folder__sheet {
   opacity: 0;
-  transform: scale(.96);
+  transform: scale(.92);
 }
 
 @media (max-width: 760px) {

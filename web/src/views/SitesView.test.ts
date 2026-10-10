@@ -15,7 +15,6 @@ vi.mock('@/lib/api', async (importOriginal) => ({
       create: vi.fn(),
       update: vi.fn(),
       remove: vi.fn(),
-      renewCertificate: vi.fn(),
     },
     system: { publicNetwork: vi.fn(), portUsage: vi.fn() },
     terminals: {
@@ -48,13 +47,6 @@ interface SitesBindings {
   openCertificateReplacement: (site: Site) => void
   closeCertificateReplacement: () => void
   replaceCertificate: () => Promise<void>
-  renewalSite: Ref<Site | undefined>
-  renewal: { open: boolean; error: string; notice: string; submitting: boolean }
-  canRenewCertificate: ComputedRef<boolean>
-  renewableCertificate: (site: Site) => boolean
-  openCertificateRenewal: (site: Site) => void
-  closeCertificateRenewal: () => void
-  renewCertificate: () => Promise<void>
   siteDirectoryPath: (site: Site) => string | undefined
   sites: Ref<Site[]>
   filteredSites: ComputedRef<Site[]>
@@ -345,73 +337,6 @@ describe('SitesView creation experience', () => {
     expect(view.replacement.submitting).toBe(false)
     view.closeCertificateReplacement()
     expect(view.replacement.privateKey).toBe('')
-  })
-
-  it('offers manual certificate requests only for expiring or expired script-managed certificates', () => {
-    const view = setupView()
-    const expiring = { ...site('example.com'), allowedActions: ['update', 'delete'], certificate: { status: 'expiring' as const } }
-    expect(view.renewableCertificate(expiring)).toBe(true)
-    expect(view.renewableCertificate({ ...expiring, certificate: { status: 'expired' } })).toBe(true)
-    expect(view.renewableCertificate({ ...expiring, certificate: { status: 'valid' } })).toBe(false)
-    expect(view.renewableCertificate({ ...expiring, allowedActions: [] })).toBe(false)
-  })
-
-  it('requests a certificate with only identity and version and fails closed without the capability', async () => {
-    const view = setupView()
-    const current = { ...site('example.com'), allowedActions: ['delete'], certificate: { status: 'expiring' as const } }
-    view.openCertificateRenewal(current)
-    expect(view.canRenewCertificate.value).toBe(false)
-    await view.renewCertificate()
-    expect(api.sites.renewCertificate).not.toHaveBeenCalled()
-    view.capabilitiesLoaded.value = true
-    view.capabilities.value = [{ id: 'sites.certificate-renew', enabled: true }]
-    vi.mocked(api.sites.renewCertificate).mockResolvedValue({ ...current, certificate: { status: 'valid' } })
-    vi.mocked(api.sites.list).mockResolvedValue({ items: [current], total: 1 })
-    vi.mocked(api.agent.capabilities).mockResolvedValue([])
-    vi.mocked(api.sites.installations).mockResolvedValue([])
-    vi.mocked(api.system.publicNetwork).mockResolvedValue({} as never)
-    await view.renewCertificate()
-    expect(api.sites.renewCertificate).toHaveBeenCalledWith(current.id, 'example.com', current.resourceVersion)
-    expect(view.renewal.open).toBe(false)
-    expect(view.renewal.error).toBe('')
-  })
-
-  it('keeps the dialog open with the fixed reason when the request fails', async () => {
-    const view = setupView()
-    const current = { ...site('example.com'), allowedActions: ['delete'], certificate: { status: 'expired' as const } }
-    view.capabilitiesLoaded.value = true
-    view.capabilities.value = [{ id: 'sites.certificate-renew', enabled: true }]
-    view.openCertificateRenewal(current)
-    vi.mocked(api.sites.renewCertificate).mockRejectedValue(
-      new ApiError('site writer unavailable: 证书申请失败，原证书保持不变；请检查 DNS 解析、80 端口和签发限额', 503, 'sites_unavailable'),
-    )
-    await view.renewCertificate()
-    expect(view.renewal.error).toBe('证书申请失败，原证书保持不变；请检查 DNS 解析、80 端口和签发限额')
-    expect(view.renewal.open).toBe(true)
-    expect(view.renewal.submitting).toBe(false)
-  })
-
-  it('keeps checking the site when Nginx restarts and drops the connection mid-request', async () => {
-    const view = setupView()
-    const current = { ...site('example.com'), allowedActions: ['delete'], certificate: { status: 'expiring' as const, expiresAt: '2026-10-26T00:00:00Z' } }
-    const renewed = { ...current, certificate: { status: 'valid' as const, expiresAt: '2027-01-07T00:00:00Z' } }
-    view.capabilitiesLoaded.value = true
-    view.capabilities.value = [{ id: 'sites.certificate-renew', enabled: true }]
-    view.openCertificateRenewal(current)
-    vi.mocked(api.sites.renewCertificate).mockRejectedValue(new ApiError('network', 0, 'network_error'))
-    vi.mocked(api.sites.list)
-      .mockRejectedValueOnce(new ApiError('network', 0, 'network_error'))
-      .mockResolvedValue({ items: [renewed], total: 1 })
-    vi.mocked(api.agent.capabilities).mockResolvedValue([])
-    vi.mocked(api.sites.installations).mockResolvedValue([])
-    vi.mocked(api.system.publicNetwork).mockResolvedValue({} as never)
-    const pending = view.renewCertificate()
-    await vi.advanceTimersByTimeAsync(5000)
-    expect(view.renewal.notice).toContain('申请仍在后台进行')
-    await vi.advanceTimersByTimeAsync(5000)
-    await pending
-    expect(view.renewal.open).toBe(false)
-    expect(view.renewal.error).toBe('')
   })
 
   it('does not show Agent unavailable before capability loading finishes', () => {

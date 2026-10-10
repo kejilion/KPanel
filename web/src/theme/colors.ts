@@ -337,9 +337,8 @@ export function deriveThemeTokens(colors: ThemeColorIntent, mode: ThemeMode): Th
   const sidebarHover = mix(sidebar, brand, mode === 'light' ? 0.15 : 0.14)
   const sidebarActive = mix(sidebar, brand, mode === 'light' ? 0.28 : 0.27)
 
-  const materialLabels = [text, textSoft, muted]
-  const glassAlpha = safeGlassAlpha(surface, materialLabels, mode === 'light' ? 0.90 : 0.82)
-  const strongGlassAlpha = safeGlassAlpha(surfaceRaised, materialLabels, mode === 'light' ? 0.96 : 0.93)
+  const glassAlpha = safeGlassAlpha(surface, text, mode === 'light' ? 0.90 : 0.82)
+  const strongGlassAlpha = safeGlassAlpha(surfaceRaised, text, mode === 'light' ? 0.96 : 0.93)
   const desktopGlass = cssRgb(surface, glassAlpha)
   const desktopGlassStrong = cssRgb(surfaceRaised, strongGlassAlpha)
   const desktopGlassBorder = cssRgb(mode === 'light' ? text : sidebarText, mode === 'light' ? 0.18 : 0.12)
@@ -637,13 +636,13 @@ function composite(foreground: string, background: string, alpha: number): strin
   return mix(background, foreground, alpha)
 }
 
-function safeGlassAlpha(base: string, labels: readonly string[], initial: number): number {
+function safeGlassAlpha(base: string, label: string, initial: number): number {
   for (let alpha = initial; alpha <= 1.0001; alpha += 0.01) {
     const rounded = Math.min(1, Number(alpha.toFixed(2)))
     const againstBlack = composite(base, '#000000', rounded)
     const againstWhite = composite(base, '#ffffff', rounded)
-    if (labels.every((label) => contrastRatio(label, againstBlack) >= AA_CONTRAST
-      && contrastRatio(label, againstWhite) >= AA_CONTRAST)) return rounded
+    if (contrastRatio(label, againstBlack) >= AA_CONTRAST
+      && contrastRatio(label, againstWhite) >= AA_CONTRAST) return rounded
   }
   return 1
 }

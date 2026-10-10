@@ -17,8 +17,6 @@ import (
 
 	"github.com/kejilion/kejilion-panel/internal/cluster"
 	"github.com/kejilion/kejilion-panel/internal/contract"
-	"github.com/kejilion/kejilion-panel/internal/httpstream"
-	"github.com/kejilion/kejilion-panel/internal/remotedownload"
 )
 
 var errReceiveUnsupported = errors.New("target does not support receiving sessions")
@@ -226,18 +224,6 @@ func (s *Server) receiveFileTransfer(
 	if session.Offset != 0 || session.State != "receiving" {
 		return contract.FileEntry{}, 0, errors.New("receiver creation invalid")
 	}
-	prefetch := func(source io.ReadCloser) io.ReadCloser {
-		if ahead, ok := source.(interface{ ReadAheadBytes() int }); ok && ahead.ReadAheadBytes() > 0 {
-			return source
-		}
-		// Small/unknown streams keep the existing allocation and timing. Large
-		// streams overlap one source chunk with the previous durable Agent write.
-		if s.fileTransferPrefetch && input.SizeBytes >= 2*contract.FileTransferChunkBytes {
-			return httpstream.NewPrefetchReadCloser(source, contract.FileTransferChunkBytes/2)
-		}
-		return source
-	}
-	body = prefetch(body)
 	buffer := make([]byte, contract.FileTransferChunkBytes)
 	hasher := sha256.New()
 	reader := &fileTransferEOFReader{Reader: body}
@@ -246,16 +232,9 @@ func (s *Server) receiveFileTransfer(
 		if err := ctx.Err(); err != nil {
 			return contract.FileEntry{}, session.Offset, err
 		}
-		readStarted := time.Now()
 		count, readErr := io.ReadFull(reader, buffer)
-		readDuration := time.Since(readStarted)
 		ended := readErr != nil && reader.eof && (readErr == io.EOF || readErr == io.ErrUnexpectedEOF)
 		if readErr != nil && !ended {
-			// A changed/malformed representation is not a transport interruption.
-			// Retrying it could hide a failed segment's consistency check.
-			if errors.Is(readErr, remotedownload.ErrSourceChanged) || errors.Is(readErr, remotedownload.ErrPartialContent) || errors.Is(readErr, remotedownload.ErrEncoding) {
-				return contract.FileEntry{}, session.Offset, readErr
-			}
 			if reopen == nil || reconnects >= 3 {
 				return contract.FileEntry{}, session.Offset, readErr
 			}
@@ -268,7 +247,6 @@ func (s *Server) receiveFileTransfer(
 			if err != nil {
 				return contract.FileEntry{}, session.Offset, err
 			}
-			body = prefetch(body)
 			stop()
 			current := body
 			stop = context.AfterFunc(ctx, func() { _ = current.Close() })
@@ -276,7 +254,6 @@ func (s *Server) receiveFileTransfer(
 			continue
 		}
 		if count > 0 {
-			writeStarted := time.Now()
 			digest := sha256.Sum256(buffer[:count])
 			query := url.Values{"id": {id}, "sourceKey": {input.SourceKey}, "offset": {strconv.FormatInt(session.Offset, 10)}, "sha256": {hex.EncodeToString(digest[:])}}
 			before := session.Offset
@@ -298,13 +275,6 @@ func (s *Server) receiveFileTransfer(
 				return contract.FileEntry{}, before, errors.New("receiver checkpoint invalid")
 			}
 			session = next
-			if checkpoint, ok := body.(interface {
-				Checkpoint(int64, string, time.Duration, time.Duration) error
-			}); ok && session.Offset < input.SizeBytes && !ended {
-				if err := checkpoint.Checkpoint(session.Offset, session.PrefixSHA256, readDuration, time.Since(writeStarted)); err != nil {
-					return contract.FileEntry{}, session.Offset, err
-				}
-			}
 			if !emit(contract.FileTransferEvent{State: "transferring", LoadedBytes: session.Offset, TotalBytes: max(input.SizeBytes, 0), Name: input.Name}) {
 				return contract.FileEntry{}, session.Offset, context.Canceled
 			}

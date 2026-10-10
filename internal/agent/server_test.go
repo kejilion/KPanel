@@ -485,26 +485,6 @@ func TestSiteWriteRoutesRejectMalformedRequests(t *testing.T) {
 			name: "unsupported collection method", method: http.MethodDelete,
 			path: "/v1/sites", wantStatus: http.StatusMethodNotAllowed,
 		},
-		{
-			name: "renewal unknown field", method: http.MethodPost,
-			path: "/v1/sites/" + strings.Repeat("a", 32) + "/certificate-renewal",
-			body: `{"primaryDomain":"example.com","command":"k ssl"}`, wantStatus: http.StatusBadRequest,
-		},
-		{
-			name: "renewal query", method: http.MethodPost,
-			path: "/v1/sites/" + strings.Repeat("a", 32) + "/certificate-renewal?force=true",
-			body: `{"primaryDomain":"example.com"}`, wantStatus: http.StatusNotFound,
-		},
-		{
-			name: "renewal invalid id", method: http.MethodPost,
-			path: "/v1/sites/" + strings.Repeat("A", 32) + "/certificate-renewal",
-			body: `{"primaryDomain":"example.com"}`, wantStatus: http.StatusNotFound,
-		},
-		{
-			name: "renewal method", method: http.MethodPatch,
-			path: "/v1/sites/" + strings.Repeat("a", 32) + "/certificate-renewal",
-			body: `{"primaryDomain":"example.com"}`, wantStatus: http.StatusMethodNotAllowed,
-		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

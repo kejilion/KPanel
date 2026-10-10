@@ -12,15 +12,10 @@ describe('classic wallpaper level', () => {
     expect(normalizeClassicWallpaperLevel('glass')).toBe('off')
   })
 
-  it('keeps the selected wallpaper visible while reducing topbar transparency', () => {
+
+  it('keeps an explicitly selected wallpaper visible when the browser reduces transparency', () => {
     const css = readFileSync(resolve(__dirname, '../styles/classicWallpaper.css'), 'utf8')
-    const reduced = css.match(/@media \(prefers-reduced-transparency: reduce\), \(prefers-contrast: more\) \{([\s\S]*?)^\}/m)?.[1]
-    expect(reduced).toBeDefined()
-    expect(reduced).toContain(':root:has(.classic-backdrop) .topbar')
-    expect(reduced).toContain('background: var(--material-chrome-fill);')
-    // Explicit wallpaper remains on the page; only shell chrome becomes solid.
-    expect(reduced).not.toMatch(/display:\s*none|visibility:\s*hidden|opacity:\s*0\b/)
-    expect(reduced).not.toContain('.page-content')
+    expect(css).not.toMatch(/@media[^\{]*prefers-reduced-transparency/)
     expect(css).toMatch(/@media\s*\(forced-colors:\s*active\)/)
   })
 })

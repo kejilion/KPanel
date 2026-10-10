@@ -45,29 +45,6 @@
   --terminal-ansi-bright-white: #f0f2f1;
 }
 
-/* Materials (themes.css) turn solid when the system asks for less transparency
-   or more contrast, or cannot blur; layering then rests on the neutral ladder,
-   borders and shadows (docs/ui-visual-language.md 3.5.5). */
-@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
-  :root {
-    --material-panel-fill: var(--surface-raised);
-    --material-panel-edge: var(--border-strong);
-    --material-chrome-fill: var(--surface-raised);
-    --material-chrome-edge: var(--border-strong);
-    --material-chrome-filter: none;
-    --material-overlay-fill: var(--surface-raised);
-    --material-overlay-edge: var(--border-strong);
-    --material-overlay-filter: none;
-  }
-}
-
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  :root {
-    --material-chrome-fill: var(--surface-raised);
-    --material-overlay-fill: var(--surface-raised);
-  }
-}
-
 /* Interactive terminals inherit the active dark foundation without changing
    the fixed palette used by editors and non-interactive log viewers. */
 :root[data-theme='dark'] .terminal-theme-scope {
@@ -727,17 +704,8 @@ textarea:focus-visible,
   outline-offset: 2px;
 }
 
-/* Every context menu is a short-lived overlay and shares one material
-   (docs/ui-visual-language.md 3.5). Components own placement and size only. */
 .k-context-menu {
   scrollbar-gutter: auto;
-  color: var(--text);
-  background: var(--material-overlay-fill);
-  border: 1px solid var(--material-overlay-edge);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-md);
-  -webkit-backdrop-filter: var(--material-overlay-filter);
-  backdrop-filter: var(--material-overlay-filter);
 }
 
 .k-context-menu > [role='menuitem']:focus {
@@ -818,9 +786,9 @@ textarea:focus-visible,
   font-weight: 600;
   line-height: 1;
   transition:
-    border-color var(--motion-duration-fast) var(--motion-ease-fade),
-    background var(--motion-duration-fast) var(--motion-ease-fade),
-    color var(--motion-duration-fast) var(--motion-ease-fade);
+    border-color 160ms ease,
+    background 160ms ease,
+    color 160ms ease;
 }
 
 .button:disabled {
@@ -898,9 +866,9 @@ textarea:focus-visible,
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition:
-    color var(--motion-duration-fast) var(--motion-ease-fade),
-    border-color var(--motion-duration-fast) var(--motion-ease-fade),
-    background var(--motion-duration-fast) var(--motion-ease-fade);
+    color 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease;
 }
 
 .icon-button:hover:not(:disabled) {
@@ -1282,8 +1250,8 @@ textarea:focus-visible,
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   transition:
-    border-color var(--motion-duration-fast) var(--motion-ease-fade),
-    box-shadow var(--motion-duration-fast) var(--motion-ease-fade);
+    border-color 160ms ease,
+    box-shadow 160ms ease;
 }
 
 .field input,
@@ -1417,7 +1385,7 @@ textarea:focus-visible,
 
 .site-template-toggle svg {
   flex: 0 0 auto;
-  transition: transform var(--motion-duration-fast) var(--motion-ease-standard);
+  transition: transform 160ms ease;
 }
 
 .site-template-toggle svg.is-open {
@@ -1438,9 +1406,9 @@ textarea:focus-visible,
   border-radius: var(--radius-md);
   cursor: pointer;
   transition:
-    border-color var(--motion-duration-fast) var(--motion-ease-fade),
-    box-shadow var(--motion-duration-fast) var(--motion-ease-fade),
-    background var(--motion-duration-fast) var(--motion-ease-fade);
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    background 160ms ease;
 }
 
 .site-service-card:hover:not(:disabled) {
@@ -1663,9 +1631,9 @@ textarea:focus-visible,
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition:
-    border-color var(--motion-duration-fast) var(--motion-ease-fade),
-    box-shadow var(--motion-duration-fast) var(--motion-ease-fade),
-    background var(--motion-duration-fast) var(--motion-ease-fade);
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    background 160ms ease;
 }
 
 .delete-mode-grid button:hover,
@@ -1776,8 +1744,8 @@ textarea:focus-visible,
   background: var(--sidebar);
   border-right: 1px solid var(--sidebar-border);
   transition:
-    width var(--motion-duration-base) var(--motion-ease-standard),
-    transform var(--motion-duration-base) var(--motion-ease-standard);
+    width 200ms ease,
+    transform 220ms ease;
 }
 
 /* Keep light navigation on the content palette without changing the dark
@@ -1825,7 +1793,7 @@ textarea:focus-visible,
   justify-content: space-between;
   padding: 0 22px;
   border-bottom: 1px solid var(--sidebar-border);
-  transition: padding var(--motion-duration-base) var(--motion-ease-standard);
+  transition: padding 200ms ease;
 }
 
 .sidebar__collapse {
@@ -1836,14 +1804,14 @@ textarea:focus-visible,
   background: transparent;
   border-color: var(--sidebar-border);
   transition:
-    width var(--motion-duration-base) var(--motion-ease-standard),
-    height var(--motion-duration-base) var(--motion-ease-standard),
-    top var(--motion-duration-base) var(--motion-ease-standard),
-    right var(--motion-duration-base) var(--motion-ease-standard),
-    color var(--motion-duration-fast) var(--motion-ease-fade),
-    background var(--motion-duration-fast) var(--motion-ease-fade),
-    box-shadow var(--motion-duration-base) var(--motion-ease-standard),
-    transform var(--motion-duration-base) var(--motion-ease-standard);
+    width 200ms ease,
+    height 200ms ease,
+    top 200ms ease,
+    right 200ms ease,
+    color 160ms ease,
+    background 160ms ease,
+    box-shadow 200ms ease,
+    transform 200ms ease;
 }
 
 .sidebar__collapse:hover {
@@ -1877,7 +1845,7 @@ textarea:focus-visible,
   --scrollbar-thumb: color-mix(in srgb, var(--sidebar-text) 22%, var(--sidebar));
   --scrollbar-thumb-hover: color-mix(in srgb, var(--sidebar-accent) 48%, var(--sidebar));
   --scrollbar-thumb-active: var(--sidebar-accent);
-  transition: padding var(--motion-duration-base) var(--motion-ease-standard);
+  transition: padding 200ms ease;
 }
 
 .sidebar__link {
@@ -1892,10 +1860,10 @@ textarea:focus-visible,
   font-size: 14px;
   font-weight: 500;
   transition:
-    color var(--motion-duration-fast) var(--motion-ease-fade),
-    background var(--motion-duration-fast) var(--motion-ease-fade),
-    gap var(--motion-duration-base) var(--motion-ease-standard),
-    padding var(--motion-duration-base) var(--motion-ease-standard);
+    color 160ms ease,
+    background 160ms ease,
+    gap 180ms ease,
+    padding 200ms ease;
 }
 
 .sidebar__link:hover {
@@ -1943,7 +1911,7 @@ textarea:focus-visible,
 
   .sidebar__brand .brand {
     min-width: 0;
-    transition: gap var(--motion-duration-base) var(--motion-ease-standard);
+    transition: gap 180ms ease;
   }
 
   .sidebar__collapse {
@@ -1967,9 +1935,9 @@ textarea:focus-visible,
     visibility: visible;
     white-space: nowrap;
     transition:
-      max-width var(--motion-duration-base) var(--motion-ease-standard),
-      opacity var(--motion-duration-instant) var(--motion-ease-fade),
-      transform var(--motion-duration-base) var(--motion-ease-standard),
+      max-width 180ms ease,
+      opacity 120ms ease,
+      transform 180ms ease,
       visibility 0s linear;
   }
 
@@ -1993,8 +1961,8 @@ textarea:focus-visible,
   .sidebar .sidebar__user {
     display: flex;
     transition:
-      gap var(--motion-duration-base) var(--motion-ease-standard),
-      padding var(--motion-duration-base) var(--motion-ease-standard);
+      gap 180ms ease,
+      padding 200ms ease;
   }
 
   .sidebar__user > span:not(.avatar) {
@@ -2032,10 +2000,10 @@ textarea:focus-visible,
     transform: translateX(-6px);
     visibility: hidden;
     transition:
-      max-width var(--motion-duration-base) var(--motion-ease-standard),
-      opacity var(--motion-duration-instant) var(--motion-ease-fade),
-      transform var(--motion-duration-base) var(--motion-ease-standard),
-      visibility 0s linear var(--motion-duration-base);
+      max-width 180ms ease,
+      opacity 100ms ease,
+      transform 180ms ease,
+      visibility 0s linear 180ms;
   }
 
   .sidebar--collapsed .sidebar__collapse {
@@ -2100,15 +2068,15 @@ textarea:focus-visible,
   margin-top: auto;
   border-top: 1px solid var(--sidebar-border);
   transition:
-    gap var(--motion-duration-base) var(--motion-ease-standard),
-    padding var(--motion-duration-base) var(--motion-ease-standard);
+    gap 180ms ease,
+    padding 200ms ease;
 }
 
 .sidebar__agent {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  transition: padding var(--motion-duration-base) var(--motion-ease-standard);
+  transition: padding 200ms ease;
 }
 
 .sidebar__agent small {
@@ -2524,9 +2492,9 @@ textarea:focus-visible,
   max-width: 160px;
   white-space: nowrap;
   transition:
-    max-width var(--motion-duration-base) var(--motion-ease-standard),
-    gap var(--motion-duration-base) var(--motion-ease-standard),
-    padding var(--motion-duration-base) var(--motion-ease-standard),
+    max-width 180ms ease,
+    gap 180ms ease,
+    padding 180ms ease,
     font-size 120ms ease;
 }
 
@@ -2817,22 +2785,17 @@ textarea:focus-visible,
   line-height: 1.5;
 }
 
-.toast-enter-active {
-  transition:
-    opacity var(--motion-duration-fast) var(--motion-ease-fade),
-    transform var(--motion-duration-fast) var(--motion-ease-standard);
-}
-
+.toast-enter-active,
 .toast-leave-active {
   transition:
-    opacity var(--motion-duration-instant) var(--motion-ease-exit),
-    transform var(--motion-duration-instant) var(--motion-ease-exit);
+    opacity 180ms ease,
+    transform 180ms ease;
 }
 
 .toast-enter-from,
 .toast-leave-to {
   opacity: 0;
-  transform: translateX(12px);
+  transform: translateX(20px);
 }
 
 /* Cards and dashboard */
@@ -2922,7 +2885,7 @@ textarea:focus-visible,
 
 .metric-link .metric-card {
   height: 100%;
-  transition: border-color var(--motion-duration-fast) var(--motion-ease-fade), box-shadow var(--motion-duration-fast) var(--motion-ease-fade), transform var(--motion-duration-fast) var(--motion-ease-standard);
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
 
 .metric-link:hover .metric-card {
@@ -3180,8 +3143,8 @@ textarea:focus-visible,
   border: 1px solid transparent;
   border-radius: var(--radius);
   transition:
-    border-color var(--motion-duration-fast) var(--motion-ease-fade),
-    background var(--motion-duration-fast) var(--motion-ease-fade);
+    border-color 160ms ease,
+    background 160ms ease;
 }
 
 .resource-summary__item--stacked {
@@ -3438,8 +3401,8 @@ textarea:focus-visible,
   border-bottom: 1px solid var(--border);
   cursor: pointer;
   transition:
-    background var(--motion-duration-fast) var(--motion-ease-fade),
-    color var(--motion-duration-fast) var(--motion-ease-fade);
+    background 160ms ease,
+    color 160ms ease;
 }
 
 .configuration-row:last-child {
@@ -3534,7 +3497,7 @@ textarea:focus-visible,
   flex: 0 0 auto;
   border-radius: 999px;
   background: var(--border-strong);
-  transition: background var(--motion-duration-fast) var(--motion-ease-fade);
+  transition: background 160ms ease;
 }
 
 .configuration-switch > span {
@@ -3546,7 +3509,7 @@ textarea:focus-visible,
   border-radius: 50%;
   background: var(--surface-raised);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
-  transition: transform var(--motion-duration-fast) var(--motion-ease-standard);
+  transition: transform 160ms ease;
 }
 
 .configuration-switch.is-on {
@@ -3593,8 +3556,8 @@ textarea:focus-visible,
   border-radius: var(--radius);
   cursor: pointer;
   transition:
-    border-color var(--motion-duration-fast) var(--motion-ease-fade),
-    background var(--motion-duration-fast) var(--motion-ease-fade);
+    border-color 160ms ease,
+    background 160ms ease;
 }
 
 .system-tool:last-child:nth-child(odd) {
@@ -3779,9 +3742,9 @@ textarea:focus-visible,
   border-radius: var(--radius);
   cursor: pointer;
   transition:
-    border-color var(--motion-duration-fast) var(--motion-ease-fade),
-    box-shadow var(--motion-duration-fast) var(--motion-ease-fade),
-    transform var(--motion-duration-fast) var(--motion-ease-standard);
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
 }
 
 .overview-system-card:hover {
@@ -3865,7 +3828,7 @@ textarea:focus-visible,
 .overview-system-card__arrow {
   align-self: center;
   color: var(--muted);
-  transition: color var(--motion-duration-fast) var(--motion-ease-fade), transform var(--motion-duration-fast) var(--motion-ease-standard);
+  transition: color 160ms ease, transform 160ms ease;
 }
 
 .overview-system-card:hover .overview-system-card__arrow {
@@ -3953,8 +3916,8 @@ textarea:focus-visible,
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
   transition:
-    border-color var(--motion-duration-fast) var(--motion-ease-fade),
-    box-shadow var(--motion-duration-fast) var(--motion-ease-fade);
+    border-color 160ms ease,
+    box-shadow 160ms ease;
 }
 
 .mirror-route-card:hover {
@@ -4444,7 +4407,7 @@ textarea:focus-visible,
 }
 
 .data-table tbody tr {
-  transition: background var(--motion-duration-instant) var(--motion-ease-fade);
+  transition: background 120ms ease;
 }
 
 .data-table tbody tr:hover {
@@ -5030,7 +4993,7 @@ div.resource-name {
   border-radius: var(--radius);
   box-shadow: var(--shadow-sm);
   cursor: pointer;
-  transition: border-color var(--motion-duration-fast) var(--motion-ease-fade);
+  transition: border-color 160ms ease;
 }
 
 .job-item:hover {
@@ -5603,7 +5566,7 @@ div.resource-name {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: background var(--motion-duration-fast) var(--motion-ease-fade), border-color var(--motion-duration-fast) var(--motion-ease-fade), box-shadow var(--motion-duration-fast) var(--motion-ease-fade);
+  transition: background .15s ease, border-color .15s ease, box-shadow .15s ease;
 }
 
 .theme-color-presets > button:hover {
@@ -6090,7 +6053,7 @@ body.terminal-fullscreen-open .modal-panel {
   display: grid;
   place-items: center;
   padding: 22px;
-  animation: modal-backdrop-in var(--motion-duration-fast) var(--motion-ease-fade) both;
+  animation: modal-backdrop-in 160ms ease-out both;
 }
 
 .modal-panel {
@@ -6103,7 +6066,7 @@ body.terminal-fullscreen-open .modal-panel {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-md);
-  animation: modal-panel-in var(--motion-duration-base) var(--motion-ease-standard) both;
+  animation: modal-panel-in 180ms ease-out both;
 }
 
 .modal-panel--small {
@@ -6339,12 +6302,9 @@ body.terminal-fullscreen-open .modal-panel {
   }
 }
 
-.fade-enter-active {
-  transition: opacity var(--motion-duration-fast) var(--motion-ease-fade);
-}
-
+.fade-enter-active,
 .fade-leave-active {
-  transition: opacity var(--motion-duration-instant) var(--motion-ease-exit);
+  transition: opacity 160ms ease;
 }
 
 .fade-enter-from,

@@ -184,7 +184,7 @@ function keydown(event: KeyboardEvent) {
 </template>
 
 <style scoped>
-.desktop-group { position: absolute; box-sizing: border-box; container-type: inline-size; border: 1px solid var(--desktop-group-border); border-radius: var(--radius-lg); background: var(--desktop-group-surface); color: var(--desktop-group-text); box-shadow: var(--shadow-md); transition: transform var(--motion-duration-layout) var(--motion-ease-standard), height var(--motion-duration-base) var(--motion-ease-standard), border-color var(--motion-duration-fast) var(--motion-ease-fade); }
+.desktop-group { position: absolute; box-sizing: border-box; container-type: inline-size; border: 1px solid var(--desktop-group-border); border-radius: var(--radius-lg); background: var(--desktop-group-surface); color: var(--desktop-group-text); box-shadow: inset 0 1px 0 var(--desktop-group-hover), 0 6px 20px rgb(0 8 18 / 10%); transition: transform 180ms cubic-bezier(.22,1,.36,1), height 200ms cubic-bezier(.22,1,.36,1), border-color 120ms; }
 .desktop-group__header { height: 36px; display: flex; align-items: center; gap: 6px; padding: 0 10px; cursor: grab; touch-action: none; }
 .desktop-group__cell { position: absolute; box-sizing: border-box; border: 1px dashed transparent; border-radius: var(--radius); pointer-events: none; }
 .desktop-group:hover .desktop-group__cell--empty, .desktop-group--drop .desktop-group__cell--empty { border-color: var(--desktop-group-border); }
@@ -207,7 +207,7 @@ function keydown(event: KeyboardEvent) {
 @container (max-width: 280px) { .desktop-group__previews :deep(> :nth-child(n+3)) { display: none; } }
 @container (max-width: 240px) { .desktop-group__previews :deep(> :nth-child(n+2)) { display: none; } }
 @container (max-width: 180px) { .desktop-group__previews { display: none; } .desktop-group__previews + .desktop-group__menu { margin-left: auto; } }
-.desktop-group__toggle svg { transition: transform var(--motion-duration-fast) var(--motion-ease-standard); }
+.desktop-group__toggle svg { transition: transform 180ms ease; }
 .desktop-group--collapsed .desktop-group__toggle svg { transform: rotate(-90deg); }
 .desktop-group--drop { border-color: var(--desktop-group-focus); box-shadow: 0 0 0 2px var(--desktop-group-hover); }
 .desktop-group__empty { margin: 24px 16px; text-align: center; font-size: 14px; color: var(--desktop-group-muted); }

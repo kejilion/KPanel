@@ -142,9 +142,6 @@ func (s *Server) startFileRemoteDownloadJob(
 		ID: newRequestID(), State: "queued", Source: source, TargetDirectory: input.TargetDirectory,
 		Name: input.Name, CreatedAt: now, UpdatedAt: now,
 	}
-	if input.SourceKind == "torrent" {
-		job.SourceKind = "bittorrent"
-	}
 	jobContext, cancel, ok := s.reserveRemoteDownloadJob(job.ID)
 	if !ok {
 		w.Header().Set("Retry-After", "1")
@@ -208,17 +205,6 @@ func (s *Server) releaseRemoteDownloadReservation(id string, cancel context.Canc
 func (s *Server) runFileRemoteDownloadJob(ctx context.Context, cancel context.CancelCauseFunc, task fileRemoteDownloadTask) {
 	defer s.remoteDownloadWG.Done()
 	defer s.releaseRemoteDownloadReservation(task.job.ID, cancel)
-	// BT resource admission precedes the common transfer slot, leaving a slot
-	// available for HTTP/cross-host work while another BT job is still queued.
-	if task.input.SourceKind == "torrent" && s.btGate != nil {
-		select {
-		case s.btGate <- struct{}{}:
-			defer func() { <-s.btGate }()
-		case <-ctx.Done():
-			s.finishRemoteDownloadJob(task, remoteDownloadJobCancellationResult(ctx, contract.FileTransferEvent{State: "error", Code: "remote_download_cancelled"}))
-			return
-		}
-	}
 	select {
 	case s.remoteDownloadGate <- struct{}{}:
 		defer func() { <-s.remoteDownloadGate }()
@@ -241,8 +227,6 @@ func (s *Server) runFileRemoteDownloadJob(ctx context.Context, cancel context.Ca
 		event = remoteDownloadJobCancellationResult(ctx, event)
 		now := time.Now().UTC()
 		job.State = event.State
-		job.TransferMode, job.Peers, job.SpeedBytes = event.TransferMode, event.Peers, event.SpeedBytes
-		job.SourceBytes = event.SourceBytes
 		if event.State == "error" {
 			if event.Code == "remote_download_cancelled" {
 				job.State = "cancelled"

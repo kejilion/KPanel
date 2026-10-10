@@ -54,9 +54,6 @@ type Config struct {
 	ResponseHeaderTimeout time.Duration
 	IdleTimeout           time.Duration
 	RejectRedirects       bool
-	// MaxConnections bounds shared connections to one origin, including probes.
-	// The default remains two; segmented file downloads may opt into four.
-	MaxConnections int
 }
 
 type Client struct {
@@ -83,10 +80,6 @@ func NewClient(config Config) *Client {
 	if config.IdleTimeout <= 0 {
 		config.IdleTimeout = 45 * time.Second
 	}
-	if config.MaxConnections <= 0 {
-		config.MaxConnections = 2
-	}
-	config.MaxConnections = min(config.MaxConnections, 4)
 	if config.Dialer == nil {
 		dialer := &net.Dialer{Timeout: config.ConnectTimeout, KeepAlive: 30 * time.Second}
 		config.Dialer = dialer.DialContext
@@ -101,8 +94,8 @@ func NewClient(config Config) *Client {
 		ForceAttemptHTTP2:      true,
 		DisableCompression:     true,
 		MaxIdleConns:           4,
-		MaxIdleConnsPerHost:    config.MaxConnections,
-		MaxConnsPerHost:        config.MaxConnections,
+		MaxIdleConnsPerHost:    2,
+		MaxConnsPerHost:        2,
 		IdleConnTimeout:        45 * time.Second,
 		TLSHandshakeTimeout:    config.TLSHandshakeTimeout,
 		ResponseHeaderTimeout:  config.ResponseHeaderTimeout,
@@ -171,8 +164,6 @@ type ResumeRequest struct {
 	SizeBytes int64
 	ETag      string
 	FinalURL  string
-	// endOffset is exclusive; zero keeps the existing suffix-resume request.
-	endOffset int64
 }
 
 var ErrSourceChanged = errors.New("remote download source changed")
@@ -212,14 +203,15 @@ func (c *Client) open(ctx context.Context, raw string, resume *ResumeRequest) (*
 	request.Header.Set("User-Agent", "KPanel-Remote-Download/1")
 	if resume != nil {
 		request.Header.Set("Range", fmt.Sprintf("bytes=%d-", resume.Offset))
-		if resume.endOffset > 0 {
-			request.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", resume.Offset, resume.endOffset-1))
-		}
 		request.Header.Set("If-Range", resume.ETag)
 	}
 	response, err := c.httpClient.Do(request)
 	if err != nil {
 		return nil, classifyError(ctx, err)
+	}
+	if resume != nil && (response.Header.Get("ETag") != resume.ETag || resume.FinalURL != "" && (response.Request == nil || response.Request.URL == nil || response.Request.URL.String() != resume.FinalURL)) {
+		response.Body.Close()
+		return nil, ErrSourceChanged
 	}
 	if response.StatusCode == http.StatusPartialContent && resume == nil {
 		response.Body.Close()
@@ -229,17 +221,9 @@ func (c *Client) open(ctx context.Context, raw string, resume *ResumeRequest) (*
 		response.Body.Close()
 		return nil, &StatusError{StatusCode: response.StatusCode}
 	}
-	if resume != nil && (response.Header.Get("ETag") != resume.ETag || resume.FinalURL != "" && (response.Request == nil || response.Request.URL == nil || response.Request.URL.String() != resume.FinalURL)) {
-		response.Body.Close()
-		return nil, ErrSourceChanged
-	}
 	if response.StatusCode == http.StatusPartialContent {
-		end := resume.SizeBytes
-		if resume.endOffset > 0 {
-			end = resume.endOffset
-		}
-		expected := fmt.Sprintf("bytes %d-%d/%d", resume.Offset, end-1, resume.SizeBytes)
-		if response.Header.Get("Content-Range") != expected || response.ContentLength >= 0 && response.ContentLength != end-resume.Offset {
+		expected := fmt.Sprintf("bytes %d-%d/%d", resume.Offset, resume.SizeBytes-1, resume.SizeBytes)
+		if response.Header.Get("Content-Range") != expected || response.ContentLength >= 0 && response.ContentLength != resume.SizeBytes-resume.Offset {
 			response.Body.Close()
 			return nil, ErrSourceChanged
 		}
@@ -329,15 +313,6 @@ func (c *Client) dialContext(ctx context.Context, network, address string) (net.
 	}
 	return nil, lastError
 }
-
-// DialPublic applies the download DNS/IP policy to a protocol adapter's TCP
-// connections. It never delegates an unresolved hostname to the underlying dialer.
-func (c *Client) DialPublic(ctx context.Context, network, address string) (net.Conn, error) {
-	return c.dialContext(ctx, network, address)
-}
-
-// PublicAddress is the shared boundary for numeric peers and datagram endpoints.
-func PublicAddress(address netip.Addr) bool { return publicAddress(address) }
 
 func (c *Client) resolve(ctx context.Context, host string) ([]netip.Addr, error) {
 	if address, err := netip.ParseAddr(host); err == nil {

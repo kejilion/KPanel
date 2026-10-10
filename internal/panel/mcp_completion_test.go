@@ -170,12 +170,6 @@ func TestMCPTrashScopeAndPartialFailure(t *testing.T) {
 		opID, digest := plan["operationId"].(string), plan["digest"].(string)
 		_, _ = s.mcp.operations.Decide(opID, digest, "admin", true)
 		result := managedCall(s, token, "operation_execute", map[string]any{"operationId": opID, "digest": digest})
-		// Execution may outlive the API's bounded synchronous wait.
-		deadline := time.Now().Add(8 * time.Second)
-		for result["state"] == "executing" && time.Now().Before(deadline) {
-			time.Sleep(20 * time.Millisecond)
-			result = managedCall(s, token, "operation_status", map[string]any{"operationId": opID})
-		}
 		if result["state"] != "failed" {
 			t.Fatal("partial or denied action reported success", result)
 		}

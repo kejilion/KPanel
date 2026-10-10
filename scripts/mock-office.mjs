@@ -3,35 +3,24 @@ const base = { kind: 'file', editable: false, previewable: true, officeEditable:
   mode: '-rw-r--r--', owner: 'demo', group: 'demo', modifiedAt: '2026-10-04T00:00:00Z' }
 export const mockOfficeFiles = [
   { ...base, name: 'office-demo', path: '/office-demo', kind: 'directory', officeEditable: false, sizeBytes: 0 },
-  ...['文档_UI模拟.docx', '长文档_UI模拟.docx', '表格_UI模拟.xlsx', '演示_UI模拟.pptx', '冲突_UI模拟.docx', '不支持_UI模拟.docx'].map(name => ({ ...base, name, path: `/office-demo/${name}` })),
+  ...['文档_UI模拟.docx', '表格_UI模拟.xlsx', '演示_UI模拟.pptx', '冲突_UI模拟.docx', '不支持_UI模拟.docx'].map(name => ({ ...base, name, path: `/office-demo/${name}` })),
 ].map((entry, index) => ({ ...entry, resourceVersion: `mock-office-${index}` }))
 const text = (id, content) => ({ id, kind: 'text', text: content, editable: true })
 const documents = new Map(mockOfficeFiles.filter(entry => entry.kind === 'file').map(entry => {
   const kind = entry.name.split('.').at(-1)
   let sections = [{ name: '', items: [
     { ...text('p1', 'KPanel 轻量 Office · UI 模拟数据'), bold: true, fontSize: 24 },
-    text('p2', '点击这段文字即可直接修改，按 Ctrl+S 保存。此预览不会修改服务器文件。'),
+    text('p2', '点击这段文字，在右侧修改内容后保存。此预览不会修改服务器文件。'),
     { id: 'table', kind: 'table', text: '', editable: false, table: [[text('c1', '任务'), text('c2', '状态')], [text('c3', '自研预览与基础编辑'), text('c4', '候选体验')]] },
-  ] }]
-  // More than one 80-item page, with read-only field results mixed in, exercises paging and locked text.
-  if (entry.name.startsWith('长文档')) sections = [{ name: '', items: [
-    { ...text('long-title', '运维周报 · 长文档分页示例'), bold: true, fontSize: 22, align: 'center' },
-    ...Array.from({ length: 110 }, (_, index) => index % 9 === 4
-      ? { id: `long-${index}`, kind: 'text', text: `第 ${index + 1} 段 · 域代码结果（只读）`, editable: false }
-      : text(`long-${index}`, `第 ${index + 1} 段：节点巡检正常，磁盘使用率 ${40 + (index % 30)}%，备份任务按计划完成。`)),
   ] }]
   if (kind === 'xlsx') sections = [{ name: '预算', rows: 8, columns: 4, items: [
     ...['项目', '数量', '单价', '总价'].map((value, index) => ({ ...text(`header-${index}`, value), kind: 'cell', row: 1, column: index + 1 })),
     ...['服务器', '2', '100', '200'].map((value, index) => ({ ...text(`value-${index}`, value), kind: 'cell', row: 2, column: index + 1,
       ...(index === 3 ? { formula: '=B2*C2', editable: false } : {}) })),
   ] }, { name: '备注', rows: 1, columns: 1, items: [{ ...text('note', '公式是缓存值，保存后请在 Excel 重算。'), kind: 'cell', row: 1, column: 1 }] }]
-  // Real decks report geometry in EMU (12700 per point) and font sizes in points.
-  const emu = points => points * 12700
-  if (kind === 'pptx') sections = [1, 2, 3].map(page => ({ name: `${page}`, width: emu(960), height: emu(540), items: page === 3 ? [
-    { ...text('title-3', '谢谢 · 演示结束'), x: emu(70), y: emu(200), width: emu(820), height: emu(120), bold: true, fontSize: 40, align: 'ctr' },
-  ] : [
-    { ...text(`title-${page}`, `KPanel · 幻灯片 ${page}`), x: emu(70), y: emu(70), width: emu(820), height: emu(100), bold: true, fontSize: 36 },
-    { ...text(`body-${page}`, '文本框可以直接修改；复杂母版和图表暂不渲染。'), x: emu(70), y: emu(220), width: emu(820), height: emu(140), fontSize: 20 },
+  if (kind === 'pptx') sections = [1, 2].map(page => ({ name: `${page}`, width: 960, height: 540, items: [
+    { ...text(`title-${page}`, `KPanel · 幻灯片 ${page}`), x: 70, y: 70, width: 800, height: 100, bold: true, fontSize: 32 },
+    { ...text(`body-${page}`, '文本框可以直接修改；复杂母版和图表暂不渲染。'), x: 70, y: 220, width: 800, height: 140, fontSize: 20 },
   ] }))
   return [entry.path, { entry, kind, contentVersion: 'a'.repeat(64), notes: ['basic_layout'], sections }]
 }))

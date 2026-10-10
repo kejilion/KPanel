@@ -183,7 +183,7 @@ func TestFileRemoteDownloadBackgroundDetachesListsRedactsAndDeletes(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	jobIndex, err := os.ReadFile(filepath.Join(filepath.Dir(tokenPath), "file-transfers", "jobs-v2.json"))
+	jobIndex, err := os.ReadFile(filepath.Join(filepath.Dir(tokenPath), "file-transfers", "jobs-v1.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
