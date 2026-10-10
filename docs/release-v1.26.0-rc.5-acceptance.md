@@ -21,6 +21,24 @@
 - 本轮文档分支 `docs/v126-rc5-acceptance` 在 L0、候选/main CI 后归档为 `archive/docs/v126-rc5-acceptance`；精确远端读回及本地分支改名见外部 docs-archive-result.json。随后同步管理 main 并清理本轮自有文档工作树。
 - 形成来源的截止时间 `2026-10-10T16:55:54.017Z`；冻结后变化另记 intake-freeze-final-r3-r2.json，留待后续预览，不追改本版不可变来源。
 
+### 2026-10-11 发布后归档清理
+
+用户追加授权“归档清理”后，发布负责人复核自有已结束资源；本节为发布后的处置补记，不改变上述发布时点和原流程异常统计。
+
+| 原分支 | 精确 tip | 归档与核验结果 |
+| --- | --- | --- |
+| `fix/bt-startup-recovery-rc5` | `50d60ff5933dc8edc8a561514fba0551328e21b5` | 已纳入 RC5；本地改名为 `archive/fix/bt-startup-recovery-rc5`，同名远端归档精确读回通过；原活跃引用已不存在 |
+| `fix/v126-rc1-go-security` | `861a3335a4e2f5263b0d32942da89c3f5becfe4b` | 已纳入 RC1 并由 RC5 继承；既有本地 `archive/fix/v126-rc1-go-security` 补充同 SHA 远端归档，精确读回通过；原活跃引用已不存在 |
+| `fix/v126-rc1-office-motion-token` | `5d4be342f5c76f78cd977612e170151bdcd7619c` | 已纳入 RC1 并由 RC5 继承；既有本地 `archive/fix/v126-rc1-office-motion-token` 补充同 SHA 远端归档，精确读回通过；原活跃引用已不存在 |
+
+- 三个归档引用通过带空 expected-SHA lease 的原子 SSH push 创建，未覆盖已有归档；原 tip 均是不可变 `v1.26.0-rc.5` 的祖先。恢复时先 fetch 并核对精确 SHA，再从批准基线建立新任务工作树读取或重放，不续写归档。
+- 六个自有旧工作树完成 clean、精确 tip、忽略文件、链接、嵌套仓库和可恢复性盘点：`kpanel-bt-startup-recovery`、`kpanel-v126-rc1-acceptance`、`kpanel-v126-rc1-go-security-fix`、`kpanel-v126-rc1-office-motion-fix`、`kpanel-v126-rc1-visual-baseline`、`kpanel-v126-rc2-acceptance`。其中 visual-baseline 仅有可再生 `web/node_modules/`；其余没有忽略内容。原生 PowerShell 清理在进程创建前被自动审批复核拒绝，返回原因仅为 `blocked by policy`，没有细分理由；实际移除工作树数为 0，六项原样保留为本地待处置。责任人为发布负责人；下次获得可用的获准原生清理入口时复核，继续保护当前候选、原始证据和作者资源。
+- `arena-154` 删除 BT r1/r2/r3/r5 的四份重复 `source.tar` 和未执行草稿解析器的 `/tmp/kpanel-rc5-draft-9b411931.tar`；五项均已与保留在本地的完整副本核对 SHA-256。根分区实测净释放 `210059264` bytes，可用空间由 `8180178944` 增至 `8390238208` bytes；不把跨文件系统的文件逻辑大小当作根分区释放量。
+- 远端 438 份原始文件清理前后哈希一致；Docker 容器、镜像和数据卷清单一致，未清理共享构建缓存。完整本地恢复 bundle、首次失败、源码叠加输入、审计与浏览器原件继续保留。
+- 唯一预览候选仍为 `release/v1.26.0-candidate@5cd7bcc747eefc952247312a7d672cd453609251`；作者所有权未释放的分支、工作树和 4179/4180/4181 预览继续保留。生产未部署。
+
+原始盘点、原子推送及远端回读、自动审批拒绝说明、重复副本资格化和清理回执保留在既有外部发布证据目录的 `archive-cleanup-20261011-r1/`；不覆盖此前发布收尾原件。
+
 ## 发布画像与范围
 
 业务域为下载、广告与桌面、终端、容器管理和体检报告；变更面包含展示、既有会话边界、宿主机容器 exec/精确进程清理以及有界 BT 重拨，风险等级 L3。
