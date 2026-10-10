@@ -22,6 +22,79 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+func TestContainerTerminalEnvironmentWaitsForExecStartup(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		environment []byte
+	}{
+		{"empty", nil},
+		{"pre-exec", []byte("TERM=xterm\x00")},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			calls := 0
+			err := verifyContainerTerminalEnvironment(ctx, "owned-nonce", func() ([]byte, error) {
+				calls++
+				if calls == 1 {
+					return test.environment, nil
+				}
+				return []byte("TERM=xterm\x00KPANEL_TERMINAL_ID=owned-nonce\x00"), nil
+			})
+			if err != nil || calls != 2 {
+				t.Fatalf("exec startup verification = %v, reads = %d", err, calls)
+			}
+		})
+	}
+}
+
+func TestContainerTerminalEnvironmentRejectsUnverifiedIdentity(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		environment []byte
+		readError   error
+	}{
+		{"wrong-nonce", []byte("KPANEL_TERMINAL_ID=other-nonce\x00"), nil},
+		{"nonce-prefix", []byte("KPANEL_TERMINAL_ID=owned-nonce-suffix\x00"), nil},
+		{"empty-nonce", []byte("KPANEL_TERMINAL_ID=\x00"), nil},
+		{"read-failure", nil, os.ErrPermission},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+			defer cancel()
+			calls := 0
+			err := verifyContainerTerminalEnvironment(ctx, "owned-nonce", func() ([]byte, error) {
+				calls++
+				return test.environment, test.readError
+			})
+			if err == nil || calls != 1 {
+				t.Fatalf("unverified identity = %v, reads = %d", err, calls)
+			}
+		})
+	}
+}
+
+func TestContainerTerminalEnvironmentHonorsOpenDeadline(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		environment []byte
+	}{
+		{"empty", nil},
+		{"missing-nonce", []byte("TERM=xterm\x00")},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+			defer cancel()
+			err := verifyContainerTerminalEnvironment(ctx, "owned-nonce", func() ([]byte, error) {
+				return test.environment, nil
+			})
+			if !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("unready environment deadline = %v", err)
+			}
+		})
+	}
+}
+
 func TestContainerTerminalUpgradePreservesBufferedBytesAndHandlerIndependence(t *testing.T) {
 	done := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
