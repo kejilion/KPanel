@@ -3,6 +3,9 @@ export interface ClusterHoverInfoRow {
   label: string
   value: string
 }
+
+// Only one card is open at a time; opening another closes the previous one.
+let closeActiveCard: (() => void) | undefined
 </script>
 
 <script setup lang="ts">
@@ -12,7 +15,9 @@ import { nextTick, onBeforeUnmount, ref, useId, watch } from 'vue'
  * Icon trigger with a read-only info card. The card opens on hover, keyboard
  * focus or tap, and is teleported so card overflow and the list's horizontal
  * scroller never clip it. Teleported content sits outside the phrase observer
- * root, so callers pass already translated text.
+ * root, so callers pass already translated text. The card takes the pointer
+ * itself, so rows underneath never react through it, and it stays open while
+ * the pointer moves onto it.
  */
 defineOptions({ inheritAttrs: false })
 
@@ -32,6 +37,8 @@ const position = ref({ left: 0, top: 0 })
 const placement = ref<'below' | 'above'>('below')
 const id = `cluster-hover-info-${useId()}`
 let hoverTimer: number | undefined
+let leaveTimer: number | undefined
+let cardHovered = false
 
 function place(): void {
   const anchor = trigger.value?.getBoundingClientRect()
@@ -50,7 +57,10 @@ function place(): void {
 
 async function show(): Promise<void> {
   window.clearTimeout(hoverTimer)
+  window.clearTimeout(leaveTimer)
   if (open.value) return
+  if (closeActiveCard !== close) closeActiveCard?.()
+  closeActiveCard = close
   open.value = true
   await nextTick()
   place()
@@ -58,6 +68,9 @@ async function show(): Promise<void> {
 
 function close(): void {
   window.clearTimeout(hoverTimer)
+  window.clearTimeout(leaveTimer)
+  cardHovered = false
+  if (closeActiveCard === close) closeActiveCard = undefined
   pinned.value = false
   open.value = false
 }
@@ -65,14 +78,38 @@ function close(): void {
 function onPointerEnter(event: PointerEvent): void {
   if (event.pointerType === 'touch') return
   window.clearTimeout(hoverTimer)
+  window.clearTimeout(leaveTimer)
   hoverTimer = window.setTimeout(() => void show(), 120)
 }
 
+/** The grace period lets the pointer cross the gap between trigger and card. */
 function onPointerLeave(event: PointerEvent): void {
   if (event.pointerType === 'touch') return
   window.clearTimeout(hoverTimer)
-  // A card opened from the keyboard stays with its focused trigger.
-  if (!pinned.value && !trigger.value?.matches(':focus-visible')) open.value = false
+  window.clearTimeout(leaveTimer)
+  leaveTimer = window.setTimeout(() => {
+    // A pinned card, or one opened from the keyboard, stays with its trigger.
+    if (!pinned.value && !trigger.value?.matches(':focus-visible')) close()
+  }, 160)
+}
+
+function onCardPointerEnter(): void {
+  cardHovered = true
+  window.clearTimeout(leaveTimer)
+}
+
+function onCardPointerLeave(event: PointerEvent): void {
+  cardHovered = false
+  onPointerLeave(event)
+}
+
+/**
+ * Pressing inside the card (to select an ASN, say) drops focus to nothing;
+ * focus moving to another control still closes it.
+ */
+function onBlur(event: FocusEvent): void {
+  if (cardHovered && !event.relatedTarget) return
+  close()
 }
 
 function onClick(): void {
@@ -91,7 +128,7 @@ function onKeydown(event: KeyboardEvent): void {
 }
 
 function onDocumentPointer(event: PointerEvent): void {
-  if (event.target instanceof Node && trigger.value?.contains(event.target)) return
+  if (event.target instanceof Node && (trigger.value?.contains(event.target) || panel.value?.contains(event.target))) return
   close()
 }
 
@@ -139,7 +176,7 @@ onBeforeUnmount(() => {
     @pointerenter="onPointerEnter"
     @pointerleave="onPointerLeave"
     @focus="show"
-    @blur="close"
+    @blur="onBlur"
     @click="onClick"
     @keydown="onKeydown"
   >
@@ -154,6 +191,8 @@ onBeforeUnmount(() => {
       :class="`is-${placement}`"
       role="tooltip"
       :style="{ left: `${position.left}px`, top: `${position.top}px` }"
+      @pointerenter="onCardPointerEnter"
+      @pointerleave="onCardPointerLeave"
     >
       <header class="cluster-hover-info__header">
         <span class="cluster-hover-info__icon" aria-hidden="true"><slot name="trigger" /></span>
@@ -213,7 +252,7 @@ onBeforeUnmount(() => {
   box-shadow: var(--shadow-md);
   font-size: 14px;
   line-height: 1.5;
-  pointer-events: none;
+  cursor: default;
   animation: cluster-hover-info-in 140ms ease-out;
 }
 

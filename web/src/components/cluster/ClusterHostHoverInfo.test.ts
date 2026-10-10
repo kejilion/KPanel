@@ -109,8 +109,65 @@ describe('ClusterHostRegionInfo', () => {
     expect([...card()!.querySelectorAll('dd')].map((node) => node.textContent)).toEqual(['AS152194', 'CTG Server Limited'])
 
     await trigger.trigger('pointerleave', { pointerType: 'mouse' })
+    vi.advanceTimersByTime(100)
+    await nextTick()
+    expect(card()).not.toBeNull()
+    vi.advanceTimersByTime(100)
+    await nextTick()
     expect(card()).toBeNull()
     wrapper.unmount()
+  })
+
+  it('stays open while the pointer rests on the card and closes after it leaves', async () => {
+    vi.useFakeTimers()
+    const wrapper = mount(ClusterHostRegionInfo, { attachTo: document.body, props: { location: { country: 'SG', countryCode: 'SG', isp: 'AS31898 Oracle Corporation' } } })
+    const trigger = wrapper.get('button')
+    await trigger.trigger('pointerenter', { pointerType: 'mouse' })
+    vi.advanceTimersByTime(150)
+    await nextTick()
+    await trigger.trigger('pointerleave', { pointerType: 'mouse' })
+    card()!.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse' }))
+    vi.advanceTimersByTime(400)
+    await nextTick()
+    expect(card()).not.toBeNull()
+
+    // Pressing inside the card, for example to select the ASN, keeps it open.
+    card()!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+    await trigger.trigger('blur')
+    await nextTick()
+    expect(card()).not.toBeNull()
+
+    // Focus moving to another control still closes it, even with the pointer on the card.
+    const other = document.createElement('button')
+    document.body.append(other)
+    trigger.element.dispatchEvent(new FocusEvent('blur', { relatedTarget: other }))
+    await nextTick()
+    expect(card()).toBeNull()
+    await trigger.trigger('focus')
+    await nextTick()
+    card()!.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse' }))
+
+    card()!.dispatchEvent(new PointerEvent('pointerleave', { pointerType: 'mouse' }))
+    vi.advanceTimersByTime(200)
+    await nextTick()
+    expect(card()).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('keeps a single card open so a covered row never stacks a second one', async () => {
+    const first = mount(ClusterHostSystemInfo, { attachTo: document.body, props: { telemetry: telemetry() } })
+    const second = mount(ClusterHostRegionInfo, { attachTo: document.body, props: { location: { country: 'SG', countryCode: 'SG', isp: 'AS31898 Oracle Corporation' } } })
+    await first.get('button').trigger('click')
+    await nextTick()
+    expect(document.body.querySelectorAll('.cluster-hover-info__card')).toHaveLength(1)
+    expect(card()?.textContent).toContain('Debian')
+
+    await second.get('button').trigger('click')
+    await nextTick()
+    expect(document.body.querySelectorAll('.cluster-hover-info__card')).toHaveLength(1)
+    expect(card()?.textContent).toContain('Oracle Corporation')
+    first.unmount()
+    second.unmount()
   })
 
   it('keeps a tapped card open until the next outside press', async () => {
