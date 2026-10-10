@@ -1644,7 +1644,7 @@ onBeforeUnmount(() => {
           >
             <GripVertical :size="15" />
           </button>
-          <ClusterHostSystemInfo class="cluster-card__system" :telemetry="host.lastSnapshot?.telemetry" />
+          <ClusterHostSystemInfo class="cluster-card__system" :system="host.lastSnapshot?.telemetry" />
           <div class="cluster-card__identity">
             <span class="cluster-card__title">
               <ClusterHostRegionInfo

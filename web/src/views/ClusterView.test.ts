@@ -483,7 +483,7 @@ describe('ClusterView inventory and navigation', () => {
   it('moves system and region details behind the identity icons and leads the network cells with live rates', () => {
     const source = readFileSync(new URL('./ClusterView.vue', import.meta.url), 'utf8')
     const card = source.slice(source.indexOf('<article'), source.indexOf('</article>'))
-    expect(card).toContain('<ClusterHostSystemInfo class="cluster-card__system" :telemetry="host.lastSnapshot?.telemetry" />')
+    expect(card).toContain('<ClusterHostSystemInfo class="cluster-card__system" :system="host.lastSnapshot?.telemetry" />')
     expect(card).toContain(':location="host.lastSnapshot.telemetry.publicNetwork"')
     expect(card.indexOf('<ClusterHostRegionInfo')).toBeLessThan(card.indexOf('<strong>{{ host.name }}</strong>'))
     expect(card).not.toContain('<span>系统</span>')

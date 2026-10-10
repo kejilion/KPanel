@@ -38,16 +38,16 @@ afterEach(() => {
 
 describe('ClusterHostSystemInfo', () => {
   it('uses the overview operating-system mapping for the icon and keeps the details in the accessible name', () => {
-    const known = mount(ClusterHostSystemInfo, { props: { telemetry: telemetry({ os: 'AlmaLinux 9.6 (Sage Margay)', osId: 'almalinux', osLike: ['rhel', 'centos', 'fedora'] }) } })
+    const known = mount(ClusterHostSystemInfo, { props: { system: telemetry({ os: 'AlmaLinux 9.6 (Sage Margay)', osId: 'almalinux', osLike: ['rhel', 'centos', 'fedora'] }) } })
     expect(known.find('.os-identity__mark').attributes('title')).toBeUndefined()
     expect(known.get('button').attributes('aria-label')).toBe('系统 · AlmaLinux 9.6 (Sage Margay) · arm64 · 6.12.48+deb13-arm64 · Neoverse-N1 · 4 核')
 
-    const unknown = mount(ClusterHostSystemInfo, { props: { telemetry: telemetry({ os: 'Vendor Linux 1', osId: 'vendorlinux', osLike: ['ubuntu', 'debian'] }) } })
+    const unknown = mount(ClusterHostSystemInfo, { props: { system: telemetry({ os: 'Vendor Linux 1', osId: 'vendorlinux', osLike: ['ubuntu', 'debian'] }) } })
     expect(unknown.get('button').attributes('aria-label')).toContain('Vendor Linux 1')
   })
 
   it('opens the system card on focus with architecture, kernel and processor, and closes on Escape', async () => {
-    const wrapper = mount(ClusterHostSystemInfo, { attachTo: document.body, props: { telemetry: telemetry() } })
+    const wrapper = mount(ClusterHostSystemInfo, { attachTo: document.body, props: { system: telemetry() } })
     const trigger = wrapper.get('button')
     expect(card()).toBeNull()
 
@@ -65,7 +65,7 @@ describe('ClusterHostSystemInfo', () => {
   })
 
   it('follows a focused trigger that scrolls into view and closes once it leaves the viewport', async () => {
-    const wrapper = mount(ClusterHostSystemInfo, { attachTo: document.body, props: { telemetry: telemetry() } })
+    const wrapper = mount(ClusterHostSystemInfo, { attachTo: document.body, props: { system: telemetry() } })
     const trigger = wrapper.get('button')
     await trigger.trigger('focus')
     await nextTick()
@@ -155,7 +155,7 @@ describe('ClusterHostRegionInfo', () => {
   })
 
   it('keeps a single card open so a covered row never stacks a second one', async () => {
-    const first = mount(ClusterHostSystemInfo, { attachTo: document.body, props: { telemetry: telemetry() } })
+    const first = mount(ClusterHostSystemInfo, { attachTo: document.body, props: { system: telemetry() } })
     const second = mount(ClusterHostRegionInfo, { attachTo: document.body, props: { location: { country: 'SG', countryCode: 'SG', isp: 'AS31898 Oracle Corporation' } } })
     await first.get('button').trigger('click')
     await nextTick()
@@ -182,6 +182,24 @@ describe('ClusterHostRegionInfo', () => {
     document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
     await nextTick()
     expect(card()).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('words missing public location and network as withheld on the share page', async () => {
+    const wrapper = mount(ClusterHostRegionInfo, { attachTo: document.body, props: { location: {}, shared: true } })
+    await wrapper.get('button').trigger('focus')
+    await nextTick()
+    expect(card()?.textContent).toContain('地区未公开')
+    expect(card()?.textContent).toContain('网络信息未公开')
+    wrapper.unmount()
+  })
+
+  it('accepts a public share host as the system summary without inventing missing fields', async () => {
+    const wrapper = mount(ClusterHostSystemInfo, { attachTo: document.body, props: { system: { os: 'Debian', architecture: 'arm64', cpu: { cores: 2 } } } })
+    await wrapper.get('button').trigger('focus')
+    await nextTick()
+    expect([...card()!.querySelectorAll('dt')].map((node) => node.textContent)).toEqual(['架构', '处理器'])
+    expect(card()?.textContent).toContain('2 核')
     wrapper.unmount()
   })
 

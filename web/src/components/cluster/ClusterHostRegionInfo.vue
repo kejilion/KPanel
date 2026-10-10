@@ -7,7 +7,8 @@ import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
 import { hostLocationLabel, splitAutonomousSystem } from '@/lib/clusterHostIdentity'
 import type { PublicNetworkSummary } from '@/types/api'
 
-const props = defineProps<{ location?: PublicNetworkSummary }>()
+/** `shared` words gaps as withheld, matching the anonymous share page and its globe. */
+const props = defineProps<{ location?: PublicNetworkSummary; shared?: boolean }>()
 
 function phrase(value: string): string {
   phraseCatalogVersion.value
@@ -16,7 +17,7 @@ function phrase(value: string): string {
 
 const countryCode = computed(() => props.location?.countryCode?.trim() || '')
 const place = computed(() => hostLocationLabel(props.location))
-const title = computed(() => place.value || phrase('位置未获取'))
+const title = computed(() => place.value || phrase(props.shared ? '地区未公开' : '位置未获取'))
 const rows = computed(() => {
   const network = splitAutonomousSystem(props.location?.isp)
   return [
@@ -24,7 +25,10 @@ const rows = computed(() => {
     { label: phrase('运营商'), value: network.organization || '' },
   ].filter((row) => row.value)
 })
-const note = computed(() => (props.location?.isp?.trim() ? '' : phrase('运营商未知')))
+const note = computed(() => {
+  if (props.location?.isp?.trim()) return ''
+  return phrase(props.shared ? '网络信息未公开' : '运营商未知')
+})
 const label = computed(() => [phrase('地区'), title.value, props.location?.isp?.trim()].filter(Boolean).join(' · '))
 </script>
 

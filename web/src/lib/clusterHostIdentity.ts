@@ -1,6 +1,16 @@
 import { formatBytes } from '@/lib/format'
 import type { PublicNetworkSummary } from '@/types/api'
 
+/** The system fields a hover card shows; panel telemetry and public share hosts both fit. */
+export interface HostSystemSummary {
+  os?: string
+  osId?: string
+  osLike?: string[]
+  architecture?: string
+  kernel?: string
+  cpu?: { model?: string; cores?: number }
+}
+
 export interface AutonomousSystemLabel {
   asn?: string
   organization?: string
