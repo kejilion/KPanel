@@ -443,7 +443,8 @@ export function useDesktopMode() {
     ensureWindowPreferences()
     const preferencePath = windowPreferencePath(path)
     const preference = preferencePath ? windowPreferences.get(preferencePath) : undefined
-    return cascadePosition(index, viewport, preference?.width, preference?.height)
+    const defaults = findDesktopApp(path)?.windowSize
+    return cascadePosition(index, viewport, preference?.width ?? defaults?.width, preference?.height ?? defaults?.height)
   }
 
   function closeWindow(id: number): void {

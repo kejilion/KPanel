@@ -39,6 +39,8 @@ export interface DesktopApp {
    * workspace only accepts `nav:` keys listed here; management pages stay pinned.
    */
   removable?: boolean
+  /** First-open window size for content-heavy pages; a remembered size still wins. */
+  windowSize?: { width: number; height: number }
 }
 
 export const desktopApps: DesktopApp[] = [
@@ -170,6 +172,8 @@ export const desktopApps: DesktopApp[] = [
     allowMultiple: false,
     gradient: ['#fdba74', '#c2410c'],
     removable: true,
+    // Wide enough for the three-column banner wall on common desktop screens.
+    windowSize: { width: 1200, height: 820 },
   },
 ]
 

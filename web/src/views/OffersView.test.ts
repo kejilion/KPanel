@@ -66,8 +66,8 @@ describe('OffersView', () => {
     expect(view.findAll('.offers-disclosure')).toHaveLength(1 + tiles.length)
     expect(view.find('.offers-showcase__caption').text()).toContain('厂商 a')
     expect(view.find('.offers-showcase .offers-host').text()).toContain('a.example.com')
-    expect(view.text()).toContain('返利用于支持 KPanel 持续开发')
-    expect(view.text()).toContain('KPanel 不记录你点了哪些横幅')
+    expect(view.find('.offers-masthead').text()).toContain('链接含推广返利（AFF）')
+    expect(view.find('.offers-footnote').text()).toContain('也不记录你点了哪些横幅')
   })
 
   it('rotates the carousel every six seconds and stops while hovered or paused', async () => {
@@ -134,7 +134,7 @@ describe('OffersView', () => {
   it('hides carousel controls for a single featured banner', async () => {
     const view = await mountOffers(snapshot([offer('a', true), offer('c')]))
     expect(view.find('.offers-controls').exists()).toBe(false)
-    expect(view.find('.offers-showcase__bar .offers-disclosure').text()).toBe('广告')
+    expect(view.find('.offers-showcase__meta .offers-disclosure').text()).toBe('广告')
   })
 
   it.each([
@@ -151,10 +151,11 @@ describe('OffersView', () => {
 
   it('keeps the last publication visible and says so when a refresh failed', async () => {
     const view = await mountOffers(snapshot([offer('c')], 'stale'))
-    expect(view.find('.offers-notice').text()).toContain('暂时无法获取最新广告')
+    expect(view.find('.offers-stale').text()).toContain('未能刷新')
+    expect(view.find('.offers-updated').exists()).toBe(false)
     expect(view.findAll('.offers-tile:not(.offers-tile--more)')).toHaveLength(1)
 
-    await view.find('.offers-notice button').trigger('click')
+    await view.find('.offers-masthead button').trigger('click')
     await flushPromises()
     expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ refresh: true }))
   })
@@ -184,7 +185,8 @@ describe('OffersView', () => {
 
   it('refreshes on demand and replaces a broken image with the vendor text', async () => {
     const view = await mountOffers(snapshot([offer('c')]))
-    await view.find('.offers-intro button').trigger('click')
+    expect(view.find('.offers-updated').text()).toContain('更新于')
+    await view.find('.offers-masthead button').trigger('click')
     await flushPromises()
     expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ refresh: true }))
 

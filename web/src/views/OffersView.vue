@@ -26,10 +26,10 @@ const AUTOPLAY_MS = 6000
 const MAX_FEATURED = 3
 // Breakpoints follow the page container, not the viewport, so a desktop
 // window lays out like a classic page of the same width. Both keep every wall
-// banner at least 352px wide (2×352+16 and 3×352+2×16), which keeps 36px
-// source text near 13px.
-const WIDE_LAYOUT_MIN = 720
-const THREE_COLUMN_MIN = 1088
+// banner at least 352px wide with the 20px column gap (2×352+20 and
+// 3×352+2×20), which keeps 36px source text near 13px.
+const WIDE_LAYOUT_MIN = 724
+const THREE_COLUMN_MIN = 1096
 
 const root = ref<HTMLElement>()
 const snapshot = ref<OffersSnapshot>()
@@ -88,6 +88,7 @@ function formatDate(value?: string): string {
 }
 const updatedLabel = computed(() => formatDate(snapshot.value?.updatedAt))
 const fetchedLabel = computed(() => formatDate(snapshot.value?.fetchedAt))
+const stale = computed(() => !loading.value && !loadError.value && snapshot.value?.state === 'stale')
 
 function linkLabel(item: OfferItem): string {
   return `${item.vendor}：${item.alt}（广告，在新标签页打开 ${item.host}）`
@@ -167,34 +168,35 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="root" class="offers-page" :class="{ 'offers-page--narrow': narrow, 'offers-page--stacked': columns < 3 }">
-    <header class="offers-intro">
-      <p class="offers-intro__text">
-        科技lion 挑选的服务器与域名厂商。这里的链接都含推广返利（AFF），你支付的价格不变，返利用于支持 KPanel 持续开发。
-      </p>
-      <div class="offers-intro__meta">
-        <span v-if="updatedLabel">更新于 {{ updatedLabel }}</span>
+  <div
+    ref="root"
+    class="page offers-page"
+    :class="{ 'offers-page--narrow': narrow }"
+  >
+    <header class="offers-masthead">
+      <div class="offers-masthead__text">
+        <h2>服务器与域名精选</h2>
+        <p>科技lion 推荐的厂商 · 链接含推广返利（AFF），你支付的价格不变</p>
+      </div>
+      <div class="offers-masthead__meta">
+        <span v-if="stale" class="offers-stale" role="status">
+          <TriangleAlert :size="14" aria-hidden="true" />
+          <template v-if="fetchedLabel">未能刷新，显示 {{ fetchedLabel }} 的内容</template>
+          <template v-else>未能刷新，显示上次的内容</template>
+        </span>
+        <span v-else-if="updatedLabel" class="offers-updated">更新于 {{ updatedLabel }}</span>
         <button
-          class="icon-button"
+          class="offers-round-button"
           type="button"
-          aria-label="刷新"
-          title="刷新"
+          :aria-label="stale ? '重试' : '刷新'"
+          :title="stale ? '重试' : '刷新'"
           :disabled="refreshing || loading"
           @click="load(true)"
         >
-          <RefreshCw :size="17" :class="{ spin: refreshing }" aria-hidden="true" />
+          <RefreshCw :size="16" :class="{ spin: refreshing }" aria-hidden="true" />
         </button>
       </div>
     </header>
-
-    <div v-if="!loading && !loadError && snapshot?.state === 'stale'" class="offers-notice" role="status">
-      <TriangleAlert :size="17" aria-hidden="true" />
-      <p>
-        <template v-if="fetchedLabel">暂时无法获取最新广告，下面是 {{ fetchedLabel }} 获取的内容。</template>
-        <template v-else>暂时无法获取最新广告，下面是上次获取的内容。</template>
-      </p>
-      <button class="button button--ghost" type="button" :disabled="refreshing" @click="load(true)">重试</button>
-    </div>
 
     <div v-if="loading" class="offers-skeleton" role="status" aria-label="正在加载广告专栏">
       <span class="offers-skeleton__block offers-skeleton__block--wide" />
@@ -263,19 +265,19 @@ onBeforeUnmount(() => {
             </span>
           </a>
         </div>
-        <div v-if="activeSlide" class="offers-showcase__bar">
-          <span class="offers-disclosure">广告</span>
-          <p class="offers-showcase__caption" aria-live="polite" data-i18n-ignore>
-            <strong>{{ activeSlide.vendor }}</strong>
-            <span>{{ activeSlide.alt }}</span>
+        <div v-if="activeSlide" class="offers-showcase__meta">
+          <p class="offers-showcase__caption" aria-live="polite">
+            <span class="offers-disclosure">广告</span>
+            <strong data-i18n-ignore>{{ activeSlide.vendor }}</strong>
+            <span class="offers-showcase__alt" data-i18n-ignore>{{ activeSlide.alt }}</span>
+            <span class="offers-host" data-i18n-ignore>
+              {{ activeSlide.host }}
+              <ExternalLink :size="12" aria-hidden="true" />
+            </span>
           </p>
-          <span class="offers-host" data-i18n-ignore>
-            {{ activeSlide.host }}
-            <ExternalLink :size="13" aria-hidden="true" />
-          </span>
           <div v-if="featured.length > 1" class="offers-controls">
-            <button type="button" aria-label="上一张" @click="showSlide(current - 1)">
-              <ChevronLeft :size="18" aria-hidden="true" />
+            <button type="button" class="offers-round-button" aria-label="上一张" @click="showSlide(current - 1)">
+              <ChevronLeft :size="16" aria-hidden="true" />
             </button>
             <div class="offers-dots">
               <button
@@ -287,18 +289,18 @@ onBeforeUnmount(() => {
                 @click="showSlide(index)"
               />
             </div>
-            <button type="button" aria-label="下一张" @click="showSlide(current + 1)">
-              <ChevronRight :size="18" aria-hidden="true" />
+            <button type="button" class="offers-round-button" aria-label="下一张" @click="showSlide(current + 1)">
+              <ChevronRight :size="16" aria-hidden="true" />
             </button>
             <button
-              class="offers-controls__pause"
+              class="offers-round-button offers-controls__pause"
               type="button"
               :aria-label="pausedByUser ? '继续自动切换' : '暂停自动切换'"
               :aria-pressed="pausedByUser"
               @click="pausedByUser = !pausedByUser"
             >
-              <Play v-if="pausedByUser" :size="16" aria-hidden="true" />
-              <Pause v-else :size="16" aria-hidden="true" />
+              <Play v-if="pausedByUser" :size="14" aria-hidden="true" />
+              <Pause v-else :size="14" aria-hidden="true" />
             </button>
           </div>
         </div>
@@ -306,8 +308,8 @@ onBeforeUnmount(() => {
 
       <section class="offers-wall-section" aria-labelledby="offers-wall-title">
         <div class="offers-section-head">
-          <h2 id="offers-wall-title">更多厂商</h2>
-          <span v-if="wall.length">{{ wall.length }} 家</span>
+          <h3 id="offers-wall-title">更多厂商</h3>
+          <span v-if="wall.length" class="offers-count">{{ wall.length }} 家</span>
         </div>
         <div class="offers-wall" :class="`offers-wall--cols-${columns}`">
           <a
@@ -338,7 +340,7 @@ onBeforeUnmount(() => {
               <span class="offers-tile__vendor" data-i18n-ignore>{{ item.vendor }}</span>
               <span class="offers-host" data-i18n-ignore>
                 {{ item.host }}
-                <ExternalLink :size="13" aria-hidden="true" />
+                <ExternalLink :size="12" aria-hidden="true" />
               </span>
             </span>
           </a>
@@ -350,7 +352,7 @@ onBeforeUnmount(() => {
             rel="noopener noreferrer"
           >
             <span class="offers-tile__image">
-              <LayoutGrid :size="22" aria-hidden="true" />
+              <LayoutGrid :size="20" aria-hidden="true" />
               <strong>更多 VPS 优惠</strong>
               <span>kejilion.pro/topvps 整理的热门套餐</span>
             </span>
@@ -359,7 +361,7 @@ onBeforeUnmount(() => {
               <span class="offers-tile__vendor">科技lion</span>
               <span class="offers-host">
                 kejilion.pro
-                <ExternalLink :size="13" aria-hidden="true" />
+                <ExternalLink :size="12" aria-hidden="true" />
               </span>
             </span>
           </a>
@@ -367,50 +369,64 @@ onBeforeUnmount(() => {
       </section>
     </template>
 
-    <aside class="offers-about" aria-labelledby="offers-about-title">
-      <Info :size="18" aria-hidden="true" />
-      <div>
-        <h2 id="offers-about-title">关于广告</h2>
-        <ul>
-          <li>本页链接含推广返利（AFF），你支付的价格不变。</li>
-          <li>横幅上的价格和配置以厂商页面为准；KPanel 不经手订单和付款。</li>
-          <li>KPanel 不记录你点了哪些横幅。</li>
-        </ul>
-      </div>
-    </aside>
+    <footer class="offers-footnote">
+      <Info :size="14" aria-hidden="true" />
+      <p>价格和配置以厂商页面为准；KPanel 不经手订单和付款，也不记录你点了哪些横幅。</p>
+    </footer>
   </div>
 </template>
 
 <style scoped>
 /*
  * Class names avoid ad/banner/sponsor/promo so content blockers do not hide
- * unrelated panel chrome by selector. Vendor colour lives only inside images.
+ * unrelated panel chrome by selector. Vendor colour lives only inside images;
+ * the page itself stays quiet so mixed artwork reads as one collection.
  */
 .offers-page {
   display: grid;
-  gap: 24px;
+  align-content: start;
+  gap: 36px;
+  width: 100%;
+  max-width: 1240px;
   min-width: 0;
+  margin-inline: auto;
 }
 
-.offers-intro {
+.offers-page--narrow {
+  gap: 28px;
+}
+
+/* Masthead: one calm line of context, with freshness and refresh at the side. */
+.offers-masthead {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: 12px 24px;
+  gap: 12px 32px;
 }
 
-.offers-intro__text {
-  flex: 1 1 420px;
+.offers-masthead__text {
+  display: grid;
+  gap: 6px;
+  flex: 1 1 320px;
   min-width: 0;
-  max-width: 68ch;
+}
+
+.offers-masthead h2 {
   margin: 0;
-  color: var(--text-soft);
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.offers-masthead p {
+  margin: 0;
+  color: var(--muted);
   font-size: 14px;
   line-height: 1.6;
 }
 
-.offers-intro__meta {
+.offers-masthead__meta {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -418,43 +434,60 @@ onBeforeUnmount(() => {
   font-size: 13px;
 }
 
-.offers-notice {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+.offers-stale {
+  display: inline-flex;
   align-items: center;
-  gap: 10px 12px;
-  padding: 10px 12px 10px 14px;
-  color: var(--text);
-  background: var(--amber-soft);
-  border: 1px solid color-mix(in srgb, var(--amber) 30%, var(--border));
-  border-radius: var(--radius);
-  font-size: 14px;
-}
-
-.offers-notice > svg {
+  gap: 6px;
+  padding: 4px 10px;
   color: var(--amber);
+  background: var(--amber-soft);
+  border-radius: 999px;
+  font-weight: 500;
 }
 
-.offers-notice p {
-  margin: 0;
+.offers-round-button {
+  display: inline-grid;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  padding: 0;
+  color: var(--text-soft);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  transition:
+    color var(--motion-duration-fast) var(--motion-ease-fade),
+    background var(--motion-duration-fast) var(--motion-ease-fade),
+    border-color var(--motion-duration-fast) var(--motion-ease-fade);
+}
+
+.offers-round-button:hover:not(:disabled) {
+  color: var(--brand);
+  background: var(--interaction-hover-surface);
+  border-color: color-mix(in srgb, var(--brand) 30%, var(--border-strong));
+}
+
+.offers-round-button:disabled {
+  cursor: default;
+  opacity: 0.6;
 }
 
 .offers-skeleton {
   display: grid;
-  gap: 24px;
+  gap: 36px;
 }
 
 .offers-skeleton__block {
   display: block;
   aspect-ratio: 2 / 1;
   background: var(--surface-subtle);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
 }
 
 .offers-skeleton__block--wide {
   aspect-ratio: 4 / 1;
-  border-radius: var(--radius-lg);
 }
 
 .offers-page--narrow .offers-skeleton__block--wide {
@@ -465,11 +498,11 @@ onBeforeUnmount(() => {
   display: grid;
   justify-items: center;
   gap: 10px;
-  padding: 40px 16px;
+  padding: 56px 20px;
   color: var(--text-soft);
   text-align: center;
   background: var(--surface);
-  border: 1px dashed var(--border-strong);
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
 }
 
@@ -489,22 +522,23 @@ onBeforeUnmount(() => {
 }
 
 .offers-empty .button {
+  margin-top: 6px;
   text-decoration: none;
 }
 
-/* Carousel: the image and the caption bar form one surface. */
+/* Carousel: frameless artwork, with a single light caption line beneath. */
 .offers-showcase {
-  overflow: hidden;
-  background: var(--surface-raised);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
+  display: grid;
+  gap: 14px;
 }
 
 .offers-showcase__stage {
   position: relative;
+  overflow: hidden;
   aspect-ratio: 4 / 1;
   background: var(--surface-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
 }
 
 .offers-page--narrow .offers-showcase__stage {
@@ -536,27 +570,31 @@ onBeforeUnmount(() => {
 .offers-showcase__slide:focus-visible {
   outline: 2px solid var(--brand);
   outline-offset: -4px;
+  border-radius: var(--radius-lg);
 }
 
-.offers-showcase__bar {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+.offers-showcase__meta {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px 14px;
-  padding: 8px 10px 8px 16px;
-  border-top: 1px solid var(--border);
+  justify-content: space-between;
+  gap: 10px 24px;
+  padding-inline: 4px;
 }
 
 .offers-showcase__caption {
   display: flex;
+  flex: 1 1 360px;
   flex-wrap: wrap;
-  column-gap: 8px;
+  align-items: center;
+  gap: 4px 10px;
   min-width: 0;
   margin: 0;
   font-size: 14px;
+  line-height: 1.5;
 }
 
-.offers-showcase__caption span {
+.offers-showcase__alt {
   color: var(--text-soft);
 }
 
@@ -565,11 +603,11 @@ onBeforeUnmount(() => {
   display: inline-flex;
   flex: none;
   align-items: center;
-  padding: 2px 8px;
+  padding: 1px 8px;
   border-radius: 999px;
   font-size: 12px;
   font-weight: 600;
-  line-height: 1.4;
+  line-height: 1.5;
   white-space: nowrap;
 }
 
@@ -581,7 +619,6 @@ onBeforeUnmount(() => {
 .offers-tag {
   color: var(--text-soft);
   background: var(--surface-subtle);
-  border: 1px solid var(--border);
   font-weight: 500;
 }
 
@@ -597,37 +634,17 @@ onBeforeUnmount(() => {
 .offers-controls {
   display: flex;
   align-items: center;
-  gap: 2px;
-}
-
-.offers-controls > button {
-  display: grid;
-  width: 36px;
-  height: 36px;
-  place-items: center;
-  padding: 0;
-  color: var(--text-soft);
-  background: none;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition:
-    color var(--motion-duration-fast) var(--motion-ease-fade),
-    background var(--motion-duration-fast) var(--motion-ease-fade);
-}
-
-.offers-controls > button:hover {
-  color: var(--brand);
-  background: var(--interaction-hover-surface);
+  gap: 6px;
 }
 
 .offers-dots {
   display: flex;
+  padding-inline: 2px;
 }
 
 .offers-dots button {
-  width: 24px;
-  height: 36px;
+  width: 22px;
+  height: 34px;
   padding: 0;
   background: none;
   border: 0;
@@ -636,8 +653,8 @@ onBeforeUnmount(() => {
 
 .offers-dots button::before {
   display: block;
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   margin: auto;
   background: var(--border-strong);
   border-radius: 999px;
@@ -648,31 +665,34 @@ onBeforeUnmount(() => {
 }
 
 .offers-dots button[aria-current='true']::before {
-  width: 18px;
+  width: 20px;
   background: var(--brand);
+}
+
+.offers-controls__pause {
+  margin-left: 6px;
 }
 
 /* Wall */
 .offers-wall-section {
   display: grid;
-  gap: 14px;
+  gap: 18px;
 }
 
 .offers-section-head {
   display: flex;
-  flex-wrap: wrap;
   align-items: baseline;
-  gap: 4px 12px;
+  gap: 10px;
 }
 
-.offers-section-head h2 {
+.offers-section-head h3 {
   margin: 0;
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 600;
   line-height: 1.3;
 }
 
-.offers-section-head span {
+.offers-count {
   color: var(--muted);
   font-size: 13px;
 }
@@ -680,7 +700,7 @@ onBeforeUnmount(() => {
 .offers-wall {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 20px 16px;
+  gap: 28px 20px;
 }
 
 .offers-wall--cols-2 {
@@ -689,16 +709,17 @@ onBeforeUnmount(() => {
 
 .offers-wall--cols-1 {
   grid-template-columns: minmax(0, 1fr);
+  row-gap: 24px;
 }
 
 .offers-tile {
   display: grid;
   align-content: start;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
   color: inherit;
   text-decoration: none;
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
 }
 
 .offers-tile__image {
@@ -708,7 +729,7 @@ onBeforeUnmount(() => {
   aspect-ratio: 2 / 1;
   max-width: 100%;
   background: var(--surface-subtle);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
   transition:
     transform var(--motion-duration-fast) var(--motion-ease-standard),
@@ -720,14 +741,14 @@ onBeforeUnmount(() => {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 8%, transparent);
   content: '';
   pointer-events: none;
 }
 
 .offers-tile:hover .offers-tile__image {
   box-shadow: var(--shadow-md);
-  transform: translateY(-2px);
+  transform: translateY(-3px);
 }
 
 .offers-tile:hover .offers-tile__vendor {
@@ -744,7 +765,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 8px;
   min-width: 0;
-  padding-inline: 2px;
+  padding-inline: 4px;
 }
 
 .offers-tile__vendor {
@@ -763,9 +784,9 @@ onBeforeUnmount(() => {
   display: grid;
   align-content: center;
   justify-items: center;
-  gap: 4px;
-  padding: 16px;
-  color: var(--text-soft);
+  gap: 6px;
+  padding: 20px;
+  color: var(--muted);
   text-align: center;
   background: var(--surface);
   border: 1px dashed var(--border-strong);
@@ -783,7 +804,7 @@ onBeforeUnmount(() => {
 
 .offers-tile--more strong {
   color: var(--text);
-  font-size: 16px;
+  font-size: 15px;
 }
 
 .offers-tile--span {
@@ -808,7 +829,7 @@ onBeforeUnmount(() => {
   justify-content: flex-start;
   gap: 4px 12px;
   aspect-ratio: auto;
-  padding: 14px 18px;
+  padding: 16px 20px;
   text-align: left;
 }
 
@@ -822,7 +843,7 @@ onBeforeUnmount(() => {
   gap: 4px;
   width: 100%;
   height: 100%;
-  padding: 0 16px;
+  padding: 0 20px;
   color: var(--text-soft);
   background: var(--surface-subtle);
   font-size: 14px;
@@ -833,72 +854,34 @@ onBeforeUnmount(() => {
   font-size: 16px;
 }
 
-.offers-about {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 12px;
-  padding: 16px 18px;
-  color: var(--text-soft);
-  background: var(--surface-subtle);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-}
-
-.offers-about > svg {
-  margin-top: 2px;
+.offers-footnote {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding-top: 20px;
   color: var(--muted);
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+  line-height: 1.6;
 }
 
-.offers-about h2 {
-  margin: 0 0 4px;
-  color: var(--text);
-  font-size: 14px;
-  font-weight: 600;
+.offers-footnote > svg {
+  flex: none;
+  margin-top: 3px;
 }
 
-.offers-about ul {
-  display: grid;
-  gap: 2px;
+.offers-footnote p {
   margin: 0;
-  padding-left: 18px;
-  font-size: 14px;
 }
 
-/* Below three wall columns the caption bar takes two rows: label and text, then host and controls. */
-.offers-page--stacked .offers-showcase__bar {
-  grid-template-columns: auto minmax(0, 1fr) auto;
-}
-
-.offers-page--stacked .offers-showcase__caption {
-  grid-column: 2 / -1;
-}
-
-.offers-page--stacked .offers-showcase__bar .offers-host {
-  grid-column: 1 / 3;
-  grid-row: 2;
-}
-
-.offers-page--stacked .offers-controls {
-  grid-column: 3;
-  grid-row: 2;
-}
-
-.offers-page--narrow .offers-showcase__bar {
-  grid-template-columns: auto minmax(0, 1fr);
-}
-
-.offers-page--narrow .offers-showcase__bar .offers-host {
-  grid-column: 1 / -1;
-  grid-row: 2;
+/* A narrow page puts the carousel controls on their own line. */
+.offers-page--narrow .offers-showcase__meta {
+  display: grid;
+  gap: 8px;
 }
 
 .offers-page--narrow .offers-controls {
-  grid-column: 1 / -1;
-  grid-row: 3;
-}
-
-.offers-page--narrow .offers-controls__pause {
-  margin-left: auto;
+  justify-self: start;
 }
 
 @media (prefers-reduced-motion: reduce) {
