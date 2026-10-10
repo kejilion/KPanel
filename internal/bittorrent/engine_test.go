@@ -73,6 +73,164 @@ func newFixtureSeeder(t *testing.T, data []byte, info metainfo.Info) *torrent.Cl
 	return client
 }
 
+func TestStartupPeerRecovery(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	var recovery startupPeerRecovery
+	if recovery.shouldRetry(now, true, 1, 1, 0) || recovery.shouldRetry(now.Add(29*time.Second), true, 1, 1, 0) {
+		t.Fatal("startup connection recovered before its grace period")
+	}
+	if !recovery.shouldRetry(now.Add(30*time.Second), true, 1, 1, 0) {
+		t.Fatal("stalled startup connection was not recovered")
+	}
+	if recovery.shouldRetry(now.Add(31*time.Second), true, 1, 1, 0) || !recovery.shouldRetry(now.Add(61*time.Second), true, 1, 1, 0) || recovery.shouldRetry(now.Add(100*time.Second), true, 1, 1, 0) {
+		t.Fatal("startup recovery interval or two-attempt bound changed")
+	}
+	for _, state := range []struct {
+		name     string
+		metadata bool
+		active   int
+		known    int
+	}{
+		{"metadata-pending", false, 1, 1},
+		{"no-connected-peers", true, 0, 1},
+		{"no-public-remembered-peers", true, 1, 0},
+	} {
+		t.Run(state.name, func(t *testing.T) {
+			var r startupPeerRecovery
+			if r.shouldRetry(now, true, 1, 1, 0) || r.shouldRetry(now.Add(time.Hour), state.metadata, state.active, state.known, 0) || r.shouldRetry(now.Add(2*time.Hour), true, 1, 1, 0) {
+				t.Fatal("ineligible connection retained a retry timer")
+			}
+		})
+	}
+	var progressing startupPeerRecovery
+	progressing.shouldRetry(now, true, 1, 1, 0)
+	if progressing.shouldRetry(now.Add(30*time.Second), true, 1, 1, 1) || progressing.shouldRetry(now.Add(time.Hour), true, 1, 1, 0) {
+		t.Fatal("a connection that delivered payload was recovered")
+	}
+	oldPeer, newPeer := new(torrent.PeerConn), new(torrent.PeerConn)
+	if startupPeersRemoved([]*torrent.PeerConn{oldPeer}, []*torrent.PeerConn{oldPeer, newPeer}) || !startupPeersRemoved([]*torrent.PeerConn{oldPeer}, []*torrent.PeerConn{newPeer}) {
+		t.Fatal("redial did not wait for the exact closed connection to leave")
+	}
+}
+
+func TestEngineRecoversZeroPayloadStartup(t *testing.T) {
+	data := make([]byte, 4<<20)
+	for i := range data {
+		data[i] = byte(i*31 + i/32771)
+	}
+	info := testInfo(data)
+	private := true
+	info.Private = &private
+	seeder := newFixtureSeeder(t, data, info)
+	stalled, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stalled.Close()
+	stalledDone := make(chan error, 1)
+	go func() {
+		conn, err := stalled.Accept()
+		if err != nil {
+			stalledDone <- err
+			return
+		}
+		defer conn.Close()
+		_ = conn.SetDeadline(time.Now().Add(45 * time.Second))
+		handshake := make([]byte, 68)
+		if _, err = io.ReadFull(conn, handshake); err != nil {
+			stalledDone <- err
+			return
+		}
+		if handshake[0] != 19 || string(handshake[1:20]) != "BitTorrent protocol" {
+			stalledDone <- errors.New("fixture did not receive plaintext BT handshake")
+			return
+		}
+		clear(handshake[20:28])
+		copy(handshake[48:], "-KP0001-stalled-peer!")
+		bits := bytes.Repeat([]byte{0xff}, (len(info.Pieces)/20+7)/8)
+		message := make([]byte, 5+len(bits))
+		binary.BigEndian.PutUint32(message, uint32(1+len(bits)))
+		message[4] = 5 // bitfield: this peer advertises every piece.
+		copy(message[5:], bits)
+		response := append(handshake, message...)
+		response = append(response, 0, 0, 0, 1, 1) // unchoke, then withhold all payload.
+		if _, err = conn.Write(response); err != nil {
+			stalledDone <- err
+			return
+		}
+		_, err = io.Copy(io.Discard, conn)
+		stalledDone <- err
+	}()
+	var announces, dials atomic.Int32
+	tracker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		announces.Add(1)
+		compact := []byte{93, 184, 216, 34, 0, 0}
+		binary.BigEndian.PutUint16(compact[4:], uint16(seeder.LocalPort()))
+		_, _ = w.Write(bencode.MustMarshal(map[string]any{"interval": 120, "peers": string(compact)}))
+	}))
+	defer tracker.Close()
+	_, trackerPort, _ := net.SplitHostPort(tracker.Listener.Addr().String())
+	seedPort := strconv.Itoa(seeder.LocalPort())
+	client := remotedownload.NewClient(remotedownload.Config{Resolver: fixtureResolver{}, Dialer: func(ctx context.Context, network, address string) (net.Conn, error) {
+		_, port, err := net.SplitHostPort(address)
+		if err != nil || (port != trackerPort && port != seedPort) {
+			return nil, remotedownload.ErrAddressBlocked
+		}
+		target := net.JoinHostPort("127.0.0.1", port)
+		if port == seedPort && dials.Add(1) == 1 {
+			target = stalled.Addr().String()
+		}
+		return (&net.Dialer{}).DialContext(ctx, network, target)
+	}})
+	cache, err := OpenCache(filepath.Join(t.TempDir(), "cache"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cache.Close()
+	mi := metainfo.MetaInfo{InfoBytes: bencode.MustMarshal(info), Announce: "http://fixture.test:" + trackerPort + "/announce"}
+	source, err := Parse("", bencode.MustMarshal(mi))
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := NewEngine(cache, client)
+	engine.noDHT = true
+	engine.configure = func(cfg *torrent.ClientConfig) {
+		cfg.HeaderObfuscationPolicy.Preferred = false
+		cfg.HeaderObfuscationPolicy.RequirePreferred = true
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+	defer cancel()
+	result, downloadErr := engine.Download(ctx, source, false, func(Progress) bool { return true })
+	if result != nil {
+		defer result.Close()
+	}
+	if downloadErr != nil {
+		t.Fatal(downloadErr)
+	}
+	body := result.Open(ctx)
+	got, err := io.ReadAll(body)
+	_ = body.Close()
+	result.Close()
+	if err != nil || !bytes.Equal(got, data) {
+		t.Fatalf("recovered payload mismatch: %v, bytes=%d", err, len(got))
+	}
+	select {
+	case err := <-stalledDone:
+		if err != nil {
+			t.Fatalf("first peer did not close cleanly: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("stalled startup connection remained open")
+	}
+	if dials.Load() != 2 || announces.Load() != 1 {
+		t.Fatalf("recovery bypassed remembered peer or tracker budget: dials=%d announces=%d", dials.Load(), announces.Load())
+	}
+	entries, err := os.ReadDir(cache.root.Name())
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("recovered payload staging was not reclaimed: %v", err)
+	}
+}
+
 func TestEngineDownloadsTorrentAndMagnetFromRealPeer(t *testing.T) {
 	data := make([]byte, 4<<20)
 	for i := range data {

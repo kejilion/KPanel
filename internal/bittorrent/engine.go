@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"runtime"
+	"slices"
 	"time"
 
 	"github.com/anacrolix/dht/v2"
@@ -38,6 +39,47 @@ type peerPolicy struct {
 	baseline float64
 	probing  bool
 	finished bool
+}
+
+// Recover only startup connections that never deliver a payload byte. A live
+// peer can stop making progress before its first request; keep recovery bounded
+// and leave the existing overall deadline and progressing downloads alone.
+type startupPeerRecovery struct {
+	connectedSince time.Time
+	attempts       int
+	finished       bool
+}
+
+func (r *startupPeerRecovery) shouldRetry(now time.Time, metadataReady bool, active, remembered int, received int64) bool {
+	if received > 0 {
+		r.finished = true
+	}
+	if r.finished || r.attempts >= 2 {
+		return false
+	}
+	if !metadataReady || active == 0 || remembered == 0 {
+		r.connectedSince = time.Time{}
+		return false
+	}
+	if r.connectedSince.IsZero() {
+		r.connectedSince = now
+		return false
+	}
+	if now.Sub(r.connectedSince) < 30*time.Second {
+		return false
+	}
+	r.attempts++
+	r.connectedSince = time.Time{}
+	return true
+}
+
+func startupPeersRemoved(closed, current []*torrent.PeerConn) bool {
+	for _, peer := range closed {
+		if slices.Contains(current, peer) {
+			return false
+		}
+	}
+	return true
 }
 
 func (p *peerPolicy) observe(speed float64, remaining int64, pressure bool) int {
@@ -183,6 +225,9 @@ func (e *Engine) Download(ctx context.Context, source Source, smart bool, progre
 	window := lastProgress
 	windowBytes := int64(0)
 	policy := peerPolicy{limit: 4}
+	recovery := startupPeerRecovery{}
+	var retryPeers []torrent.PeerInfo
+	var retryClosed []*torrent.PeerConn
 	mode := "bt-standard"
 	if smart {
 		mode = "bt-adaptive"
@@ -220,7 +265,31 @@ func (e *Engine) Download(ctx context.Context, source Source, smart bool, progre
 			keep = true
 			return &Result{Metadata: *metadata, stage: stage}, nil
 		case now := <-ticker.C:
-			p := Progress{Mode: mode, Peers: t.Stats().ActivePeers}
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			stats := t.Stats()
+			p := Progress{Mode: mode, Peers: stats.ActivePeers}
+			received := stats.ConnStats.BytesReadData.Int64()
+			if len(retryPeers) != 0 {
+				// Wait until the exact closed connections leave the client's set;
+				// otherwise AddPeers can discard a still-connected address. Newly
+				// discovered connections do not delay this bounded recovery.
+				if received > 0 {
+					retryPeers, retryClosed = nil, nil
+				} else if startupPeersRemoved(retryClosed, t.PeerConns()) {
+					t.AddPeers(retryPeers)
+					retryPeers, retryClosed = nil, nil
+				}
+			}
+			knownPeers := remembered.peers()
+			if len(retryPeers) == 0 && recovery.shouldRetry(now, metadata != nil, stats.ActivePeers, len(knownPeers), received) {
+				retryClosed = t.PeerConns()
+				for _, peer := range retryClosed {
+					_ = peer.Close()
+				}
+				retryPeers = knownPeers
+			}
 			if metadata != nil {
 				p.Name = metadata.Name
 				p.Total = metadata.Size
