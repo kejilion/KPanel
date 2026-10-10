@@ -80,6 +80,33 @@ describe('DesktopEntryIcon touch interaction', () => {
     wrapper.unmount()
   })
 
+  it.each(['site', 'shortcut'] as const)('uses the solid %s fallback only until its image loads', async (kind) => {
+    const entry = { key: `${kind}:example`, id: 'example', kind, name: '文档', launch: 'external' as const }
+    const wrapper = mount(DesktopEntryIcon, {
+      props: {
+        label: '文档', entry,
+        gradient: 'linear-gradient(145deg, #38bdf8, #0369a1)',
+        fallbackBackground: '#1e93cd',
+      },
+    })
+    const glyph = () => wrapper.get('.desktop__icon-glyph')
+    expect(glyph().classes()).toContain('desktop__icon-glyph--web-fallback')
+    expect((glyph().element as HTMLElement).style.backgroundColor).toBe('rgb(30, 147, 205)')
+    await wrapper.setProps({ entry: { ...entry, iconURL: '/favicon.webp' } })
+    expect(glyph().classes()).toContain('desktop__icon-glyph--web-fallback')
+    await wrapper.get('img').trigger('load')
+    expect(glyph().classes()).not.toContain('desktop__icon-glyph--web-fallback')
+    expect(wrapper.find('.desktop__site-fallback-letter, .desktop__icon-monogram').exists()).toBe(false)
+    expect((glyph().element as HTMLElement).style.background).toContain('linear-gradient')
+    await wrapper.setProps({ entry: { ...entry, iconURL: '/other-favicon.webp' } })
+    expect(glyph().classes()).toContain('desktop__icon-glyph--web-fallback')
+    await wrapper.get('img').trigger('error')
+    expect(wrapper.find('img').exists()).toBe(false)
+    expect(glyph().classes()).toContain('desktop__icon-glyph--web-fallback')
+    expect((glyph().element as HTMLElement).style.backgroundColor).toBe('rgb(30, 147, 205)')
+    wrapper.unmount()
+  })
+
   it.each([
     ['file', FileText],
     ['directory', FolderOpen],

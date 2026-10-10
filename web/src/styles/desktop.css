@@ -2040,6 +2040,11 @@ body.desktop-mode-open::-webkit-scrollbar {
   text-transform: uppercase;
 }
 
+.desktop__icon-glyph--web-fallback .desktop__site-fallback-letter,
+.desktop__icon-glyph--web-fallback .desktop__icon-monogram {
+  background: #f7f9fc;
+}
+
 .desktop__icon-label {
   display: block;
   height: 20px;
