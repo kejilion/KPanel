@@ -123,8 +123,9 @@ export function isNonTokenShadow(value: string): boolean {
   return normalized !== 'none' && !normalized.includes('var(')
 }
 
+/** A filter variable may resolve to blur; unapproved selectors must not hide it. */
 export function isBlurFilter(value: string): boolean {
-  return /\bblur\s*\(/i.test(value)
+  return /\bblur\s*\(|\bvar\s*\(/i.test(value)
 }
 
 export function isAllowedComponentBlurSelector(selector: string): boolean {

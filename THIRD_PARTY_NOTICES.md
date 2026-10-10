@@ -12,9 +12,13 @@ KPanel.
 | `github.com/flynn/noise` | `v1.1.0` | BSD-3-Clause | [`LICENSES/flynn-noise-BSD-3-Clause.txt`](LICENSES/flynn-noise-BSD-3-Clause.txt) |
 | `github.com/minio/minio-go/v7` | `v7.3.0` | Apache-2.0 | [`LICENSES/Apache-2.0.txt`](LICENSES/Apache-2.0.txt) |
 | `github.com/coder/websocket` | `v1.8.15` | ISC | [`LICENSES/coder-websocket-ISC.txt`](LICENSES/coder-websocket-ISC.txt) |
+| `github.com/anacrolix/dht/v2` | `v2.23.0` | MPL-2.0 | [`LICENSES/anacrolix-dht-MPL-2.0.txt`](LICENSES/anacrolix-dht-MPL-2.0.txt) |
+| `github.com/anacrolix/log` | `v0.17.1-0.20251118025802-918f1157b7bb` | MPL-2.0 | [`LICENSES/anacrolix-log-MPL-2.0.txt`](LICENSES/anacrolix-log-MPL-2.0.txt) |
+| `github.com/anacrolix/torrent` | `v1.61.0` | MPL-2.0 | [`LICENSES/anacrolix-torrent-MPL-2.0.txt`](LICENSES/anacrolix-torrent-MPL-2.0.txt) |
 | `golang.org/x/crypto` | `v0.54.0` | BSD-3-Clause | [`LICENSES/golang-x-crypto-BSD-3-Clause.txt`](LICENSES/golang-x-crypto-BSD-3-Clause.txt) |
 | `golang.org/x/image` | `v0.45.0` | BSD-3-Clause | [`LICENSES/golang-x-image-BSD-3-Clause.txt`](LICENSES/golang-x-image-BSD-3-Clause.txt) |
 | `golang.org/x/sys` | `v0.47.0` | BSD-3-Clause | [`LICENSES/golang-x-sys-BSD-3-Clause.txt`](LICENSES/golang-x-sys-BSD-3-Clause.txt) |
+| `golang.org/x/time` | `v0.15.0` | BSD-3-Clause | [`LICENSES/golang-x-time-BSD-3-Clause.txt`](LICENSES/golang-x-time-BSD-3-Clause.txt) |
 | `@lucide/vue` | `1.26.0` | ISC and bundled icon notices | [`LICENSES/lucide-ISC.txt`](LICENSES/lucide-ISC.txt) |
 | `@xterm/addon-fit` | `0.11.0` | MIT | [`LICENSES/xterm-addon-fit-MIT.txt`](LICENSES/xterm-addon-fit-MIT.txt) |
 | `@xterm/addon-web-links` | `0.12.0` | MIT | [`LICENSES/xterm-addon-web-links-MIT.txt`](LICENSES/xterm-addon-web-links-MIT.txt) |
@@ -25,9 +29,10 @@ KPanel.
 | `vue-router` | `4.6.4` | MIT | [`LICENSES/vue-router-MIT.txt`](LICENSES/vue-router-MIT.txt) |
 
 
-Transitive dependency versions and license identifiers are recorded in
-`go.sum` and `web/package-lock.json`. Release container images additionally
-publish an SBOM. Each component remains governed by its own license.
+Transitive dependency versions are recorded in `go.sum` and
+`web/package-lock.json`; these lock files are not a complete license inventory.
+Release container images additionally publish an SBOM. Each component remains
+governed by its own license.
 
 Third-party project names and logos are used only for identification. Their
 appearance in KPanel does not imply sponsorship or endorsement.

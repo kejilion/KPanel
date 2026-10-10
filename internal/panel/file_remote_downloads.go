@@ -15,6 +15,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/kejilion/kejilion-panel/internal/bittorrent"
 	"github.com/kejilion/kejilion-panel/internal/contract"
 	"github.com/kejilion/kejilion-panel/internal/filemanager"
 	"github.com/kejilion/kejilion-panel/internal/httpstream"
@@ -44,7 +45,7 @@ func (s *Server) handleFileRemoteDownload(w http.ResponseWriter, r *http.Request
 	if err := s.decodeJSON(w, r, &input); err != nil {
 		return
 	}
-	parsedURL, err := remotedownload.ValidateURL(input.URL)
+	source, err := validateRemoteDownloadInput(&input)
 	if err != nil || !validFileRemoteDownloadTarget(input.TargetDirectory) ||
 		(input.Name != "" && !validFileRemoteDownloadName(input.Name)) {
 		s.writeProblem(w, r, http.StatusUnprocessableEntity, "remote_download_invalid", "请检查下载地址、目标目录和保存名称。", "")
@@ -52,9 +53,8 @@ func (s *Server) handleFileRemoteDownload(w http.ResponseWriter, r *http.Request
 	}
 	// Pass the validated canonical URL to both execution modes. The URL stays in
 	// Panel memory only; background persistence receives SourceDisplay instead.
-	input.URL = parsedURL.String()
 	if input.Background {
-		s.startFileRemoteDownloadJob(w, r, input, remotedownload.SourceDisplay(parsedURL), session.User.ID)
+		s.startFileRemoteDownloadJob(w, r, input, source, session.User.ID)
 		return
 	}
 	select {
@@ -67,7 +67,7 @@ func (s *Server) handleFileRemoteDownload(w http.ResponseWriter, r *http.Request
 	}
 
 	change := map[string]any{
-		"source":          remotedownload.SourceDisplay(parsedURL),
+		"source":          source,
 		"targetDirectory": input.TargetDirectory,
 	}
 	if input.Name != "" {
@@ -122,6 +122,38 @@ func (s *Server) handleFileRemoteDownload(w http.ResponseWriter, r *http.Request
 	_ = s.audit(r, session.User.ID, "file.remote_download", "directory", input.TargetDirectory, "failure", completed)
 }
 
+func validateRemoteDownloadInput(input *contract.FileRemoteDownloadRequest) (string, error) {
+	if input.Acceleration != "" && input.Acceleration != "auto" && input.Acceleration != "off" {
+		return "", bittorrent.ErrMetadata
+	}
+	input.URL = strings.TrimSpace(input.URL)
+	if input.SourceKind != "" && input.SourceKind != "torrent" {
+		return "", bittorrent.ErrMetadata
+	}
+	if len(input.Torrent) > 0 || strings.HasPrefix(input.URL, "magnet:") {
+		if !input.Background {
+			return "", bittorrent.ErrMetadata
+		}
+		if _, err := bittorrent.Parse(input.URL, input.Torrent); err != nil {
+			return "", err
+		}
+		input.SourceKind = "torrent"
+		return "bittorrent", nil
+	}
+	u, err := remotedownload.ValidateURL(input.URL)
+	if err != nil {
+		return "", err
+	}
+	input.URL = u.String()
+	if input.SourceKind == "torrent" {
+		if !input.Background {
+			return "", bittorrent.ErrMetadata
+		}
+		return "bittorrent", nil
+	}
+	return remotedownload.SourceDisplay(u), nil
+}
+
 func validFileRemoteDownloadTarget(value string) bool {
 	if !validFileDownloadPath(value) {
 		return false
@@ -173,6 +205,16 @@ func fileRemoteDownloadName(requested string, response *http.Response) string {
 func fileRemoteDownloadError(err error) (string, string) {
 	var statusError *remotedownload.StatusError
 	switch {
+	case errors.Is(err, bittorrent.ErrPrivateMagnet):
+		return "bt_private_magnet_unsupported", "私有任务请导入 .torrent 文件，以便在连接前确定节点发现策略。"
+	case errors.Is(err, bittorrent.ErrVersion):
+		return "bt_version_unsupported", "此候选支持 BitTorrent v1 种子和 btih 磁力链接。"
+	case errors.Is(err, bittorrent.ErrMetadata), errors.Is(err, bittorrent.ErrIntegrity):
+		return "bt_metadata_invalid", "种子信息无效、超过限制或校验失败。"
+	case errors.Is(err, bittorrent.ErrStorage):
+		return "bt_storage_unavailable", "BT 暂存区不可用或磁盘空间不足。"
+	case errors.Is(err, bittorrent.ErrNoPeers):
+		return "bt_no_peers", "暂未找到可用节点或连续 2 分钟无有效下载，请稍后重试。"
 	case errors.Is(err, context.Canceled):
 		return "remote_download_cancelled", "停止请求已发送；文件可能已经完成保存，请刷新目标目录确认结果。"
 	case errors.Is(err, context.DeadlineExceeded):

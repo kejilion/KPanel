@@ -101,6 +101,49 @@ func TestTransferJobStoreMigratesWithoutChangingRollbackJournal(t *testing.T) {
 	}
 }
 
+func TestTransferJobStoreMigratesV1AndPersistsBTWithoutSecrets(t *testing.T) {
+	parent := t.TempDir()
+	root := filepath.Join(parent, "file-transfers")
+	if err := os.Mkdir(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	old := contract.FileRemoteDownloadJob{ID: strings.Repeat("a", 32), State: "queued", Source: "https://example.com", TargetDirectory: "/home", CreatedAt: now, UpdatedAt: now}
+	data, _ := json.Marshal(persistedJobs{SchemaVersion: 1, Jobs: []contract.FileRemoteDownloadJob{old}})
+	previous := filepath.Join(root, "jobs-v1.json")
+	if err := os.WriteFile(previous, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := OpenTransferJobStore(root, filepath.Join(parent, "remote-downloads"))
+	if err != nil || !store.Available() {
+		t.Fatal(err)
+	}
+	got, err := store.Get(old.ID)
+	if err != nil || got.State != "interrupted" {
+		t.Fatal(got, err)
+	}
+	bt := contract.FileRemoteDownloadJob{ID: strings.Repeat("b", 32), State: "transferring", Source: "bittorrent", SourceKind: "bittorrent", TargetDirectory: "/home", Name: "bundle", CreatedAt: now, UpdatedAt: now, SourceBytes: 4096, TotalBytes: 8192, TransferMode: "bt-adaptive", Peers: 8}
+	if err = store.Create(bt); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := OpenTransferJobStore(root, filepath.Join(parent, "remote-downloads"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err = reopened.Get(bt.ID)
+	if err != nil || got.State != "interrupted" || got.SourceBytes != 4096 {
+		t.Fatal(got, err)
+	}
+	after, _ := os.ReadFile(previous)
+	if !bytes.Equal(data, after) {
+		t.Fatal("rollback journal mutated")
+	}
+	bt.Source = "magnet:?xt=urn:btih:0123456789012345678901234567890123456789&tr=https://example.com/secret"
+	if err = store.Update(bt, true); err == nil {
+		t.Fatal("full magnet retained in journal")
+	}
+}
+
 func TestTransferJobStorePreservesHistoricalCrossHostJournalAndMigratesDownloads(t *testing.T) {
 	for _, downloadHistory := range []bool{false, true} {
 		t.Run(fmt.Sprint(downloadHistory), func(t *testing.T) {
@@ -234,7 +277,7 @@ func TestTransferJobStoreRefusesUnknownAndDamagedIndexes(t *testing.T) {
 			if err != nil || current.Available() {
 				t.Fatalf("unknown/damaged history accepted: %v", err)
 			}
-			if _, err := os.Lstat(filepath.Join(currentRoot, "jobs-v1.json")); !errors.Is(err, os.ErrNotExist) {
+			if _, err := os.Lstat(filepath.Join(currentRoot, "jobs-v2.json")); !errors.Is(err, os.ErrNotExist) {
 				t.Fatalf("created another history: %v", err)
 			}
 			after, err := os.ReadFile(filename)
@@ -253,7 +296,7 @@ func TestTransferJobStoreNeverReplacesDamagedVersionedIndex(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	filename := filepath.Join(currentRoot, "jobs-v1.json")
+	filename := filepath.Join(currentRoot, "jobs-v2.json")
 	before := []byte("damaged authoritative history")
 	if err := os.WriteFile(filename, before, 0600); err != nil {
 		t.Fatal(err)

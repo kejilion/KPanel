@@ -39,6 +39,7 @@ import {
   Trash2,
   Waypoints,
   Wrench,
+  X,
 } from '@lucide/vue'
 import EmptyState from '@/components/feedback/EmptyState.vue'
 import ErrorState from '@/components/feedback/ErrorState.vue'
@@ -46,6 +47,8 @@ import LoadingState from '@/components/feedback/LoadingState.vue'
 import ModalDialog from '@/components/common/ModalDialog.vue'
 import PageHeader from '@/components/common/PageHeader.vue'
 import StatusBadge from '@/components/feedback/StatusBadge.vue'
+import DockerBatchBar, { type DockerBatchBarAction, type DockerBatchBarProgress } from '@/components/docker/DockerBatchBar.vue'
+import DockerBatchDialog from '@/components/docker/DockerBatchDialog.vue'
 import DockerDeploymentEditor from '@/components/docker/DockerDeploymentEditor.vue'
 import DockerRunCommandDialog from '@/components/docker/DockerRunCommandDialog.vue'
 import DockerUsageMeter from '@/components/docker/DockerUsageMeter.vue'
@@ -63,6 +66,28 @@ import {
   showContextMenuPointerFocus,
 } from '@/lib/contextMenu'
 import { desktopWindowActiveKey, desktopWindowVisibleKey } from '@/lib/desktopRouteKeys'
+import {
+  containerBatchActions,
+  createDockerBatchRun,
+  dockerBatchActionLabel,
+  dockerBatchIsDanger,
+  dockerBatchTitle,
+  dockerContainerPermits,
+  DockerBatchUnconfirmedError,
+  executeDockerBatch,
+  planContainerBatch,
+  planImageBatch,
+  planNetworkBatch,
+  planVolumeBatch,
+  runDockerBatchTask,
+  summarizeDockerBatch,
+  type ContainerBatchAction,
+  type DockerBatchAction,
+  type DockerBatchPlan,
+  type DockerBatchRun,
+  type DockerBatchRunItem,
+  type DockerBatchTab,
+} from '@/lib/dockerBatch'
 import { analyzeDockerDeployment, composeEnvironmentVariables } from '@/lib/dockerDeployment'
 import { dockerComposeGroupAccent, groupDockerContainers, type DockerContainerGroup } from '@/lib/dockerComposeGroups'
 import {
@@ -99,6 +124,7 @@ type DockerContextMenuItem =
   | { kind: 'image'; item: DockerInventory['images'][number] }
   | { kind: 'network'; item: DockerInventory['networks'][number] }
   | { kind: 'volume'; item: DockerInventory['volumes'][number] }
+  | { kind: 'batch' }
 type DockerContextMenu = DockerContextMenuItem & { x: number; y: number }
 
 interface CreatePortRow {
@@ -149,6 +175,7 @@ const containerSort = ref<ContainerSort>('smart')
 const containerViewMode = ref<ContainerViewMode>('manage')
 const taskRunning = ref(false)
 const activeJob = ref<DockerMaintenanceJob>()
+const batchDialog = ref<{ plan: DockerBatchPlan; run?: DockerBatchRun }>()
 const pendingMaintenance = ref<{
   title: string
   description: string
@@ -284,8 +311,14 @@ const tabs = computed(() => [
   { id: 'volumes' as const, label: '存储卷', icon: HardDrive, count: String(data.value?.volumes.length || 0) },
   { id: 'environment' as const, label: '环境', icon: Wrench, count: '' },
 ])
+// The Agent runs one Docker job at a time; an image, network or volume batch
+// holds that slot between its own jobs too.
+const resourceBatchActive = computed(() => {
+  const run = batchDialog.value?.run
+  return Boolean(run && run.phase !== 'finished' && run.plan.tab !== 'containers')
+})
 const dockerJobActive = computed(() =>
-  activeJob.value?.status === 'queued' || activeJob.value?.status === 'running',
+  activeJob.value?.status === 'queued' || activeJob.value?.status === 'running' || resourceBatchActive.value,
 )
 const contextContainer = computed(() =>
   contextMenu.value?.kind === 'container' ? contextMenu.value.item : undefined,
@@ -299,6 +332,7 @@ const contextNetwork = computed(() =>
 const contextVolume = computed(() =>
   contextMenu.value?.kind === 'volume' ? contextMenu.value.item : undefined,
 )
+const contextBatch = computed(() => contextMenu.value?.kind === 'batch')
 
 const runningCount = computed(() => data.value?.containers.filter((item) => item.state === 'running').length || 0)
 const manageableCount = computed(() => data.value?.containers.filter((item) => (item.allowedActions?.length || 0) > 0).length || 0)
@@ -551,12 +585,237 @@ function formatPorts(container: DockerContainer): string {
 }
 
 function permits(container: DockerContainer, action: string): boolean {
-  return Boolean(
-    container.resourceVersion &&
-    container.allowedActions?.some(
-      (allowed) => allowed === action || allowed.endsWith(`.${action}`) || allowed.endsWith(`/${action}`),
-    ),
-  )
+  return dockerContainerPermits(container, action)
+}
+
+// Batch operations. The selection belongs to one tab at a time and survives
+// searching; the confirmation lists every target, including hidden ones.
+const batchSelection = ref<Set<string>>(new Set())
+let batchAnchor = ''
+const batchDialogOpen = ref(false)
+let batchController: AbortController | undefined
+
+const batchTab = computed<DockerBatchTab | undefined>(() => {
+  if (activeTab.value === 'environment' || (activeTab.value === 'containers' && monitoring.value)) return undefined
+  return activeTab.value
+})
+// Every container in on-screen group order, regardless of search or collapsing.
+const batchContainerOrder = computed(() =>
+  groupDockerContainers(sortedContainers.value, containerSort.value).flatMap((group) => group.containers),
+)
+const batchScopeKeys = computed(() => {
+  switch (batchTab.value) {
+    case 'containers': return containerGroups.value.flatMap((group) => group.containers).map((item) => item.id)
+    case 'images': return filteredImages.value.map((item) => item.id)
+    case 'networks': return filteredNetworks.value.map((item) => item.id)
+    case 'volumes': return filteredVolumes.value.map((item) => item.name)
+    default: return []
+  }
+})
+// Shift-click ranges follow the rows a user can actually see.
+const batchRangeKeys = computed(() => batchTab.value === 'containers'
+  ? containerGroups.value.flatMap((group) => visibleContainerGroupRows(group)).map((item) => item.id)
+  : batchScopeKeys.value)
+const batchAllSelected = computed(() =>
+  batchScopeKeys.value.length > 0 && batchScopeKeys.value.every((key) => batchSelection.value.has(key)),
+)
+const batchSomeSelected = computed(() =>
+  !batchAllSelected.value && batchScopeKeys.value.some((key) => batchSelection.value.has(key)),
+)
+const batchActive = computed(() => Boolean(batchDialog.value?.run && batchDialog.value.run.phase !== 'finished'))
+
+function batchContainers(keys: ReadonlySet<string>): DockerContainer[] {
+  return batchContainerOrder.value.filter((item) => keys.has(item.id))
+}
+
+function batchPlan(action: DockerBatchAction, keys: ReadonlySet<string>): DockerBatchPlan {
+  const containers = data.value?.containers || []
+  switch (action) {
+    case 'image_pull':
+    case 'image_remove':
+      return planImageBatch(sortedImages.value.filter((item) => keys.has(item.id)), containers, action)
+    case 'network_remove':
+      return planNetworkBatch(sortedNetworks.value.filter((item) => keys.has(item.id)), containers)
+    case 'volume_remove':
+      return planVolumeBatch(sortedVolumes.value.filter((item) => keys.has(item.name)), containers)
+    default:
+      return planContainerBatch(batchContainers(keys), action)
+  }
+}
+
+const containerBatchIcons: Record<ContainerBatchAction, typeof Play> = {
+  start: Play, restart: RotateCw, pause: Pause, stop: CircleStop, remove: Trash2,
+}
+const batchBarActions = computed<DockerBatchBarAction[]>(() => {
+  const tab = batchTab.value
+  const keys = batchSelection.value
+  if (!tab || !keys.size) return []
+  const readOnly = panel.isReadOnly.value ? 'Agent 当前只读或不可用，不能执行写入操作' : undefined
+  // Image, network and volume changes run as Docker background jobs, one at a time.
+  const jobBlocked = readOnly || (dockerJobActive.value ? '请等待当前 Docker 后台任务完成' : undefined)
+  const action = (id: DockerBatchAction, icon: typeof Play, disabledReason?: string): DockerBatchBarAction => ({
+    id, icon, label: dockerBatchActionLabel(id), danger: dockerBatchIsDanger(id),
+    count: batchPlan(id, keys).items.length, disabledReason,
+  })
+  if (tab === 'containers') return containerBatchActions.map((id) => action(id, containerBatchIcons[id], readOnly))
+  if (tab === 'images') return [action('image_pull', RefreshCw, jobBlocked), action('image_remove', Trash2, jobBlocked)]
+  return [action(tab === 'networks' ? 'network_remove' : 'volume_remove', Trash2, jobBlocked)]
+})
+const batchBarProgress = computed<DockerBatchBarProgress | undefined>(() => {
+  const run = batchDialog.value?.run
+  if (!run || batchDialogOpen.value) return undefined
+  const summary = summarizeDockerBatch(run)
+  return { label: dockerBatchTitle(run.plan.action), done: summary.done, total: summary.total, finished: run.phase === 'finished' }
+})
+const batchBarVisible = computed(() => Boolean(batchBarProgress.value || (batchTab.value && batchSelection.value.size)))
+
+function clearBatchSelection(): void {
+  batchSelection.value = new Set()
+  batchAnchor = ''
+}
+
+function toggleBatchAll(): void {
+  const next = new Set(batchSelection.value)
+  if (batchAllSelected.value) batchScopeKeys.value.forEach((key) => next.delete(key))
+  else batchScopeKeys.value.forEach((key) => next.add(key))
+  batchSelection.value = next
+  batchAnchor = ''
+}
+
+function groupBatchState(group: DockerContainerGroup): 'all' | 'some' | 'none' {
+  const selected = group.containers.filter((item) => batchSelection.value.has(item.id)).length
+  if (!selected) return 'none'
+  return selected === group.containers.length ? 'all' : 'some'
+}
+
+function toggleBatchGroup(group: DockerContainerGroup): void {
+  const next = new Set(batchSelection.value)
+  const select = groupBatchState(group) !== 'all'
+  for (const item of group.containers) {
+    if (select) next.add(item.id)
+    else next.delete(item.id)
+  }
+  batchSelection.value = next
+}
+
+function toggleBatchItem(event: MouseEvent, key: string): void {
+  const next = new Set(batchSelection.value)
+  const select = !next.has(key)
+  const keys = batchRangeKeys.value
+  const from = event.shiftKey && batchAnchor ? keys.indexOf(batchAnchor) : -1
+  const to = keys.indexOf(key)
+  // The clicked box decides whether the whole range is selected or cleared.
+  const range = from >= 0 && to >= 0 ? keys.slice(Math.min(from, to), Math.max(from, to) + 1) : [key]
+  for (const item of range) {
+    if (select) next.add(item)
+    else next.delete(item)
+  }
+  batchSelection.value = next
+  batchAnchor = key
+}
+
+function inventoryBatchKeys(inventory: DockerInventory, tab: DockerBatchTab): string[] {
+  switch (tab) {
+    case 'containers': return inventory.containers.map((item) => item.id)
+    case 'images': return inventory.images.map((item) => item.id)
+    case 'networks': return inventory.networks.map((item) => item.id)
+    case 'volumes': return inventory.volumes.map((item) => item.name)
+  }
+}
+
+watch([activeTab, containerViewMode], () => clearBatchSelection())
+// Drop selections whose resource disappeared, but not while a refresh is still
+// streaming in: partial inventories briefly report empty resource lists.
+watch(data, (inventory) => {
+  const tab = batchTab.value
+  if (!inventory || !tab || !batchSelection.value.size) return
+  if (tab !== 'containers' && inventory.loading?.[tab]) return
+  const present = new Set(inventoryBatchKeys(inventory, tab))
+  const next = new Set([...batchSelection.value].filter((key) => present.has(key)))
+  if (next.size !== batchSelection.value.size) batchSelection.value = next
+})
+
+function batchMenuTitle(action: DockerBatchBarAction): string | undefined {
+  if (batchActive.value) return phrase('请等待当前批量操作完成')
+  if (action.disabledReason) return phrase(action.disabledReason)
+  return action.count ? undefined : phrase('所选项都不适用此操作')
+}
+
+function runBatchFromContextMenu(id: string): void {
+  contextMenu.value = undefined
+  openBatch(id)
+}
+
+function clearBatchSelectionFromContextMenu(): void {
+  closeContextMenu(true)
+  clearBatchSelection()
+}
+
+function openBatch(id: string): void {
+  if (!batchTab.value || batchActive.value) return
+  batchDialog.value = { plan: batchPlan(id as DockerBatchAction, batchSelection.value) }
+  batchDialogOpen.value = true
+}
+
+async function executeBatchItem(item: DockerBatchRunItem, signal: AbortSignal): Promise<void> {
+  const operation = item.operation
+  if (operation.kind === 'task') {
+    await runDockerBatchTask(operation.input, { submit: api.docker.task, job: api.docker.job }, signal)
+    return
+  }
+  try {
+    await api.docker.action(operation.id, operation.action, operation.resourceVersion)
+  } catch (reason) {
+    // Stopping or restarting the panel's own container drops this very request.
+    if (item.self && reason instanceof ApiError && reason.status === 0) {
+      throw new DockerBatchUnconfirmedError('与面板的连接已中断：KPanel 自身容器可能正在停止或重启，请稍后刷新确认结果')
+    }
+    throw reason
+  }
+}
+
+async function startBatch(plan: DockerBatchPlan): Promise<void> {
+  if (batchActive.value || !plan.items.length || panel.isReadOnly.value) return
+  batchDialog.value = { plan, run: createDockerBatchRun(plan) }
+  // Read the run back through the ref so every step goes through the reactive proxy.
+  const run = batchDialog.value.run!
+  batchController?.abort()
+  const controller = new AbortController()
+  batchController = controller
+  await executeDockerBatch(run, executeBatchItem, (reason) => localizeError(reason), controller.signal)
+  if (batchController === controller) batchController = undefined
+  if (controller.signal.aborted) return
+  const summary = summarizeDockerBatch(run)
+  const title = phrase(dockerBatchTitle(plan.action))
+  if (!batchDialogOpen.value) {
+    if (summary.succeeded === summary.total) toast.success(title, phrase(`全部 ${summary.total} 项已完成`))
+    else toast.danger(title, phrase(`成功 ${summary.succeeded} 项，未成功 ${summary.total - summary.succeeded} 项；点击底部“查看结果”了解原因`))
+    // Nothing left to look at once everything succeeded.
+    if (summary.succeeded === summary.total) batchDialog.value = undefined
+  }
+  await load(true)
+}
+
+function stopBatch(): void {
+  const run = batchDialog.value?.run
+  if (run?.phase === 'running') run.phase = 'stopping'
+}
+
+function closeBatchDialog(): void {
+  batchDialogOpen.value = false
+  if (!batchActive.value) batchDialog.value = undefined
+}
+
+async function retryBatch(): Promise<void> {
+  const current = batchDialog.value
+  if (!current?.run || batchActive.value) return
+  const keys = new Set(current.run.items.filter((item) => item.status === 'failed').map((item) => item.key))
+  // Plan from a fresh inventory so each retry carries the current resourceVersion.
+  await load(true)
+  if (batchDialog.value !== current) return
+  const plan = batchPlan(current.plan.action, keys)
+  if (plan.items.length) await startBatch(plan)
+  else batchDialog.value = { plan }
 }
 
 function contextMenuPoint(event: MouseEvent): { x: number; y: number } {
@@ -577,11 +836,26 @@ async function settleContextMenu(focusOrigin: ContextMenuFocusOrigin): Promise<v
   focusFirstContextMenuItem(menu, focusOrigin)
 }
 
+function contextBatchKey(item: DockerContextMenuItem): string | undefined {
+  switch (item.kind) {
+    case 'container':
+    case 'image':
+    case 'network': return item.item.id
+    case 'volume': return item.item.name
+    default: return undefined
+  }
+}
+
 function openContextMenu(event: MouseEvent, item: DockerContextMenuItem): void {
   event.preventDefault()
   event.stopPropagation()
   contextMenuOpener = event.currentTarget instanceof HTMLElement ? event.currentTarget : null
-  contextMenu.value = { ...item, ...contextMenuPoint(event) } as DockerContextMenu
+  // Right-clicking a row inside a multi-selection acts on the whole selection,
+  // as in the file manager; the row's own ⋯ button always stays per item.
+  const key = contextBatchKey(item)
+  const selection = event.type === 'contextmenu' && Boolean(batchTab.value) && batchSelection.value.size > 1 &&
+    key !== undefined && batchSelection.value.has(key)
+  contextMenu.value = { ...(selection ? { kind: 'batch' as const } : item), ...contextMenuPoint(event) } as DockerContextMenu
   void settleContextMenu(contextMenuFocusOrigin(event))
 }
 
@@ -831,6 +1105,10 @@ async function restoreBackgroundJob(): Promise<void> {
 
 async function submitTask(input: DockerMaintenanceInput): Promise<void> {
   if (taskRunning.value || panel.isReadOnly.value) return
+  if (resourceBatchActive.value) {
+    toast.danger('请等待批量操作完成', '批量操作正在逐个提交 Docker 后台任务，完成或停止后再提交新任务。')
+    return
+  }
   taskRunning.value = true
   try {
     const job = await api.docker.task(input)
@@ -1520,6 +1798,7 @@ onBeforeUnmount(() => {
   window.visualViewport?.removeEventListener?.('scroll', closeContextMenuOnViewportChange)
   controller?.abort()
   logController?.abort()
+  batchController?.abort()
   stopStatsPolling()
   stopMonitorInventoryRefresh()
   stopJobPolling()
@@ -1527,7 +1806,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="page docker-page">
+  <div class="page docker-page" :class="{ 'docker-page--batch': batchBarVisible }">
     <PageHeader
       title="Docker 管理"
       description="直接管理服务器上的容器、镜像、网络与存储；与 kejilion.sh 共用同一 Docker 实际状态。"
@@ -1763,12 +2042,23 @@ onBeforeUnmount(() => {
                 <col class="docker-table__traffic" />
                 <col class="docker-table__pids" />
               </colgroup>
-              <thead v-if="!monitoring"><tr><th>容器</th><th>状态</th><th>端口</th><th>网络</th><th>归属</th><th>操作</th></tr></thead>
+              <thead v-if="!monitoring"><tr><th><span class="docker-select-head"><span class="docker-select-box"><input class="docker-select" type="checkbox" :checked="batchAllSelected" :indeterminate="batchSomeSelected" :disabled="!batchScopeKeys.length" aria-label="选择全部容器" @change="toggleBatchAll" /></span>容器</span></th><th>状态</th><th>端口</th><th>网络</th><th>归属</th><th>操作</th></tr></thead>
               <thead v-else><tr><th>容器</th><th>状态</th><th :title="phrase('与 docker stats 一致，100% 约等于占满 1 个 CPU 核心')">CPU</th><th>内存</th><th>磁盘 I/O</th><th>网络</th><th>进程</th></tr></thead>
               <tbody v-for="group in containerGroups" :key="group.key" class="docker-group" :style="containerGroupStyle(group)">
                 <tr class="docker-group__row">
                   <td :colspan="monitoring ? 7 : 6">
-                    <div class="docker-group__summary">
+                    <div class="docker-group__summary" :class="{ 'docker-group__summary--selectable': !monitoring }">
+                      <span v-if="!monitoring" class="docker-select-box">
+                        <input
+                          class="docker-select"
+                          type="checkbox"
+                          :checked="groupBatchState(group) === 'all'"
+                          :indeterminate="groupBatchState(group) === 'some'"
+                          :disabled="!group.containers.length"
+                          :aria-label="`选择 ${group.name} 中的全部容器`"
+                          @change="toggleBatchGroup(group)"
+                        />
+                      </span>
                       <button
                         class="docker-group__toggle"
                         type="button"
@@ -1801,16 +2091,19 @@ onBeforeUnmount(() => {
                   <tr
                     v-for="container in visibleContainerGroupRows(group)"
                     :key="container.id"
-                    :class="[`docker-row docker-row--${container.state}`, { 'docker-row--stale': monitoring && liveEntries[container.id]?.failed }]"
+                    :class="[`docker-row docker-row--${container.state}`, { 'docker-row--stale': monitoring && liveEntries[container.id]?.failed, 'is-batch-selected': !monitoring && batchSelection.has(container.id) }]"
                     @contextmenu="showContainerContext($event, container)"
                   >
                   <td>
-                    <div class="resource-name">
-                      <span class="resource-name__icon resource-name__icon--docker docker-container-icon">
-                        <Container :size="18" />
-                        <ImageUpdateBadge v-if="imageUpdateEntries[container.id]?.status === 'available'" class="docker-image-update" :label="phrase('有镜像更新')" />
-                      </span>
-                      <span><strong>{{ container.name }}</strong><small :title="container.image">{{ container.image }}</small></span>
+                    <div class="docker-select-name">
+                      <span v-if="!monitoring" class="docker-select-box"><input class="docker-select" type="checkbox" :checked="batchSelection.has(container.id)" :aria-label="`选择容器 ${container.name}`" @click="toggleBatchItem($event, container.id)" /></span>
+                      <div class="resource-name">
+                        <span class="resource-name__icon resource-name__icon--docker docker-container-icon">
+                          <Container :size="18" />
+                          <ImageUpdateBadge v-if="imageUpdateEntries[container.id]?.status === 'available'" class="docker-image-update" :label="phrase('有镜像更新')" />
+                        </span>
+                        <span><strong>{{ container.name }}</strong><small :title="container.image">{{ container.image }}</small></span>
+                      </div>
                     </div>
                   </td>
                   <td><div class="table-stack"><StatusBadge :status="container.state" /><small>{{ container.statusText || '—' }}</small></div></td>
@@ -1892,9 +2185,9 @@ onBeforeUnmount(() => {
           </header>
           <EmptyState v-if="!filteredImages.length" title="没有本地镜像" description="可输入完整镜像引用拉取，任务会在后台继续。" />
           <div v-else class="table-scroll">
-            <table class="data-table"><thead><tr><th>镜像</th><th>摘要</th><th>大小</th><th>创建时间</th><th>状态</th><th>操作</th></tr></thead>
-              <tbody><tr v-for="image in filteredImages" :key="image.id" @contextmenu="showImageContext($event, image)">
-                <td><strong>{{ image.tags.join(', ') || '未标记镜像' }}</strong></td>
+            <table class="data-table"><thead><tr><th><span class="docker-select-head"><span class="docker-select-box"><input class="docker-select" type="checkbox" :checked="batchAllSelected" :indeterminate="batchSomeSelected" :disabled="!batchScopeKeys.length" aria-label="选择全部镜像" @change="toggleBatchAll" /></span>镜像</span></th><th>摘要</th><th>大小</th><th>创建时间</th><th>状态</th><th>操作</th></tr></thead>
+              <tbody><tr v-for="image in filteredImages" :key="image.id" :class="{ 'is-batch-selected': batchSelection.has(image.id) }" @contextmenu="showImageContext($event, image)">
+                <td><div class="docker-select-name"><span class="docker-select-box"><input class="docker-select" type="checkbox" :checked="batchSelection.has(image.id)" :aria-label="`选择镜像 ${image.tags[0] || shortId(image.id)}`" @click="toggleBatchItem($event, image.id)" /></span><strong>{{ image.tags.join(', ') || '未标记镜像' }}</strong></div></td>
                 <td><code>{{ shortId(image.id) }}</code></td>
                 <td>{{ formatBytes(image.sizeBytes) }}</td>
                 <td>{{ image.createdAt ? relativeTime(image.createdAt) : '未知' }}</td>
@@ -1943,9 +2236,9 @@ onBeforeUnmount(() => {
             </div>
             <EmptyState v-if="!filteredNetworks.length" title="没有 Docker 网络" description="Docker Engine 未返回网络资源。" />
             <div v-else class="table-scroll">
-              <table class="data-table"><thead><tr><th>网络</th><th>驱动</th><th>范围</th><th>容器数</th><th>操作</th></tr></thead>
-                <tbody><tr v-for="network in filteredNetworks" :key="network.id" @contextmenu="showNetworkContext($event, network)">
-                  <td><strong>{{ network.name }}</strong><small class="table-sub">{{ shortId(network.id) }}</small></td>
+              <table class="data-table"><thead><tr><th><span class="docker-select-head"><span class="docker-select-box"><input class="docker-select" type="checkbox" :checked="batchAllSelected" :indeterminate="batchSomeSelected" :disabled="!batchScopeKeys.length" aria-label="选择全部网络" @change="toggleBatchAll" /></span>网络</span></th><th>驱动</th><th>范围</th><th>容器数</th><th>操作</th></tr></thead>
+                <tbody><tr v-for="network in filteredNetworks" :key="network.id" :class="{ 'is-batch-selected': batchSelection.has(network.id) }" @contextmenu="showNetworkContext($event, network)">
+                  <td><div class="docker-select-name"><span class="docker-select-box"><input class="docker-select" type="checkbox" :checked="batchSelection.has(network.id)" :aria-label="`选择网络 ${network.name}`" @click="toggleBatchItem($event, network.id)" /></span><span class="docker-select-copy"><strong>{{ network.name }}</strong><small class="table-sub">{{ shortId(network.id) }}</small></span></div></td>
                   <td>{{ network.driver }}</td><td>{{ network.scope || 'local' }}</td><td>{{ network.containers || 0 }}</td>
                   <td><div class="row-actions">
                     <button class="icon-button icon-button--danger" type="button" title="删除网络" :disabled="!network.resourceVersion" @click="askNetworkRemoval(network)"><Trash2 :size="16" /></button>
@@ -1984,9 +2277,9 @@ onBeforeUnmount(() => {
           </header>
           <EmptyState v-if="!filteredVolumes.length" title="没有 Docker 存储卷" description="可创建 local 卷，并在新建容器时选择挂载。" />
           <div v-else class="table-scroll">
-            <table class="data-table"><thead><tr><th>存储卷</th><th>驱动</th><th>挂载点</th><th>状态</th><th>操作</th></tr></thead>
-              <tbody><tr v-for="volume in filteredVolumes" :key="volume.name" @contextmenu="showVolumeContext($event, volume)">
-                <td><strong>{{ volume.name }}</strong></td><td>{{ volume.driver }}</td>
+            <table class="data-table"><thead><tr><th><span class="docker-select-head"><span class="docker-select-box"><input class="docker-select" type="checkbox" :checked="batchAllSelected" :indeterminate="batchSomeSelected" :disabled="!batchScopeKeys.length" aria-label="选择全部存储卷" @change="toggleBatchAll" /></span>存储卷</span></th><th>驱动</th><th>挂载点</th><th>状态</th><th>操作</th></tr></thead>
+              <tbody><tr v-for="volume in filteredVolumes" :key="volume.name" :class="{ 'is-batch-selected': batchSelection.has(volume.name) }" @contextmenu="showVolumeContext($event, volume)">
+                <td><div class="docker-select-name"><span class="docker-select-box"><input class="docker-select" type="checkbox" :checked="batchSelection.has(volume.name)" :aria-label="`选择存储卷 ${volume.name}`" @click="toggleBatchItem($event, volume.name)" /></span><strong>{{ volume.name }}</strong></div></td><td>{{ volume.driver }}</td>
                 <td><span class="table-code" :title="volume.mountpoint">{{ volume.mountpoint || '—' }}</span></td>
                 <td><StatusBadge :status="volume.inUse ? 'running' : 'stopped'" :label="volume.inUse ? '使用中' : '未使用'" subtle /></td>
                 <td><div class="row-actions">
@@ -2088,6 +2381,28 @@ onBeforeUnmount(() => {
         <hr />
         <button class="danger-link k-context-menu__item--danger" type="button" role="menuitem" :disabled="!contextNetwork.resourceVersion" @click="askNetworkRemoval(contextNetwork)">
           <Trash2 :size="15" />{{ phrase('删除网络') }}
+        </button>
+      </template>
+
+      <template v-else-if="contextBatch">
+        <strong class="docker-context-menu__title">{{ phrase(`已选 ${batchSelection.size} 项`) }}</strong>
+        <template v-for="action in batchBarActions" :key="action.id">
+          <hr v-if="action.id.endsWith('remove') && batchBarActions.length > 1" />
+          <button
+            :class="{ 'danger-link k-context-menu__item--danger': action.id.endsWith('remove') }"
+            type="button"
+            role="menuitem"
+            :disabled="batchActive || !action.count || Boolean(action.disabledReason)"
+            :title="batchMenuTitle(action)"
+            @click="runBatchFromContextMenu(action.id)"
+          >
+            <component :is="action.icon" :size="15" />{{ phrase(action.label) }}
+            <span v-if="action.count" class="docker-context-menu__count">{{ action.count }}</span>
+          </button>
+        </template>
+        <hr />
+        <button type="button" role="menuitem" @click="clearBatchSelectionFromContextMenu">
+          <X :size="15" />{{ phrase('取消选择') }}
         </button>
       </template>
 
@@ -2354,6 +2669,29 @@ onBeforeUnmount(() => {
       <p class="modal-copy">{{ phrase('后续版本将直接复用 kejilion.sh 的卸载流程，并在 KPanel 停止后继续记录执行结果。') }}</p>
       <template #footer><button class="button button--secondary" type="button" @click="uninstallNoticeOpen = false">{{ phrase('我知道了') }}</button></template>
     </ModalDialog>
+
+    <Transition name="docker-batch-dock">
+      <DockerBatchBar
+        v-if="batchBarVisible"
+        :count="batchTab ? batchSelection.size : 0"
+        :actions="batchBarActions"
+        :progress="batchBarProgress"
+        @run="openBatch"
+        @clear="clearBatchSelection"
+        @show-progress="batchDialogOpen = true"
+      />
+    </Transition>
+    <DockerBatchDialog
+      v-if="batchDialog"
+      :open="batchDialogOpen"
+      :plan="batchDialog.plan"
+      :run="batchDialog.run"
+      :read-only="panel.isReadOnly.value"
+      @confirm="startBatch(batchDialog.plan)"
+      @close="closeBatchDialog"
+      @stop="stopBatch"
+      @retry="retryBatch"
+    />
   </div>
 </template>
 
@@ -2507,6 +2845,24 @@ onBeforeUnmount(() => {
 .docker-group-row-leave-active { will-change: opacity, transform; transition: opacity .12s linear, transform .12s cubic-bezier(.2, .8, .2, 1); }
 .docker-group-row-enter-from,
 .docker-group-row-leave-to { opacity: 0; transform: translate3d(0, -3px, 0); }
+.docker-group__summary--selectable { grid-template-columns: auto minmax(0, 1fr) auto; }
+.docker-select-head { display: inline-flex; align-items: center; gap: 8px; }
+.docker-select-name { display: flex; min-width: 0; align-items: center; gap: 8px; }
+.docker-select-name > .resource-name { min-width: 0; flex: 1 1 auto; }
+.docker-select-copy { display: grid; min-width: 0; }
+.docker-select-box { display: inline-grid; width: 24px; height: 24px; flex: 0 0 auto; place-items: center; }
+.docker-select { width: 18px; height: 18px; margin: 0; accent-color: var(--brand); cursor: pointer; }
+.docker-select:disabled { opacity: .45; cursor: not-allowed; }
+.docker-select:focus-visible { outline: 2px solid color-mix(in srgb, var(--brand) 55%, transparent); outline-offset: 2px; }
+.data-table tbody tr.is-batch-selected > td { background: color-mix(in srgb, var(--brand) 7%, var(--surface)); }
+.data-table tbody tr.is-batch-selected:hover > td { background: color-mix(in srgb, var(--brand) 11%, var(--surface)); }
+/* Room for the floating batch bar so it never covers the last rows. */
+.docker-page--batch { padding-bottom: 96px; }
+.desktop-window__body .docker-page--batch { padding-bottom: 0; }
+.docker-batch-dock-enter-active,
+.docker-batch-dock-leave-active { transition: opacity var(--motion-duration-fast) var(--motion-ease-fade); }
+.docker-batch-dock-enter-from,
+.docker-batch-dock-leave-to { opacity: 0; }
 .docker-context-menu {
   position: fixed;
   z-index: 110;
@@ -2518,10 +2874,6 @@ onBeforeUnmount(() => {
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 6px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface);
-  box-shadow: var(--shadow-md);
 }
 .docker-context-menu__title {
   overflow: hidden;
@@ -2546,6 +2898,9 @@ onBeforeUnmount(() => {
   font-size: 14px;
 }
 .docker-context-menu button.danger-link { color: var(--danger); }
+.docker-context-menu button:disabled { opacity: .48; cursor: not-allowed; }
+.docker-context-menu__count { min-width: 22px; margin-left: auto; padding: 1px 6px; border-radius: 999px; color: var(--brand); background: var(--brand-soft); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; text-align: center; }
+.docker-context-menu button.danger-link .docker-context-menu__count { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
 .docker-context-menu hr {
   width: 100%;
   margin: 4px 0;
@@ -2684,6 +3039,7 @@ onBeforeUnmount(() => {
   .deployment-detection small { white-space: normal; }
   .deployment-options { justify-content: stretch; flex-direction: column; }
   .deployment-options .button { width: 100%; }
+  .docker-page--batch { padding-bottom: 180px; }
 }
 /* A desktop window can be far narrower than the viewport, so the phone rules
    above never fire there. Mirror the command-center part of them against the
@@ -2700,7 +3056,9 @@ onBeforeUnmount(() => {
 @media (prefers-reduced-motion: reduce) {
   .docker-group__toggle > svg,
   .docker-group-row-enter-active,
-  .docker-group-row-leave-active { transition: none; }
+  .docker-group-row-leave-active,
+  .docker-batch-dock-enter-active,
+  .docker-batch-dock-leave-active { transition: none; }
   .docker-live-status__dot.is-sampling { animation: none; }
 }
 </style>

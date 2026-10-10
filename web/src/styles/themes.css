@@ -69,6 +69,35 @@
       var(--sidebar) 78%);
   --auth-form-background:
     linear-gradient(180deg, color-mix(in srgb, var(--surface) 94%, var(--brand-soft) 6%), var(--surface) 24rem);
+  /* Materials (docs/ui-visual-language.md 3.5). Content defaults to solid fills;
+     classicWallpaper.css scopes the explicit wallpaper show-through exception.
+     Shell, desktop panels and short-lived overlays use the material fills.
+     Fills reuse the glass
+     tokens checked against black/white backdrops for text, text-soft and muted
+     at >= 4.5:1, including these static defaults. A live blur is spent only where the backdrop can hold
+     moving content or text (chrome, overlays); panels resting on the wallpaper
+     alone take the fill without one. Material blur values live in the two
+     filters below; scrims, drag hints and the public share hero retain bounded fixed filters. */
+  --material-panel-fill: var(--desktop-glass-strong);
+  --material-panel-edge: var(--desktop-glass-border);
+  --material-chrome-fill: var(--desktop-glass-strong);
+  --material-chrome-edge: var(--desktop-glass-border);
+  --material-chrome-filter: blur(16px) saturate(140%);
+  --material-overlay-fill: var(--desktop-glass-strong);
+  --material-overlay-edge: var(--border);
+  --material-overlay-filter: blur(20px) saturate(150%);
+  /* Motion (docs/ui-visual-language.md 3.6). Enter and move decelerate, exits
+     accelerate and are shorter. Only app icon feedback permits bounded overshoot.
+     The global reduced-motion rule
+     in main.css removes movement while state changes stay visible. */
+  --motion-duration-instant: 100ms;
+  --motion-duration-fast: 160ms;
+  --motion-duration-base: 220ms;
+  --motion-duration-layout: 260ms;
+  --motion-duration-ambient: 420ms;
+  --motion-ease-standard: cubic-bezier(.22, 1, .36, 1);
+  --motion-ease-exit: cubic-bezier(.4, 0, 1, 1);
+  --motion-ease-fade: ease;
 }
 
 :root {
@@ -113,7 +142,7 @@
   --sidebar-active: rgb(61 130 211 / 16%);
   --sidebar-accent: #3d82d3;
   --desktop-glass: rgb(250 251 253 / 72%);
-  --desktop-glass-strong: rgb(255 255 255 / 86%);
+  --desktop-glass-strong: rgb(255 255 255 / 96%);
   --desktop-glass-border: rgb(255 255 255 / 70%);
   --desktop-label: #1f2329;
   --desktop-shadow: rgb(17 23 32 / 20%);
@@ -180,7 +209,7 @@
   --sidebar-active: rgb(99 154 220 / 18%);
   --sidebar-accent: #337bd1;
   --desktop-glass: rgb(11 16 23 / 64%);
-  --desktop-glass-strong: rgb(21 31 44 / 84%);
+  --desktop-glass-strong: rgb(21 31 44 / 93%);
   --desktop-glass-border: rgb(255 255 255 / 13%);
   --desktop-label: #eeeff2;
   --desktop-shadow: rgb(0 0 0 / 42%);

@@ -48,6 +48,7 @@ import SitesSectionTabs from '@/components/sites/SitesSectionTabs.vue'
 import SiteFavicon from '@/components/sites/SiteFavicon.vue'
 import SiteAppearanceName from '@/components/sites/SiteAppearanceName.vue'
 import SiteDeleteDialog from '@/components/sites/SiteDeleteDialog.vue'
+import SiteCertificateRenewDialog from '@/components/sites/SiteCertificateRenewDialog.vue'
 import LocalWebServicePicker from '@/components/sites/LocalWebServicePicker.vue'
 import { ApiError, api, isTransientAgentError, siteInstallationRetryDelay } from '@/lib/api'
 import { formatDateTime, relativeTime, shortId } from '@/lib/format'
@@ -376,6 +377,101 @@ async function replaceCertificate(): Promise<void> {
     replacement.error = error instanceof Error ? localizeError(error) : phrase('更换证书失败，请刷新网站状态后重试。')
   } finally {
     replacement.submitting = false
+  }
+}
+
+const renewalSite = ref<Site>()
+const renewal = reactive({ open: false, error: '', notice: '', submitting: false })
+const certificateRenewCapability = computed(() => capabilities.value.find((item) => item.id === 'sites.certificate-renew'))
+const canRenewCertificate = computed(() => capabilitiesLoaded.value && certificateRenewCapability.value?.enabled === true)
+
+// Only script-managed sites with a certificate that is about to lapse (or has) can ask for a new one.
+function renewableCertificate(site: Site): boolean {
+  return (site.certificate?.status === 'expiring' || site.certificate?.status === 'expired') &&
+    Boolean(site.allowedActions?.includes('delete'))
+}
+
+function openCertificateRenewal(site: Site): void {
+  renewalSite.value = site
+  renewal.error = ''
+  renewal.notice = ''
+  selectedSite.value = undefined
+  renewal.open = true
+}
+
+function closeCertificateRenewal(): void {
+  if (renewal.submitting) return
+  renewal.open = false
+  renewalSite.value = undefined
+}
+
+// Nginx is stopped while the certificate is issued, which also cuts the browser's
+// connection when this panel is served through that same Nginx. The Agent finishes
+// regardless, so keep checking the site until the certificate changes.
+async function waitForRenewedCertificate(site: Site): Promise<Site | undefined> {
+  const before = site.certificate?.expiresAt
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 5000))
+    try {
+      const current = (await api.sites.list()).items.find((item) => item.id === site.id)
+      if (current?.certificate?.status === 'valid' && current.certificate.expiresAt !== before) return current
+    } catch {
+      // The panel itself may still be unreachable while Nginx restarts.
+    }
+  }
+  return undefined
+}
+
+// A problem response such as sites_unavailable is the script's own failure, not a lost connection.
+function renewalConnectionLost(reason: unknown): boolean {
+  return reason instanceof ApiError && (
+    reason.status === 0 ||
+    reason.status === 502 ||
+    reason.status === 504 ||
+    (reason.status >= 520 && reason.status <= 524) ||
+    reason.code === 'network_error' ||
+    reason.code === 'agent_unavailable' ||
+    reason.code === 'http_503'
+  )
+}
+
+// Agent details carry a fixed Chinese reason after a technical prefix; show only the reason.
+function renewalErrorMessage(reason: unknown): string {
+  if (!(reason instanceof Error)) return '证书申请失败，请刷新网站状态后重试。'
+  const detail = reason instanceof ApiError && reason.code !== 'resource_conflict'
+    ? /[一-鿿].*$/.exec(reason.message)?.[0]
+    : undefined
+  return detail || localizeError(reason)
+}
+
+async function renewCertificate(): Promise<void> {
+  const site = renewalSite.value
+  if (!site || renewal.submitting || !canRenewCertificate.value || panel.isReadOnly.value) return
+  renewal.submitting = true
+  renewal.error = ''
+  renewal.notice = ''
+  try {
+    let saved: Site | undefined
+    try {
+      saved = await api.sites.renewCertificate(site.id, site.primaryDomain, site.resourceVersion)
+    } catch (reason) {
+      if (!renewalConnectionLost(reason)) throw reason
+      renewal.notice = '连接已中断，申请仍在后台进行；正在等待 Nginx 恢复并核对证书状态…'
+      saved = await waitForRenewedCertificate(site)
+      if (!saved) {
+        throw new ApiError('暂时无法确认申请结果，请稍后刷新网站状态核对证书。', 0, 'renewal_unconfirmed')
+      }
+    }
+    renewal.open = false
+    renewalSite.value = undefined
+    await load(true)
+    selectedSite.value = sites.value.find((item) => item.id === saved?.id) || saved
+    toast.success(phrase('证书已重新申请'), saved.primaryDomain)
+  } catch (reason) {
+    renewal.error = renewalErrorMessage(reason)
+    renewal.notice = ''
+  } finally {
+    renewal.submitting = false
   }
 }
 
@@ -1181,6 +1277,16 @@ onBeforeUnmount(() => {
                 <div class="table-stack">
                   <StatusBadge :status="site.certificate?.status || 'unknown'" subtle />
                   <small v-if="site.certificate?.expiresAt">{{ relativeTime(site.certificate.expiresAt) }}</small>
+                  <button
+                    v-if="renewableCertificate(site)"
+                    class="button button--ghost button--small"
+                    type="button"
+                    :disabled="panel.isReadOnly.value || !canRenewCertificate"
+                    :title="!canRenewCertificate ? certificateRenewCapability?.reason || phrase('当前脚本尚不支持手动申请证书，请先更新配套脚本。') : ''"
+                    @click="openCertificateRenewal(site)"
+                  >
+                    {{ phrase('手动申请证书') }}
+                  </button>
                 </div>
               </td>
               <td>
@@ -1303,6 +1409,13 @@ onBeforeUnmount(() => {
           </div>
         </section>
 
+        <section v-if="renewableCertificate(selectedSite)" class="detail-section">
+          <button class="button button--secondary" type="button" :disabled="panel.isReadOnly.value || !canRenewCertificate" @click="openCertificateRenewal(selectedSite)">
+            <ShieldCheck :size="16" /> {{ phrase('手动申请证书') }}
+          </button>
+          <p v-if="!canRenewCertificate">{{ certificateRenewCapability?.reason || phrase('当前脚本尚不支持手动申请证书，请先更新配套脚本。') }}</p>
+        </section>
+
         <section v-if="selectedSite.allowedActions?.includes('delete') && selectedSite.certificate" class="detail-section">
           <button class="button button--secondary" type="button" :disabled="panel.isReadOnly.value || !canReplaceCertificate" @click="openCertificateReplacement(selectedSite)">
             <KeyRound :size="16" /> {{ phrase('更换证书') }}
@@ -1359,6 +1472,16 @@ onBeforeUnmount(() => {
         </button>
       </template>
     </ModalDialog>
+
+    <SiteCertificateRenewDialog
+      :open="renewal.open"
+      :site="renewalSite"
+      :renewing="renewal.submitting"
+      :error="renewal.error"
+      :notice="renewal.notice"
+      @close="closeCertificateRenewal"
+      @confirm="renewCertificate"
+    />
 
     <SiteDeleteDialog
       :open="deleteOpen"

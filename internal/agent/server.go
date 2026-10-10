@@ -595,6 +595,7 @@ func (s *Server) capabilities(w http.ResponseWriter, r *http.Request) {
 		templateWriteErr      error
 		customCertificateErr  error
 		certificateReplaceErr error
+		certificateRenewErr   error
 		siteDeleteErr         error
 		diagnosticErr         = errors.New("体检服务未配置")
 		environmentReadErr    = errors.New("LDNMP 环境读取服务未配置")
@@ -637,6 +638,7 @@ func (s *Server) capabilities(w http.ResponseWriter, r *http.Request) {
 		defer checks.Done()
 		customCertificateErr = s.sitesManager.CustomCertificateWritable()
 		certificateReplaceErr = s.sitesManager.CertificateReplaceWritable()
+		certificateRenewErr = s.sitesManager.CertificateRenewWritable()
 	}()
 	go func() {
 		defer checks.Done()
@@ -686,6 +688,7 @@ func (s *Server) capabilities(w http.ResponseWriter, r *http.Request) {
 		{ID: "sites.recipes.install", Enabled: recipeWriteErr == nil, Reason: reasonIf(recipeWriteErr, "kejilion.sh 一键建站协议不可用"), Methods: []string{"POST"}},
 		{ID: "sites.templates.install", Enabled: templateWriteErr == nil, Reason: reasonIf(templateWriteErr, "kejilion.sh 交互建站模板不可用"), Methods: []string{"POST"}},
 		{ID: "sites.custom-certificate", Enabled: customCertificateErr == nil, Reason: reasonIf(customCertificateErr, "当前 kejilion.sh 不支持自定义证书协议"), Methods: []string{"POST"}},
+		{ID: "sites.certificate-renew", Enabled: certificateRenewErr == nil, Reason: reasonIf(certificateRenewErr, "当前 kejilion.sh 不支持手动申请证书协议"), Methods: []string{"POST"}},
 		{ID: "sites.certificate-replace", Enabled: certificateReplaceErr == nil, Reason: reasonIf(certificateReplaceErr, "当前 kejilion.sh 不支持更换证书协议"), Methods: []string{"PATCH"}},
 		{ID: "diagnostics.run", Enabled: diagnosticErr == nil, Reason: reasonIf(diagnosticErr, "请更新本机 kejilion.sh 以启用体检协议"), Methods: []string{"GET", "POST"}},
 		{ID: "files.read", Enabled: fileErr == nil, Reason: reasonIf(fileErr, "宿主机文件根目录不可用"), Methods: []string{"GET"}},
@@ -1171,6 +1174,29 @@ func (s *Server) siteOperation(w http.ResponseWriter, r *http.Request, requestID
 			return
 		}
 		s.siteIcon(w, r, requestID, parts[0])
+		return
+	}
+	if len(parts) == 2 && parts[1] == "certificate-renewal" {
+		if r.URL.RawPath != "" || r.URL.RawQuery != "" || !validSiteID(parts[0]) {
+			writeProblem(w, requestID, http.StatusNotFound, "not_found", "资源不存在", "")
+			return
+		}
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", http.MethodPost)
+			writeProblem(w, requestID, http.StatusMethodNotAllowed, "method_not_allowed", "请求方法不允许", "")
+			return
+		}
+		var input sites.RenewCertificateInput
+		if err := decodeJSON(w, r, &input); err != nil {
+			writeProblem(w, requestID, http.StatusBadRequest, "invalid_request", "请求格式无效", "")
+			return
+		}
+		result, err := s.sitesManager.RenewCertificate(r.Context(), parts[0], input)
+		if err != nil {
+			s.writeSiteError(w, requestID, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
 		return
 	}
 	if (r.Method == http.MethodPatch || r.Method == http.MethodDelete) &&

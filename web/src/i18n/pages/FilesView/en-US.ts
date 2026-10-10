@@ -10,7 +10,6 @@ export default [
   ["远程下载完成", "Remote download complete"],
   ["已请求停止远程下载", "Remote download stop requested"],
   ["远程下载失败", "Remote download failed"],
-  ["请输入完整的 HTTP 或 HTTPS 下载地址。", "Enter a complete HTTP or HTTPS download URL."],
   ["保存名称不能包含路径字符，且最多 255 字节。", "The save name cannot contain path separators and must be at most 255 bytes."],
   ["停止", "Stop"],
   ["重新下载", "Download again"],

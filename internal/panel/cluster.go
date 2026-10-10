@@ -109,6 +109,9 @@ func (s *Server) Close() error {
 		clusterErr = s.cluster.Close()
 	}
 	s.requests.Wait()
+	if s.btCache != nil {
+		_ = s.btCache.Close()
+	}
 	var aiErr error
 	if s.ai != nil {
 		aiErr = s.ai.Close()

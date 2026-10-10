@@ -23,7 +23,7 @@ import (
 
 const (
 	jobSchemaVersion = 1
-	transferJobFile  = "jobs-v1.json"
+	transferJobFile  = "jobs-v2.json"
 	MaxJobs          = 100
 	MaxQueuedJobs    = 10
 	MaxJobStateBytes = 256 << 10
@@ -71,9 +71,15 @@ func OpenTransferJobStore(root, legacyRoot string) (*JobStore, error) {
 	if _, err := os.Lstat(newPath); !errors.Is(err, os.ErrNotExist) {
 		return openCurrent()
 	}
-	// Prefer valid rc.13 common history over the older download-only journal.
-	previousPath := filepath.Join(root, "jobs.json")
+	// The v2 record shape adds BT sources and source-stage progress. Keep the
+	// v1 journal byte-for-byte intact so older binaries can still roll back.
+	// The envelope is unchanged; its schemaVersion remains one.
+	previousPath := filepath.Join(root, "jobs-v1.json")
 	legacy, err := readPersistedJobs(previousPath)
+	if errors.Is(err, os.ErrNotExist) {
+		previousPath = filepath.Join(root, "jobs.json")
+		legacy, err = readPersistedJobs(previousPath)
+	}
 	if errors.Is(err, ErrJobStoreUnavailable) && isHistoricalCrossHostIndex(previousPath) {
 		// This separate historical facility is retained for rollback, never
 		// imported as single-file jobs or replayed by the common job runner.
@@ -423,10 +429,11 @@ func validateJob(job contract.FileRemoteDownloadJob) error {
 		validName = validCrossTransferName(job.Name)
 	}
 	validSourceKind := job.SourceKind == "" && validSource(job.Source) && job.TargetHostID == "" ||
+		job.SourceKind == "bittorrent" && job.Source == "bittorrent" && job.TargetHostID == "" ||
 		job.SourceKind == "cross-host" && strings.HasPrefix(job.Source, "kpanel://") && jobIDPattern.MatchString(strings.TrimPrefix(job.Source, "kpanel://")) &&
 			(job.TargetHostID == "" || jobIDPattern.MatchString(job.TargetHostID))
 	if !jobIDPattern.MatchString(job.ID) || !validJobState(job.State) || job.CreatedAt.IsZero() ||
-		job.UpdatedAt.Before(job.CreatedAt) || job.LoadedBytes < 0 || job.TotalBytes < 0 ||
+		job.UpdatedAt.Before(job.CreatedAt) || job.LoadedBytes < 0 || job.TotalBytes < 0 || job.SourceBytes < 0 || job.SourceBytes > contract.MaxFileTransferBytes || job.Peers < 0 || job.Peers > 16 || job.SpeedBytes < 0 || !validTransferMode(job.TransferMode) ||
 		job.LoadedBytes > contract.MaxFileTransferBytes+(32<<20) || job.TotalBytes > contract.MaxFileTransferBytes || !validSourceKind ||
 		!validTargetDirectory(job.TargetDirectory) || (job.Name != "" && !validName) {
 		return errors.New("invalid remote download job")
@@ -436,7 +443,7 @@ func validateJob(job contract.FileRemoteDownloadJob) error {
 		return errors.New("invalid remote download job timestamps")
 	}
 	if job.State == "complete" {
-		if job.Code != "" || job.Name == "" || job.Entry == nil || (job.Entry.Kind != "file" && !(job.SourceKind == "cross-host" && job.Entry.Kind == "directory")) ||
+		if job.Code != "" || job.Name == "" || job.Entry == nil || (job.Entry.Kind != "file" && !((job.SourceKind == "cross-host" || job.SourceKind == "bittorrent") && job.Entry.Kind == "directory")) ||
 			job.Entry.Name != job.Name || job.Entry.Path != path.Join(job.TargetDirectory, job.Name) ||
 			(job.Entry.Kind == "file" && job.Entry.SizeBytes != job.LoadedBytes) || job.Entry.ResourceVersion == "" || len(job.Entry.ResourceVersion) > 256 {
 			return errors.New("invalid completed remote download job")
@@ -445,6 +452,15 @@ func validateJob(job contract.FileRemoteDownloadJob) error {
 		return errors.New("invalid remote download job result")
 	}
 	return nil
+}
+
+func validTransferMode(mode string) bool {
+	switch mode {
+	case "", "single", "probing", "parallel", "bt-standard", "bt-adaptive", "bt-publish":
+		return true
+	default:
+		return false
+	}
 }
 
 func validJobState(state string) bool {
