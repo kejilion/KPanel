@@ -68,6 +68,8 @@ const fileShortcutKind = computed<'file' | 'directory' | undefined>(() => {
     ? props.entry.launch
     : undefined
 })
+const fileArtworkVisible = computed(() => fileShortcutKind.value === 'file'
+  && (!imageLoaded.value || imageFailed.value))
 const accessibleLabel = computed(() => {
   const domain = props.entry?.kind === 'site' ? props.entry.site?.primaryDomain : undefined
   const label = domain && domain !== props.label ? `${props.label} · ${domain}` : props.label
@@ -251,8 +253,9 @@ onBeforeUnmount(clearLongPress)
       :class="{
         'desktop__icon-glyph--dynamic': Boolean(entry),
         'desktop__icon-glyph--shortcut': Boolean(fileShortcutKind),
+        'desktop__icon-glyph--file': fileArtworkVisible,
       }"
-      :style="{ background: gradient }"
+      :style="{ background: fileArtworkVisible ? 'transparent' : gradient }"
     >
       <img
         v-if="(navIconURL || entry?.iconURL) && !imageFailed"
@@ -271,9 +274,9 @@ onBeforeUnmount(clearLongPress)
       />
       <template v-if="!imageLoaded || imageFailed">
         <DesktopShortcutArtwork
-          v-if="fileShortcutKind && (navIcon || entry?.icon)"
+          v-if="fileShortcutKind"
           :kind="fileShortcutKind"
-          :icon="navIcon || entry?.icon"
+          :name="entry?.name || label"
         />
         <component
           v-else-if="navIcon || entry?.icon"

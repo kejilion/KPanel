@@ -83,7 +83,7 @@ describe('DesktopEntryIcon touch interaction', () => {
   it.each([
     ['file', FileText],
     ['directory', FolderOpen],
-  ] as const)('renders %s shortcuts with unified shortcut artwork', (launch, icon) => {
+  ] as const)('renders %s shortcuts with unified shortcut artwork', async (launch, icon) => {
     const wrapper = mount(DesktopEntryIcon, {
       props: {
         label: launch === 'file' ? 'README.md' : '项目',
@@ -92,7 +92,7 @@ describe('DesktopEntryIcon touch interaction', () => {
           key: `shortcut:${launch}`,
           id: launch,
           kind: 'shortcut',
-          name: launch,
+          name: launch === 'file' ? 'README.md' : '项目',
           launch,
           icon,
         },
@@ -104,9 +104,22 @@ describe('DesktopEntryIcon touch interaction', () => {
     expect(wrapper.find('.desktop__shortcut-link-badge').exists()).toBe(false)
     expect(wrapper.find('.desktop__shortcut-artwork > svg').exists()).toBe(launch === 'file')
     expect(wrapper.find('.desktop__shortcut-directory-image').exists()).toBe(launch === 'directory')
+    expect(wrapper.get('.desktop__icon-glyph').classes().includes('desktop__icon-glyph--file'))
+      .toBe(launch === 'file')
     if (launch === 'directory') {
       expect(wrapper.get('.desktop__shortcut-directory-image').attributes('src'))
         .toBe('/desktop-icons/folder-open-shortcut-kpanel-flat-v1.webp')
+    } else {
+      expect(wrapper.get('[data-file-icon-kind]').attributes('data-file-icon-kind')).toBe('document')
+      await wrapper.setProps({ label: '项目说明', entry: { ...wrapper.props('entry')!, iconURL: '/custom.webp' } })
+      expect(wrapper.get('[data-file-icon-kind]').attributes('data-file-icon-kind')).toBe('document')
+      const customImage = wrapper.get('.desktop__icon-img')
+      await customImage.trigger('load')
+      expect(wrapper.find('.desktop__shortcut-artwork').exists()).toBe(false)
+      expect(wrapper.get('.desktop__icon-glyph').classes()).not.toContain('desktop__icon-glyph--file')
+      await customImage.trigger('error')
+      expect(wrapper.get('[data-file-icon-kind]').attributes('data-file-icon-kind')).toBe('document')
+      expect(wrapper.get('.desktop__icon-glyph').classes()).toContain('desktop__icon-glyph--file')
     }
     wrapper.unmount()
   })

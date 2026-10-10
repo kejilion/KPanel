@@ -15,7 +15,6 @@ import ModalDialog from '@/components/common/ModalDialog.vue'
 import { useI18n } from '@/i18n'
 import type { DesktopEntry } from '@/lib/desktopEntries'
 import type { DesktopWidgetDefinition } from '@/lib/desktopWidgets'
-import { shortcutFileIcon } from '@/lib/fileEntryPresentation'
 import type { DesktopShortcut } from '@/types/api'
 import DesktopShortcutArtwork from './DesktopShortcutArtwork.vue'
 
@@ -137,7 +136,7 @@ function isWidgetVisible(key: string): boolean {
                 <DesktopShortcutArtwork
                   v-else-if="shortcut.targetType === 'directory' || shortcut.targetType === 'file'"
                   :kind="shortcut.targetType"
-                  :icon="shortcutFileIcon(shortcut.name, shortcut.targetType)"
+                  :name="shortcut.name"
                 />
                 <Link2 v-else :size="20" />
               </span>
