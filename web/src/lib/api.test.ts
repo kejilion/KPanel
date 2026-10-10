@@ -1525,31 +1525,29 @@ describe('API client', () => {
     expect(JSON.parse(String(init.body))).toEqual({ paths: ['/home/app', '/missing'] })
   })
 
-  it('creates an archive download ticket with paths, resource versions, and name', async () => {
-    const ticket = {
-      downloadUrl: '/api/v1/files/archive-download/test-ticket',
-      expiresAt: '2026-08-20T00:05:00Z',
-    }
-    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse(ticket))
+  it('builds session download URLs without requesting a credential', () => {
+    const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
     const entries = [
       { path: '/home/one.txt', resourceVersion: 'sha256:one' },
       { path: '/home/logs', resourceVersion: 'sha256:logs' },
     ]
 
-    await expect(api.files.createArchiveDownloadTicket(entries, 'home.zip')).resolves.toEqual(ticket)
-
-    const [requestURL, init] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(requestURL).toBe('/api/v1/files/archive-download-tickets')
-    expect(init.method).toBe('POST')
-    expect(JSON.parse(String(init.body))).toEqual({
+    const single = new URL(api.files.contentUrl('/home/app config.json', 'attachment'), 'http://panel.test')
+    expect(single.pathname).toBe('/api/v1/files/content')
+    expect(single.searchParams.get('path')).toBe('/home/app config.json')
+    expect(single.searchParams.get('disposition')).toBe('attachment')
+    const archive = new URL(api.files.archiveUrl(entries, 'home.zip'), 'http://panel.test')
+    expect(archive.pathname).toBe('/api/v1/files/archive')
+    expect(archive.searchParams.get('name')).toBe('home.zip')
+    expect(JSON.parse(archive.searchParams.get('selection')!)).toEqual({
       sources: ['/home/one.txt', '/home/logs'],
       expectedResourceVersions: {
         '/home/one.txt': 'sha256:one',
         '/home/logs': 'sha256:logs',
       },
-      name: 'home.zip',
     })
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('uses the hash-only file share contract for lookup, rotation, removal, and public metadata', async () => {

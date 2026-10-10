@@ -51,8 +51,6 @@ vi.mock('@/lib/api', () => ({
       upload: vi.fn(),
       contentUrl: vi.fn(() => ''),
       archiveUrl: vi.fn(() => ''),
-      createDownloadTicket: vi.fn(),
-      createArchiveDownloadTicket: vi.fn(),
       thumbnailUrl: vi.fn(() => ''),
     },
     cluster: { hosts: mocks.hosts },

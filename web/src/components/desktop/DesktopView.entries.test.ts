@@ -48,8 +48,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
         entries: vi.fn(),
         action: vi.fn(),
         archiveUrl: vi.fn(),
-        createArchiveDownloadTicket: vi.fn(),
-        createDownloadTicket: vi.fn(),
+        contentUrl: vi.fn(),
         upload: vi.fn(),
         transferFromPanel: vi.fn(),
       },
@@ -70,8 +69,7 @@ const mockedFileEntry = vi.mocked(api.files.entry)
 const mockedFileEntries = vi.mocked(api.files.entries)
 const mockedFileAction = vi.mocked(api.files.action)
 const mockedArchiveUrl = vi.mocked(api.files.archiveUrl)
-const mockedCreateArchiveDownloadTicket = vi.mocked(api.files.createArchiveDownloadTicket)
-const mockedCreateDownloadTicket = vi.mocked(api.files.createDownloadTicket)
+const mockedContentUrl = vi.mocked(api.files.contentUrl)
 const mockedFileUpload = vi.mocked(api.files.upload)
 const mockedPanelTransfer = vi.mocked(api.files.transferFromPanel)
 const mockedClusterHosts = vi.mocked(api.cluster.hosts)
@@ -158,18 +156,10 @@ describe('DesktopView dynamic entries', () => {
       succeeded: [{ path: `${input.target}/${input.name}` }],
       failed: [],
     }))
+    mockedContentUrl.mockReset()
+    mockedContentUrl.mockImplementation((filePath, disposition) => `/api/v1/files/content?path=${encodeURIComponent(filePath)}&disposition=${disposition}`)
     mockedArchiveUrl.mockReset()
     mockedArchiveUrl.mockImplementation((_entries, name) => `/api/v1/files/archive?name=${encodeURIComponent(name)}`)
-    mockedCreateArchiveDownloadTicket.mockReset()
-    mockedCreateArchiveDownloadTicket.mockResolvedValue({
-      downloadUrl: '/api/v1/files/archive-download/test-ticket',
-      expiresAt: '2026-08-20T08:00:00Z',
-    })
-    mockedCreateDownloadTicket.mockReset()
-    mockedCreateDownloadTicket.mockResolvedValue({
-      downloadUrl: '/api/v1/files/download/test-ticket',
-      expiresAt: '2026-08-20T08:00:00Z',
-    })
     mockedFileUpload.mockReset()
     mockedFileUpload.mockImplementation(async (path, file, _overwrite, onProgress) => {
       onProgress?.(45)
@@ -817,15 +807,17 @@ describe('DesktopView dynamic entries', () => {
     await download!.trigger('click')
     await flushPromises()
 
-    expect(mockedCreateDownloadTicket).toHaveBeenCalledWith('/home/nginx.conf')
-    expect(mockedCreateArchiveDownloadTicket).not.toHaveBeenCalled()
+    expect(mockedContentUrl).toHaveBeenCalledWith('/home/nginx.conf', 'attachment', null)
+    expect(anchorClick.mock.instances[0]).toMatchObject({
+      pathname: '/api/v1/files/content', download: 'nginx.conf',
+    })
     expect(mockedArchiveUrl).not.toHaveBeenCalled()
     expect(anchorClick).toHaveBeenCalledOnce()
     anchorClick.mockRestore()
     wrapper.unmount()
   })
 
-  it('downloads a desktop directory through one short-lived archive ticket', async () => {
+  it('downloads a desktop directory through the session archive URL', async () => {
     const shortcutID = 'a'.repeat(32)
     mockedWorkspace.mockResolvedValueOnce(makeWorkspace({
       shortcuts: [{
@@ -855,11 +847,12 @@ describe('DesktopView dynamic entries', () => {
     await download!.trigger('click')
     await flushPromises()
 
-    expect(mockedCreateArchiveDownloadTicket).toHaveBeenCalledWith([
+    expect(mockedArchiveUrl).toHaveBeenCalledWith([
       expect.objectContaining({ path: '/home/logs', resourceVersion: 'sha256:logs' }),
-    ], 'logs.zip')
-    expect(mockedCreateDownloadTicket).not.toHaveBeenCalled()
-    expect(mockedArchiveUrl).not.toHaveBeenCalled()
+    ], 'logs.zip', null)
+    expect(anchorClick.mock.instances[0]).toMatchObject({
+      pathname: '/api/v1/files/archive', download: 'logs.zip',
+    })
     expect(anchorClick).toHaveBeenCalledOnce()
     anchorClick.mockRestore()
     wrapper.unmount()
@@ -894,8 +887,6 @@ describe('DesktopView dynamic entries', () => {
       .map((item) => item.text().trim())
     expect(labels).not.toContain('下载')
     expect(labels).not.toContain('下载 ZIP')
-    expect(mockedCreateDownloadTicket).not.toHaveBeenCalled()
-    expect(mockedCreateArchiveDownloadTicket).not.toHaveBeenCalled()
     expect(mockedArchiveUrl).not.toHaveBeenCalled()
     wrapper.unmount()
   })
@@ -972,7 +963,6 @@ describe('DesktopView dynamic entries', () => {
       expect.objectContaining({ path: '/home/one.txt' }),
       expect.objectContaining({ path: '/home/app' }),
     ]), 'KPanel Desktop.zip')
-    expect(mockedCreateArchiveDownloadTicket).not.toHaveBeenCalled()
     expect(values.get(NATIVE_FILE_DOWNLOAD_DRAG_TYPE)).toMatch(
       /^application\/zip:KPanel Desktop\.zip:https?:\/\//,
     )

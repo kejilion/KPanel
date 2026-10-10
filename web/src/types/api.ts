@@ -2450,11 +2450,6 @@ export interface FileDirectory {
   readAt: string
 }
 
-export interface FileDownloadTicket {
-  downloadUrl: string
-  expiresAt: string
-}
-
 export type FileShareExpiry = '7d' | '30d' | 'never'
 
 export interface FileShareAdminView {

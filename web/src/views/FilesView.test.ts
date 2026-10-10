@@ -30,8 +30,6 @@ const mocks = vi.hoisted(() => ({
   upload: vi.fn(),
   contentUrl: vi.fn(),
   archiveUrl: vi.fn(),
-  createArchiveDownloadTicket: vi.fn(),
-  createDownloadTicket: vi.fn(),
   thumbnailUrl: vi.fn(),
   desktopWorkspace: vi.fn(),
   desktopUpdate: vi.fn(),
@@ -74,8 +72,6 @@ vi.mock('@/lib/api', () => ({
       trash: mocks.trash,
       contentUrl: mocks.contentUrl,
       archiveUrl: mocks.archiveUrl,
-      createArchiveDownloadTicket: mocks.createArchiveDownloadTicket,
-      createDownloadTicket: mocks.createDownloadTicket,
       thumbnailUrl: mocks.thumbnailUrl,
       text: vi.fn(),
       write: mocks.write,
@@ -461,14 +457,6 @@ beforeEach(() => {
   mocks.write.mockImplementation(async (_path: string, _content: string, _version: string) => ({
     entry: testEntry('saved.txt'),
   }))
-  mocks.createDownloadTicket.mockResolvedValue({
-    downloadUrl: '/api/v1/files/download/test-ticket',
-    expiresAt: '2026-07-30T00:05:00Z',
-  })
-  mocks.createArchiveDownloadTicket.mockResolvedValue({
-    downloadUrl: '/api/v1/files/archive-download/test-ticket',
-    expiresAt: '2026-07-30T00:05:00Z',
-  })
   mocks.contentUrl.mockImplementation((path: string, disposition: string) => (
     `/api/v1/files/content?path=${encodeURIComponent(path)}&disposition=${disposition}`
   ))
@@ -1110,7 +1098,6 @@ describe('FilesView desktop shortcuts', () => {
     expect(single.dataTransfer?.getData(NATIVE_FILE_DOWNLOAD_DRAG_TYPE)).toContain(
       '/api/v1/files/content?path=%2Fone.txt&disposition=attachment',
     )
-    expect(mocks.createArchiveDownloadTicket).not.toHaveBeenCalled()
 
     view.selected.value = new Set([first.path, second.path])
     const selection = internalDrag([])
@@ -1131,7 +1118,6 @@ describe('FilesView desktop shortcuts', () => {
     expect(directory.dataTransfer?.getData(NATIVE_FILE_DOWNLOAD_DRAG_TYPE)).toContain(
       'application/zip:photos.zip:https://panel.example/api/v1/files/archive',
     )
-    expect(mocks.createArchiveDownloadTicket).not.toHaveBeenCalled()
     expect(mocks.show).not.toHaveBeenCalled()
   })
 
@@ -1189,7 +1175,7 @@ describe('FilesView desktop shortcuts', () => {
 })
 
 describe('FilesView downloads', () => {
-  it('uses a short-lived download URL and reports ticket failures', async () => {
+  it('uses the session download URL and reports download setup failures', async () => {
     const anchor = {
       href: '',
       download: '',
@@ -1208,18 +1194,17 @@ describe('FilesView downloads', () => {
 
     await view.download(entry)
 
-    expect(mocks.createDownloadTicket).toHaveBeenCalledWith('/hello.txt')
-    expect(mocks.createArchiveDownloadTicket).not.toHaveBeenCalled()
+    expect(mocks.contentUrl).toHaveBeenCalledWith('/hello.txt', 'attachment', '')
     expect(mocks.archiveUrl).not.toHaveBeenCalled()
-    expect(anchor.href).toBe('/api/v1/files/download/test-ticket')
+    expect(anchor.href).toBe('/api/v1/files/content?path=%2Fhello.txt&disposition=attachment')
     expect(anchor.download).toBe('hello.txt')
     expect(appendChild).toHaveBeenCalledWith(anchor)
     expect(anchor.click).toHaveBeenCalledOnce()
     expect(anchor.remove).toHaveBeenCalledOnce()
 
-    mocks.createDownloadTicket.mockRejectedValueOnce(new Error('ticket failed'))
+    mocks.contentUrl.mockImplementationOnce(() => { throw new Error('download failed') })
     await view.download(entry)
-    expect(mocks.danger).toHaveBeenCalledWith('下载失败', 'ticket failed')
+    expect(mocks.danger).toHaveBeenCalledWith('下载失败', 'download failed')
   })
 })
 
@@ -2046,14 +2031,12 @@ describe('FilesView directory loading', () => {
 
     const downloadPromise = view.downloadSelected(second)
 
-    expect(mocks.createDownloadTicket).not.toHaveBeenCalled()
-    expect(mocks.createArchiveDownloadTicket).toHaveBeenCalledWith([first, second], 'home.zip')
-    expect(mocks.archiveUrl).not.toHaveBeenCalled()
-    expect(anchors).toHaveLength(0)
+    expect(mocks.archiveUrl).toHaveBeenCalledWith([first, second], 'home.zip', '')
+    expect(anchors).toHaveLength(1)
     await downloadPromise
     expect(anchors).toHaveLength(1)
     expect(anchors[0]).toMatchObject({
-      href: '/api/v1/files/archive-download/test-ticket',
+      href: '/api/v1/files/archive?selection=test&name=home.zip',
       download: 'home.zip',
       rel: 'noopener',
     })
@@ -2069,8 +2052,6 @@ describe('FilesView directory loading', () => {
 
     await view.downloadSelected(special)
 
-    expect(mocks.createDownloadTicket).not.toHaveBeenCalled()
-    expect(mocks.createArchiveDownloadTicket).not.toHaveBeenCalled()
     expect(mocks.archiveUrl).not.toHaveBeenCalled()
     expect(mocks.danger).toHaveBeenCalledWith('下载失败', '只能下载普通文件或文件夹')
   })

@@ -4,8 +4,6 @@ import { archiveDownloadName, downloadFileEntries } from './fileDownloads'
 const mocks = vi.hoisted(() => ({
   archiveUrl: vi.fn(),
   contentUrl: vi.fn(),
-  createArchiveDownloadTicket: vi.fn(),
-  createDownloadTicket: vi.fn(),
 }))
 
 vi.mock('@/lib/api', () => ({
@@ -13,8 +11,6 @@ vi.mock('@/lib/api', () => ({
     files: {
       archiveUrl: mocks.archiveUrl,
       contentUrl: mocks.contentUrl,
-      createArchiveDownloadTicket: mocks.createArchiveDownloadTicket,
-      createDownloadTicket: mocks.createDownloadTicket,
     },
   },
 }))
@@ -53,12 +49,8 @@ beforeEach(() => {
   vi.unstubAllGlobals()
   mocks.archiveUrl.mockReset()
   mocks.contentUrl.mockReset()
-  mocks.createArchiveDownloadTicket.mockReset()
-  mocks.createDownloadTicket.mockReset()
-  mocks.createArchiveDownloadTicket.mockResolvedValue({
-    downloadUrl: '/downloads/archive-ticket',
-    expiresAt: '2026-08-20T00:05:00Z',
-  })
+  mocks.contentUrl.mockReturnValue('/api/v1/files/content?path=%2Fnginx.conf&disposition=attachment')
+  mocks.archiveUrl.mockImplementation((_entries, name) => `/api/v1/files/archive?name=${name}`)
 })
 
 describe('downloadFileEntries', () => {
@@ -71,50 +63,46 @@ describe('downloadFileEntries', () => {
     expect(archiveDownloadName([entry('one.txt'), entry('two.txt')], '报表:2026?')).toBe('报表_2026_.zip')
   })
 
-  it('uses one ticket for a single ordinary file', async () => {
+  it('starts a session download immediately for a single ordinary file', async () => {
     const { anchors } = installDocument()
     const file = entry('nginx.conf')
-    mocks.createDownloadTicket.mockResolvedValue({
-      downloadUrl: '/downloads/ticket',
-      expiresAt: '2026-08-20T00:05:00Z',
-    })
+    const download = downloadFileEntries([file], 'etc')
 
-    await downloadFileEntries([file], 'etc')
-
-    expect(mocks.createDownloadTicket).toHaveBeenCalledWith(file.path)
-    expect(mocks.createArchiveDownloadTicket).not.toHaveBeenCalled()
+    expect(mocks.contentUrl).toHaveBeenCalledWith(file.path, 'attachment', undefined)
     expect(mocks.archiveUrl).not.toHaveBeenCalled()
     expect(anchors).toHaveLength(1)
-    expect(anchors[0]).toMatchObject({ href: '/downloads/ticket', download: 'nginx.conf', rel: 'noopener' })
+    expect(anchors[0]).toMatchObject({
+      href: '/api/v1/files/content?path=%2Fnginx.conf&disposition=attachment',
+      download: 'nginx.conf', rel: 'noopener',
+    })
     expect(anchors[0]!.click).toHaveBeenCalledOnce()
     expect(anchors[0]!.remove).toHaveBeenCalledOnce()
+    await download
   })
 
-  it('uses one short-lived archive ticket for a directory ZIP', async () => {
+  it('uses the session archive URL for a directory ZIP', async () => {
     const { anchors } = installDocument()
     const directory = entry('photos', 'directory')
 
     await downloadFileEntries([directory], 'home')
 
-    expect(mocks.createDownloadTicket).not.toHaveBeenCalled()
-    expect(mocks.createArchiveDownloadTicket).toHaveBeenCalledWith([directory], 'photos.zip')
-    expect(mocks.archiveUrl).not.toHaveBeenCalled()
+    expect(mocks.contentUrl).not.toHaveBeenCalled()
+    expect(mocks.archiveUrl).toHaveBeenCalledWith([directory], 'photos.zip', undefined)
     expect(anchors).toHaveLength(1)
-    expect(anchors[0]).toMatchObject({ href: '/downloads/archive-ticket', download: 'photos.zip' })
+    expect(anchors[0]).toMatchObject({ href: '/api/v1/files/archive?name=photos.zip', download: 'photos.zip' })
     expect(anchors[0]!.click).toHaveBeenCalledOnce()
   })
 
-  it('uses one short-lived archive ticket for a mixed multi-selection', async () => {
+  it('uses one session archive URL for a mixed multi-selection', async () => {
     const { anchors } = installDocument()
     const entries = [entry('one.txt'), entry('logs', 'directory')]
 
     await downloadFileEntries(entries, 'home')
 
-    expect(mocks.createDownloadTicket).not.toHaveBeenCalled()
-    expect(mocks.createArchiveDownloadTicket).toHaveBeenCalledWith(entries, 'home.zip')
-    expect(mocks.archiveUrl).not.toHaveBeenCalled()
+    expect(mocks.contentUrl).not.toHaveBeenCalled()
+    expect(mocks.archiveUrl).toHaveBeenCalledWith(entries, 'home.zip', undefined)
     expect(anchors).toHaveLength(1)
-    expect(anchors[0]).toMatchObject({ href: '/downloads/archive-ticket', download: 'home.zip' })
+    expect(anchors[0]).toMatchObject({ href: '/api/v1/files/archive?name=home.zip', download: 'home.zip' })
     expect(anchors[0]!.click).toHaveBeenCalledOnce()
   })
 
@@ -125,7 +113,7 @@ describe('downloadFileEntries', () => {
 
     await downloadFileEntries([file], 'etc', 'remote')
 
-    expect(mocks.createDownloadTicket).not.toHaveBeenCalled()
+    expect(mocks.contentUrl).toHaveBeenCalledWith(file.path, 'attachment', 'remote')
     expect(anchors[0]).toMatchObject({
       href: '/api/v1/files/content?path=%2Fnginx.conf&disposition=attachment',
       download: 'nginx.conf',
@@ -139,7 +127,7 @@ describe('downloadFileEntries', () => {
 
     await downloadFileEntries([directory], 'home', 'remote')
 
-    expect(mocks.createArchiveDownloadTicket).not.toHaveBeenCalled()
+    expect(mocks.contentUrl).not.toHaveBeenCalled()
     expect(mocks.archiveUrl).toHaveBeenCalledWith([directory], 'photos.zip', 'remote')
     expect(anchors[0]).toMatchObject({
       href: '/api/v1/files/archive?selection=photos&name=photos.zip',

@@ -103,8 +103,6 @@ type Server struct {
 	terminalOpeningUser     map[string]int
 	terminalStreams         *terminalStreamHub
 	jobInputs               jobInputGate
-	downloadTicketMu        sync.Mutex
-	downloadTickets         map[[32]byte]fileDownloadTicket
 	remoteDownloadOpen      func(context.Context, string) (*http.Response, error)
 	remoteDownloadRangeOpen func(context.Context, string, remotedownload.ResumeRequest) (*http.Response, error)
 	remoteDownloadAdaptive  func(context.Context, string, *http.Response) io.ReadCloser
@@ -549,12 +547,6 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		s.handleFileArchiveDownload(w, r)
 	case r.URL.Path == "/api/v1/files/archive-contents" || r.URL.Path == "/api/v1/files/archive-jobs":
 		s.handleFileArchives(w, r)
-	case r.URL.Path == "/api/v1/files/download-tickets":
-		s.handleFileDownloadTicketCreate(w, r)
-	case r.URL.Path == "/api/v1/files/archive-download-tickets":
-		s.handleFileArchiveDownloadTicketCreate(w, r)
-	case isFileDownloadTicketPath(r.URL.Path):
-		s.handleFileDownloadTicket(w, r)
 	case r.URL.Path == "/api/v1/files/upload":
 		s.handleFileUpload(w, r)
 	case r.URL.Path == "/api/v1/files/transfers":
@@ -991,7 +983,7 @@ func securityEntrancePublicPath(requestPath string) bool {
 	if _, _, _, ok := scenePackFilePath(requestPath); ok {
 		return true
 	}
-	return requestPath == "/api/v1/health" || isFileDownloadTicketPath(requestPath) || isStaticAssetPath(requestPath) || isClusterSharePagePath(requestPath) || isPublicClusterShareAPIPath(requestPath) || isFileSharePagePath(requestPath) || isPublicFileShareAPIPath(requestPath) || isPublicFileShareContentPath(requestPath) || strings.HasPrefix(requestPath, "/api/v1/federation/") || strings.HasPrefix(requestPath, "/api/v2/federation/") || strings.HasPrefix(requestPath, "/api/v3/federation/light/")
+	return requestPath == "/api/v1/health" || isStaticAssetPath(requestPath) || isClusterSharePagePath(requestPath) || isPublicClusterShareAPIPath(requestPath) || isFileSharePagePath(requestPath) || isPublicFileShareAPIPath(requestPath) || isPublicFileShareContentPath(requestPath) || strings.HasPrefix(requestPath, "/api/v1/federation/") || strings.HasPrefix(requestPath, "/api/v2/federation/") || strings.HasPrefix(requestPath, "/api/v3/federation/light/")
 }
 
 func isStaticAssetPath(requestPath string) bool {
