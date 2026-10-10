@@ -527,7 +527,7 @@ onBeforeUnmount(() => {
 .batch-result.is-expanded > .batch-result__summary .batch-result__chevron { transform: rotate(180deg); color: var(--brand); }
 .batch-result__detail { display: grid; min-width: 0; }
 .batch-result :deep(.batch-result__os) { width: 34px; height: 34px; flex: 0 0 auto; border-radius: var(--radius-sm); box-shadow: none; }
-.batch-result pre { max-height: 190px; margin: 0; overflow: auto; padding: 12px 14px; color: var(--terminal-shell-text, #d8dddc); background: var(--terminal-shell-background, #0b1214); font: 13px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; scrollbar-color: var(--terminal-shell-scrollbar, #35474a) var(--terminal-shell-background, #0b1214); scrollbar-width: thin; }
+.batch-result pre { max-height: 190px; margin: 0; overflow: auto; padding: 12px 14px; color: var(--terminal-shell-text, #d8dddc); background: var(--terminal-wallpaper-background, var(--terminal-shell-background, #0b1214)); font: 13px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; scrollbar-color: var(--terminal-shell-scrollbar, #35474a) var(--terminal-shell-background, #0b1214); scrollbar-width: thin; }
 .batch-result__pending { display: flex; min-height: 64px; align-items: center; justify-content: center; gap: 7px; color: var(--terminal-shell-muted, #8a9695); font-size: 14px; }
 .batch-result__notice, .batch-result__error { margin: 0; padding: 9px 13px; font-size: 13px; line-height: 1.45; }
 .batch-result__notice { color: var(--warning); }

@@ -81,6 +81,28 @@
   --terminal-shell-scrollbar-hover: var(--control-border);
 }
 
+/* Terminals and terminal-style output share one wallpaper treatment, including
+   empty output states. Editors and command input fields keep their own fill. */
+.host-terminal__screen,
+.interactive-terminal__screen,
+.diagnostic-log,
+.job-log pre,
+.job-log p,
+.log-viewer,
+.log-view,
+.batch-result pre {
+  --terminal-canvas-background: #00000000;
+  --terminal-wallpaper-veil: color-mix(in srgb, var(--terminal-shell-background, #0b1214) var(--terminal-wallpaper-opacity, 84%), transparent);
+  --terminal-wallpaper-background: linear-gradient(var(--terminal-wallpaper-veil), var(--terminal-wallpaper-veil)), var(--terminal-wallpaper-image, var(--classic-wallpaper-image, url('/wallpapers/kpanel-desktop.webp'))) var(--desktop-wallpaper-position, center) / cover no-repeat var(--terminal-shell-background, #0b1214);
+  background: var(--terminal-wallpaper-background);
+}
+
+:root[data-wallpaper-bright] { --terminal-wallpaper-opacity: 94%; }
+
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active) {
+  :root { --terminal-wallpaper-image: none; }
+}
+
 /* AI workspace */
 .page-content--ai {
   max-width: none;
@@ -5021,7 +5043,7 @@ div.resource-name {
   margin: 0;
   overflow: auto;
   color: var(--terminal-shell-text);
-  background: var(--terminal-shell-background);
+  background: var(--terminal-wallpaper-background, var(--terminal-shell-background));
   border: 1px solid var(--terminal-shell-border);
   border-radius: var(--terminal-shell-radius);
   box-shadow: var(--terminal-shell-shadow);
