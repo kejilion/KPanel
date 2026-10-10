@@ -3,8 +3,6 @@ import type { PhraseCatalog } from '@/i18n/phrase'
 export default [
   ["无法读取广告专栏，请稍后重试。", "Sponsored offers could not be loaded. Try again later."],
   ["{0}：{1}（广告，在新标签页打开 {2}）", "{0}: {1} (Ad, opens {2} in a new tab)"],
-  ["服务器与域名精选", "Servers and domains"],
-  ["科技lion 推荐的厂商 · 链接含推广返利（AFF），你支付的价格不变", "Providers recommended by Kejilion · Affiliate (AFF) links, you pay the same price"],
   ["未能刷新，显示 {0} 的内容", "Refresh failed, showing offers from {0}"],
   ["未能刷新，显示上次的内容", "Refresh failed, showing the last offers"],
   ["更新于 {0}", "Updated {0}"],
@@ -29,8 +27,8 @@ export default [
   ["kejilion.pro/topvps 整理的热门套餐", "Popular plans collected at kejilion.pro/topvps"],
   ["外部链接", "External link"],
   ["科技lion", "Kejilion"],
-  ["价格和配置以厂商页面为准；KPanel 不经手订单和付款，也不记录你点了哪些横幅。", "Prices and specs are set by each provider; KPanel does not handle orders or payments and does not record which banners you open."],
   ["去 kejilion.pro 查看更多 VPS 优惠", "See more VPS deals on kejilion.pro"],
   ["重试", "Retry"],
   ["刷新", "Refresh"],
+  ["科技lion 推荐的厂商，链接含推广返利（AFF），你支付的价格不变。价格和配置以厂商页面为准；KPanel 不经手订单和付款，也不记录你点了哪些横幅。", "Providers recommended by Kejilion. Links are affiliate (AFF) links and you pay the same price. Prices and specs are set by each provider; KPanel does not handle orders or payments and does not record which banners you open."],
 ] as const satisfies PhraseCatalog

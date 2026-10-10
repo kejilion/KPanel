@@ -66,7 +66,7 @@ describe('OffersView', () => {
     expect(view.findAll('.offers-disclosure')).toHaveLength(1 + tiles.length)
     expect(view.find('.offers-showcase__caption').text()).toContain('厂商 a')
     expect(view.find('.offers-showcase .offers-host').text()).toContain('a.example.com')
-    expect(view.find('.offers-masthead').text()).toContain('链接含推广返利（AFF）')
+    expect(view.find('.offers-footnote').text()).toContain('链接含推广返利（AFF）')
     expect(view.find('.offers-footnote').text()).toContain('也不记录你点了哪些横幅')
   })
 
@@ -155,7 +155,7 @@ describe('OffersView', () => {
     expect(view.find('.offers-updated').exists()).toBe(false)
     expect(view.findAll('.offers-tile:not(.offers-tile--more)')).toHaveLength(1)
 
-    await view.find('.offers-masthead button').trigger('click')
+    await view.find('.offers-section-head button').trigger('click')
     await flushPromises()
     expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ refresh: true }))
   })
@@ -186,7 +186,7 @@ describe('OffersView', () => {
   it('refreshes on demand and replaces a broken image with the vendor text', async () => {
     const view = await mountOffers(snapshot([offer('c')]))
     expect(view.find('.offers-updated').text()).toContain('更新于')
-    await view.find('.offers-masthead button').trigger('click')
+    await view.find('.offers-section-head button').trigger('click')
     await flushPromises()
     expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ refresh: true }))
 

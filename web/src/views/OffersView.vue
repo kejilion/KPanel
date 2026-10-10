@@ -175,31 +175,6 @@ onBeforeUnmount(() => {
     class="page offers-page"
     :class="{ 'offers-page--narrow': narrow }"
   >
-    <header class="offers-masthead">
-      <div class="offers-masthead__text">
-        <h2>服务器与域名精选</h2>
-        <p>科技lion 推荐的厂商 · 链接含推广返利（AFF），你支付的价格不变</p>
-      </div>
-      <div class="offers-masthead__meta">
-        <span v-if="stale" class="offers-stale" role="status">
-          <TriangleAlert :size="14" aria-hidden="true" />
-          <template v-if="fetchedLabel">未能刷新，显示 {{ fetchedLabel }} 的内容</template>
-          <template v-else>未能刷新，显示上次的内容</template>
-        </span>
-        <span v-else-if="updatedLabel" class="offers-updated">更新于 {{ updatedLabel }}</span>
-        <button
-          class="offers-round-button"
-          type="button"
-          :aria-label="stale ? '重试' : '刷新'"
-          :title="stale ? '重试' : '刷新'"
-          :disabled="refreshing || loading"
-          @click="load(true)"
-        >
-          <RefreshCw :size="16" :class="{ spin: refreshing }" aria-hidden="true" />
-        </button>
-      </div>
-    </header>
-
     <div v-if="loading" class="offers-skeleton" role="status" aria-label="正在加载广告专栏">
       <span class="offers-skeleton__block offers-skeleton__block--wide" />
       <div class="offers-wall" :class="`offers-wall--cols-${columns}`">
@@ -312,6 +287,24 @@ onBeforeUnmount(() => {
         <div class="offers-section-head">
           <h3 id="offers-wall-title">更多厂商</h3>
           <span v-if="wall.length" class="offers-count">{{ wall.length }} 家</span>
+          <div class="offers-section-head__meta">
+            <span v-if="stale" class="offers-stale" role="status">
+              <TriangleAlert :size="14" aria-hidden="true" />
+              <template v-if="fetchedLabel">未能刷新，显示 {{ fetchedLabel }} 的内容</template>
+              <template v-else>未能刷新，显示上次的内容</template>
+            </span>
+            <span v-else-if="updatedLabel" class="offers-updated">更新于 {{ updatedLabel }}</span>
+            <button
+              class="offers-round-button"
+              type="button"
+              :aria-label="stale ? '重试' : '刷新'"
+              :title="stale ? '重试' : '刷新'"
+              :disabled="refreshing || loading"
+              @click="load(true)"
+            >
+              <RefreshCw :size="16" :class="{ spin: refreshing }" aria-hidden="true" />
+            </button>
+          </div>
         </div>
         <div class="offers-wall" :class="`offers-wall--cols-${columns}`">
           <a
@@ -373,7 +366,7 @@ onBeforeUnmount(() => {
 
     <footer class="offers-footnote">
       <Info :size="14" aria-hidden="true" />
-      <p>价格和配置以厂商页面为准；KPanel 不经手订单和付款，也不记录你点了哪些横幅。</p>
+      <p>科技lion 推荐的厂商，链接含推广返利（AFF），你支付的价格不变。价格和配置以厂商页面为准；KPanel 不经手订单和付款，也不记录你点了哪些横幅。</p>
     </footer>
   </div>
 </template>
@@ -396,44 +389,6 @@ onBeforeUnmount(() => {
 
 .offers-page--narrow {
   gap: 28px;
-}
-
-/* Masthead: one calm line of context, with freshness and refresh at the side. */
-.offers-masthead {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 12px 32px;
-}
-
-.offers-masthead__text {
-  display: grid;
-  gap: 6px;
-  flex: 1 1 320px;
-  min-width: 0;
-}
-
-.offers-masthead h2 {
-  margin: 0;
-  font-size: 22px;
-  font-weight: 600;
-  line-height: 1.25;
-}
-
-.offers-masthead p {
-  margin: 0;
-  color: var(--muted);
-  font-size: 14px;
-  line-height: 1.6;
-}
-
-.offers-masthead__meta {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--muted);
-  font-size: 13px;
 }
 
 .offers-stale {
@@ -683,8 +638,17 @@ onBeforeUnmount(() => {
 
 .offers-section-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 10px;
+}
+
+.offers-section-head__meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .offers-section-head h3 {
