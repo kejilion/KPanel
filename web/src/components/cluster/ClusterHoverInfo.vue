@@ -71,7 +71,8 @@ function onPointerEnter(event: PointerEvent): void {
 function onPointerLeave(event: PointerEvent): void {
   if (event.pointerType === 'touch') return
   window.clearTimeout(hoverTimer)
-  if (!pinned.value) open.value = false
+  // A card opened from the keyboard stays with its focused trigger.
+  if (!pinned.value && !trigger.value?.matches(':focus-visible')) open.value = false
 }
 
 function onClick(): void {
@@ -94,16 +95,26 @@ function onDocumentPointer(event: PointerEvent): void {
   close()
 }
 
+/**
+ * Focusing an off-screen trigger scrolls it into view after the card opened,
+ * so scrolling follows the trigger and only closes once it leaves the viewport.
+ */
+function onScroll(): void {
+  const anchor = trigger.value?.getBoundingClientRect()
+  if (!anchor || anchor.bottom < 0 || anchor.top > window.innerHeight) close()
+  else place()
+}
+
 function listen(active: boolean): void {
   if (active) {
     document.addEventListener('pointerdown', onDocumentPointer, true)
-    document.addEventListener('scroll', close, true)
+    document.addEventListener('scroll', onScroll, true)
     window.addEventListener('resize', close)
     window.addEventListener('blur', close)
     return
   }
   document.removeEventListener('pointerdown', onDocumentPointer, true)
-  document.removeEventListener('scroll', close, true)
+  document.removeEventListener('scroll', onScroll, true)
   window.removeEventListener('resize', close)
   window.removeEventListener('blur', close)
 }

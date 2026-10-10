@@ -64,6 +64,22 @@ describe('ClusterHostSystemInfo', () => {
     wrapper.unmount()
   })
 
+  it('follows a focused trigger that scrolls into view and closes once it leaves the viewport', async () => {
+    const wrapper = mount(ClusterHostSystemInfo, { attachTo: document.body, props: { telemetry: telemetry() } })
+    const trigger = wrapper.get('button')
+    await trigger.trigger('focus')
+    await nextTick()
+    document.dispatchEvent(new Event('scroll'))
+    await nextTick()
+    expect(card()).not.toBeNull()
+
+    vi.spyOn(trigger.element, 'getBoundingClientRect').mockReturnValue({ top: window.innerHeight + 40, bottom: window.innerHeight + 80, left: 0, right: 24, width: 24, height: 40, x: 0, y: window.innerHeight + 40, toJSON: () => ({}) })
+    document.dispatchEvent(new Event('scroll'))
+    await nextTick()
+    expect(card()).toBeNull()
+    wrapper.unmount()
+  })
+
   it('names a host without telemetry instead of showing an empty card', async () => {
     const wrapper = mount(ClusterHostSystemInfo, { attachTo: document.body })
     await wrapper.get('button').trigger('click')

@@ -164,9 +164,13 @@ function nodeMetric(host: GlobeHost, key: 'cpu' | 'memory' | 'disk'): string {
   return typeof value === 'number' && Number.isFinite(value) ? formatPercent(value) : '—'
 }
 
-function nodeMeter(host: GlobeHost, key: 'cpu' | 'memory' | 'disk') {
-  const value = hostSample(host)?.[key].usagePercent
-  return { width: `${clampPercent(value)}%`, tone: usageTone(value) }
+const nodeMetricLabels = { cpu: 'CPU', memory: '内存', disk: '磁盘' } as const
+
+function nodeMeters(host: GlobeHost) {
+  return (['cpu', 'memory', 'disk'] as const).map((key) => {
+    const value = hostSample(host)?.[key].usagePercent
+    return { key, label: phrase(nodeMetricLabels[key]), text: nodeMetric(host, key), width: `${clampPercent(value)}%`, tone: usageTone(value) }
+  })
 }
 
 function clearFilters(): void {
@@ -381,7 +385,7 @@ onBeforeUnmount(() => {
             />
             <Globe2 v-else :size="19" />
             <span class="cluster-globe__node-body"><strong class="cluster-globe__node-name" data-i18n-ignore>{{ host.name }}</strong><span class="cluster-globe__node-meta"><StatusBadge :status="host.state" :label="stateLabel(host)" subtle /><span data-i18n-ignore>{{ globeHostLocation(host)?.city || phrase('位置未知') }}</span></span></span>
-            <span class="cluster-globe__node-metrics"><span v-for="metric in (['cpu', 'memory', 'disk'] as const)" :key="metric">{{ metric === 'cpu' ? 'CPU' : phrase(metric === 'memory' ? '内存' : '磁盘') }} <i class="cluster-globe__node-meter" aria-hidden="true" :class="`is-${nodeMeter(host, metric).tone}`"><span :style="{ width: nodeMeter(host, metric).width }" /></i><b>{{ nodeMetric(host, metric) }}</b></span></span>
+            <span class="cluster-globe__node-metrics"><span v-for="meter in nodeMeters(host)" :key="meter.key">{{ meter.label }} <i class="cluster-globe__node-meter" aria-hidden="true" :class="`is-${meter.tone}`"><span :style="{ width: meter.width }" /></i><b>{{ meter.text }}</b></span></span>
           </button>
         </div>
         <div v-else class="cluster-globe__empty" role="status"><Search :size="24" /><strong>没有匹配的节点</strong><button class="button button--secondary button--small" type="button" @click="clearFilters">清除筛选</button></div>
