@@ -58,6 +58,33 @@ func newFakeProcess() *fakeProcess {
 	return &fakeProcess{reader: reader, writer: writer}
 }
 
+func TestOpeningSnapshotPreservesAlreadyCapturedOutput(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		limit     int
+		want      string
+		truncated bool
+	}{
+		{"prompt", 1024, "ready-prompt$ ", false},
+		{"truncated-prompt", 4, "pt$ ", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			now := time.Now().UTC()
+			item := &session{id: "new-session", notify: make(chan struct{}), createdAt: now}
+			// Capture can finish its first read before Open returns its snapshot.
+			item.append([]byte("ready-prompt$ "), test.limit, now)
+			snapshot := item.snapshot()
+			output, err := item.currentOutput(snapshot.Offset, 1024, now)
+			if err != nil || string(output.Data) != test.want || output.Truncated != test.truncated {
+				t.Fatalf("first read at %d = %#v, %v", snapshot.Offset, output, err)
+			}
+			if output.NextOffset != int64(len("ready-prompt$ ")) {
+				t.Fatalf("next offset = %d", output.NextOffset)
+			}
+		})
+	}
+}
+
 func TestBackupBusyRetainsTerminalUntilScopeClosed(t *testing.T) {
 	p := newFakeProcess()
 	m := New(Config{Starter: func(uint16, uint16) (Process, error) { return p, nil }})

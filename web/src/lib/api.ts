@@ -1897,8 +1897,8 @@ export const api = {
       }),
   },
   jobTerminals: {
-    inputTransport: (kind: JobTerminalKind, id: string): Promise<{ protocol: string }> =>
-      request<{ protocol: string }>(`/job-terminals/${kind}/${encodeURIComponent(id)}/input-transport`, { method: 'POST', body: {} }),
+    inputTransport: (kind: JobTerminalKind, id: string, signal?: AbortSignal): Promise<{ protocol: string }> =>
+      request<{ protocol: string }>(`/job-terminals/${kind}/${encodeURIComponent(id)}/input-transport`, { method: 'POST', body: {}, signal }),
     inputBatch: (
       kind: JobTerminalKind,
       id: string,
@@ -1915,8 +1915,8 @@ export const api = {
   terminals: {
 	inputBatch: (sessionId: string, frames: Array<{ stream: string; seq: number; data: string }>, signal?: AbortSignal): Promise<{ acked: number }> =>
 	  request<{ acked: number }>(`/terminal-sessions/${encodeURIComponent(sessionId)}/input-batch`, { method: 'POST', body: { frames }, signal }),
-	inputTransport: (sessionId: string): Promise<{ protocol: string }> =>
-	  request<{ protocol: string }>(`/terminal-sessions/${encodeURIComponent(sessionId)}/input-transport`, { method: 'POST', body: {} }),
+	inputTransport: (sessionId: string, signal?: AbortSignal): Promise<{ protocol: string }> =>
+	  request<{ protocol: string }>(`/terminal-sessions/${encodeURIComponent(sessionId)}/input-transport`, { method: 'POST', body: {}, signal }),
 	inputSocket: (sessionId: string): { url: string; csrf: string } => {
 	  const url = new URL(buildUrl(`/terminal-sessions/${encodeURIComponent(sessionId)}/input-stream`), window.location.href)
 	  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -2677,7 +2677,7 @@ export function resetApiSecurityState(): void {
 /** Shared push channel for terminal output; see lib/terminalStream.ts. */
 export const terminalStream = new TerminalStreamClient({
   url: () => buildUrl('/terminal-stream'),
-  subscribe: (body) => request<{ accepted: boolean }>('/terminal-stream/subscriptions', { method: 'POST', body }),
+  subscribe: (body, signal) => request<{ accepted: boolean }>('/terminal-stream/subscriptions', { method: 'POST', body, signal }),
 })
 
 export function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {

@@ -621,7 +621,9 @@ func (item *session) isActive() bool {
 func (item *session) snapshot() Snapshot {
 	item.mu.Lock()
 	defer item.mu.Unlock()
-	return Snapshot{ID: item.id, Offset: item.next, CreatedAt: item.createdAt, UpdatedAt: item.updatedAt, ExitedAt: item.exitedAt, ExitError: item.exitError, Closed: item.closed}
+	// A new reader must receive output already captured during Open, including
+	// the first prompt. Starting at zero also preserves truncation reporting.
+	return Snapshot{ID: item.id, Offset: 0, CreatedAt: item.createdAt, UpdatedAt: item.updatedAt, ExitedAt: item.exitedAt, ExitError: item.exitError, Closed: item.closed}
 }
 
 func (item *session) append(data []byte, limit int, now time.Time) {

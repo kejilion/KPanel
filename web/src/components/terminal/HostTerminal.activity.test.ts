@@ -52,7 +52,7 @@ describe('HostTerminal in a background desktop window', () => {
     vi.stubGlobal('WebSocket', class { constructor(url: string) { opened(url) } close() {} })
     const wrapper = mount(HostTerminal, { props: { sessionId: 'prewarm-id', hostName: 'Local', initialOffset: 0 } })
     await flushPromises()
-    expect(mocks.inputTransport).toHaveBeenCalledWith('prewarm-id')
+    expect(mocks.inputTransport).toHaveBeenCalledWith('prewarm-id', expect.any(AbortSignal))
     expect(opened).toHaveBeenCalledWith('ws://localhost/input-stream')
     wrapper.unmount()
   })

@@ -320,7 +320,7 @@ onMounted(() => {
   mounted = true
   stopPageHideClose = closeTerminalsOnPageHide(() => (closeConfirmed ? [] : [props.sessionId]))
   duplexInput = new TerminalDuplexInput({
-      negotiate: () => api.terminals.inputTransport(props.sessionId),
+      negotiate: signal => api.terminals.inputTransport(props.sessionId, signal),
       credentials: () => api.terminals.inputSocket(props.sessionId),
       legacy: (data) => api.terminals.input(props.sessionId, data),
       batch: (frames, signal) => api.terminals.inputBatch(props.sessionId, frames, signal),

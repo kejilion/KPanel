@@ -265,7 +265,7 @@ function ensureInput(): TerminalDuplexInput {
   const kind: JobTerminalKind = props.kind ?? 'app'
   const jobId = props.jobId
   const input: TerminalDuplexInput = new TerminalDuplexInput({
-    negotiate: () => api.jobTerminals.inputTransport(kind, jobId),
+    negotiate: signal => api.jobTerminals.inputTransport(kind, jobId, signal),
     credentials: () => api.jobTerminals.inputSocket(kind, jobId),
     legacy: (data) => legacyInput(kind, jobId, data),
     legacyText: true,

@@ -91,7 +91,7 @@ describe('task terminal input channel', () => {
     const wrapper = mountTerminal(kind)
     await flushPromises()
     // The connection exists before anybody typed: the first key pays no handshake.
-    expect(mocks.transport).toHaveBeenCalledWith(kind, 'job-1')
+    expect(mocks.transport).toHaveBeenCalledWith(kind, 'job-1', expect.any(AbortSignal))
     expect(mocks.socket).toHaveBeenCalledWith(kind, 'job-1')
     const socket = await readySocket()
     expect(socket.url).toContain(`/job-terminals/${kind}/job-1/input-stream`)

@@ -228,7 +228,13 @@ func (s *Server) openTerminalSession(w http.ResponseWriter, r *http.Request, use
 		s.writeValidationProblem(w, r, "containerId", "a full container identity and resource version are required together")
 		return
 	}
-	host, err := s.cluster.Host(r.Context(), input.HostID)
+	// Local terminal capability is fixed; collecting host telemetry here adds
+	// CPU sampling and unrelated monitoring latency to every cold-cache open.
+	host := cluster.Host{ID: cluster.LocalHostID, IsLocal: true, TerminalAvailable: true}
+	var err error
+	if input.HostID != cluster.LocalHostID {
+		host, err = s.cluster.Host(r.Context(), input.HostID)
+	}
 	if err != nil || !host.TerminalAvailable {
 		s.writeProblem(w, r, http.StatusConflict, "terminal_unavailable", "Terminal unavailable", "This host does not expose an authenticated terminal")
 		return

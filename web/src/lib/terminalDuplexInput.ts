@@ -1,4 +1,5 @@
 import { TerminalInputQueue } from './terminalInput'
+import { terminalRequest } from './terminalRequest'
 
 export const terminalInputProtocol = 'terminal-input-v1'
 export const terminalInputWindow = 32
@@ -7,7 +8,7 @@ const encoder = new TextEncoder()
 type Frame = { stream: string; seq: number; data: string; bytes: number; sent: boolean }
 type Socket = Pick<WebSocket, 'send' | 'close' | 'readyState' | 'bufferedAmount' | 'onopen' | 'onmessage' | 'onclose' | 'onerror'>
 export type TerminalDuplexOptions = {
-  negotiate: () => Promise<{ protocol: string }>
+  negotiate: (signal: AbortSignal) => Promise<{ protocol: string }>
   credentials: () => { url: string; csrf: string }
   legacy: (data: string) => Promise<unknown>
   /** Hand the per-request fallback the typed text instead of its base64 form. */
@@ -48,6 +49,7 @@ export class TerminalDuplexInput {
   private postSending = false
   private postClaimed = false
   private postController?: AbortController
+  private negotiationController?: AbortController
   private everReady = false
   private retries = 0
   private failureSince = 0
@@ -77,7 +79,9 @@ export class TerminalDuplexInput {
     this.connecting = true
     try {
       if (this.mode === 'unknown') {
-        const result = await this.options.negotiate()
+        const controller = new AbortController()
+        this.negotiationController = controller
+        const result = await terminalRequest(controller, signal => this.options.negotiate(signal))
         if (this.stopped) return
         if (result.protocol === '') { this.mode = 'legacy'; void this.flushLegacy(); return }
         if (result.protocol !== terminalInputProtocol) { this.fail(); return }
@@ -121,7 +125,7 @@ export class TerminalDuplexInput {
       socket.onclose = () => { if (this.socket === socket) this.disconnect() }
       socket.onerror = () => { if (this.socket === socket) this.disconnect() }
     } catch { this.disconnect() }
-    finally { this.connecting = false }
+    finally { this.negotiationController = undefined; this.connecting = false }
   }
   private pump(): void {
     const socket = this.socket
@@ -237,6 +241,7 @@ export class TerminalDuplexInput {
   close(): void {
     this.stopped = true
     this.ready = false
+    this.negotiationController?.abort()
     this.postController?.abort()
     if (this.retryTimer) clearTimeout(this.retryTimer)
     if (this.deadline) clearTimeout(this.deadline)

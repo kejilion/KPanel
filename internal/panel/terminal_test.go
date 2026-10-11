@@ -9,7 +9,58 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/kejilion/kejilion-panel/internal/cluster"
+	"github.com/kejilion/kejilion-panel/internal/contract"
 )
+
+type terminalTelemetryProbe struct{ calls int }
+
+func (p *terminalTelemetryProbe) Telemetry(context.Context) (contract.HostTelemetry, error) {
+	p.calls++
+	return contract.HostTelemetry{Hostname: "fixture", CollectedAt: time.Now().UTC()}, nil
+}
+
+func TestLocalTerminalAdmissionDoesNotCollectTelemetry(t *testing.T) {
+	server, tokenPath := newTestServer(t)
+	telemetry := &terminalTelemetryProbe{}
+	service, err := cluster.NewService(cluster.ServiceConfig{DataDir: t.TempDir(), Telemetry: telemetry})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = server.cluster.Close()
+	server.cluster = service
+	t.Cleanup(func() { _ = service.Close() })
+	stub := &terminalAgentStub{}
+	server.agent = stub
+	session, csrf := bootstrapCookies(t, server, tokenPath)
+	headers := map[string]string{"Content-Type": "application/json", "Origin": "http://panel.test", "X-CSRF-Token": csrf.Value}
+	for _, container := range []bool{false, true} {
+		body := map[string]any{"hostId": "local", "rows": 24, "columns": 80}
+		if container {
+			body["containerId"] = strings.Repeat("a", 64)
+			body["resourceVersion"] = "version"
+		}
+		data, _ := json.Marshal(body)
+		response := authenticatedRequest(server, http.MethodPost, "/api/v1/terminal-sessions", data, session, csrf, headers)
+		if response.Code != http.StatusCreated {
+			t.Fatalf("open = %d %s", response.Code, response.Body.String())
+		}
+	}
+	if stub.opened != 2 || telemetry.calls != 0 {
+		t.Fatalf("opened=%d telemetry=%d", stub.opened, telemetry.calls)
+	}
+	for _, host := range []string{"", " local", "LOCAL", "unknown"} {
+		data, _ := json.Marshal(map[string]any{"hostId": host, "rows": 24, "columns": 80})
+		response := authenticatedRequest(server, http.MethodPost, "/api/v1/terminal-sessions", data, session, csrf, headers)
+		if response.Code != http.StatusConflict {
+			t.Fatalf("host %q = %d", host, response.Code)
+		}
+	}
+	if stub.opened != 2 {
+		t.Fatal("unknown host reached local Agent")
+	}
+}
 
 type terminalAgentStub struct {
 	mu           sync.Mutex

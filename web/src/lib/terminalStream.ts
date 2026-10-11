@@ -4,6 +4,7 @@
 // buffers or blocks it, or repeated failures) subscribe() returns null or the
 // subscription reports `unavailable`, and callers keep their polling path.
 import type { AppTerminalChunk, TerminalOutput } from '@/types/api'
+import { terminalRequest } from './terminalRequest'
 
 export type TerminalStreamTarget =
   | { kind: 'terminal'; id: string; offset: number }
@@ -30,7 +31,7 @@ interface StreamEvent {
 
 export interface TerminalStreamTransport {
   url(): string
-  subscribe(body: { streamId: string; add: unknown[]; remove: string[] }): Promise<unknown>
+  subscribe(body: { streamId: string; add: unknown[]; remove: string[] }, signal: AbortSignal): Promise<unknown>
   createSource?: (url: string) => EventSource
 }
 
@@ -61,6 +62,7 @@ export class TerminalStreamClient {
   private readonly entries = new Map<string, Entry>()
   private pendingAdd = new Set<string>()
   private pendingRemove = new Set<string>()
+  private subscriptionRequest?: AbortController
 
   constructor(
     private readonly transport: TerminalStreamTransport,
@@ -127,6 +129,8 @@ export class TerminalStreamClient {
     this.source = source
     this.armReadyTimer()
     source.addEventListener('ready', (event) => {
+      if (this.source !== source) return
+      this.cancelSubscriptionRequest()
       try {
         const payload = JSON.parse((event as MessageEvent<string>).data) as { streamId?: string }
         if (!payload.streamId) throw new Error('missing stream id')
@@ -144,6 +148,7 @@ export class TerminalStreamClient {
       for (const entry of this.entries.values()) entry.handlers.connected?.()
     })
     source.addEventListener('output', (event) => {
+      if (this.source !== source) return
       let payload: StreamEvent
       try {
         payload = JSON.parse((event as MessageEvent<string>).data) as StreamEvent
@@ -165,9 +170,11 @@ export class TerminalStreamClient {
         entry.handlers.error?.(payload.error)
       }
     })
-    source.addEventListener('auth.expired', () => this.disable())
+    source.addEventListener('auth.expired', () => { if (this.source === source) this.disable() })
     source.addEventListener('error', () => {
+      if (this.source !== source) return
       this.streamId = ''
+      this.cancelSubscriptionRequest()
       if (source.readyState === 2 /* CLOSED */) {
         this.failures = MAX_FAILURES_BEFORE_READY
       } else {
@@ -200,24 +207,33 @@ export class TerminalStreamClient {
   }
 
   private async flush(): Promise<void> {
-    if (!this.streamId || (!this.pendingAdd.size && !this.pendingRemove.size)) return
+    if (this.subscriptionRequest || !this.streamId || (!this.pendingAdd.size && !this.pendingRemove.size)) return
     const streamId = this.streamId
     const addKeys = [...this.pendingAdd]
+    const entries = new Map(addKeys.map(key => [key, this.entries.get(key)]))
     const remove = [...this.pendingRemove]
     this.pendingAdd.clear()
     this.pendingRemove.clear()
     const add = addKeys
       .map((key) => this.entries.get(key)?.target)
       .filter((target): target is TerminalStreamTarget => Boolean(target))
+    const controller = new AbortController()
+    this.subscriptionRequest = controller
     try {
-      await this.transport.subscribe({ streamId, add, remove })
+      await terminalRequest(controller, signal => this.transport.subscribe({ streamId, add, remove }, signal))
     } catch {
-      if (streamId !== this.streamId) return
+      if (this.subscriptionRequest !== controller || streamId !== this.streamId) return
+      if (controller.signal.aborted) {
+        // A timed-out add may still reach the server. Closing this stream
+        // cancels every pump; a racing remove alone cannot guarantee cleanup.
+        this.disable()
+        return
+      }
       // The server could not take these subscriptions (limit or stale
       // stream): those terminals keep working over polling.
       for (const key of addKeys) {
         const entry = this.entries.get(key)
-        if (!entry) continue
+        if (!entry || entry !== entries.get(key)) continue
         this.entries.delete(key)
         // The server may have started some of this batch before rejecting
         // the rest; release those pumps instead of leaving them orphaned.
@@ -225,7 +241,18 @@ export class TerminalStreamClient {
         entry.handlers.unavailable?.()
       }
       this.scheduleFlush()
+    } finally {
+      if (this.subscriptionRequest === controller) {
+        this.subscriptionRequest = undefined
+        if (this.pendingAdd.size || this.pendingRemove.size) this.scheduleFlush()
+      }
     }
+  }
+
+  private cancelSubscriptionRequest(): void {
+    const controller = this.subscriptionRequest
+    this.subscriptionRequest = undefined
+    controller?.abort()
   }
 
   private disable(): void {
@@ -238,6 +265,7 @@ export class TerminalStreamClient {
   }
 
   private closeSource(): void {
+    this.cancelSubscriptionRequest()
     this.clearReadyTimer()
     this.clearIdleTimer()
     if (this.flushTimer) clearTimeout(this.flushTimer)
@@ -246,6 +274,8 @@ export class TerminalStreamClient {
     this.source = undefined
     this.streamId = ''
     this.failures = 0
+    this.pendingAdd.clear()
+    this.pendingRemove.clear()
   }
 
   /** Allows a later subscription to retry streaming, e.g. after re-login. */
