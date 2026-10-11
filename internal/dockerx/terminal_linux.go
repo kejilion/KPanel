@@ -211,7 +211,7 @@ func (p *containerTerminalProcess) pin(ctx context.Context) error {
 			break
 		}
 		if state.ExitCode != 0 {
-			return errors.New("container shell failed to start")
+			return errContainerShellStart
 		}
 		select {
 		case <-ctx.Done():

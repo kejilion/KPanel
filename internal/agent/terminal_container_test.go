@@ -2,11 +2,13 @@ package agent
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/kejilion/kejilion-panel/internal/dockerx"
 	"github.com/kejilion/kejilion-panel/internal/terminal"
 )
 
@@ -36,5 +38,18 @@ func TestContainerTerminalCannotFallBackToHostShell(t *testing.T) {
 	}
 	if hostStarts != 0 {
 		t.Fatalf("container request started %d host shells", hostStarts)
+	}
+}
+
+func TestContainerShellUnavailableHasSafeProblemCode(t *testing.T) {
+	s := testServer(t)
+	response := httptest.NewRecorder()
+	s.writeTerminalError(response, "shell-check", fmt.Errorf("private Docker diagnostic: %w", dockerx.ErrContainerShellUnavailable))
+	var problem struct{ Code, Detail string }
+	if err := json.Unmarshal(response.Body.Bytes(), &problem); err != nil {
+		t.Fatal(err)
+	}
+	if response.Code != http.StatusConflict || problem.Code != "container_shell_unavailable" || problem.Detail != "The container does not contain the required /bin/sh" {
+		t.Fatalf("shell problem = %d %s", response.Code, response.Body.String())
 	}
 }

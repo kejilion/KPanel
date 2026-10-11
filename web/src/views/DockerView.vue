@@ -1695,7 +1695,9 @@ async function openConsole(container: DockerContainer): Promise<void> {
         ? '已达到终端会话上限，请先关闭不用的终端。'
         : reason instanceof ApiError && reason.code === 'resource_conflict'
           ? '容器状态已变化，请刷新列表后重新打开终端。'
-          : '容器终端启动失败，请检查容器状态与 Agent 终端服务。'
+          : reason instanceof ApiError && reason.code === 'container_shell_unavailable'
+            ? '该容器缺少控制台所需的 /bin/sh，无法启动交互终端。仍可查看容器日志和状态。'
+            : '容器终端启动失败，请检查容器状态与 Agent 终端服务。'
     }
   } finally {
     if (generation === consoleGeneration) consoleOpening.value = false

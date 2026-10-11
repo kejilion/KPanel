@@ -218,6 +218,8 @@ func (s *Server) terminalOutput(w http.ResponseWriter, r *http.Request, requestI
 
 func (s *Server) writeTerminalError(w http.ResponseWriter, requestID string, err error) {
 	switch {
+	case errors.Is(err, dockerx.ErrContainerShellUnavailable):
+		writeProblem(w, requestID, http.StatusConflict, "container_shell_unavailable", "Container shell unavailable", "The container does not contain the required /bin/sh")
 	case errors.Is(err, terminal.ErrInputSequence):
 		writeProblem(w, requestID, http.StatusConflict, "terminal_input_sequence", "Terminal input sequence is invalid", "")
 	case errors.Is(err, terminal.ErrInputUncertain):

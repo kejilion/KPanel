@@ -109,6 +109,7 @@ func TestContainerTerminalPanelRejectsPartialTargetsAndMapsAdmissionErrors(t *te
 		{"version-conflict", strings.Repeat("a", 64), "v", "resource_conflict", 409, 409},
 		{"shared-limit", strings.Repeat("a", 64), "v", "terminal_limit", 429, 429},
 		{"unsupported", strings.Repeat("a", 64), "v", "container_terminal_unavailable", 409, 409},
+		{"missing-shell", strings.Repeat("a", 64), "v", "container_shell_unavailable", 409, 409},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			s, tokenPath := newTestServer(t)
@@ -119,6 +120,12 @@ func TestContainerTerminalPanelRejectsPartialTargetsAndMapsAdmissionErrors(t *te
 			response := authenticatedRequest(s, http.MethodPost, "/api/v1/terminal-sessions", body, sessionCookie, csrfCookie, map[string]string{"Content-Type": "application/json", "Origin": "http://panel.test", "X-CSRF-Token": csrfCookie.Value})
 			if response.Code != scenario.expected {
 				t.Fatalf("open = %d %s", response.Code, response.Body.String())
+			}
+			if scenario.problem != "" {
+				var problem struct{ Code string }
+				if err := json.Unmarshal(response.Body.Bytes(), &problem); err != nil || problem.Code != scenario.problem {
+					t.Fatalf("Agent problem code was not preserved: %s", response.Body.String())
+				}
 			}
 			if scenario.backend == 0 && len(stub.body) != 0 {
 				t.Fatal("invalid target reached Agent")

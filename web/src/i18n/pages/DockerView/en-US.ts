@@ -1,6 +1,7 @@
 import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
+  ['该容器缺少控制台所需的 /bin/sh，无法启动交互终端。仍可查看容器日志和状态。', 'This container does not contain /bin/sh, which the console needs to start an interactive terminal. You can still view its logs and status.'],
   ['正在连接容器终端…', 'Connecting to the container terminal…'],
   ['已达到终端会话上限，请先关闭不用的终端。', 'The terminal session limit has been reached. Close unused terminals first.'],
   ['容器状态已变化，请刷新列表后重新打开终端。', 'The container state has changed. Refresh the list and reopen the terminal.'],

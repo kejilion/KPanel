@@ -139,6 +139,8 @@ func decodeTerminalAgentResponse(response AgentResponse, err error, target any) 
 				return dockerx.ErrResourceConflict
 			case "container_terminal_unavailable":
 				return dockerx.ErrActionUnsupported
+			case "container_shell_unavailable":
+				return dockerx.ErrContainerShellUnavailable
 			case "terminal_cleanup_pending":
 				return terminal.ErrCleanupPending
 			case "terminal_input_sequence":
@@ -275,6 +277,9 @@ func (s *Server) openTerminalSession(w http.ResponseWriter, r *http.Request, use
 			return
 		case errors.Is(err, dockerx.ErrActionUnsupported):
 			s.writeProblem(w, r, http.StatusConflict, "container_terminal_unavailable", "Container terminal unavailable", "")
+			return
+		case errors.Is(err, dockerx.ErrContainerShellUnavailable):
+			s.writeProblem(w, r, http.StatusConflict, "container_shell_unavailable", "Container shell unavailable", "The container does not contain the required /bin/sh")
 			return
 		}
 		s.writeProblem(w, r, http.StatusBadGateway, "terminal_open_failed", "Terminal open failed", "")
