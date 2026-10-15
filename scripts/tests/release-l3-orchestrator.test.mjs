@@ -84,7 +84,7 @@ process.exit(result.status ?? 1);
 }
 
 function prepareFixture(fixture, extra = [], environment = process.env) {
-  return spawnSync(process.execPath, [orchestrator, '--repo', fixture.repo,
+  return spawnSync(process.execPath, [fixture.orchestrator ?? orchestrator, '--repo', fixture.repo,
     '--candidate', fixture.candidate, '--base-tag', 'v1.0.0',
     '--runner-image', 'example/release-runner:stable', '--runner-id', 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', '--run-id', 'source-test',
     '--artifact-dir', join(fixture.root, 'artifacts'), '--prepare-only', ...extra],
@@ -98,6 +98,24 @@ function sourceSnapshot(repo) {
 
 function publishedFixture() {
   const fixture = createFixture();
+  // The committed controller is a separate source from the published target.
+  // Keep it isolated from other suites' transient files in the outer checkout.
+  const controller = join(fixture.root, 'controller');
+  mkdirSync(join(controller, 'scripts'), { recursive: true });
+  for (const name of ['run-release-l3.mjs', 'run-release-l3-remote.sh',
+    'check-release-acceptance-coverage.mjs', 'report-release-metrics.mjs',
+    'check-security-audit-coverage.mjs', 'check-environment-policy.mjs']) {
+    writeFileSync(join(controller, 'scripts', name), readFileSync(join(repoRoot, 'scripts', name)));
+  }
+  writeFileSync(join(controller, 'environment-policy.json'), readFileSync(join(repoRoot, 'environment-policy.json')));
+  git(controller, 'init', '--initial-branch=main');
+  git(controller, 'config', 'user.name', 'KPanel Test');
+  git(controller, 'config', 'user.email', 'kpanel-test@example.invalid');
+  git(controller, 'add', '.');
+  git(controller, 'commit', '-m', 'frozen governance controller');
+  fixture.controller = controller;
+  fixture.governanceCommit = git(controller, 'rev-parse', 'HEAD');
+  fixture.orchestrator = join(controller, 'scripts', 'run-release-l3.mjs');
   writeFileSync(join(fixture.repo, 'VERSION'), '1.1.0\n');
   git(fixture.repo, 'add', 'VERSION');
   git(fixture.repo, 'commit', '-m', 'published version');
@@ -126,7 +144,7 @@ test('published-tag mode freezes an exact older stable tag without executing lat
     assert.equal(manifest.publishedTag.commit, fixture.candidate);
     assert.equal(manifest.publishedTag.object, git(fixture.repo, 'rev-parse', 'v1.1.0'));
     assert.equal(manifest.baseMainCommit, fixture.laterMain);
-    assert.match(manifest.governanceCommit, /^[0-9a-f]{40}$/);
+    assert.equal(manifest.governanceCommit, fixture.governanceCommit);
     assert.equal(readFileSync(join(dir, 'run-release-l3-remote.sh'), 'utf8'), readFileSync(remoteScript, 'utf8'));
     const digest = createHash('sha256').update(readFileSync(join(dir, 'manifest.json'))).digest('hex');
     assert.equal(loadPreparedKit(dir, digest).candidate, fixture.candidate);
@@ -144,6 +162,18 @@ test('normal release mode still rejects an already superseded published candidat
     const result = prepareFixture(fixture);
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /current origin\/main is not an ancestor/);
+  } finally { removeFixture(fixture.root); }
+});
+
+test('published-tag mode rejects a dirty governance controller independently of the target', () => {
+  const fixture = publishedFixture();
+  try {
+    const before = sourceSnapshot(fixture.repo);
+    writeFileSync(join(fixture.controller, 'unexpected.txt'), 'uncommitted controller input\n');
+    const result = prepareFixture(fixture, ['--published-tag', 'v1.1.0']);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /clean committed governance entrypoint/);
+    assert.deepEqual(sourceSnapshot(fixture.repo), before);
   } finally { removeFixture(fixture.root); }
 });
 
