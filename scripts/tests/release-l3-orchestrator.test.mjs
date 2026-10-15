@@ -96,6 +96,92 @@ function sourceSnapshot(repo) {
     status: git(repo, 'status', '--porcelain=v1', '--untracked-files=all'), config: git(repo, 'config', '--local', '--list') };
 }
 
+function publishedFixture() {
+  const fixture = createFixture();
+  writeFileSync(join(fixture.repo, 'VERSION'), '1.1.0\n');
+  git(fixture.repo, 'add', 'VERSION');
+  git(fixture.repo, 'commit', '-m', 'published version');
+  fixture.candidate = git(fixture.repo, 'rev-parse', 'HEAD');
+  git(fixture.repo, 'tag', '-a', 'v1.1.0', '-m', 'published stable');
+  git(fixture.repo, 'push', fixture.remote, 'main', 'refs/tags/v1.1.0');
+  writeFileSync(join(fixture.repo, 'later.txt'), 'unreleased code must not execute\n');
+  git(fixture.repo, 'add', 'later.txt');
+  git(fixture.repo, 'commit', '-m', 'later main');
+  fixture.laterMain = git(fixture.repo, 'rev-parse', 'HEAD');
+  git(fixture.repo, 'push', fixture.remote, 'main');
+  git(fixture.repo, 'fetch', 'origin', '--no-tags', 'refs/heads/main:refs/remotes/origin/main');
+  git(fixture.repo, 'checkout', '--detach', fixture.candidate);
+  return fixture;
+}
+
+test('published-tag mode freezes an exact older stable tag without executing later main', () => {
+  const fixture = publishedFixture();
+  try {
+    const before = sourceSnapshot(fixture.repo);
+    const result = prepareFixture(fixture, ['--published-tag', 'v1.1.0']);
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(sourceSnapshot(fixture.repo), before);
+    const dir = join(fixture.root, 'artifacts');
+    const manifest = JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8'));
+    assert.equal(manifest.publishedTag.commit, fixture.candidate);
+    assert.equal(manifest.publishedTag.object, git(fixture.repo, 'rev-parse', 'v1.1.0'));
+    assert.equal(manifest.baseMainCommit, fixture.laterMain);
+    assert.match(manifest.governanceCommit, /^[0-9a-f]{40}$/);
+    assert.equal(readFileSync(join(dir, 'run-release-l3-remote.sh'), 'utf8'), readFileSync(remoteScript, 'utf8'));
+    const digest = createHash('sha256').update(readFileSync(join(dir, 'manifest.json'))).digest('hex');
+    assert.equal(loadPreparedKit(dir, digest).candidate, fixture.candidate);
+    const offline = join(fixture.root, 'offline');
+    git(fixture.root, 'clone', '--no-checkout', join(dir, manifest.files.bundle.name), offline);
+    git(offline, 'merge-base', '--is-ancestor', fixture.candidate, fixture.laterMain);
+    git(offline, 'checkout', '--detach', fixture.candidate);
+    assert.equal(existsSync(join(offline, 'later.txt')), false);
+  } finally { removeFixture(fixture.root); }
+});
+
+test('normal release mode still rejects an already superseded published candidate', () => {
+  const fixture = publishedFixture();
+  try {
+    const result = prepareFixture(fixture);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /current origin\/main is not an ancestor/);
+  } finally { removeFixture(fixture.root); }
+});
+
+test('published-tag mode rejects wrong, lightweight, and nonstable tags', () => {
+  for (const mode of ['wrong', 'lightweight', 'preview']) {
+    const fixture = publishedFixture();
+    try {
+      let tag = 'v1.1.0';
+      if (mode === 'wrong') tag = 'v1.0.0';
+      if (mode === 'preview') tag = 'v1.1.0-rc.1';
+      if (mode === 'lightweight') {
+        git(fixture.repo, 'tag', '-d', tag);
+        git(fixture.repo, 'tag', tag, fixture.candidate);
+        git(fixture.repo, 'push', '--force', fixture.remote, 'refs/tags/' + tag);
+      }
+      const result = prepareFixture(fixture, ['--published-tag', tag]);
+      assert.notEqual(result.status, 0, mode);
+      assert.match(result.stderr, /published tag must be/);
+    } finally { removeFixture(fixture.root); }
+  }
+});
+
+test('published handoff refuses a changed tag object even with recomputed file hashes', () => {
+  const fixture = publishedFixture();
+  try {
+    assert.equal(prepareFixture(fixture, ['--published-tag', 'v1.1.0']).status, 0);
+    const dir = join(fixture.root, 'artifacts');
+    const path = join(dir, 'manifest.json');
+    const manifest = JSON.parse(readFileSync(path, 'utf8'));
+    const planPath = join(dir, 'plan.env');
+    writeFileSync(planPath, readFileSync(planPath, 'utf8').replace(/PUBLISHED_TAG_OBJECT=[a-f0-9]+/, 'PUBLISHED_TAG_OBJECT=' + 'b'.repeat(40)));
+    manifest.files.plan.sha256 = createHash('sha256').update(readFileSync(planPath)).digest('hex');
+    writeFileSync(path, JSON.stringify(manifest));
+    const digest = createHash('sha256').update(readFileSync(path)).digest('hex');
+    assert.throws(() => loadPreparedKit(dir, digest), /published tag plan mismatch/);
+  } finally { removeFixture(fixture.root); }
+});
+
 function artifactText(directory) {
   if (!existsSync(directory)) return '';
   return readdirSync(directory, { withFileTypes: true }).map((entry) => entry.isDirectory()

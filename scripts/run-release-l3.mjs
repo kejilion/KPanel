@@ -50,7 +50,7 @@ function usage(message) {
     'usage: node scripts/run-release-l3.mjs --candidate SHA --base-tag vX.Y.Z ' +
       '--runner-image IMAGE --runner-id sha256:HEX --run-id ID --artifact-dir ABSOLUTE_PATH ' +
       '[--runner-archive ABSOLUTE_PATH --runner-archive-sha256 HEX] ' +
-      '[--repo PATH] [--target ENVIRONMENT] [--prepare-only]\n' +
+      '[--repo PATH] [--target ENVIRONMENT] [--published-tag vX.Y.Z] [--prepare-only]\n' +
       '   or: node scripts/run-release-l3.mjs --execute-kit ABSOLUTE_PATH ' +
       '--kit-manifest-sha256 HEX --target ENVIRONMENT\n',
   );
@@ -72,6 +72,7 @@ function parseArgs(argv) {
     '--target',
     '--execute-kit',
     '--kit-manifest-sha256',
+    '--published-tag',
   ]);
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -89,7 +90,7 @@ function parseArgs(argv) {
   }
 
   if (options.executeKit) {
-    const incompatible = ['candidate', 'baseTag', 'runnerImage', 'runnerId', 'runId', 'artifactDir', 'runnerArchive', 'runnerArchiveSha256']
+    const incompatible = ['candidate', 'baseTag', 'runnerImage', 'runnerId', 'runId', 'artifactDir', 'runnerArchive', 'runnerArchiveSha256', 'publishedTag']
       .filter((key) => options[key]);
     if (options.prepareOnly || incompatible.length > 0) usage('--execute-kit only accepts --target');
     if (!isAbsolute(options.executeKit)) usage('--execute-kit must be an absolute path');
@@ -300,7 +301,7 @@ async function remoteStableTags(repo, environment) {
   });
 }
 
-async function exactRemoteMain(repo, candidate, environment) {
+async function exactRemoteMain(repo, candidate, environment, publishedTag) {
   const output = await runGit(repo, ['ls-remote', '--heads', 'origin', 'refs/heads/main'], environment);
   const match = output.match(/^([0-9a-f]{40,64})\s+refs\/heads\/main$/i);
   if (!match) throw new Error('origin/main is missing or ambiguous');
@@ -309,10 +310,24 @@ async function exactRemoteMain(repo, candidate, environment) {
   if (trackedMain !== remoteMain) {
     throw new Error('local origin/main is stale; fetch that exact ref with --no-tags before retrying');
   }
-  if (!await gitSucceeds(repo, ['merge-base', '--is-ancestor', remoteMain, candidate])) {
+  if (publishedTag) {
+    if (!await gitSucceeds(repo, ['merge-base', '--is-ancestor', candidate, remoteMain])) {
+      throw new Error('published candidate is not an ancestor of current origin/main');
+    }
+  } else if (!await gitSucceeds(repo, ['merge-base', '--is-ancestor', remoteMain, candidate])) {
     throw new Error('current origin/main is not an ancestor of the candidate');
   }
   return remoteMain;
+}
+
+function publishedIdentity(options, tags, version) {
+  if (!options.publishedTag) return undefined;
+  const tag = tags.find((entry) => entry.tag === options.publishedTag);
+  if (!tag || tag.commit !== options.candidate || tag.object === tag.commit ||
+      version.trim() !== options.publishedTag.slice(1)) {
+    throw new Error('published tag must be annotated, match candidate exactly, and match VERSION');
+  }
+  return tag;
 }
 
 function requiredStableTags(ancestors, remoteTags, baseTag, businessTag) {
@@ -333,6 +348,7 @@ function requiredStableTags(ancestors, remoteTags, baseTag, businessTag) {
 function validateInputs(options) {
   if (!/^[0-9a-f]{40,64}$/i.test(options.candidate)) throw new Error('candidate must be a full Git object ID');
   if (!stableTagPattern.test(options.baseTag)) throw new Error('base tag must be a stable vX.Y.Z tag');
+  if (options.publishedTag && !stableTagPattern.test(options.publishedTag)) throw new Error('published tag must be a stable vX.Y.Z tag');
   if (!/^[A-Za-z0-9][A-Za-z0-9._/@:+-]{0,254}$/.test(options.runnerImage)) {
     throw new Error('runner image contains unsupported characters');
   }
@@ -419,9 +435,19 @@ async function prepare(options) {
     const ancestors = new Set((await runGit(source, ['rev-list', options.candidate])).split('\n'));
     const environment = await transportEnvironment(source);
     phase('remote-snapshot');
-    const baseMainCommit = await exactRemoteMain(source, options.candidate, environment);
+    const baseMainCommit = await exactRemoteMain(source, options.candidate, environment, options.publishedTag);
     const businessBaseline = await parseBusinessBaseline(source, options.candidate);
-    const tags = requiredStableTags(ancestors, await remoteStableTags(source, environment), options.baseTag, businessBaseline.tag);
+    const remoteTags = await remoteStableTags(source, environment);
+    const publishedTag = publishedIdentity(options, remoteTags,
+      options.publishedTag ? await runGit(source, ['show', `${options.candidate}:VERSION`]) : '');
+    const tags = requiredStableTags(ancestors, remoteTags, options.baseTag, businessBaseline.tag);
+    let governanceCommit;
+    if (publishedTag) {
+      governanceCommit = await runGit(scriptRoot, ['rev-parse', 'HEAD']);
+      if (await runGit(scriptRoot, ['status', '--porcelain', '--untracked-files=all']) !== '') {
+        throw new Error('published verification requires a clean committed governance entrypoint');
+      }
+    }
     state.sourceTagDifferences = [];
     for (const { tag, object } of tags) {
       const result = await gitResult(source, ['rev-parse', '--verify', `refs/tags/${tag}`]);
@@ -462,12 +488,16 @@ async function prepare(options) {
       throw new Error('business context baseline tag is not reachable from its recorded commit');
     }
     phase('bundle-verification');
-    prepared = await buildKit(options, { repo, artifactDir, baseMainCommit, businessBaseline, requiredTags: tags.map(({ tag }) => tag), ownedRoot });
+    prepared = await buildKit(options, { repo, artifactDir, baseMainCommit, businessBaseline, requiredTags: tags.map(({ tag }) => tag), ownedRoot, publishedTag, governanceCommit });
     phase('final-source-check');
     await checkSource(source, options.candidate);
-    if (await exactRemoteMain(source, options.candidate, environment) !== baseMainCommit ||
+    if (await exactRemoteMain(source, options.candidate, environment, options.publishedTag) !== baseMainCommit ||
         JSON.stringify(requiredStableTags(ancestors, await remoteStableTags(source, environment), options.baseTag, businessBaseline.tag)) !== JSON.stringify(tags)) {
       throw new Error('origin main or required tags changed during source preparation');
+    }
+    if (publishedTag && (await runGit(scriptRoot, ['rev-parse', 'HEAD']) !== governanceCommit ||
+        await runGit(scriptRoot, ['status', '--porcelain', '--untracked-files=all']) !== '')) {
+      throw new Error('published verification governance entrypoint changed during preparation');
     }
     phase('cleanup');
   } catch (error) {
@@ -491,11 +521,12 @@ async function prepare(options) {
   return prepared;
 }
 
-async function buildKit(options, { repo, artifactDir, baseMainCommit, businessBaseline, requiredTags, ownedRoot }) {
+async function buildKit(options, { repo, artifactDir, baseMainCommit, businessBaseline, requiredTags, ownedRoot, publishedTag, governanceCommit }) {
   const bundleName = `kpanel-${options.runId}.bundle`;
   const bundlePath = join(artifactDir, bundleName);
   const tagRefs = requiredTags.map((tag) => `refs/tags/${tag}`);
-  await runGit(repo, ['bundle', 'create', bundlePath, 'HEAD', ...tagRefs]);
+  await runGit(repo, ['bundle', 'create', bundlePath, 'HEAD', ...tagRefs,
+    ...(publishedTag ? ['refs/remotes/origin/main'] : [])]);
   await runGit(repo, ['bundle', 'verify', bundlePath]);
 
   const verifyRepo = join(ownedRoot, 'offline');
@@ -511,7 +542,7 @@ async function buildKit(options, { repo, artifactDir, baseMainCommit, businessBa
     timeout: Math.max(1, Math.min(gitTimeout, gitDeadline - Date.now())),
   });
 
-  const remoteScriptSource = resolve(repo, 'scripts', 'run-release-l3-remote.sh');
+  const remoteScriptSource = resolve(publishedTag ? scriptRoot : repo, 'scripts', 'run-release-l3-remote.sh');
   if (!existsSync(remoteScriptSource)) throw new Error('tracked remote L3 entrypoint is missing');
   const remoteScriptPath = join(artifactDir, 'run-release-l3-remote.sh');
   writeFileSync(remoteScriptPath, readFileSync(remoteScriptSource));
@@ -544,6 +575,8 @@ async function buildKit(options, { repo, artifactDir, baseMainCommit, businessBa
     `BUNDLE_SHA256=${sha256(bundlePath)}`,
     `REMOTE_SCRIPT_SHA256=${sha256(remoteScriptPath)}`,
     `REQUIRED_TAGS=${requiredTags.join(',')}`,
+    ...(publishedTag ? [`PUBLISHED_TAG=${publishedTag.tag}`, `PUBLISHED_TAG_OBJECT=${publishedTag.object}`,
+      `GOVERNANCE_COMMIT=${governanceCommit}`] : []),
     '',
   ].join('\n');
   writeFileSync(planPath, plan, { encoding: 'utf8', mode: 0o600 });
@@ -559,6 +592,7 @@ async function buildKit(options, { repo, artifactDir, baseMainCommit, businessBa
         candidate: options.candidate.toLowerCase(),
         baseMainCommit,
         baseTag: options.baseTag,
+        ...(publishedTag ? { publishedTag, governanceCommit } : {}),
         businessBaseline,
         requiredTags,
         runnerImage: options.runnerImage,
@@ -652,6 +686,16 @@ export function loadPreparedKit(kitDirectory, expectedManifestSha256) {
     'RUNNER_ARCHIVE_FILE', 'RUNNER_ARCHIVE_SHA256', 'BUNDLE_FILE', 'BUNDLE_SHA256',
     'REMOTE_SCRIPT_SHA256', 'REQUIRED_TAGS',
   ]);
+  if (manifest.publishedTag !== undefined) {
+    const tag = manifest.publishedTag;
+    if (!stableTagPattern.test(tag?.tag ?? '') || tag.commit !== manifest.candidate ||
+        !/^[0-9a-f]{40,64}$/.test(tag.object ?? '') || tag.object === tag.commit ||
+        !/^[0-9a-f]{40,64}$/.test(manifest.governanceCommit ?? '') ||
+        !manifest.requiredTags?.includes(tag.tag)) throw new Error('invalid published tag handoff identity');
+    for (const key of ['PUBLISHED_TAG', 'PUBLISHED_TAG_OBJECT', 'GOVERNANCE_COMMIT']) allowedKeys.add(key);
+    if (planEntries.get('PUBLISHED_TAG') !== tag.tag || planEntries.get('PUBLISHED_TAG_OBJECT') !== tag.object ||
+        planEntries.get('GOVERNANCE_COMMIT') !== manifest.governanceCommit) throw new Error('published tag plan mismatch');
+  } else if (manifest.governanceCommit !== undefined) throw new Error('governance identity requires published tag mode');
   for (const key of planEntries.keys()) if (!allowedKeys.has(key)) throw new Error(`unknown handoff plan key: ${key}`);
   if (planEntries.size !== allowedKeys.size || planEntries.get('SCHEMA_VERSION') !== '2' ||
       planEntries.get('RUN_ID') !== manifest.runId ||

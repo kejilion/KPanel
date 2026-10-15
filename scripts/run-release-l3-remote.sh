@@ -27,6 +27,9 @@ BUNDLE_FILE=
 BUNDLE_SHA256=
 REMOTE_SCRIPT_SHA256=
 REQUIRED_TAGS=
+PUBLISHED_TAG=
+PUBLISHED_TAG_OBJECT=
+GOVERNANCE_COMMIT=
 declare -A seen_plan_keys=()
 
 while IFS='=' read -r key value; do
@@ -34,7 +37,7 @@ while IFS='=' read -r key value; do
   case "$key" in
     SCHEMA_VERSION|RUN_ID|EXPECTED_COMMIT|BASE_MAIN_COMMIT|EXPECTED_BASE_TAG|BUSINESS_BASELINE_COMMIT|\
     BUSINESS_BASELINE_TAG|RUNNER_IMAGE|EXPECTED_RUNNER_ID|RUNNER_ARCHIVE_FILE|RUNNER_ARCHIVE_SHA256|\
-    BUNDLE_FILE|BUNDLE_SHA256|REMOTE_SCRIPT_SHA256|REQUIRED_TAGS)
+    BUNDLE_FILE|BUNDLE_SHA256|REMOTE_SCRIPT_SHA256|REQUIRED_TAGS|PUBLISHED_TAG|PUBLISHED_TAG_OBJECT|GOVERNANCE_COMMIT)
       [ -z "${seen_plan_keys[$key]+present}" ] || {
         echo "duplicate release plan key: $key" >&2
         exit 2
@@ -66,6 +69,11 @@ fi
 [[ "$BUNDLE_SHA256" =~ ^[0-9a-f]{64}$ ]] || usage
 [[ "$REMOTE_SCRIPT_SHA256" =~ ^[0-9a-f]{64}$ ]] || usage
 [[ "$REQUIRED_TAGS" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(,v[0-9]+\.[0-9]+\.[0-9]+)*$ ]] || usage
+if [ -n "$PUBLISHED_TAG" ] || [ -n "$PUBLISHED_TAG_OBJECT" ] || [ -n "$GOVERNANCE_COMMIT" ]; then
+  [[ "$PUBLISHED_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || usage
+  [[ "$PUBLISHED_TAG_OBJECT" =~ ^[0-9a-f]{40,64}$ ]] || usage
+  [[ "$GOVERNANCE_COMMIT" =~ ^[0-9a-f]{40,64}$ ]] || usage
+fi
 
 [ "$(uname -s)" = Linux ] || {
   echo "remote L3 entrypoint requires Linux" >&2
@@ -128,6 +136,8 @@ finish() {
     echo "candidate=$EXPECTED_COMMIT"
     echo "base_main_commit=$BASE_MAIN_COMMIT"
     echo "base_tag=$EXPECTED_BASE_TAG"
+    echo "published_tag=$PUBLISHED_TAG"
+    echo "governance_commit=$GOVERNANCE_COMMIT"
     echo "status=$status"
     echo "exit_code=$rc"
     echo "started_at=$started_at"
@@ -156,7 +166,15 @@ git -C "$candidate_repo" checkout --detach "$EXPECTED_COMMIT" >> "$evidence/bund
 [ "$(git -C "$candidate_repo" rev-parse HEAD)" = "$EXPECTED_COMMIT" ]
 [ -z "$(git -C "$candidate_repo" status --short --untracked-files=all)" ]
 git -C "$candidate_repo" merge-base --is-ancestor "$EXPECTED_BASE_TAG" "$EXPECTED_COMMIT"
-git -C "$candidate_repo" merge-base --is-ancestor "$BASE_MAIN_COMMIT" "$EXPECTED_COMMIT"
+if [ -n "$PUBLISHED_TAG" ]; then
+  git -C "$candidate_repo" merge-base --is-ancestor "$EXPECTED_COMMIT" "$BASE_MAIN_COMMIT"
+  [ "$(git -C "$candidate_repo" cat-file -t "refs/tags/$PUBLISHED_TAG")" = tag ]
+  [ "$(git -C "$candidate_repo" rev-parse "refs/tags/$PUBLISHED_TAG")" = "$PUBLISHED_TAG_OBJECT" ]
+  [ "$(git -C "$candidate_repo" rev-parse "refs/tags/$PUBLISHED_TAG^{commit}")" = "$EXPECTED_COMMIT" ]
+  [ "$(tr -d '\r\n' < "$candidate_repo/VERSION")" = "${PUBLISHED_TAG#v}" ]
+else
+  git -C "$candidate_repo" merge-base --is-ancestor "$BASE_MAIN_COMMIT" "$EXPECTED_COMMIT"
+fi
 git -C "$candidate_repo" merge-base --is-ancestor "$BUSINESS_BASELINE_COMMIT" "$EXPECTED_COMMIT"
 git -C "$candidate_repo" show-ref --verify "refs/tags/$BUSINESS_BASELINE_TAG" > /dev/null
 
