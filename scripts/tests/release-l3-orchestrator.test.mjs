@@ -182,6 +182,40 @@ test('published handoff refuses a changed tag object even with recomputed file h
   } finally { removeFixture(fixture.root); }
 });
 
+test('published-tag mode rejects VERSION mismatch and surrounding spaces', () => {
+  for (const version of ['1.2.0\n', ' 1.1.0 \n']) {
+    const fixture = publishedFixture();
+    try {
+      git(fixture.repo, 'checkout', 'main');
+      writeFileSync(join(fixture.repo, 'VERSION'), version);
+      git(fixture.repo, 'add', 'VERSION');
+      git(fixture.repo, 'commit', '-m', 'invalid published VERSION');
+      fixture.candidate = git(fixture.repo, 'rev-parse', 'HEAD');
+      git(fixture.repo, 'tag', '-f', '-a', 'v1.1.0', '-m', 'mismatched version');
+      git(fixture.repo, 'push', fixture.remote, 'main', '+refs/tags/v1.1.0');
+      git(fixture.repo, 'fetch', 'origin', '--no-tags', 'refs/heads/main:refs/remotes/origin/main');
+      const result = prepareFixture(fixture, ['--published-tag', 'v1.1.0']);
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, /match VERSION/);
+    } finally { removeFixture(fixture.root); }
+  }
+});
+
+test('published-tag mode rejects a tagged candidate outside current main ancestry', () => {
+  const fixture = publishedFixture();
+  try {
+    writeFileSync(join(fixture.repo, 'fork.txt'), 'fork\n');
+    git(fixture.repo, 'add', 'fork.txt');
+    git(fixture.repo, 'commit', '-m', 'forked published candidate');
+    fixture.candidate = git(fixture.repo, 'rev-parse', 'HEAD');
+    git(fixture.repo, 'tag', '-f', '-a', 'v1.1.0', '-m', 'forked stable');
+    git(fixture.repo, 'push', fixture.remote, '+refs/tags/v1.1.0');
+    const result = prepareFixture(fixture, ['--published-tag', 'v1.1.0']);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /published candidate is not an ancestor/);
+  } finally { removeFixture(fixture.root); }
+});
+
 function artifactText(directory) {
   if (!existsSync(directory)) return '';
   return readdirSync(directory, { withFileTypes: true }).map((entry) => entry.isDirectory()

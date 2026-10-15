@@ -324,7 +324,7 @@ function publishedIdentity(options, tags, version) {
   if (!options.publishedTag) return undefined;
   const tag = tags.find((entry) => entry.tag === options.publishedTag);
   if (!tag || tag.commit !== options.candidate || tag.object === tag.commit ||
-      version.trim() !== options.publishedTag.slice(1)) {
+      version.replace(/[\r\n]/g, '') !== options.publishedTag.slice(1)) {
     throw new Error('published tag must be annotated, match candidate exactly, and match VERSION');
   }
   return tag;
@@ -438,8 +438,10 @@ async function prepare(options) {
     const baseMainCommit = await exactRemoteMain(source, options.candidate, environment, options.publishedTag);
     const businessBaseline = await parseBusinessBaseline(source, options.candidate);
     const remoteTags = await remoteStableTags(source, environment);
-    const publishedTag = publishedIdentity(options, remoteTags,
-      options.publishedTag ? await runGit(source, ['show', `${options.candidate}:VERSION`]) : '');
+    const versionResult = options.publishedTag
+      ? await gitResult(source, ['show', `${options.candidate}:VERSION`]) : undefined;
+    if (versionResult && versionResult.status !== 0) throw new Error('published VERSION is missing');
+    const publishedTag = publishedIdentity(options, remoteTags, versionResult?.stdout ?? '');
     const tags = requiredStableTags(ancestors, remoteTags, options.baseTag, businessBaseline.tag);
     let governanceCommit;
     if (publishedTag) {
