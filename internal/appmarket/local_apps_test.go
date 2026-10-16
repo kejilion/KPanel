@@ -67,7 +67,7 @@ docker_app_plus
 	if item.DefaultPort != 18080 || !item.InstallPortConfigurable {
 		t.Fatalf("local app spec was not read: %#v", item)
 	}
-	if selector, ok := service.scriptSelectorFor(item); !ok || selector != "myapp" {
+	if selector, ok := service.scriptSelectorFor(item); !ok || selector != "local:myapp" || !appSelectorPattern.MatchString(selector) {
 		t.Fatalf("local app selector = %q, %v", selector, ok)
 	}
 }
@@ -145,6 +145,30 @@ func TestLocalAppScriptActionsRequireLocalAppProtocol(t *testing.T) {
 		if install.Enabled != sample.enabled ||
 			(!sample.enabled && install.Reason != localAppScriptOutdated) {
 			t.Fatalf("script %q: install capability = %#v", sample.content, install)
+		}
+	}
+}
+
+func TestLocalAppJobsRecheckSelectorAndScriptProtocol(t *testing.T) {
+	compatible := func([]byte) bool { return true }
+	current := []byte("KPANEL_LOCAL_APPS_PROTOCOL_VERSION=\"1\"\n")
+	for _, sample := range []struct {
+		selector string
+		content  []byte
+		want     bool
+	}{
+		{"local:myapp", current, true},
+		{"myapp", current, false},
+		{"local:other", current, false},
+		{"local:myapp", []byte("#!/bin/bash\n"), false},
+	} {
+		if got := appScriptCompatible(compatible, "local-myapp", sample.selector)(sample.content); got != sample.want {
+			t.Errorf("selector %q: compatible = %v, want %v", sample.selector, got, sample.want)
+		}
+	}
+	for _, selector := range []string{"local:", "local:../x", "local:a b", "remote:myapp"} {
+		if appSelectorPattern.MatchString(selector) {
+			t.Errorf("selector pattern accepted %q", selector)
 		}
 	}
 }

@@ -16,8 +16,10 @@ import (
 const (
 	localAppSource   = "local"
 	localAppIDPrefix = "local-"
-	localAppCategory = "local"
-	maxLocalApps     = 200
+	// kejilion.sh resolves `app local:<name>` only from ~/apps-local.
+	localAppSelectorPrefix = "local:"
+	localAppCategory       = "local"
+	maxLocalApps           = 200
 )
 
 var localAppMetadataPattern = regexp.MustCompile(

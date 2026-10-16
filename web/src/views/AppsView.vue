@@ -327,6 +327,11 @@ const sourceFilters = computed(() => {
   return filters
 })
 
+// The local filter disappears with the last ~/apps-local config; fall back instead of showing an empty list.
+watch(sourceFilters, (filters) => {
+  if (!filters.some((filter) => filter.key === source.value)) source.value = 'all'
+})
+
 function marketResultLabel(): string {
   if (!inventory.value) return ''
   i18n.locale.value

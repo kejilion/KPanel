@@ -33,7 +33,7 @@ const (
 
 var (
 	appJobIDPattern    = regexp.MustCompile(`^[a-f0-9]{32}$`)
-	appSelectorPattern = regexp.MustCompile(`^(?:[1-9][0-9]{0,2}|[A-Za-z0-9][A-Za-z0-9_-]{0,63})$`)
+	appSelectorPattern = regexp.MustCompile(`^(?:[1-9][0-9]{0,2}|(?:local:)?[A-Za-z0-9][A-Za-z0-9_-]{0,63})$`)
 	containerIDPattern = regexp.MustCompile(`^[a-f0-9]{12,64}$`)
 	appProgressPattern = regexp.MustCompile(`^KPANEL_PROGRESS ([0-9]{1,3}) (.+)$`)
 	appLicensePattern  = regexp.MustCompile(`(?m)^permission_granted="true"\r?$`)
@@ -657,7 +657,11 @@ func (s *Service) scriptSelectorFor(item Summary) (string, bool) {
 	if _, declarative := declarativeSpecs[item.Token]; declarative {
 		return "", false
 	}
-	if usesScriptAppConfig(item.Source) {
+	if item.Source == localAppSource {
+		// A bare name could match a builtin menu alias such as b (backup) or r (restore).
+		return localAppSelectorPrefix + item.Token, true
+	}
+	if item.Source == "thirdparty" {
 		return item.Token, true
 	}
 	if item.Source == "builtin" && item.Num > 0 && item.Num <= maxRemoteCatalogApps {
@@ -787,6 +791,9 @@ func appScriptCompatible(
 	return func(content []byte) bool {
 		if !compatible(content) {
 			return false
+		}
+		if token, local := strings.CutPrefix(appID, localAppIDPrefix); local {
+			return selector == localAppSelectorPrefix+token && localAppProtocol.Match(content)
 		}
 		if !strings.HasPrefix(appID, "builtin-") {
 			return true
