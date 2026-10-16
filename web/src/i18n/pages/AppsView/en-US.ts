@@ -153,9 +153,7 @@ export default [
   ['脚本内置', 'Built-in scripts'],
   ['本地', 'Local'],
   ['应用入驻', 'Submit an app'],
-  ['查看入驻指南', 'View onboarding guide'],
   ['想让你的应用出现在这里？', 'Want your app listed here?'],
-  ['写一个 .conf 即可提交到官方市场，或只放在本机使用。', 'Write one .conf to submit it to the official market, or keep it on this server only.'],
   ['第三方', 'Third-party'],
   ['全部', 'All'],
   ['管理', 'Manage'],
@@ -196,4 +194,6 @@ export default [
   ["等待专属安装适配器。", "Waiting for a dedicated install adapter."],
   ["后台运行", "Running in background"],
   ["关闭窗口", "Close window"],
+  ["先在本机添加并安装验证，再一键提交到官方市场。","Add and verify it on this server first, then submit it to the official market in one click."],
+  ["开始入驻","Get started"],
 ] as const satisfies PhraseCatalog

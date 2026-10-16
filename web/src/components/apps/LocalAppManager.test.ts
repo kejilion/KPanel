@@ -81,11 +81,9 @@ describe('LocalAppManager', () => {
       'draft.conf · 未安装', 'notes.conf · 运行中', 'stopped.conf · 已安装',
     ])
     expect(rows[0]!.text()).toContain('删除')
-    expect(rows[0]!.text()).not.toContain('提交官方')
-    expect(rows[1]!.text()).toContain('提交官方')
     expect(rows[1]!.text()).toContain('先卸载')
     expect(rows[1]!.text()).not.toContain('删除')
-    expect(rows[2]!.text()).not.toContain('提交官方')
+    expect(rows.every((row) => row.text().includes('提交官方'))).toBe(true)
   })
 
   it('routes installed apps to uninstall instead of deleting their config', async () => {
@@ -108,10 +106,12 @@ describe('LocalAppManager', () => {
     expect(wrapper.emitted('changed')).toHaveLength(1)
   })
 
-  it('creates an app from the template renamed to the chosen name', async () => {
+  it('creates an app from the template, then guides install and PR submission', async () => {
     mocks.createLocalApp.mockResolvedValue(documentFor('mynotes'))
+    mocks.localApp.mockResolvedValue(documentFor('mynotes'))
     const wrapper = mountManager([])
     await buttonByText(wrapper, '新建本地应用').trigger('click')
+    expect(wrapper.find('.local-editor__tips').attributes('open')).toBeDefined()
     await wrapper.find('.local-editor__name input').setValue('mynotes')
     const content = (wrapper.find('textarea').element as HTMLTextAreaElement).value
     expect(content).toContain('local app_id="mynotes"')
@@ -122,6 +122,15 @@ describe('LocalAppManager', () => {
       token: 'mynotes', resourceVersion: '', content: expect.stringContaining('docker_app_plus'),
     }))
     expect(wrapper.emitted('changed')).toHaveLength(1)
+    expect(wrapper.text()).toContain('已添加')
+    expect(buttonByText(wrapper, '去安装').attributes('disabled')).toBeDefined()
+    const created = localItem('mynotes')
+    await wrapper.setProps({ apps: [created] })
+    await buttonByText(wrapper, '去安装').trigger('click')
+    expect(wrapper.emitted('manage')?.[0]).toEqual([created])
+    await buttonByText(wrapper, '提交官方').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('a.button--primary').attributes('href')).toContain('filename=mynotes.conf')
   })
 
   it('blocks invalid names before reaching the server', async () => {
@@ -151,7 +160,7 @@ describe('LocalAppManager', () => {
     expect(mocks.localApp).toHaveBeenCalledTimes(2)
   })
 
-  it('prefills a GitHub new-file PR from a running local app', async () => {
+  it('prefills a GitHub new-file PR from a local app', async () => {
     mocks.localApp.mockResolvedValue(documentFor('notes', true))
     const wrapper = mountManager([localItem('notes', true, 'running')])
     await buttonByText(wrapper, '提交官方').trigger('click')

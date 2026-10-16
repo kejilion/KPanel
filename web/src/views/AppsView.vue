@@ -1496,10 +1496,10 @@ watch(windowActive, syncJobPollingForWindow)
       <span><PackagePlus :size="22" /></span>
       <div>
         <strong>想让你的应用出现在这里？</strong>
-        <p>写一个 .conf 即可提交到官方市场，或只放在本机使用。</p>
+        <p>先在本机添加并安装验证，再一键提交到官方市场。</p>
       </div>
       <button class="button button--primary" type="button" @click="onboardingOpen = true">
-        查看入驻指南 <ChevronRight :size="16" />
+        开始入驻 <ChevronRight :size="16" />
       </button>
     </section>
 
@@ -1960,7 +1960,6 @@ watch(windowActive, syncJobPollingForWindow)
     <AppOnboardingGuide
       :open="onboardingOpen"
       :local-apps="localApps"
-      :initial-mode="source === 'local' ? 'local' : 'official'"
       @close="onboardingOpen = false"
       @changed="load(true)"
       @manage="manageLocalApp"

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
 import {
-  ArrowLeft, ArrowUpRight, Check, Copy, ImagePlus, LoaderCircle, Pencil, Plus, Send, ShieldAlert, Trash2, X,
+  ArrowLeft, ArrowUpRight, Check, CheckCircle2, Copy, ImagePlus, LoaderCircle, Pencil, Plus, Send, ShieldAlert, Trash2, X,
 } from '@lucide/vue'
 import { ApiError, api } from '@/lib/api'
 import { copyText } from '@/lib/clipboard'
@@ -14,7 +14,7 @@ const emit = defineEmits<{ changed: []; manage: [item: AppMarketItem] }>()
 const defaultIcon = '/app-icons/thirdparty-default.svg'
 const maxIconBytes = 64 << 10
 
-type View = 'list' | 'edit' | 'submit'
+type View = 'list' | 'edit' | 'saved' | 'submit'
 const view = ref<View>('list')
 const isNew = ref(false)
 const name = ref('')
@@ -89,12 +89,15 @@ async function startEdit(item: AppMarketItem): Promise<void> {
   await loadDocument(item.token)
 }
 
-async function startSubmit(item: AppMarketItem): Promise<void> {
+async function startSubmit(token: string): Promise<void> {
   resetEditor()
   isNew.value = false
   view.value = 'submit'
-  await loadDocument(item.token)
+  await loadDocument(token)
 }
+
+// The saved app appears in props.apps once the market reloads its inventory.
+const savedApp = computed(() => props.apps.find((item) => item.token === name.value))
 
 // Rename the template's placeholder while the user is still naming a new app.
 function onNameInput(): void {
@@ -169,10 +172,16 @@ async function save(): Promise<void> {
     ...(removeIcon.value ? { removeIcon: true } : {}),
   }
   try {
-    if (isNew.value) await api.apps.createLocalApp(body)
+    const created = isNew.value
+    if (created) await api.apps.createLocalApp(body)
     else await api.apps.updateLocalApp(name.value, body)
     emit('changed')
-    backToList()
+    if (created) {
+      resetEditor()
+      view.value = 'saved'
+    } else {
+      backToList()
+    }
   } catch (reason) {
     conflict.value = reason instanceof ApiError && reason.code === 'resource_conflict'
     error.value = reason instanceof Error ? reason.message : '保存失败'
@@ -252,11 +261,10 @@ onBeforeUnmount(() => {
         </template>
         <template v-else>
           <button
-            v-if="item.runtime.installed && item.runtime.state === 'running'"
             class="button button--ghost button--small"
             type="button"
             title="本机验证通过后提交到官方市场"
-            @click="startSubmit(item)"
+            @click="startSubmit(item.token)"
           >
             <Send :size="14" /> 提交官方
           </button>
@@ -334,6 +342,17 @@ onBeforeUnmount(() => {
       应用已安装：docker_name 不能修改；端口等改动在下次更新或重新安装时生效。
     </div>
 
+    <details class="local-editor__tips" :open="isNew">
+      <summary>编写要点</summary>
+      <ul>
+        <li>app_id 与名称保持一致，docker_name 写成固定的容器名</li>
+        <li>数据统一放在 /home/docker/应用名 下，不要写到 /root、/etc 等目录</li>
+        <li>docker-compose 设置 restart: always 或 unless-stopped</li>
+        <li>卸载要删除容器、镜像和 /home/docker/应用名 目录</li>
+        <li>下载 GitHub 资源时加上 ${gh_proxy} 前缀，结尾保留 docker_app_plus</li>
+      </ul>
+    </details>
+
     <label class="local-editor__content">
       <span>配置内容（可直接粘贴）</span>
       <textarea v-model="content" spellcheck="false" rows="16" :disabled="busy && !loaded && !isNew" />
@@ -359,6 +378,28 @@ onBeforeUnmount(() => {
     </footer>
   </section>
 
+  <section v-else-if="view === 'saved'" class="local-saved" aria-label="已添加本地应用">
+    <CheckCircle2 :size="28" />
+    <strong>已添加</strong>
+    <code>{{ name }}.conf</code>
+    <p>接下来在应用市场安装并验证，运行正常后即可提交到官方市场。</p>
+    <ol class="local-saved__steps">
+      <li>
+        <span>安装验证：完整走一遍安装、更新、卸载</span>
+        <button class="button button--primary button--small" type="button" :disabled="!savedApp" @click="savedApp && emit('manage', savedApp)">
+          去安装
+        </button>
+      </li>
+      <li>
+        <span>提交官方：在 GitHub 发起 PR，审核后所有用户可见</span>
+        <button class="button button--secondary button--small" type="button" @click="startSubmit(name)">
+          <Send :size="14" /> 提交官方
+        </button>
+      </li>
+    </ol>
+    <button class="button button--ghost button--small" type="button" @click="backToList">返回列表</button>
+  </section>
+
   <section v-else class="local-editor" aria-label="提交到官方市场">
     <header class="local-editor__header">
       <button class="button button--ghost button--small" type="button" @click="backToList">
@@ -368,6 +409,7 @@ onBeforeUnmount(() => {
       <code>{{ name }}.conf</code>
     </header>
     <ol class="local-submit__checks">
+      <li>已在本机完成安装、更新、卸载验证</li>
       <li>数据与配置都放在 /home/docker/应用名 下，没有写到 /root、/etc 等目录</li>
       <li>docker-compose 设置了 restart: always 或 unless-stopped</li>
       <li>卸载会删除容器、镜像和 /home/docker/应用名 目录</li>
@@ -431,6 +473,62 @@ onBeforeUnmount(() => {
 .local-editor__content span,
 .local-apps__empty,
 .local-submit__hint,
+.local-editor__tips {
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+}
+
+.local-editor__tips summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.local-editor__tips ul {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0 2px;
+  padding-left: 18px;
+  color: var(--text-secondary);
+}
+
+.local-saved {
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  padding: 8px 0;
+  text-align: center;
+}
+
+.local-saved > svg {
+  color: var(--success);
+}
+
+.local-saved p {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.local-saved__steps {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  margin: 4px 0;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+}
+
+.local-saved__steps li {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
 .local-submit__checks {
   color: var(--text-secondary);
 }
