@@ -27,6 +27,7 @@ import {
   Minus,
   Network,
   PackageCheck,
+  PackagePlus,
   Play,
   RefreshCw,
   RotateCw,
@@ -46,6 +47,7 @@ import ErrorState from '@/components/feedback/ErrorState.vue'
 import LoadingState from '@/components/feedback/LoadingState.vue'
 import StatusBadge from '@/components/feedback/StatusBadge.vue'
 import AppInteractiveTerminal from '@/components/apps/AppInteractiveTerminal.vue'
+import AppOnboardingGuide from '@/components/apps/AppOnboardingGuide.vue'
 import ImageUpdateBadge from '@/components/docker/ImageUpdateBadge.vue'
 import SiteDeleteDialog from '@/components/sites/SiteDeleteDialog.vue'
 import KPanelUpdateDialog from '@/components/update/KPanelUpdateDialog.vue'
@@ -83,6 +85,7 @@ const error = ref('')
 const search = ref('')
 const category = ref('all')
 const source = ref<SourceFilter>('all')
+const onboardingOpen = ref(false)
 const status = ref<StatusFilter>('installed')
 const selectedID = ref('')
 const installOpen = ref(false)
@@ -1268,6 +1271,9 @@ watch(windowActive, syncJobPollingForWindow)
         <div><strong>{{ inventory.items.filter((item) => capability(item, 'install') || capability(item, 'update')).length }}</strong><span>可直接安装</span></div>
       </div>
       <div class="market-hero__actions">
+        <button class="button button--secondary button--small" type="button" @click="onboardingOpen = true">
+          <PackagePlus :size="15" /> 应用入驻
+        </button>
         <a class="button button--secondary button--small" href="https://app.kejilion.sh" target="_blank" rel="noopener noreferrer">
           <ArrowUpRight :size="15" /> 官方目录
         </a>
@@ -1470,6 +1476,17 @@ watch(windowActive, syncJobPollingForWindow)
       </div>
       <button class="button button--primary" type="button" @click="showAllApps">
         浏览全部应用 <ChevronRight :size="16" />
+      </button>
+    </section>
+
+    <section v-if="inventory && (source === 'thirdparty' || source === 'local')" class="install-more-card">
+      <span><PackagePlus :size="22" /></span>
+      <div>
+        <strong>想让你的应用出现在这里？</strong>
+        <p>写一个 .conf 即可提交到官方市场，或只放在本机使用。</p>
+      </div>
+      <button class="button button--primary" type="button" @click="onboardingOpen = true">
+        查看入驻指南 <ChevronRight :size="16" />
       </button>
     </section>
 
@@ -1926,6 +1943,8 @@ watch(windowActive, syncJobPollingForWindow)
         </button>
       </template>
     </ModalDialog>
+
+    <AppOnboardingGuide :open="onboardingOpen" @close="onboardingOpen = false" />
 
     <KPanelUpdateDialog
       :open="kpanelUpdateConfirmOpen"

@@ -152,6 +152,8 @@ export default [
   ['全部来源', 'All sources'],
   ['脚本内置', 'Built-in scripts'],
   ['本地', 'Local'],
+  ['想让你的应用出现在这里？', 'Want your app listed here?'],
+  ['写一个 .conf 即可提交到官方市场，或只放在本机使用。', 'Write one .conf to submit it to the official market, or keep it on this server only.'],
   ['第三方', 'Third-party'],
   ['全部', 'All'],
   ['管理', 'Manage'],
