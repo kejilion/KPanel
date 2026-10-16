@@ -55,6 +55,15 @@ describe('AppOnboardingGuide', () => {
     )
   })
 
+  it('says so when the clipboard is unavailable', async () => {
+    copyText.mockResolvedValueOnce(false)
+    mountGuide()
+    button('复制模板').click()
+    await nextTick()
+    await nextTick()
+    expect(button('复制失败，请手动选择')).toBeTruthy()
+  })
+
   it('copies a template that registers through docker_app_plus', async () => {
     mountGuide()
     button('复制模板').click()

@@ -1702,4 +1702,9 @@ export default [
   ['如需覆盖官方应用，请换一个文件名。', 'Use a different file name instead of shadowing an official app.'],
   ['配置模板', 'Config template'],
   ['我知道了', 'Got it'],
+  ["复制模板", "Copy template"],
+  ["复制失败，请手动选择", "Copy failed; select it manually"],
+  ["开发者指南", "Developer guide"],
+  ["前往 kejilion/apps", "Open kejilion/apps"],
+  ["本地应用未经官方审核，会以 root 身份执行；请只使用自己编写或信任的配置。需要较新的 kejilion.sh。", "Local apps are not reviewed and run as root; only use configs you wrote or trust. Requires a recent kejilion.sh."],
 ] as const satisfies PhraseCatalog

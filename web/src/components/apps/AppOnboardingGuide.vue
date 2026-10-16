@@ -40,12 +40,19 @@ docker_app_plus
 `
 const localCommand = `chown root:root ${localDirectory}/myapp.conf && chmod 644 ${localDirectory}/myapp.conf`
 
+// Clipboard access is often denied on plain HTTP/IP panels; say so instead
+// of silently doing nothing, the template stays selectable below.
 async function copy(key: string, value: string): Promise<void> {
-  if (!await copyText(value)) return
-  copied.value = key
+  const state = await copyText(value) ? key : `${key}:failed`
+  copied.value = state
   window.setTimeout(() => {
-    if (copied.value === key) copied.value = ''
-  }, 1600)
+    if (copied.value === state) copied.value = ''
+  }, 2400)
+}
+
+function copyLabel(key: string, idle: string): string {
+  if (copied.value === key) return '已复制'
+  return copied.value === `${key}:failed` ? '复制失败，请手动选择' : idle
 }
 </script>
 
@@ -97,7 +104,7 @@ async function copy(key: string, value: string): Promise<void> {
       <code>{{ localCommand }}</code>
       <button class="button button--ghost button--small" type="button" @click="copy('command', localCommand)">
         <Check v-if="copied === 'command'" :size="14" /><Copy v-else :size="14" />
-        {{ copied === 'command' ? '已复制' : '复制命令' }}
+        {{ copyLabel('command', '复制命令') }}
       </button>
     </div>
 
@@ -106,7 +113,7 @@ async function copy(key: string, value: string): Promise<void> {
         <strong>配置模板</strong>
         <button class="button button--ghost button--small" type="button" @click="copy('template', template)">
           <Check v-if="copied === 'template'" :size="14" /><Copy v-else :size="14" />
-          {{ copied === 'template' ? '已复制' : '复制模板' }}
+          {{ copyLabel('template', '复制模板') }}
         </button>
       </header>
       <pre><code>{{ template }}</code></pre>
@@ -178,9 +185,17 @@ async function copy(key: string, value: string): Promise<void> {
   padding-left: 20px;
 }
 
-.onboarding-steps li {
-  display: grid;
-  gap: 2px;
+.onboarding-steps li::marker {
+  color: var(--text-secondary);
+}
+
+.onboarding-steps strong,
+.onboarding-steps span {
+  display: block;
+}
+
+.onboarding-steps span {
+  margin-top: 2px;
 }
 
 .onboarding-command,
