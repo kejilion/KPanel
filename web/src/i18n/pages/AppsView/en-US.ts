@@ -151,6 +151,7 @@ export default [
   ['刷新状态', 'Refresh status'],
   ['全部来源', 'All sources'],
   ['脚本内置', 'Built-in scripts'],
+  ['本地', 'Local'],
   ['第三方', 'Third-party'],
   ['全部', 'All'],
   ['管理', 'Manage'],

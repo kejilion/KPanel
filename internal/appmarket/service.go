@@ -96,6 +96,7 @@ type Service struct {
 	docker                        Docker
 	appRoot                       string
 	scriptAppRoot                 string
+	scriptLocalAppRoot            string
 	now                           func() time.Time
 	fetchCatalog                  catalogFetcher
 	iconCache                     *officialIconCache
@@ -139,7 +140,7 @@ func newService(docker Docker, appRoot string, fetcher catalogFetcher) (*Service
 	return &Service{
 		catalog: catalog, legacy: legacy, scriptSHA256: scriptSHA256,
 		docker: docker, appRoot: filepath.Clean(appRoot), now: time.Now,
-		scriptAppRoot: "/root/apps", fetchCatalog: fetcher,
+		scriptAppRoot: "/root/apps", scriptLocalAppRoot: "/root/apps-local", fetchCatalog: fetcher,
 		dynamicIconSources:            make(map[string]string),
 		scriptInteractiveFinder:       findKejilionInteractiveScript,
 		scriptInteractiveManageFinder: findKejilionInteractiveManageScript,
@@ -157,6 +158,7 @@ func (s *Service) Inventory(ctx context.Context) (Inventory, error) {
 // Public inventory and all mutations continue to use full inspect snapshots.
 func (s *Service) inventory(ctx context.Context, imageUpdateID string) (Inventory, error) {
 	catalogState := s.currentCatalog(ctx)
+	catalogState.Catalog = s.withLocalApps(catalogState.Catalog)
 	readContainers := s.docker.Containers
 	if imageUpdateID != "" {
 		var selected *App
@@ -199,6 +201,7 @@ func (s *Service) inventory(ctx context.Context, imageUpdateID string) (Inventor
 	scriptInstallAvailable := s.scriptInstallAvailable()
 	scriptManageAvailable := s.scriptManageAvailable()
 	scriptInteractiveManageAvailable := s.scriptInteractiveManageAvailable()
+	var localScriptSupported *bool
 	for _, app := range catalogState.Catalog.Apps {
 		legacy := s.legacy[app.Num]
 		item := Summary{
@@ -225,9 +228,9 @@ func (s *Service) inventory(ctx context.Context, imageUpdateID string) (Inventor
 		if legacy.Service != "" {
 			containerName = legacy.Service
 		}
-		if app.Source == "thirdparty" {
+		if usesScriptAppConfig(app.Source) {
 			storageName = app.Token
-			spec, configErr := s.readThirdPartyScriptSpec(app.Token)
+			spec, configErr := s.readScriptAppSpec(app.Source, app.Token)
 			if configErr == nil {
 				containerName = spec.runtimeContainer()
 				storageName = spec.Container
@@ -298,6 +301,15 @@ func (s *Service) inventory(ctx context.Context, imageUpdateID string) (Inventor
 				item.Capabilities[action] = Capability{Reason: reason}
 			}
 			item.Runtime.Warning = reason
+		}
+		if app.Source == localAppSource {
+			if localScriptSupported == nil {
+				supported := s.localAppScriptSupported()
+				localScriptSupported = &supported
+			}
+			if !*localScriptSupported {
+				disableLocalAppScriptActions(&item)
+			}
 		}
 		if markerWarning != "" && item.Runtime.Warning == "" {
 			item.Runtime.Warning = markerWarning
@@ -382,7 +394,7 @@ func installerKind(app App, _ LegacyApp, scriptInstallAvailable bool) string {
 	if _, ok := declarativeSpecs[app.Token]; ok {
 		return "declarative"
 	}
-	if scriptInstallAvailable && (app.Source == "builtin" || app.Source == "thirdparty") {
+	if scriptInstallAvailable && (app.Source == "builtin" || usesScriptAppConfig(app.Source)) {
 		return "kejilion"
 	}
 	return "guided"
@@ -510,9 +522,9 @@ func defaultCapabilities(
 	if _, ok := declarativeSpecs[app.Token]; ok {
 		install = Capability{Enabled: true}
 	} else if scriptInstallAvailable &&
-		(app.Source == "builtin" || app.Source == "thirdparty") {
+		(app.Source == "builtin" || usesScriptAppConfig(app.Source)) {
 		install = Capability{Enabled: true}
-	} else if app.Source == "builtin" || app.Source == "thirdparty" {
+	} else if app.Source == "builtin" || usesScriptAppConfig(app.Source) {
 		install = Capability{Reason: "请先更新 kejilion.sh，并在终端运行一次 k 接受许可协议"}
 	}
 	return map[string]Capability{

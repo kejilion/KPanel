@@ -41,22 +41,45 @@ func (spec scriptAppSpec) runtimeContainer() string {
 	return spec.Container
 }
 
-func (s *Service) readThirdPartyScriptSpec(token string) (scriptAppSpec, error) {
-	if !tokenPattern.MatchString(token) {
-		return scriptAppSpec{}, errors.New("invalid application token")
+// scriptAppConfigRoot returns where kejilion.sh reads the .conf for a source.
+func (s *Service) scriptAppConfigRoot(source string) (string, bool) {
+	switch source {
+	case "thirdparty":
+		return s.scriptAppRoot, true
+	case localAppSource:
+		return s.scriptLocalAppRoot, true
 	}
-	path := filepath.Join(s.scriptAppRoot, token+".conf")
+	return "", false
+}
+
+func (s *Service) openScriptAppConfig(source, token string) (*os.File, error) {
+	root, ok := s.scriptAppConfigRoot(source)
+	if !ok || root == "" {
+		return nil, errors.New("application source has no script configuration")
+	}
+	if !tokenPattern.MatchString(token) {
+		return nil, errors.New("invalid application token")
+	}
+	path := filepath.Join(root, token+".conf")
 	info, err := os.Lstat(path)
 	if err != nil {
-		return scriptAppSpec{}, err
+		return nil, err
 	}
 	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 ||
 		info.Size() <= 0 || info.Size() > maxScriptAppConfigBytes ||
 		!s.fileOwnerTrusted(info) ||
 		(runtime.GOOS == "linux" && info.Mode().Perm()&0o022 != 0) {
-		return scriptAppSpec{}, errors.New("application configuration is not a trusted regular file")
+		return nil, errors.New("application configuration is not a trusted regular file")
 	}
-	file, err := os.Open(path)
+	return os.Open(path)
+}
+
+func (s *Service) readThirdPartyScriptSpec(token string) (scriptAppSpec, error) {
+	return s.readScriptAppSpec("thirdparty", token)
+}
+
+func (s *Service) readScriptAppSpec(source, token string) (scriptAppSpec, error) {
+	file, err := s.openScriptAppConfig(source, token)
 	if err != nil {
 		return scriptAppSpec{}, err
 	}

@@ -795,6 +795,7 @@ export const zhCNMessages = {
   'apps.iconAlt': '{name} 图标',
   'apps.source.builtin': '内置 #{num}',
   'apps.source.thirdParty': '第三方',
+  'apps.source.local': '本地自建（未审核）',
   'apps.marketResult': '已显示 {shown} / {total} 个应用',
   'apps.catalog.live': '动态同步',
   'apps.catalog.cached': '安全缓存',

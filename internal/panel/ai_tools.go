@@ -344,6 +344,11 @@ func (t *panelAITools) prepareWrite(name string, raw json.RawMessage) (method, p
 			err = errors.New("invalid appId")
 			return
 		}
+		// Local apps run unreviewed user scripts as root; keep them a human action.
+		if strings.HasPrefix(input.AppID, "local-") {
+			err = errors.New("local applications must be operated from the app market")
+			return
+		}
 		public := "/api/v1/apps/" + input.AppID + "/" + input.Action
 		var ok bool
 		path, _, _, ok = allowedAppActionPath(public)

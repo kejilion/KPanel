@@ -657,7 +657,7 @@ func (s *Service) scriptSelectorFor(item Summary) (string, bool) {
 	if _, declarative := declarativeSpecs[item.Token]; declarative {
 		return "", false
 	}
-	if item.Source == "thirdparty" {
+	if usesScriptAppConfig(item.Source) {
 		return item.Token, true
 	}
 	if item.Source == "builtin" && item.Num > 0 && item.Num <= maxRemoteCatalogApps {

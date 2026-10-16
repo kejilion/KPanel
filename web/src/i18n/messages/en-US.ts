@@ -794,6 +794,7 @@ export const enUSMessages = {
   'apps.iconAlt': '{name} icon',
   'apps.source.builtin': 'Built-in #{num}',
   'apps.source.thirdParty': 'Third-party',
+  'apps.source.local': 'Local (unreviewed)',
   'apps.marketResult': 'Showing {shown} of {total} apps',
   'apps.catalog.live': 'Live sync',
   'apps.catalog.cached': 'Safe cache',

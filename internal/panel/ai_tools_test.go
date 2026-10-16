@@ -421,3 +421,16 @@ func TestDockerAgentProblemsAreReplannedByMeaning(t *testing.T) {
 		t.Fatalf("unrelated tool problem was reclassified: %v", err)
 	}
 }
+
+func TestAIAppActionsExcludeLocalApplications(t *testing.T) {
+	tools := &panelAITools{}
+	if _, _, _, _, err := tools.prepareWrite("host_app_action", json.RawMessage(`{"appId":"local-myapp","action":"install"}`)); err == nil {
+		t.Fatal("AI tools accepted a local application action")
+	}
+	if _, path, _, _, err := tools.prepareWrite("host_app_action", json.RawMessage(`{"appId":"thirdparty-myapp","action":"restart"}`)); err != nil || path == "" {
+		t.Fatalf("third-party application action was rejected: %q %v", path, err)
+	}
+	if _, _, _, ok := allowedAppActionPath("/api/v1/apps/local-myapp/install"); !ok {
+		t.Fatal("app market route rejected a local application ID")
+	}
+}

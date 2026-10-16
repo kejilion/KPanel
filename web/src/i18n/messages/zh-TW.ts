@@ -730,6 +730,7 @@ export const zhTWMessages = {
   "apps.iconAlt": "{name} 圖示",
   "apps.source.builtin": "內建 #{num}",
   "apps.source.thirdParty": "第三方",
+  "apps.source.local": "本地自建（未審核）",
   "apps.marketResult": "已顯示 {shown} / {total} 個應用程式",
   "apps.catalog.live": "動態同步",
   "apps.catalog.cached": "安全快取",

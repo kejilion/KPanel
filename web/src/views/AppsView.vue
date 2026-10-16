@@ -70,7 +70,7 @@ import type {
   Site,
 } from '@/types/api'
 
-type SourceFilter = 'all' | 'builtin' | 'thirdparty'
+type SourceFilter = 'all' | 'builtin' | 'thirdparty' | 'local'
 type StatusFilter = 'all' | 'installed' | 'running' | 'adapted'
 type ConfirmAction = 'update' | 'uninstall' | undefined
 
@@ -310,10 +310,19 @@ function appIconAlt(item: AppMarketItem): string {
 
 function sourceMeta(item: AppMarketItem): string {
   i18n.locale.value
-  return item.source === 'builtin'
-    ? i18n.t('apps.source.builtin', { num: item.num ?? '' })
-    : i18n.t('apps.source.thirdParty')
+  if (item.source === 'builtin') return i18n.t('apps.source.builtin', { num: item.num ?? '' })
+  return item.source === 'local' ? i18n.t('apps.source.local') : i18n.t('apps.source.thirdParty')
 }
+
+const sourceFilters = computed(() => {
+  const filters: { key: SourceFilter, label: string }[] = [
+    { key: 'all', label: '全部来源' },
+    { key: 'builtin', label: '脚本内置' },
+    { key: 'thirdparty', label: '第三方' },
+  ]
+  if (inventory.value?.items.some((item) => item.source === 'local')) filters.push({ key: 'local', label: '本地' })
+  return filters
+})
 
 function marketResultLabel(): string {
   if (!inventory.value) return ''
@@ -1336,15 +1345,11 @@ watch(windowActive, syncJobPollingForWindow)
       </label>
       <div class="market-segment" aria-label="来源筛选">
         <button
-          v-for="item in [
-            { key: 'all', label: '全部来源' },
-            { key: 'builtin', label: '脚本内置' },
-            { key: 'thirdparty', label: '第三方' },
-          ]"
+          v-for="item in sourceFilters"
           :key="item.key"
           type="button"
           :class="{ 'is-active': source === item.key }"
-          @click="source = item.key as SourceFilter"
+          @click="source = item.key"
         >
           {{ item.label }}
         </button>

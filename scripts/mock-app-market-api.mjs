@@ -24,6 +24,13 @@ const catalog = JSON.parse(await readFile(join(root, 'internal', 'appmarket', 'c
 const legacy = JSON.parse(await readFile(join(root, 'internal', 'appmarket', 'legacy-apps.json'), 'utf8'))
 const mockNewApp = catalog.apps.find((app) => app.token === 'speedtest')
 if (mockNewApp) mockNewApp.addedAt = new Date().toISOString().slice(0, 10)
+// A user-authored ~/apps-local config, as the agent appends it after the official catalog.
+catalog.categories.push({ key: 'local', zh: '本地应用', zh_tw: '本地應用', en: 'Local apps' })
+catalog.apps.push({
+  id: 'local-my-notes', source: 'local', token: 'my-notes', slug: 'my-notes',
+  name_zh: '我的笔记服务', name_en: '我的笔记服务', desc_zh: '自建的 Markdown 笔记服务', desc_en: '自建的 Markdown 笔记服务',
+  cat: 'local', url: 'https://example.com/my-notes', icon: '/app-icons/thirdparty-default.svg', iconSha256: '',
+})
 const legacyByNumber = new Map(legacy.apps.map((item) => [item.num, item]))
 const installed = new Map([
   ['speedtest', { state: 'running', direct: true }],
@@ -451,7 +458,7 @@ const diagnosticCatalog = {
 const items = catalog.apps.map((app, index) => {
   const mapping = legacyByNumber.get(app.num) || {}
   const runtime = installed.get(app.token)
-  const isStandard = app.source === 'thirdparty' || mapping.usesDockerApp
+  const isStandard = app.source === 'thirdparty' || app.source === 'local' || mapping.usesDockerApp
   const isRunning = runtime?.state === 'running'
   const port = mapping.defaultPort || 0
   return {

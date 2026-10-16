@@ -1369,7 +1369,7 @@ export interface AppMarketRuntime {
 export interface AppMarketItem {
   id: string
   num?: number
-  source: 'builtin' | 'thirdparty'
+  source: 'builtin' | 'thirdparty' | 'local'
   token: string
   name_zh: string
   name_zh_tw?: string

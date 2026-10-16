@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-var appIDPattern = regexp.MustCompile(`^(?:builtin|thirdparty)-[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
+var appIDPattern = regexp.MustCompile(`^(?:builtin|thirdparty|local)-[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
 var markerResourceVersionPattern = regexp.MustCompile(`^marker:sha256:[a-f0-9]{64}$`)
 
 type appActionInput struct {

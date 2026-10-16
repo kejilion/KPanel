@@ -32,6 +32,10 @@ var parallelAppProtocol = regexp.MustCompile(`(?m)^KPANEL_APP_CONCURRENCY_PROTOC
 // Compatibility is recorded before admission and checked again by the PTY
 // worker. Jobs started with an older script remain exclusive until they exit.
 func (s *Service) parallelAppScript(path string) bool {
+	return s.scriptHasProtocol(path, parallelAppProtocol)
+}
+
+func (s *Service) scriptHasProtocol(path string, protocol *regexp.Regexp) bool {
 	file, err := os.Open(path)
 	if err != nil {
 		return false
@@ -43,7 +47,7 @@ func (s *Service) parallelAppScript(path string) bool {
 		return false
 	}
 	content, err := io.ReadAll(io.LimitReader(file, (4<<20)+1))
-	return err == nil && len(content) <= 4<<20 && parallelAppProtocol.Match(content)
+	return err == nil && len(content) <= 4<<20 && protocol.Match(content)
 }
 
 func (s *Service) appJobResourceKeys(item Summary) []string {
@@ -53,8 +57,8 @@ func (s *Service) appJobResourceKeys(item Summary) []string {
 	}
 	legacy := s.legacy[item.Num]
 	container, service := legacy.Container, legacy.Service
-	if item.Source == "thirdparty" {
-		if spec, err := s.readThirdPartyScriptSpec(item.Token); err == nil {
+	if usesScriptAppConfig(item.Source) {
+		if spec, err := s.readScriptAppSpec(item.Source, item.Token); err == nil {
 			container, service = spec.Container, spec.Service
 		}
 	}
