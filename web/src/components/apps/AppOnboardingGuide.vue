@@ -64,11 +64,10 @@ function copyLabel(key: string, idle: string): string {
     size="medium"
     @close="emit('close')"
   >
-    <div class="onboarding-modes" role="tablist" aria-label="入驻方式">
+    <div class="onboarding-modes" role="group" aria-label="入驻方式">
       <button
         type="button"
-        role="tab"
-        :aria-selected="mode === 'official'"
+        :aria-pressed="mode === 'official'"
         :class="{ 'is-active': mode === 'official' }"
         @click="mode = 'official'"
       >
@@ -77,8 +76,7 @@ function copyLabel(key: string, idle: string): string {
       </button>
       <button
         type="button"
-        role="tab"
-        :aria-selected="mode === 'local'"
+        :aria-pressed="mode === 'local'"
         :class="{ 'is-active': mode === 'local' }"
         @click="mode = 'local'"
       >
