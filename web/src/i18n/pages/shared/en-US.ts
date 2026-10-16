@@ -1733,4 +1733,5 @@ export default [
   ["打开后 GitHub 会自动 fork 并填好配置，确认无误后点击“Propose new file”发起 PR。","GitHub forks the repository and fills in the config; check it and click \"Propose new file\" to open the PR."],
   ["配置较长，GitHub 页面不会自动填入：请先复制配置，再粘贴到新建文件页。","The config is too long to prefill: copy it first, then paste it into the new file page."],
   ["如有图标，可在 PR 描述里附上图片。","Attach the icon image in the PR description if you have one."],
+  ["图标读取失败，请重新选择", "Could not read the icon; choose it again"],
 ] as const satisfies PhraseCatalog

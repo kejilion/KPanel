@@ -133,7 +133,14 @@ async function pickIcon(event: Event): Promise<void> {
     error.value = '图标需为正方形，边长 64–512 px'
     return
   }
-  const bytes = new Uint8Array(await file.arrayBuffer())
+  let bytes: Uint8Array
+  try {
+    bytes = new Uint8Array(await file.arrayBuffer())
+  } catch {
+    URL.revokeObjectURL(url)
+    error.value = '图标读取失败，请重新选择'
+    return
+  }
   let binary = ''
   for (const byte of bytes) binary += String.fromCharCode(byte)
   if (iconPreview.value) URL.revokeObjectURL(iconPreview.value)
