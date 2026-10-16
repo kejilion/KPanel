@@ -14,7 +14,6 @@ import (
 // Panel only authenticates, audits and forwards; the Agent owns validation.
 const (
 	localAppsPath           = "/api/v1/apps/local"
-	localAppIconsPath       = "/api/v1/apps/local-icons/"
 	maxLocalAppContentBytes = 256 << 10
 	maxLocalAppIconBytes    = 64 << 10
 )
@@ -37,9 +36,10 @@ type localAppWriteInput struct {
 	RemoveIcon      bool               `json:"removeIcon"`
 }
 
+// Local app IDs are "local-<token>", so action routes such as
+// /api/v1/apps/local-notes/install never share this prefix.
 func isLocalAppRequest(path string) bool {
-	return path == localAppsPath || strings.HasPrefix(path, localAppsPath+"/") ||
-		strings.HasPrefix(path, localAppIconsPath)
+	return path == localAppsPath || strings.HasPrefix(path, localAppsPath+"/")
 }
 
 func (s *Server) handleLocalApps(w http.ResponseWriter, r *http.Request) {
@@ -47,14 +47,15 @@ func (s *Server) handleLocalApps(w http.ResponseWriter, r *http.Request) {
 		s.writeProblem(w, r, http.StatusNotFound, "route_not_found", "Route not found", "")
 		return
 	}
-	if strings.HasPrefix(r.URL.Path, localAppIconsPath) {
-		s.handleLocalAppIcon(w, r)
-		return
-	}
 	token := ""
 	if r.URL.Path != localAppsPath {
-		token = strings.TrimPrefix(r.URL.Path, localAppsPath+"/")
-		if !localAppTokenPattern.MatchString(token) {
+		parts := strings.Split(strings.TrimPrefix(r.URL.Path, localAppsPath+"/"), "/")
+		if len(parts) == 3 && parts[1] == "icon" {
+			s.handleLocalAppIcon(w, r, parts[0], parts[2])
+			return
+		}
+		token = parts[0]
+		if len(parts) != 1 || !localAppTokenPattern.MatchString(token) {
 			s.writeProblem(w, r, http.StatusNotFound, "route_not_found", "Route not found", "")
 			return
 		}
@@ -198,9 +199,9 @@ func (s *Server) forwardLocalAppMutation(
 	s.writeAgentResponse(w, r, response)
 }
 
-// handleLocalAppIcon serves GET /api/v1/apps/local-icons/{token}/{tag}; the
+// handleLocalAppIcon serves GET /api/v1/apps/local/{token}/icon/{tag}; the
 // tag is a content hash that only busts browser caches.
-func (s *Server) handleLocalAppIcon(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleLocalAppIcon(w http.ResponseWriter, r *http.Request, token, tag string) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
 		s.writeProblem(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed", "")
@@ -209,12 +210,11 @@ func (s *Server) handleLocalAppIcon(w http.ResponseWriter, r *http.Request) {
 	if _, _, ok := s.requireSession(w, r); !ok {
 		return
 	}
-	parts := strings.Split(strings.TrimPrefix(r.URL.Path, localAppIconsPath), "/")
-	if len(parts) != 2 || !localAppTokenPattern.MatchString(parts[0]) || !localAppIconTagPattern.MatchString(parts[1]) {
+	if !localAppTokenPattern.MatchString(token) || !localAppIconTagPattern.MatchString(tag) {
 		writeAppIconFallback(w, r)
 		return
 	}
-	response, err := s.hostOps.Get(r.Context(), "/v1/apps/local/"+parts[0]+"/icon", "", requestID(r))
+	response, err := s.hostOps.Get(r.Context(), "/v1/apps/local/"+token+"/icon", "", requestID(r))
 	if err != nil || response.StatusCode != http.StatusOK {
 		writeAppIconFallback(w, r)
 		return

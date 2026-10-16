@@ -83,7 +83,7 @@ func TestSaveLocalAppCreatesTrustedConfigAndIcon(t *testing.T) {
 		}
 	}
 	if !strings.HasPrefix(document.ResourceVersion, "sha256:") || document.ContainerName != "notes" ||
-		!strings.HasPrefix(document.IconURL, "/api/v1/apps/local-icons/notes/") {
+		!strings.HasPrefix(document.IconURL, "/api/v1/apps/local/notes/icon/") {
 		t.Fatalf("unexpected document: %#v", document)
 	}
 	item, err := service.Find(context.Background(), "local-notes")

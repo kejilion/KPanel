@@ -446,5 +446,5 @@ func localAppVersion(content []byte, icon *LocalAppIcon) string {
 // localAppIconURL embeds a content hash so a replaced icon is never served stale.
 func localAppIconURL(token string, data []byte) string {
 	digest := sha256.Sum256(data)
-	return "/api/v1/apps/local-icons/" + token + "/" + hex.EncodeToString(digest[:6])
+	return "/api/v1/apps/local/" + token + "/icon/" + hex.EncodeToString(digest[:6])
 }

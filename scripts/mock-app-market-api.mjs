@@ -1729,7 +1729,7 @@ function mockLocalDocument(token) {
   const item = items.find(value => value.id === `local-${token}`)
   return {
     token, content: entry.content, resourceVersion: `sha256:${String(entry.revision).padStart(64, '0')}`,
-    ...(entry.icon ? { iconUrl: `/api/v1/apps/local-icons/${token}/${String(entry.revision).padStart(12, '0')}` } : {}),
+    ...(entry.icon ? { iconUrl: `/api/v1/apps/local/${token}/icon/${String(entry.revision).padStart(12, '0')}` } : {}),
     installed: Boolean(item?.runtime.installed), containerName: token,
   }
 }
@@ -1765,7 +1765,7 @@ function syncMockLocalItem(token) {
 }
 
 async function handleMockLocalApps(request, response, url) {
-  const iconMatch = url.pathname.match(/^\/api\/v1\/apps\/local-icons\/([^/]+)\/[a-f0-9]{12}$/)
+  const iconMatch = url.pathname.match(/^\/api\/v1\/apps\/local\/([^/]+)\/icon\/[a-f0-9]{12}$/)
   if (iconMatch) {
     const icon = mockLocalApps.get(iconMatch[1])?.icon
     if (request.method !== 'GET' || !icon) { response.writeHead(307, { Location: '/app-icons/thirdparty-default.svg' }); response.end(); return true }

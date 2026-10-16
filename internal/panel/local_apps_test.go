@@ -103,7 +103,7 @@ func TestLocalAppReadAndIconRoutes(t *testing.T) {
 	server.agent = agent
 
 	icon := authenticatedSiteRequest(server, sessionCookie, csrfCookie, http.MethodGet,
-		"/api/v1/apps/local-icons/notes/0123456789ab", nil, false)
+		"/api/v1/apps/local/notes/icon/0123456789ab", nil, false)
 	if icon.Code != http.StatusOK || icon.Header().Get("Content-Type") != "image/png" ||
 		icon.Header().Get("X-Content-Type-Options") != "nosniff" {
 		t.Fatalf("icon route returned %d %v", icon.Code, icon.Header())
@@ -113,8 +113,8 @@ func TestLocalAppReadAndIconRoutes(t *testing.T) {
 		t.Fatalf("icon was not read from the Agent route: %#v", calls)
 	}
 	for _, path := range []string{
-		"/api/v1/apps/local-icons/notes/not-a-hash",
-		"/api/v1/apps/local-icons/../x/0123456789ab",
+		"/api/v1/apps/local/notes/icon/not-a-hash",
+		"/api/v1/apps/local/bad.name/icon/0123456789ab",
 	} {
 		if response := authenticatedSiteRequest(server, sessionCookie, csrfCookie, http.MethodGet, path, nil, false); response.Code != http.StatusTemporaryRedirect {
 			t.Fatalf("%s returned %d, want fallback redirect", path, response.Code)
@@ -123,7 +123,7 @@ func TestLocalAppReadAndIconRoutes(t *testing.T) {
 
 	agent.response = AgentResponse{StatusCode: http.StatusOK, ContentType: "image/svg+xml", Body: []byte("<svg/>")}
 	if response := authenticatedSiteRequest(server, sessionCookie, csrfCookie, http.MethodGet,
-		"/api/v1/apps/local-icons/notes/0123456789ab", nil, false); response.Code != http.StatusTemporaryRedirect {
+		"/api/v1/apps/local/notes/icon/0123456789ab", nil, false); response.Code != http.StatusTemporaryRedirect {
 		t.Fatalf("non-raster icon was served: %d", response.Code)
 	}
 
@@ -139,6 +139,25 @@ func TestLocalAppReadAndIconRoutes(t *testing.T) {
 	server.ServeHTTP(anonymous, anonymousRequest)
 	if anonymous.Code != http.StatusUnauthorized {
 		t.Fatalf("anonymous read returned %d", anonymous.Code)
+	}
+}
+
+// A local app may be named "icons"; its action routes must not be taken by
+// the icon route, which lives under /api/v1/apps/local/{token}/icon/.
+func TestLocalAppActionRoutesDoNotCollideWithLocalAppPaths(t *testing.T) {
+	server, tokenPath := newTestServer(t)
+	sessionCookie, csrfCookie := bootstrapCookies(t, server, tokenPath)
+	agent := &stubAgent{response: AgentResponse{
+		StatusCode: http.StatusAccepted, ContentType: "application/json", Body: []byte(`{"id":"` + strings.Repeat("c", 32) + `"}`),
+	}}
+	server.agent = agent
+	for _, id := range []string{"local-icons", "local-local"} {
+		before := len(agent.snapshotCalls())
+		authenticatedSiteRequest(server, sessionCookie, csrfCookie, http.MethodPost, "/api/v1/apps/"+id+"/install", []byte(`{}`), true)
+		calls := agent.snapshotCalls()
+		if len(calls) != before+1 || calls[before].path != "/v1/apps/"+id+"/install" {
+			t.Fatalf("%s install was not routed as an app action: %#v", id, calls)
+		}
 	}
 }
 
