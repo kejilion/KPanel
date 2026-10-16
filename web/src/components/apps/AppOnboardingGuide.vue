@@ -153,7 +153,7 @@ function copyLabel(key: string, idle: string): string {
   align-items: flex-start;
   padding: 10px 12px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--text-secondary);
   text-align: left;
@@ -207,7 +207,7 @@ function copyLabel(key: string, idle: string): string {
 .onboarding-command {
   margin-bottom: 12px;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--surface-muted);
 }
 
@@ -225,7 +225,7 @@ function copyLabel(key: string, idle: string): string {
   margin: 8px 0 0;
   padding: 10px 12px;
   overflow: auto;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--surface-muted);
   font-size: 12px;
   line-height: 1.5;
