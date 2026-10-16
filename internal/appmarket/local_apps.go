@@ -138,5 +138,8 @@ func (s *Service) readLocalApp(token string) (App, bool) {
 	if scanner.Err() != nil {
 		return App{}, false
 	}
+	if icon, err := s.readLocalAppIcon(token); err == nil && icon != nil {
+		app.Icon = localAppIconURL(token, icon.Data)
+	}
 	return app, true
 }

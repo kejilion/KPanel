@@ -1416,6 +1416,25 @@ export interface AppMarketInventory {
   collectedAt: string
 }
 
+/** A ~/apps-local kejilion.sh config as the app market editor sees it. */
+export interface LocalAppDocument {
+  token: string
+  content: string
+  resourceVersion: string
+  iconUrl?: string
+  installed: boolean
+  containerName: string
+}
+
+export interface LocalAppWriteInput {
+  token: string
+  content: string
+  resourceVersion: string
+  /** Base64 file bytes; PNG or WebP, square, at most 64 KiB. */
+  icon?: { contentType: 'image/png' | 'image/webp'; data: string }
+  removeIcon?: boolean
+}
+
 export interface AppMutationResult {
   containerId?: string
   action: string

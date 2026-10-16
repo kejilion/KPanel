@@ -30,7 +30,37 @@ catalog.apps.push({
   id: 'local-my-notes', source: 'local', token: 'my-notes', slug: 'my-notes',
   name_zh: '我的笔记服务', name_en: '我的笔记服务', desc_zh: '自建的 Markdown 笔记服务', desc_en: '自建的 Markdown 笔记服务',
   cat: 'local', url: 'https://example.com/my-notes', icon: '/app-icons/thirdparty-default.svg', iconSha256: '',
+}, {
+  id: 'local-my-blog', source: 'local', token: 'my-blog', slug: 'my-blog',
+  name_zh: '我的博客', name_en: '我的博客', desc_zh: '已在本机安装验证的博客', desc_en: '已在本机安装验证的博客',
+  cat: 'local', url: '', icon: '/app-icons/thirdparty-default.svg', iconSha256: '',
 })
+// Stateful ~/apps-local documents behind the app market editor.
+function mockLocalConfig(token, name, port) {
+  return `local app_id="${token}"
+local app_name="${name}"
+local docker_name="${token}"
+local docker_port="${port}"
+
+docker_app_install() {
+	mkdir -p /home/docker/${token}
+}
+
+docker_app_update() {
+	true
+}
+
+docker_app_uninstall() {
+	rm -rf /home/docker/${token}
+}
+
+docker_app_plus
+`
+}
+const mockLocalApps = new Map([
+  ['my-notes', { content: mockLocalConfig('my-notes', '我的笔记服务', 8081), revision: 1, icon: null }],
+  ['my-blog', { content: mockLocalConfig('my-blog', '我的博客', 8082), revision: 1, icon: null }],
+])
 const legacyByNumber = new Map(legacy.apps.map((item) => [item.num, item]))
 const installed = new Map([
   ['speedtest', { state: 'running', direct: true }],
@@ -39,6 +69,7 @@ const installed = new Map([
   ['n8n', { state: 'exited', direct: false }],
   ['frps', { state: 'running', direct: true }],
   ['frpc', { state: 'exited', direct: true }],
+  ['my-blog', { state: 'running', direct: true }],
 ])
 const appJobs = new Map()
 const diagnosticJobs = new Map()
@@ -1693,6 +1724,104 @@ function fileShareAdminView(record, token = '') {
   }
 }
 
+function mockLocalDocument(token) {
+  const entry = mockLocalApps.get(token)
+  const item = items.find(value => value.id === `local-${token}`)
+  return {
+    token, content: entry.content, resourceVersion: `sha256:${String(entry.revision).padStart(64, '0')}`,
+    ...(entry.icon ? { iconUrl: `/api/v1/apps/local-icons/${token}/${String(entry.revision).padStart(12, '0')}` } : {}),
+    installed: Boolean(item?.runtime.installed), containerName: token,
+  }
+}
+
+function mockLocalProblem(content, token) {
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(token)) return '名称只能使用字母、数字、下划线和短横线，且以字母或数字开头'
+  if (items.some(item => item.source !== 'local' && item.token.toLowerCase() === token.toLowerCase())) return `${token} 与应用市场已有应用同名，请换一个名称`
+  if (!new RegExp(`^\\s*(local\\s+)?app_id="${token}"`, 'm').test(content)) return `需要 local app_id="${token}"，与名称保持一致，否则无法记录安装状态`
+  if (!/^\s*(local\s+)?docker_name="[A-Za-z0-9][A-Za-z0-9_.-]*"/m.test(content)) return '需要静态的 local docker_name="容器名"，并以 docker_app_plus 结尾'
+  for (const name of ['docker_app_install', 'docker_app_update', 'docker_app_uninstall']) {
+    if (!new RegExp(`^\\s*${name}\\s*\\(\\)`, 'm').test(content)) return `缺少 ${name}() 函数`
+  }
+  if (!/^\s*docker_app_plus\s*$/m.test(content)) return '本地应用需以 docker_app_plus 注册'
+  return ''
+}
+
+function syncMockLocalItem(token) {
+  const entry = mockLocalApps.get(token)
+  const name = entry.content.match(/app_name="([^"]*)"/)?.[1] || token
+  const text = entry.content.match(/app_text="([^"]*)"/)?.[1] || ''
+  const icon = entry.icon ? mockLocalDocument(token).iconUrl : '/app-icons/thirdparty-default.svg'
+  let item = items.find(value => value.id === `local-${token}`)
+  if (!item) {
+    const template = items.find(value => value.id === 'local-my-notes')
+    item = structuredClone(template)
+    item.id = `local-${token}`
+    item.token = token
+    item.slug = token
+    item.runtime = { installed: false, state: 'not_installed', ports: [], accessMode: 'not_applicable', updateStatus: 'not_installed', detectedBy: [] }
+    items.push(item)
+  }
+  Object.assign(item, { name_zh: name, name_en: name, desc_zh: text, desc_en: text, icon })
+}
+
+async function handleMockLocalApps(request, response, url) {
+  const iconMatch = url.pathname.match(/^\/api\/v1\/apps\/local-icons\/([^/]+)\/[a-f0-9]{12}$/)
+  if (iconMatch) {
+    const icon = mockLocalApps.get(iconMatch[1])?.icon
+    if (request.method !== 'GET' || !icon) { response.writeHead(307, { Location: '/app-icons/thirdparty-default.svg' }); response.end(); return true }
+    sendBinary(response, 200, Buffer.from(icon.data, 'base64'), icon.contentType)
+    return true
+  }
+  const itemMatch = url.pathname.match(/^\/api\/v1\/apps\/local(?:\/([^/]+))?$/)
+  if (!itemMatch) return false
+  const token = itemMatch[1]
+  if (!token && request.method === 'POST') {
+    const body = await readJSON(request, 600_000)
+    const problem = mockLocalProblem(body.content || '', body.token || '')
+    if (problem) { send(response, 422, { code: 'local_app_invalid', title: '本地应用配置未通过校验', detail: problem }); return true }
+    if (mockLocalApps.has(body.token)) { send(response, 409, { code: 'local_app_exists', title: '同名本地应用已存在', detail: '请换一个名称，或编辑已有应用' }); return true }
+    mockLocalApps.set(body.token, { content: body.content, revision: 1, icon: body.icon || null })
+    syncMockLocalItem(body.token)
+    send(response, 201, mockLocalDocument(body.token))
+    return true
+  }
+  if (!token || !mockLocalApps.has(token)) { send(response, 404, { code: 'app_not_found', title: '本地应用不存在' }); return true }
+  const entry = mockLocalApps.get(token)
+  if (request.method === 'GET') { send(response, 200, mockLocalDocument(token)); return true }
+  const body = await readJSON(request, 600_000)
+  if (body.resourceVersion !== mockLocalDocument(token).resourceVersion) {
+    send(response, 409, { code: 'resource_conflict', title: '配置已在别处被修改', detail: '请重新加载后再保存' })
+    return true
+  }
+  const installedNow = Boolean(items.find(value => value.id === `local-${token}`)?.runtime.installed)
+  if (request.method === 'DELETE') {
+    if (installedNow) { send(response, 422, { code: 'local_app_installed', title: '应用已安装', detail: '应用已安装，请先在应用市场卸载后再删除配置' }); return true }
+    mockLocalApps.delete(token)
+    items.splice(items.findIndex(value => value.id === `local-${token}`), 1)
+    response.writeHead(204)
+    response.end()
+    return true
+  }
+  if (request.method === 'PUT') {
+    const problem = mockLocalProblem(body.content || '', token)
+    if (problem) { send(response, 422, { code: 'local_app_invalid', title: '本地应用配置未通过校验', detail: problem }); return true }
+    const previous = entry.content.match(/docker_name="([^"]*)"/)?.[1]
+    if (installedNow && body.content.match(/docker_name="([^"]*)"/)?.[1] !== previous) {
+      send(response, 422, { code: 'local_app_invalid', title: '本地应用配置未通过校验', detail: `应用已安装，docker_name 与 docker_app_service 不能修改（当前为 ${previous}）；如需更换请先卸载` })
+      return true
+    }
+    entry.content = body.content
+    entry.revision += 1
+    if (body.icon) entry.icon = body.icon
+    if (body.removeIcon) entry.icon = null
+    syncMockLocalItem(token)
+    send(response, 200, mockLocalDocument(token))
+    return true
+  }
+  send(response, 405, { code: 'method_not_allowed' })
+  return true
+}
+
 async function readJSON(request, maxBytes = 65_536) {
   const chunks = []
   let size = 0
@@ -2371,6 +2500,7 @@ createServer(async (request, response) => {
     send(response, 200, inventory)
     return
   }
+  if (await handleMockLocalApps(request, response, url)) return
   const appUpdateMatch = url.pathname.match(/^\/api\/v1\/apps\/([^/]+)\/check_update$/)
   if (request.method === 'POST' && appUpdateMatch) {
     const app = items.find(item => item.id === appUpdateMatch[1] && item.capabilities.check_update.enabled)

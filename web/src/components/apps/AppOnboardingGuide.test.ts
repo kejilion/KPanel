@@ -5,6 +5,7 @@ import { nextTick } from 'vue'
 
 const copyText = vi.fn(async (_value: string) => true)
 vi.mock('@/lib/clipboard', () => ({ copyText }))
+vi.mock('@/lib/api', () => ({ ApiError: Error, api: { apps: {} } }))
 
 const { default: AppOnboardingGuide } = await import('./AppOnboardingGuide.vue')
 
@@ -18,7 +19,7 @@ afterEach(async () => {
 })
 
 function mountGuide(): VueWrapper {
-  const wrapper = mount(AppOnboardingGuide, { attachTo: document.body, props: { open: true } })
+  const wrapper = mount(AppOnboardingGuide, { attachTo: document.body, props: { open: true, localApps: [] } })
   wrappers.push(wrapper)
   return wrapper
 }
@@ -39,20 +40,16 @@ describe('AppOnboardingGuide', () => {
     expect(document.querySelector('a[href="https://dev.kejilion.sh/"]')).not.toBeNull()
   })
 
-  it('switches to the local path with the shared apps-local directory and root warning', async () => {
+  it('switches to the in-place local app manager with the root warning', async () => {
     mountGuide()
     button('仅本机使用').click()
     await nextTick()
     const text = document.body.textContent || ''
-    expect(text).toContain('/root/apps-local/应用名.conf')
+    expect(text).toContain('本机的本地应用')
+    expect(text).toContain('还没有本地应用')
     expect(text).toContain('会以 root 身份执行')
     expect(document.querySelector('a[href="https://github.com/kejilion/apps"]')).toBeNull()
-
-    button('复制命令').click()
-    await nextTick()
-    expect(copyText).toHaveBeenCalledWith(
-      'chown root:root /root/apps-local/myapp.conf && chmod 644 /root/apps-local/myapp.conf',
-    )
+    expect(button('新建本地应用')).toBeTruthy()
   })
 
   it('says so when the clipboard is unavailable', async () => {
@@ -69,6 +66,7 @@ describe('AppOnboardingGuide', () => {
     button('复制模板').click()
     await nextTick()
     const template = copyText.mock.calls[0]?.[0] ?? ''
+    expect(template).toContain('local app_id="myapp"')
     expect(template).toContain('local docker_name="myapp"')
     expect(template).toContain('${gh_proxy}')
     expect(template.trim().endsWith('docker_app_plus')).toBe(true)

@@ -477,6 +477,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.requireMethod(w, r, requestID, http.MethodGet, s.appList)
 	case strings.HasPrefix(r.URL.Path, "/v1/apps/icons/"):
 		s.requireMethod(w, r, requestID, http.MethodGet, s.appIcon)
+	case r.URL.Path == "/v1/apps/local":
+		s.localAppCollection(w, r)
+	case strings.HasPrefix(r.URL.Path, "/v1/apps/local/"):
+		s.localAppItem(w, r)
 	case r.URL.Path == "/v1/app-jobs":
 		s.requireMethod(w, r, requestID, http.MethodGet, s.appJobList)
 	case strings.HasPrefix(r.URL.Path, "/v1/app-jobs/"):
@@ -2160,12 +2164,16 @@ func (s *Server) containerOperation(w http.ResponseWriter, r *http.Request, requ
 var errJSONContentType = errors.New("JSON request body required")
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, target interface{}) error {
+	return decodeJSONWithLimit(w, r, target, maxAgentRequestBytes)
+}
+
+func decodeJSONWithLimit(w http.ResponseWriter, r *http.Request, target interface{}, limit int64) error {
 	// Match the Panel's JSON contract: action bodies must declare JSON rather
 	// than being parsed from whatever media type arrived.
 	if mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mediaType != "application/json" {
 		return errJSONContentType
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxAgentRequestBytes)
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {

@@ -327,6 +327,14 @@ const sourceFilters = computed(() => {
   return filters
 })
 
+const localApps = computed(() => inventory.value?.items.filter((item) => item.source === 'local') ?? [])
+
+// Installed local apps are uninstalled from their detail panel before the config can be deleted.
+function manageLocalApp(item: AppMarketItem): void {
+  onboardingOpen.value = false
+  openDetails(item)
+}
+
 // The local filter disappears with the last ~/apps-local config; fall back instead of showing an empty list.
 watch(sourceFilters, (filters) => {
   if (!filters.some((filter) => filter.key === source.value)) source.value = 'all'
@@ -1949,7 +1957,14 @@ watch(windowActive, syncJobPollingForWindow)
       </template>
     </ModalDialog>
 
-    <AppOnboardingGuide :open="onboardingOpen" @close="onboardingOpen = false" />
+    <AppOnboardingGuide
+      :open="onboardingOpen"
+      :local-apps="localApps"
+      :initial-mode="source === 'local' ? 'local' : 'official'"
+      @close="onboardingOpen = false"
+      @changed="load(true)"
+      @manage="manageLocalApp"
+    />
 
     <KPanelUpdateDialog
       :open="kpanelUpdateConfirmOpen"

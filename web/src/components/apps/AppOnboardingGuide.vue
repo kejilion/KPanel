@@ -1,44 +1,23 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { ArrowUpRight, Check, Copy, FolderCode, Globe, ShieldAlert } from '@lucide/vue'
+import { ref, watch } from 'vue'
+import { ArrowUpRight, Check, Copy, FolderCode, Globe } from '@lucide/vue'
 import ModalDialog from '@/components/common/ModalDialog.vue'
 import { copyText } from '@/lib/clipboard'
-
-defineProps<{ open: boolean }>()
-const emit = defineEmits<{ close: [] }>()
+import type { AppMarketItem } from '@/types/api'
+import LocalAppManager from './LocalAppManager.vue'
+import { localAppTemplate } from './localAppTemplate'
 
 type GuideMode = 'official' | 'local'
-const mode = ref<GuideMode>('official')
+const props = defineProps<{ open: boolean; localApps: AppMarketItem[]; initialMode?: GuideMode }>()
+const emit = defineEmits<{ close: []; changed: []; manage: [item: AppMarketItem] }>()
+
+const mode = ref<GuideMode>(props.initialMode ?? 'official')
+watch(() => props.open, (open) => {
+  if (open) mode.value = props.initialMode ?? 'official'
+})
 const copied = ref('')
 
-const localDirectory = '/root/apps-local'
-const template = `local app_name="My App"
-local app_text="A brief description"
-local app_url="https://github.com/..."
-local docker_name="myapp"
-local docker_port="8080"
-local app_size="1"
-
-docker_app_install() {
-\tmkdir -p /home/docker/myapp && cd /home/docker/myapp
-\tcurl -L -o docker-compose.yml "\${gh_proxy}https://raw.githubusercontent.com/..."
-\tsed -i "s/8080:8080/\${docker_port}:8080/g" docker-compose.yml
-\tdocker compose up -d
-\tcheck_docker_app_ip
-}
-
-docker_app_update() {
-\tcd /home/docker/myapp && docker compose pull && docker compose up -d
-}
-
-docker_app_uninstall() {
-\tcd /home/docker/myapp && docker compose down --rmi all
-\trm -rf /home/docker/myapp
-}
-
-docker_app_plus
-`
-const localCommand = `chown root:root ${localDirectory}/myapp.conf && chmod 644 ${localDirectory}/myapp.conf`
+const template = localAppTemplate()
 
 // Clipboard access is often denied on plain HTTP/IP panels; say so instead
 // of silently doing nothing, the template stays selectable below.
@@ -61,7 +40,7 @@ function copyLabel(key: string, idle: string): string {
     :open="open"
     title="应用入驻指南"
     description="把自己的 Docker 应用写成一个 .conf，即可出现在应用市场并使用安装、更新、卸载等管理操作。"
-    size="medium"
+    size="large"
     @close="emit('close')"
   >
     <div class="onboarding-modes" role="group" aria-label="入驻方式">
@@ -87,26 +66,13 @@ function copyLabel(key: string, idle: string): string {
 
     <ol v-if="mode === 'official'" class="onboarding-steps">
       <li><strong>按模板编写配置</strong><span>文件名即应用标识，例如 myapp.conf；数据统一放在 /home/docker/应用名 下。</span></li>
-      <li><strong>先在本机自测</strong><span>放到 /root/apps-local 后在“本地应用”里完整走一遍安装、更新、卸载。</span></li>
+      <li><strong>先在本机自测</strong><span>在“仅本机使用”里新建并安装，完整走一遍安装、更新、卸载；运行正常后可在列表里一键“提交官方”。</span></li>
       <li><strong>向 kejilion/apps 提交 Pull Request</strong><span>维护者审核脚本安全后合入。</span></li>
       <li><strong>自动上架</strong><span>合入后出现在“第三方”来源，所有 KPanel 与 kejilion.sh 用户都能看到。</span></li>
     </ol>
-    <ol v-else class="onboarding-steps">
-      <li><strong>按模板编写配置</strong><span>保存为 /root/apps-local/应用名.conf，可用文件管理直接新建。</span></li>
-      <li><strong>收紧文件权限</strong><span>文件须属于 root，且不能被其他用户写入；软链接会被忽略。</span></li>
-      <li><strong>刷新应用市场</strong><span>点击“刷新状态”，应用会出现在“本地应用”分类，kejilion.sh 菜单里也会同步出现。</span></li>
-      <li><strong>与官方同名时以官方为准</strong><span>如需覆盖官方应用，请换一个文件名。</span></li>
-    </ol>
+    <LocalAppManager v-else :apps="localApps" @changed="emit('changed')" @manage="emit('manage', $event)" />
 
-    <div v-if="mode === 'local'" class="onboarding-command">
-      <code>{{ localCommand }}</code>
-      <button class="button button--ghost button--small" type="button" @click="copy('command', localCommand)">
-        <Check v-if="copied === 'command'" :size="14" /><Copy v-else :size="14" />
-        {{ copyLabel('command', '复制命令') }}
-      </button>
-    </div>
-
-    <section class="onboarding-template" aria-label="配置模板">
+    <section v-if="mode === 'official'" class="onboarding-template" aria-label="配置模板">
       <header>
         <strong>配置模板</strong>
         <button class="button button--ghost button--small" type="button" @click="copy('template', template)">
@@ -116,11 +82,6 @@ function copyLabel(key: string, idle: string): string {
       </header>
       <pre><code>{{ template }}</code></pre>
     </section>
-
-    <div v-if="mode === 'local'" class="inline-alert inline-alert--warning">
-      <ShieldAlert :size="17" />
-      本地应用未经官方审核，会以 root 身份执行；请只使用自己编写或信任的配置。需要较新的 kejilion.sh。
-    </div>
 
     <template #footer>
       <a class="button button--secondary" href="https://dev.kejilion.sh/" target="_blank" rel="noopener noreferrer">
@@ -135,7 +96,7 @@ function copyLabel(key: string, idle: string): string {
       >
         <ArrowUpRight :size="15" /> 前往 kejilion/apps
       </a>
-      <button v-else class="button button--primary" type="button" @click="emit('close')">我知道了</button>
+      <button v-else class="button button--primary" type="button" @click="emit('close')">关闭</button>
     </template>
   </ModalDialog>
 </template>
@@ -196,24 +157,11 @@ function copyLabel(key: string, idle: string): string {
   margin-top: 2px;
 }
 
-.onboarding-command,
 .onboarding-template header {
   display: flex;
   gap: 8px;
   align-items: center;
   justify-content: space-between;
-}
-
-.onboarding-command {
-  margin-bottom: 12px;
-  padding: 8px 10px;
-  border-radius: var(--radius-sm);
-  background: var(--surface-muted);
-}
-
-.onboarding-command code {
-  overflow-x: auto;
-  white-space: nowrap;
 }
 
 .onboarding-template {

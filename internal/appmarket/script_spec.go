@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -84,10 +85,15 @@ func (s *Service) readScriptAppSpec(source, token string) (scriptAppSpec, error)
 		return scriptAppSpec{}, err
 	}
 	defer file.Close()
+	return parseScriptAppSpec(file)
+}
 
+// parseScriptAppSpec reads the static container metadata kejilion.sh relies on;
+// it also validates local app configs before they are written.
+func parseScriptAppSpec(source io.Reader) (scriptAppSpec, error) {
 	spec := scriptAppSpec{}
 	assignments := make(map[string]bool, 2)
-	scanner := bufio.NewScanner(file)
+	scanner := bufio.NewScanner(source)
 	scanner.Buffer(make([]byte, 4<<10), maxScriptAppConfigBytes)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())

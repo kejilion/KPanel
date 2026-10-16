@@ -97,6 +97,7 @@ type Service struct {
 	appRoot                       string
 	scriptAppRoot                 string
 	scriptLocalAppRoot            string
+	localAppSyntaxCheck           func(context.Context, []byte) error
 	now                           func() time.Time
 	fetchCatalog                  catalogFetcher
 	iconCache                     *officialIconCache

@@ -20,6 +20,8 @@ import type {
   AgentStatus,
   AppInstallPortStatus,
   AppMarketInventory,
+  LocalAppDocument,
+  LocalAppWriteInput,
   AppImageUpdateResult,
   AppMutationResult,
   AuditEvent,
@@ -2178,6 +2180,14 @@ export const api = {
   apps: {
     inventory: (signal?: AbortSignal): Promise<AppMarketInventory> =>
       request<AppMarketInventory>('/apps', { signal }),
+    localApp: (token: string, signal?: AbortSignal): Promise<LocalAppDocument> =>
+      request<LocalAppDocument>(`/apps/local/${encodeURIComponent(token)}`, { signal }),
+    createLocalApp: (body: LocalAppWriteInput): Promise<LocalAppDocument> =>
+      request<LocalAppDocument>('/apps/local', { method: 'POST', body }),
+    updateLocalApp: (token: string, body: LocalAppWriteInput): Promise<LocalAppDocument> =>
+      request<LocalAppDocument>(`/apps/local/${encodeURIComponent(token)}`, { method: 'PUT', body }),
+    deleteLocalApp: (token: string, resourceVersion: string): Promise<void> =>
+      request<void>(`/apps/local/${encodeURIComponent(token)}`, { method: 'DELETE', body: { resourceVersion } }),
     installPort: (
       id: string,
       port: number,
