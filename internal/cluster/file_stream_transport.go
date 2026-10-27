@@ -637,7 +637,7 @@ func (b *streamOwnedBody) Close() error { err := b.ReadCloser.Close(); b.once.Do
 // RunFileStream serves one authenticated control connection. Reconnection is
 // handled by the broker; only an explicit pre-upgrade unsupported response
 // permits its legacy polling loop. Already opened requests are never replayed.
-func (c *FileRelayClient) RunFileStream(ctx context.Context, origin, node, target string, key noise.DHKey, peer []byte, handler http.Handler) error {
+func (c *FileRelayClient) RunFileStream(ctx context.Context, origin, node, target string, key noise.DHKey, peer []byte, handler http.Handler, connected ...func()) error {
 	if c == nil || c.client == nil || c.history || handler == nil {
 		return ErrAuthentication
 	}
@@ -652,6 +652,9 @@ func (c *FileRelayClient) RunFileStream(ctx context.Context, origin, node, targe
 	kind, data, err := control.read()
 	if err != nil || kind != streamOpen || !validID(string(data)) {
 		return ErrAuthentication
+	}
+	if len(connected) > 0 && connected[0] != nil {
+		connected[0]()
 	}
 	generation := string(data)
 	gate := make(chan struct{}, 8)

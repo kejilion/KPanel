@@ -114,7 +114,8 @@ func runFileBroker(arguments []string) error {
 	defer stopPreviews()
 	backoff := time.Second
 	for ctx.Err() == nil {
-		streamErr := relay.RunFileStream(ctx, config.Origin, config.NodeID, config.TargetNodeID, identity.Key, identity.Peer, fileHandler)
+		connected := false
+		streamErr := relay.RunFileStream(ctx, config.Origin, config.NodeID, config.TargetNodeID, identity.Key, identity.Peer, fileHandler, func() { connected = true })
 		if errors.Is(streamErr, cluster.ErrFileStreamUnsupported) {
 			// Compatibility is selected before any file action. Keep this mode for
 			// this broker lifetime, so a capability recheck cannot interrupt writes.
@@ -124,11 +125,14 @@ func runFileBroker(arguments []string) error {
 		if ctx.Err() != nil {
 			break
 		}
+		if connected {
+			backoff = time.Second
+		}
 		slog.Warn("file stream disconnected; reconnecting", "error", streamErr)
 		if !waitContext(ctx, backoff) {
 			break
 		}
-		backoff = min(5*time.Second, backoff*2)
+		backoff = min(time.Minute, backoff*2)
 	}
 	stop()
 	<-historyDone
