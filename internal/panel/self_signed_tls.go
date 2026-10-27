@@ -430,6 +430,7 @@ func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
 // (0x16 is a TLS handshake record), so a slow client cannot stall Accept.
 type selfSignedTLSListener struct {
 	net.Listener
+	failures        failureDiagnostics
 	config          func() *tls.Config
 	conns           chan net.Conn
 	errs            chan error
@@ -445,9 +446,16 @@ type selfSignedTLSListener struct {
 const selfSignedTLSMaxConcurrentClassifiers = 64
 const selfSignedTLSMaxSourceClassifiers = 16
 
+// Apply the source budget only to clients that have not sent a protocol byte
+// within this grace period. A reverse proxy multiplexes many legitimate cold
+// connections through one transport address; counting those as slow clients
+// drops static resources before HTTP can return a response.
+const selfSignedTLSFastSniffWait = 100 * time.Millisecond
+
 type selfSignedTLSClassifier struct {
 	conn   net.Conn
 	source string
+	slow   bool
 }
 
 // Admission uses the transport peer, never forwarding headers. IPv6 clients
@@ -475,7 +483,7 @@ func (l *selfSignedTLSListener) reserve(conn net.Conn) *selfSignedTLSClassifier 
 	l.classifierMu.Lock()
 	defer l.classifierMu.Unlock()
 	source := selfSignedTLSSource(conn.RemoteAddr())
-	if l.closed || l.sources[source] >= selfSignedTLSMaxSourceClassifiers {
+	if l.closed {
 		return nil
 	}
 	select {
@@ -489,17 +497,29 @@ func (l *selfSignedTLSListener) reserve(conn net.Conn) *selfSignedTLSClassifier 
 	}
 	ticket := &selfSignedTLSClassifier{conn: conn, source: source}
 	l.pending[ticket] = struct{}{}
-	l.sources[source]++
 	return ticket
+}
+
+func (l *selfSignedTLSListener) reserveSlow(ticket *selfSignedTLSClassifier) bool {
+	l.classifierMu.Lock()
+	defer l.classifierMu.Unlock()
+	if l.closed || l.sources[ticket.source] >= selfSignedTLSMaxSourceClassifiers {
+		return false
+	}
+	ticket.slow = true
+	l.sources[ticket.source]++
+	return true
 }
 
 func (l *selfSignedTLSListener) release(ticket *selfSignedTLSClassifier) {
 	l.classifierMu.Lock()
 	defer l.classifierMu.Unlock()
 	delete(l.pending, ticket)
-	l.sources[ticket.source]--
-	if l.sources[ticket.source] == 0 {
-		delete(l.sources, ticket.source)
+	if ticket.slow {
+		l.sources[ticket.source]--
+		if l.sources[ticket.source] == 0 {
+			delete(l.sources, ticket.source)
+		}
 	}
 	<-l.classifierSlots
 }
@@ -537,6 +557,7 @@ func (l *selfSignedTLSListener) acceptLoop() {
 				l.classify(ticket)
 			}()
 		} else {
+			l.failures.record("listener", "classifier_capacity", "", 0)
 			_ = conn.Close()
 		}
 	}
@@ -544,9 +565,22 @@ func (l *selfSignedTLSListener) acceptLoop() {
 
 func (l *selfSignedTLSListener) classify(ticket *selfSignedTLSClassifier) {
 	conn := ticket.conn
-	_ = conn.SetReadDeadline(time.Now().Add(selfSignedTLSSniffWait))
+	deadline := time.Now().Add(selfSignedTLSSniffWait)
+	_ = conn.SetReadDeadline(time.Now().Add(selfSignedTLSFastSniffWait))
 	reader := bufio.NewReaderSize(conn, 1024)
 	first, err := reader.Peek(1)
+	var timeout net.Error
+	if errors.As(err, &timeout) && timeout.Timeout() {
+		if !l.reserveSlow(ticket) {
+			l.failures.record("listener", "slow_source_capacity", "", 0)
+			_ = conn.Close()
+			return
+		}
+		// Peek(1) returned no byte, so resetting cannot discard application data.
+		reader.Reset(conn)
+		_ = conn.SetReadDeadline(deadline)
+		first, err = reader.Peek(1)
+	}
 	if err != nil {
 		conn.Close()
 		return
