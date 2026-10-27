@@ -441,10 +441,15 @@ type selfSignedTLSListener struct {
 	closed          bool
 	pending         map[*selfSignedTLSClassifier]struct{}
 	sources         map[string]int
+	pendingSources  map[string]int
 }
 
 const selfSignedTLSMaxConcurrentClassifiers = 64
 const selfSignedTLSMaxSourceClassifiers = 16
+
+// Keep at least one slow-source allowance available to other transport peers,
+// even before silent connections have finished their initial grace period.
+const selfSignedTLSMaxSourceBurst = selfSignedTLSMaxConcurrentClassifiers - selfSignedTLSMaxSourceClassifiers
 
 // Apply the source budget only to clients that have not sent a protocol byte
 // within this grace period. A reverse proxy multiplexes many legitimate cold
@@ -483,7 +488,7 @@ func (l *selfSignedTLSListener) reserve(conn net.Conn) *selfSignedTLSClassifier 
 	l.classifierMu.Lock()
 	defer l.classifierMu.Unlock()
 	source := selfSignedTLSSource(conn.RemoteAddr())
-	if l.closed {
+	if l.closed || l.pendingSources[source] >= selfSignedTLSMaxSourceBurst {
 		return nil
 	}
 	select {
@@ -494,9 +499,11 @@ func (l *selfSignedTLSListener) reserve(conn net.Conn) *selfSignedTLSClassifier 
 	if l.pending == nil {
 		l.pending = make(map[*selfSignedTLSClassifier]struct{})
 		l.sources = make(map[string]int)
+		l.pendingSources = make(map[string]int)
 	}
 	ticket := &selfSignedTLSClassifier{conn: conn, source: source}
 	l.pending[ticket] = struct{}{}
+	l.pendingSources[source]++
 	return ticket
 }
 
@@ -515,6 +522,10 @@ func (l *selfSignedTLSListener) release(ticket *selfSignedTLSClassifier) {
 	l.classifierMu.Lock()
 	defer l.classifierMu.Unlock()
 	delete(l.pending, ticket)
+	l.pendingSources[ticket.source]--
+	if l.pendingSources[ticket.source] == 0 {
+		delete(l.pendingSources, ticket.source)
+	}
 	if ticket.slow {
 		l.sources[ticket.source]--
 		if l.sources[ticket.source] == 0 {
