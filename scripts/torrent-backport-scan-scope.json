@@ -11,8 +11,8 @@
     "scripts/build-mcp-clients.sh": "29b0e82668f585aa46d10432912e1050954430cfac6a0550dd408d728979e113",
     "Makefile": "f651d8ce2f10adc487118e1ccb476615347661922a8c8ef529f1b8013da5d53e"
   },
-  "closureSha256": "2dafcb21081005c23b4fda0a2f4d804e06cc634b05841ba229650159f018cd81",
-  "firstPartySourceSha256": "fac5b3a7741575ab958ff9803a92ebd3aa3b4e66b54001c9175344ca1e5bccdf",
+  "closureSha256": "bcfac1491f912c9871cbdae330e5bdcf1fedfa84618fa8c8de9e42a97cfa2cd8",
+  "firstPartySourceSha256": "9e62fd93b3650422ee16ac993ba21394b928f9e7fa877566679bcc528dbc887c",
   "buildTargetHashEncoding": "UTF-8 with LF line endings",
   "closureEncoding": "SHA256 of JSON.stringify of ordered OS/architecture rows; packages sorted by import path; path, module and selected version; stdlib go1.27.3; main-module packages additionally bind relative sourceDirectory and sorted actual GoFiles.",
   "firstPartySourceEncoding": "SHA256 of JSON.stringify of all cmd/internal Go source path and SHA256 pairs sorted by relative path; contents normalized to UTF-8 LF. All actual main-module production GoFiles must be covered. Generated .pb.go and .proto files or symlinks require a new review.",
@@ -130,7 +130,9 @@
     "rc128RC9ObservationSha256": "3595cca9d76eea1dd1e3570cc8442445ead717f7f062662f5966f1e37645879f",
     "rc128RC9Summary": "RC9 source qualification observes the candidate Go files and six actual/original production closures; original scanner findings and observation dates are unchanged. This is not a scanner or release result.",
     "rc128RC10ObservationSha256": "a8c12e833edeabe76ac96b531195e4e571ed9ec4a2c5724f5a83e1aae2db109d",
-    "rc128RC10Summary": "RC10 source qualification observes the candidate Go files and six actual/original production closures; original scanner findings and observation dates are unchanged. This is not a scanner or release result."
+    "rc128RC10Summary": "RC10 source qualification observes the candidate Go files and six actual/original production closures; original scanner findings and observation dates are unchanged. This is not a scanner or release result.",
+    "rc11SourceEvidenceSha256": "6ac3737796497ddabf41c9931cf7dca802ff7fbfeceb08fb2367e354905339f4",
+    "rc11SourceSummary": "RC11 release maintainer independently reviewed the original product candidates and assembled release, and observed six Go 1.27.3 actual/original closures and 1251 tracked first-party Go files. Source and closure identities rebound; selected graph, build files, existing findings, dispositions, observation and expiry unchanged. Same-provider release reviewer also assembled the merge and version metadata; no separate reviewer claim for that assembly. Canonical Linux CI, L3 and scanners remain required."
   },
   "findings": [
     {
