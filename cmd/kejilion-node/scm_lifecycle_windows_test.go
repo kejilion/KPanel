@@ -234,7 +234,7 @@ func TestWindowsHostedSCMLifecycle(t *testing.T) {
 		}
 	}()
 	next := filepath.Join(windowsnode.InstallDir(), "staging", "kejilion-node.exe.next")
-	for _, mode := range []string{"apply", "rollback", "apply", "rollback", "apply", "rollback", "apply", "rollback", "apply", "rollback"} {
+	for _, mode := range []string{"apply", "rollback", "apply", "rollback", "apply", "rollback", "apply", "rollback", "apply", "rollback", "apply", "rollback", "apply", "rollback", "apply", "rollback", "apply", "rollback", "apply", "rollback", "apply", "rollback", "apply", "rollback", "apply", "rollback", "apply", "rollback", "apply", "rollback"} {
 		build(next, "1.28.0-rc.8-scm-"+mode)
 		if err := windowsnode.SecureProgramFile(next); err != nil {
 			t.Fatal(err)
