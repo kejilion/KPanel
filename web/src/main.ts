@@ -21,6 +21,7 @@ async function bootstrap(): Promise<void> {
   document.getElementById('desktop-boot')?.remove()
   document.documentElement.classList.remove('classic-wallpaper-boot')
   document.getElementById('classic-wallpaper-boot')?.remove()
+  window.dispatchEvent(new Event('kpanel:ready'))
 }
 
-void bootstrap()
+void bootstrap().catch(() => window.dispatchEvent(new Event('kpanel:boot-failed')))

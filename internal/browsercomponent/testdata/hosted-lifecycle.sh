@@ -17,7 +17,7 @@ cleanup() {
   status=$?
   trap - EXIT
   actual=$(docker network inspect --format '{{index .Labels "com.docker.compose.project"}}' "$network" 2>/dev/null || true)
-  if [[ "$actual" == kejilion-panel && -n "$panel_id" ]]; then
+  if [[ "$actual" == kpanel && -n "$panel_id" ]]; then
     if docker container inspect kpanel-browser >/dev/null 2>&1; then
       attached=$(docker inspect --format '{{with index .NetworkSettings.Networks "kejilion-panel-browser-control"}}{{.NetworkID}}{{end}}' kpanel-browser)
       owned=$(docker network inspect --format '{{.Id}}' "$network")
@@ -42,12 +42,28 @@ go build -buildvcs=false -o "$runtime/reconcile" "$evidence/reconcile.go"
 CGO_ENABLED=0 go build -buildvcs=false -o "$runtime/probe" "$evidence/live-browser-probe.go"
 chmod 0555 "$runtime/probe"
 docker pull docker.io/kjlion/kpanel-browser@sha256:fbc00e5b7e5bb39c117507b1995cc0e4f85976eb6818db23322d46968f7d5697 >/dev/null
-start_panel() { docker run -d --name kejilion-panel --label com.docker.compose.project=kejilion-panel \
+start_panel() { docker run -d --name kejilion-panel --label com.docker.compose.project=kpanel \
   --label com.docker.compose.service=panel --label "kpanel.test=$label" \
   --mount "type=bind,src=$runtime/runtime-parent,dst=/run/kejilion-panel,readonly" \
   --mount "type=bind,src=$runtime/probe,dst=/test/probe,readonly" \
   --entrypoint /bin/sleep docker.io/kjlion/kpanel-browser@sha256:fbc00e5b7e5bb39c117507b1995cc0e4f85976eb6818db23322d46968f7d5697 3600; }
-panel_id=$(start_panel)
+cat > "$runtime/panel.yml" <<EOF
+services:
+  panel:
+    image: docker.io/kjlion/kpanel-browser@sha256:fbc00e5b7e5bb39c117507b1995cc0e4f85976eb6818db23322d46968f7d5697
+    container_name: kejilion-panel
+    entrypoint: ["/bin/sleep", "3600"]
+    volumes:
+      - "$runtime/runtime-parent:/run/kejilion-panel:ro"
+      - "$runtime/probe:/test/probe:ro"
+    networks: [browser-control]
+networks:
+  browser-control:
+    name: kejilion-panel-browser-control
+    internal: true
+EOF
+docker compose -p kpanel -f "$runtime/panel.yml" up -d >/dev/null
+panel_id=$(docker inspect --format '{{.Id}}' kejilion-panel)
 for action in install stop start restart uninstall install uninstall; do
   id=$(node "$evidence/live-component-task.mjs" "$action" "$runtime/state")
   "$runtime/agent" browser-component-run --state-dir "$runtime/state" --runtime-dir "$runtime/runtime-parent/browser" --docker-socket /var/run/docker.sock --job "$id"

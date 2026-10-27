@@ -50,7 +50,7 @@ async function refresh(force = false): Promise<void> {
   statusPromise = (async () => {
     state.loading = true
     try {
-      const status = await api.auth.status()
+      const status = await api.auth.status(AbortSignal.timeout(10_000))
       if (run === generation) applyStatus(status)
     } catch (error) {
       if (run !== generation) return

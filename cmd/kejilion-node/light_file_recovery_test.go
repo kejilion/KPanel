@@ -48,7 +48,7 @@ func TestLightFileTransientUnsupportedResponseAfterConnectionRecoversPromptly(t 
 func TestLightFileTransientRetryBacksOffAndResets(t *testing.T) {
 	control := &lightFileControl{}
 	err := &cluster.RemoteError{StatusCode: http.StatusBadGateway}
-	for attempt, expected := range []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 5 * time.Second, 5 * time.Second} {
+	for attempt, expected := range []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 16 * time.Second, 32 * time.Second, time.Minute, time.Minute} {
 		if delay := control.retryDelay(err); delay != expected {
 			t.Fatalf("retry %d = %v, want %v", attempt, delay, expected)
 		}

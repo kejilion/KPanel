@@ -58,6 +58,7 @@ func runLightTerminalControl(
 		processed: make(map[string]cluster.TerminalRelayEvent),
 	}
 	unsupportedUntil := time.Time{}
+	failureDelay := lightTerminalFailureRetry
 	for {
 		if ctx.Err() != nil {
 			return
@@ -87,12 +88,14 @@ func runLightTerminalControl(
 				unsupportedUntil = time.Now().Add(lightTerminalUnsupportedRetry)
 			} else {
 				slog.Warn("lightweight terminal relay failed", "error", err)
-				if !waitContext(ctx, lightTerminalFailureRetry) {
+				if !waitContext(ctx, failureDelay) {
 					return
 				}
+				failureDelay = min(time.Minute, failureDelay*2)
 			}
 			continue
 		}
+		failureDelay = lightTerminalFailureRetry
 		control.acceptRelayResponse(response)
 		if response.Command == nil {
 			continue

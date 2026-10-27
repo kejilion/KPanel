@@ -7,10 +7,13 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"time"
 )
 
 const controlNetwork = "kejilion-panel-browser-control"
+
+var composeProjectPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
 
 // RunNetworkReconciler restores the panel connection after a container
 // replacement. It never starts Docker or recreates a browser container.
@@ -88,11 +91,12 @@ func (s *Service) prepareNetwork(ctx context.Context) error {
 		NetworkSettings struct{ Networks map[string]json.RawMessage }
 	}
 	if json.Unmarshal(body, &panels) != nil || len(panels) != 1 || !panels[0].State.Running ||
-		panels[0].Config.Labels["com.docker.compose.project"] != "kejilion-panel" ||
+		!composeProjectPattern.MatchString(panels[0].Config.Labels["com.docker.compose.project"]) ||
 		panels[0].Config.Labels["com.docker.compose.service"] != "panel" {
 		return errors.New("browser_panel_unsupported")
 	}
 	panel := panels[0]
+	project := panel.Config.Labels["com.docker.compose.project"]
 	// The existing read-only runtime mount is required to deliver the token.
 	parent := filepath.Dir(s.config.RuntimeDir)
 	mounted := false
@@ -106,7 +110,7 @@ func (s *Service) prepareNetwork(ctx context.Context) error {
 	}
 	body, err = s.docker(ctx, "network", "inspect", controlNetwork)
 	if err != nil {
-		if _, err = s.docker(ctx, "network", "create", "--internal", "--label", "com.docker.compose.project=kejilion-panel", "--label", "com.docker.compose.network=browser-control", controlNetwork); err != nil {
+		if _, err = s.docker(ctx, "network", "create", "--internal", "--label", "com.docker.compose.project="+project, "--label", "com.docker.compose.network=browser-control", controlNetwork); err != nil {
 			return errors.New("browser_network_create_failed")
 		}
 		body, err = s.docker(ctx, "network", "inspect", controlNetwork)
@@ -121,7 +125,7 @@ func (s *Service) prepareNetwork(ctx context.Context) error {
 		Containers map[string]struct{ Name string }
 	}
 	if json.Unmarshal(body, &networks) != nil || len(networks) != 1 || !networks[0].Internal || networks[0].Driver != "bridge" ||
-		networks[0].Labels["com.docker.compose.project"] != "kejilion-panel" || networks[0].Labels["com.docker.compose.network"] != "browser-control" {
+		networks[0].Labels["com.docker.compose.project"] != project || networks[0].Labels["com.docker.compose.network"] != "browser-control" {
 		return errors.New("browser_network_invalid")
 	}
 	for id, c := range networks[0].Containers {

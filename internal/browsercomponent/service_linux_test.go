@@ -3,6 +3,7 @@ package browsercomponent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,6 +19,7 @@ type fakeRunner struct {
 	networkMissing                                 bool
 	unsafeNetwork                                  bool
 	runtimeParent                                  string
+	project, networkProject                        string
 	calls                                          []string
 }
 
@@ -44,7 +46,7 @@ func (f *fakeRunner) Run(_ context.Context, name string, args ...string) ([]byte
 		return nil, nil
 	}
 	if strings.Contains(a, "container inspect kejilion-panel") {
-		return []byte(`[{"Id":"panel-id","Config":{"Labels":{"com.docker.compose.project":"kejilion-panel","com.docker.compose.service":"panel"}},"State":{"Running":true},"Mounts":[{"Source":"` + f.runtimeParent + `","Destination":"/run/kejilion-panel","RW":false}],"NetworkSettings":{"Networks":{}}}]`), nil
+		return []byte(`[{"Id":"panel-id","Config":{"Labels":{"com.docker.compose.project":"` + f.project + `","com.docker.compose.service":"panel"}},"State":{"Running":true},"Mounts":[{"Source":"` + f.runtimeParent + `","Destination":"/run/kejilion-panel","RW":false}],"NetworkSettings":{"Networks":{}}}]`), nil
 	}
 	if strings.Contains(a, "network inspect") {
 		if f.networkMissing {
@@ -53,7 +55,7 @@ func (f *fakeRunner) Run(_ context.Context, name string, args ...string) ([]byte
 		if f.unsafeNetwork {
 			return []byte(`[{"Internal":false,"Driver":"bridge"}]`), nil
 		}
-		return []byte(`[{"Internal":true,"Driver":"bridge","Labels":{"com.docker.compose.project":"kejilion-panel","com.docker.compose.network":"browser-control"},"Containers":{}}]`), nil
+		return []byte(`[{"Internal":true,"Driver":"bridge","Labels":{"com.docker.compose.project":"` + f.networkProject + `","com.docker.compose.network":"browser-control"},"Containers":{}}]`), nil
 	}
 	if strings.Contains(a, "network create") {
 		f.networkMissing = false
@@ -97,7 +99,7 @@ func fixture(t *testing.T) (*Service, *fakeRunner) {
 		t.Skip("private Agent state requires root")
 	}
 	dir := t.TempDir()
-	f := &fakeRunner{runtimeParent: dir}
+	f := &fakeRunner{runtimeParent: dir, project: "kejilion-panel", networkProject: "kejilion-panel"}
 	return New(Config{StateDir: filepath.Join(dir, "state"), RuntimeDir: filepath.Join(dir, "runtime"), Executable: "/usr/bin/kejilion-agent", Runner: f}), f
 }
 
@@ -119,6 +121,59 @@ func TestInstallCreatesMissingControlNetwork(t *testing.T) {
 	calls := strings.Join(f.calls, "\n")
 	if !strings.Contains(calls, "network create --internal") || !strings.Contains(calls, "network connect "+controlNetwork+" panel-id") {
 		t.Fatal(calls)
+	}
+}
+
+func TestInstallSupportsPanelComposeProjects(t *testing.T) {
+	for _, tc := range []struct {
+		project string
+		missing bool
+	}{{"kpanel", false}, {"kpanel", true}, {"kejilion-panel", true}, {"custom-panel_1", true}} {
+		t.Run(fmt.Sprintf("%s-missing-%t", tc.project, tc.missing), func(t *testing.T) {
+			s, f := fixture(t)
+			f.project, f.networkProject = tc.project, tc.project
+			f.networkMissing = tc.missing
+			ctx := context.Background()
+			v, err := s.Snapshot(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			j, err := s.Start(ctx, contract.BrowserComponentRequest{Action: "install", ExpectedResourceVersion: v.ResourceVersion})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = s.RunJob(ctx, j.ID); err != nil {
+				t.Fatal(err)
+			}
+			if tc.missing && !strings.Contains(strings.Join(f.calls, "\n"), "com.docker.compose.project="+tc.project) {
+				t.Fatal(f.calls)
+			}
+		})
+	}
+}
+
+func TestInstallRejectsMismatchedNetworkProject(t *testing.T) {
+	s, f := fixture(t)
+	f.project, f.networkProject = "kpanel", "other"
+	err := s.prepareNetwork(context.Background())
+	if err == nil || err.Error() != "browser_network_invalid" {
+		t.Fatal(err)
+	}
+	if strings.Contains(strings.Join(f.calls, "\n"), "network connect") {
+		t.Fatal(f.calls)
+	}
+}
+
+func TestInstallRejectsInvalidComposeProject(t *testing.T) {
+	for _, project := range []string{"", "-panel", "KPanel", "panel;echo"} {
+		s, f := fixture(t)
+		f.project = project
+		if err := s.prepareNetwork(context.Background()); err == nil || err.Error() != "browser_panel_unsupported" {
+			t.Fatal(project, err)
+		}
+		if strings.Contains(strings.Join(f.calls, "\n"), "network create") {
+			t.Fatal(f.calls)
+		}
 	}
 }
 

@@ -60,6 +60,7 @@ var (
 )
 
 type Server struct {
+	failures                failureDiagnostics
 	browserCancels          map[uint64]context.CancelFunc
 	browserNext             uint64
 	browserGate             chan struct{}
@@ -359,6 +360,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.requestsMu.Lock()
 	if s.requestsClosed {
 		s.requestsMu.Unlock()
+		w.Header().Set("Retry-After", "1")
+		s.failures.record("panel", "panel_restarting", "", http.StatusServiceUnavailable)
 		http.Error(w, "Panel is restarting", http.StatusServiceUnavailable)
 		return
 	}
@@ -1081,7 +1084,7 @@ func isStaticAssetPath(requestPath string) bool {
 		return true
 	}
 	switch requestPath {
-	case "/favicon.ico", "/favicon.svg", "/apple-touch-icon.png", "/manifest.webmanifest", "/robots.txt":
+	case "/favicon.ico", "/favicon.svg", "/apple-touch-icon.png", "/manifest.webmanifest", "/robots.txt", "/bootstrap-recovery.js":
 		return true
 	default:
 		return false
@@ -1360,6 +1363,9 @@ func (s *Server) handleAgentProxy(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) writeAgentResponse(w http.ResponseWriter, r *http.Request, response AgentResponse) {
+	if response.StatusCode >= 500 {
+		s.failures.record("agent", "agent_response_error", requestID(r), response.StatusCode)
+	}
 	w.Header().Set("Content-Type", response.ContentType)
 	if len(response.Body) >= 1024 &&
 		r.Method != http.MethodHead &&
@@ -1875,6 +1881,9 @@ func (s *Server) writeValidationProblem(w http.ResponseWriter, r *http.Request, 
 }
 
 func (s *Server) writeProblem(w http.ResponseWriter, r *http.Request, status int, code, title, detail string) {
+	if status >= 500 {
+		s.failures.record("panel", code, requestID(r), status)
+	}
 	writeProblemJSON(w, contract.Problem{
 		Type: "about:blank", Title: title, Status: status, Code: code,
 		Detail: detail, RequestID: requestID(r), Retryable: status >= 500,
@@ -1950,7 +1959,7 @@ func (s *Server) serveStaticFile(
 	candidate string,
 	requestPath string,
 ) {
-	if filepath.Base(candidate) == "index.html" || requestPath == "appearance-init.js" {
+	if filepath.Base(candidate) == "index.html" || requestPath == "appearance-init.js" || requestPath == "bootstrap-recovery.js" {
 		w.Header().Set("Cache-Control", "no-cache")
 	} else if strings.HasPrefix(filepath.ToSlash(requestPath), "assets/") {
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")

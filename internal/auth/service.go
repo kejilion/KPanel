@@ -281,9 +281,6 @@ func (s *Service) Login(ip, username, password, secondFactor string) (Credential
 		return Credentials{}, &RateLimitError{RetryAfter: s.config.LoginWindow}
 	}
 	defer s.releaseLogin(ipKey, accountKey)
-	if !s.admitPasswordComputation(ipKey) {
-		return Credentials{}, &RateLimitError{RetryAfter: s.config.LoginWindow}
-	}
 	select {
 	case s.hashSlots <- struct{}{}:
 		defer func() { <-s.hashSlots }()
@@ -303,6 +300,11 @@ func (s *Service) Login(ip, username, password, secondFactor string) (Credential
 	if inputInvalid {
 		passwordToVerify = "invalid-input"
 		hash = s.dummyHash
+	}
+	// Charge only work that will actually run. A busy global slot must not
+	// turn a one-second retry into an exhausted fifteen-minute source budget.
+	if !s.admitPasswordComputation(ipKey) {
+		return Credentials{}, &RateLimitError{RetryAfter: s.config.LoginWindow}
 	}
 	valid, verifyErr := s.hasher.Verify(passwordToVerify, hash)
 	if inputInvalid || userErr != nil || verifyErr != nil || !valid {
@@ -505,9 +507,6 @@ func (s *Service) verifyCurrentPassword(userID, currentPassword string) (store.U
 // so an authenticated session cannot use them as an unthrottled password
 // oracle. slotHeld reports that the caller already holds a hash slot.
 func (s *Service) verifyCurrentPasswordWithSlot(userID, currentPassword string, slotHeld bool) (store.User, error) {
-	if !s.admitPasswordComputation("user:" + userID) {
-		return store.User{}, &RateLimitError{RetryAfter: s.config.LoginWindow}
-	}
 	now := s.now()
 	reauthKey := "reauth:" + userID
 	if !s.reserveAuthenticationAttempt(reauthKey, now.Add(-s.config.LoginWindow), s.config.MaxLoginFailures) {
@@ -537,6 +536,9 @@ func (s *Service) verifyCurrentPasswordWithSlot(userID, currentPassword string, 
 			return store.User{}, recordErr
 		}
 		return store.User{}, ErrInvalidCurrentPassword
+	}
+	if !s.admitPasswordComputation("user:" + userID) {
+		return store.User{}, &RateLimitError{RetryAfter: s.config.LoginWindow}
 	}
 	valid, err := s.hasher.Verify(currentPassword, user.PasswordHash)
 	if err != nil || !valid {

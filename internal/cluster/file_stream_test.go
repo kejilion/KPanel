@@ -196,6 +196,7 @@ func TestFileStreamLightUsesIndependentOutboundSockets(t *testing.T) {
 	defer cancel()
 	relay, _ := NewFileRelayClient(f.server.Client())
 	done := make(chan error, 1)
+	ready := make(chan struct{}, 1)
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			_, _ = w.Write([]byte("light-directory"))
@@ -205,9 +206,23 @@ func TestFileStreamLightUsesIndependentOutboundSockets(t *testing.T) {
 			panic(http.ErrAbortHandler)
 		}
 	})
+	wrongKey, _ := GenerateFederationV2Keypair()
+	if err := relay.RunFileStream(ctx, f.server.URL, enrolled.NodeID, enrolled.TargetNodeID, wrongKey, peer, handler, func() { ready <- struct{}{} }); err == nil {
+		t.Fatal("invalid identity unexpectedly connected")
+	}
+	select {
+	case <-ready:
+		t.Fatal("invalid identity reported an authenticated connection")
+	default:
+	}
 	go func() {
-		done <- relay.RunFileStream(ctx, f.server.URL, enrolled.NodeID, enrolled.TargetNodeID, key, peer, handler)
+		done <- relay.RunFileStream(ctx, f.server.URL, enrolled.NodeID, enrolled.TargetNodeID, key, peer, handler, func() { ready <- struct{}{} })
 	}()
+	select {
+	case <-ready:
+	case <-time.After(3 * time.Second):
+		t.Fatal("authenticated connection did not report readiness")
+	}
 	deadline := time.Now().Add(3 * time.Second)
 	for !f.service.fileStreamHub.available(enrolled.NodeID) && time.Now().Before(deadline) {
 		time.Sleep(5 * time.Millisecond)
@@ -240,7 +255,7 @@ func TestFileStreamLightUsesIndependentOutboundSockets(t *testing.T) {
 			t.Fatal("light directory mismatch")
 		}
 	}
-	if f.streamCalls.Load() != 4 || f.legacyCalls.Load() != 0 {
+	if f.streamCalls.Load() != 5 || f.legacyCalls.Load() != 0 {
 		t.Fatalf("stream=%d legacy=%d", f.streamCalls.Load(), f.legacyCalls.Load())
 	}
 	cancel()

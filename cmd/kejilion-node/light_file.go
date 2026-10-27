@@ -19,7 +19,7 @@ import (
 const (
 	lightFileUnsupportedRetryMin = time.Second
 	lightFileUnsupportedRetryMax = 5 * time.Minute
-	lightFileFailureRetry        = 5 * time.Second
+	lightFileFailureRetry        = time.Minute
 	lightFileEventLimit          = 16
 	// Match the full Panel relay's maximum session lifetime, including while
 	// the center is disconnected and cannot send a cancellation.
@@ -145,8 +145,8 @@ func (control *lightFileControl) retryDelay(err error) time.Duration {
 	}
 	// Recover one transient loss promptly, but back off persistent failures.
 	// Pending events and command IDs are retained until authenticated success.
-	delay := time.Second << min(control.failures, 3)
-	if control.failures < 3 {
+	delay := time.Second << min(control.failures, 6)
+	if control.failures < 6 {
 		control.failures++
 	}
 	return min(delay, lightFileFailureRetry)

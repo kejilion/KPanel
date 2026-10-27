@@ -4,13 +4,62 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net/http"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"github.com/kejilion/kejilion-panel/internal/cluster"
 	"github.com/kejilion/kejilion-panel/internal/terminal"
 )
+
+type terminalRetryTransport func(*http.Request) (*http.Response, error)
+
+func (transport terminalRetryTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	return transport(request)
+}
+
+func TestLightTerminalAuthenticationFailuresBackOff(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows capability admission uses a separate authenticated transport")
+	}
+	synctest.Test(t, func(t *testing.T) {
+		key, err := cluster.GenerateFederationV2Keypair()
+		if err != nil {
+			t.Fatal(err)
+		}
+		requests := make(chan time.Time)
+		client := &http.Client{Transport: terminalRetryTransport(func(request *http.Request) (*http.Response, error) {
+			requests <- time.Now()
+			return &http.Response{StatusCode: http.StatusUnauthorized, Body: io.NopCloser(strings.NewReader("")), Header: make(http.Header)}, nil
+		})}
+		relay, err := cluster.NewTerminalRelayClient(client)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		manager := terminal.New(terminal.Config{})
+		defer manager.CloseAll()
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			runLightTerminalControl(ctx, nodeConfig{Origin: "https://example.com", NodeID: strings.Repeat("a", 32), TargetNodeID: strings.Repeat("b", 32)}, terminalIdentity{Key: key, Peer: key.Public}, relay, manager)
+		}()
+		previous := <-requests
+		for _, expected := range []time.Duration{5 * time.Second, 10 * time.Second, 20 * time.Second, 40 * time.Second, time.Minute, time.Minute} {
+			current := <-requests
+			if delay := current.Sub(previous); delay != expected {
+				t.Fatalf("retry delay = %v, want %v", delay, expected)
+			}
+			previous = current
+		}
+		cancel()
+		<-done
+	})
+}
 
 type lightTerminalTestProcess struct {
 	reader *io.PipeReader

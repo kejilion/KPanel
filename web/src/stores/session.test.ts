@@ -12,6 +12,15 @@ vi.mock('@/lib/loginAppearance', () => ({ applyLoginAppearance: mocks.apply, can
 vi.mock('@/lib/preferencesSync', () => ({ startPreferencesSync: mocks.startPreferences, stopPreferencesSync: mocks.stopPreferences }))
 import { useSession } from './session'
 
+it('passes a finite timeout to bootstrap status so a stalled connection can recover', async () => {
+  const timeout = vi.spyOn(AbortSignal, 'timeout')
+  mocks.status.mockResolvedValue({ setupRequired: false, authenticated: false })
+  await useSession().refresh(true)
+  expect(timeout).toHaveBeenCalledWith(10_000)
+  expect(mocks.status).toHaveBeenLastCalledWith(expect.any(AbortSignal))
+  timeout.mockRestore()
+})
+
 const appearance = { configured: true, resourceVersion: 'sha256:current', theme: 'dark' as const, colors: null, wallpaper: 'prism', classicLevel: 'off' as const }
 const guest: AuthStatus = {
   setupRequired: false, authenticated: false,
