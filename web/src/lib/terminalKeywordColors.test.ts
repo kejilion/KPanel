@@ -14,13 +14,13 @@ function fixture(texts = ['ERROR WARNING SUCCESS']) {
       const cell = { getWidth: () => width, getChars: () => char, isFgDefault: () => true, isInverse: () => false }
       return width === 2 ? [cell, { ...cell, getWidth: () => 0 }] : [cell]
     })
-    return { length: cells.length, getCell: (x: number) => cells[x], cells }
+    return { length: cells.length, getCell: (x: number) => cells[x], cells, isWrapped: false }
   })
   const buffer = { type: 'normal', viewportY: 0, baseY: 0, cursorY: 0, length: lines.length, getLine: vi.fn((row: number) => lines[row]) }
   const markers: Array<{ line: number; isDisposed: boolean; dispose: () => void }> = []
   const registerDecoration = vi.fn((_options: IDecorationOptions) => ({ dispose: vi.fn() }))
   const terminal = {
-    cols: 80, rows: 24, buffer: { active: buffer, onBufferChange: subscribe('buffer') },
+    cols: Math.max(80, ...lines.map(line => line.length)), rows: 24, buffer: { active: buffer, onBufferChange: subscribe('buffer') },
     options: { theme: { red: '#ff0000', yellow: '#ffff00', green: '#00ff00' } },
     onWriteParsed: subscribe('write'), onScroll: subscribe('scroll'), onResize: subscribe('resize'), onRender: subscribe('render'),
     registerMarker: (offset: number) => {
@@ -69,8 +69,32 @@ describe('terminal keyword colors', () => {
   it('keeps offsets exact and excludes adjacent punctuation and URL path fragments', () => {
     const text = '失败：(/var/log/app.log), ip=192.168.1.1:80 https://example.com/path'
     const tokens = terminalColorTokens(text)
-    expect(tokens.map(token => token.text)).toEqual(['失败', '/var/log/app.log', '192.168.1.1', '80'])
+    expect(tokens.map(token => token.text)).toEqual(['失败', '/var/log/app.log', '192.168.1.1', '80', 'https://example.com/path'])
     expect(tokens.every(token => text.slice(token.start, token.start + token.text.length) === token.text)).toBe(true)
+  })
+
+  it('colors complete HTTP(S) URLs uniformly instead of their embedded IP, port, path or status words', () => {
+    const text = 'See https://127.0.0.1:8443/ERROR?q=OK and (http://[::1]:8080/path).'
+    expect(terminalColorTokens(text).map(token => [token.text, token.color])).toEqual([
+      ['https://127.0.0.1:8443/ERROR?q=OK', 'blue'], ['http://[::1]:8080/path', 'blue'],
+    ])
+  })
+
+  it('keeps naturally wrapped URLs uniform, including when their first row is above the viewport', () => {
+    const url = 'https://host:8080/ERROR?q=OK'
+    const f = fixture([url.slice(0, 20), url.slice(20)])
+    f.terminal.cols = 20
+    f.lines[1]!.isWrapped = true
+    vi.advanceTimersByTime(100)
+    expect(f.options().map(({ x, width, foregroundColor }) => [x, width, foregroundColor])).toEqual([
+      [0, 20, '#76a4c7'], [0, url.length - 20, '#76a4c7'],
+    ])
+    f.buffer.viewportY = 1
+    f.events.scroll!()
+    vi.advanceTimersByTime(100)
+    expect(f.options().at(-1)!.foregroundColor).toBe('#76a4c7')
+    expect(f.markers.filter(marker => !marker.isDisposed).map(marker => marker.line)).toEqual([1])
+    f.addon.dispose()
   })
 
   it('preserves native foreground colors on addresses and paths too', () => {
