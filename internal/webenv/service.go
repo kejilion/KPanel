@@ -78,11 +78,11 @@ type Protection struct {
 }
 
 type BanMigration struct {
-	State                  string `json:"state"`
-	ImportedRecords        int    `json:"importedRecords"`
+	State                   string `json:"state"`
+	ImportedRecords         int    `json:"importedRecords"`
 	APIJailEnabled          bool   `json:"apiJailEnabled"`
-	LegacyCFDetected       bool   `json:"legacyCFDetected"`
-	CFReentryRequired      bool   `json:"cfReentryRequired"`
+	LegacyCFDetected        bool   `json:"legacyCFDetected"`
+	CFReentryRequired       bool   `json:"cfReentryRequired"`
 	LegacyReconcilerStopped bool   `json:"legacyReconcilerStopped"`
 }
 
