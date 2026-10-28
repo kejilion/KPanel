@@ -86,20 +86,35 @@ func (s *Server) handleBrowser(w http.ResponseWriter, r *http.Request) {
 		client := &http.Client{Timeout: 3 * time.Second, Transport: &http.Transport{Proxy: nil, DisableKeepAlives: true}, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 		response, err := client.Do(request)
 		ready := err == nil && response.StatusCode == 200
+		transport := ""
 		if response != nil {
 			defer response.Body.Close()
 			var health struct {
-				Ready bool `json:"ready"`
+				Ready     bool   `json:"ready"`
+				Transport string `json:"transport"`
 			}
 			if json.NewDecoder(io.LimitReader(response.Body, 1024)).Decode(&health) != nil || !health.Ready {
 				ready = false
 			}
+			transport = health.Transport
 		}
-		s.writeJSON(w, 200, map[string]any{"ready": ready, "reason": map[bool]string{true: "", false: "browser_unavailable"}[ready], "maxTabs": webbrowser.MaxTabs})
+		reason := "browser_unavailable"
+		if ready && transport != "vnc" {
+			ready, reason = false, "browser_incompatible"
+		}
+		if ready {
+			reason = ""
+		}
+		s.writeJSON(w, 200, map[string]any{"ready": ready, "reason": reason, "transport": transport, "maxTabs": webbrowser.MaxTabs})
 		return
 	}
-	workspace := strings.TrimPrefix(r.URL.Path, "/api/v1/browser/stream/")
-	if !strings.HasPrefix(r.URL.Path, "/api/v1/browser/stream/") || !browserWorkspacePattern.MatchString(workspace) {
+	vnc := strings.HasPrefix(r.URL.Path, "/api/v1/browser/vnc/")
+	prefix := "/api/v1/browser/stream/"
+	if vnc {
+		prefix = "/api/v1/browser/vnc/"
+	}
+	workspace := strings.TrimPrefix(r.URL.Path, prefix)
+	if !strings.HasPrefix(r.URL.Path, prefix) || !browserWorkspacePattern.MatchString(workspace) {
 		s.writeProblem(w, r, 404, "route_not_found", "Route not found", "")
 		return
 	}
@@ -116,9 +131,13 @@ func (s *Server) handleBrowser(w http.ResponseWriter, r *http.Request) {
 	s.browserCancels[connectionID] = cancel
 	s.requestsMu.Unlock()
 	defer func() { s.requestsMu.Lock(); delete(s.browserCancels, connectionID); s.requestsMu.Unlock() }()
+	gate := s.browserGate
+	if vnc {
+		gate = s.browserVNCGate
+	}
 	select {
-	case s.browserGate <- struct{}{}:
-		defer func() { <-s.browserGate }()
+	case gate <- struct{}{}:
+		defer func() { <-gate }()
 	default:
 		s.writeProblem(w, r, 429, "browser_busy", "Browser capacity reached", "")
 		return
@@ -142,7 +161,11 @@ func (s *Server) handleBrowser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	identity := sha256.Sum256([]byte(token + ":" + workspace))
-	request, err := s.browserServiceRequest(ctx, "/v1/sessions/"+hex.EncodeToString(identity[:]))
+	servicePath := "/v1/sessions/" + hex.EncodeToString(identity[:])
+	if vnc {
+		servicePath += "/vnc"
+	}
+	request, err := s.browserServiceRequest(ctx, servicePath)
 	if err != nil {
 		_ = ws.Close(websocket.StatusTryAgainLater, "browser_unavailable")
 		return
@@ -176,6 +199,10 @@ func (s *Server) handleBrowser(w http.ResponseWriter, r *http.Request) {
 			_ = upstream.Write(finish, websocket.MessageText, []byte(`{"type":"end"}`))
 		}
 	}()
+	if vnc {
+		s.handleBrowserVNC(ctx, cancel, ws, upstream, token, session.ExpiresAt)
+		return
+	}
 	upstream.SetReadLimit(webbrowser.MaxEventBytes)
 	done := make(chan struct{})
 	go func() {
@@ -232,6 +259,82 @@ func (s *Server) handleBrowser(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		if _, err = webbrowser.DecodeCommand(data); err != nil {
+			break
+		}
+		write, stop := context.WithTimeout(ctx, 5*time.Second)
+		err = upstream.Write(write, kind, data)
+		stop()
+		if err != nil {
+			break
+		}
+	}
+	cancel()
+	_ = ws.Close(websocket.StatusNormalClosure, "disconnected")
+	<-done
+}
+
+// The VNC relay accepts only bounded binary messages after the same session,
+// Origin and CSRF checks as the browser control stream. The upstream exposes a
+// private, view-only framebuffer tied to that exact control workspace.
+func (s *Server) handleBrowserVNC(ctx context.Context, cancel context.CancelFunc, ws, upstream *websocket.Conn, token string, expires time.Time) {
+	ws.SetReadLimit(64 << 10)
+	upstream.SetReadLimit(8 << 20)
+	ready, stop := context.WithTimeout(ctx, 5*time.Second)
+	err := ws.Write(ready, websocket.MessageText, []byte(`{"ready":true}`))
+	stop()
+	if err != nil {
+		return
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer cancel()
+		for {
+			kind, data, err := upstream.Read(ctx)
+			if err != nil || kind != websocket.MessageBinary {
+				return
+			}
+			write, stop := context.WithTimeout(ctx, 5*time.Second)
+			err = ws.Write(write, kind, data)
+			stop()
+			if err != nil {
+				return
+			}
+		}
+	}()
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if _, err := s.auth.Authenticate(token); err != nil || !time.Now().Before(expires) {
+					cancel()
+					return
+				}
+				ping, stop := context.WithTimeout(ctx, 5*time.Second)
+				err := ws.Ping(ping)
+				stop()
+				if err != nil {
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	window, count := time.Now(), 0
+	for {
+		kind, data, err := ws.Read(ctx)
+		if err != nil || kind != websocket.MessageBinary {
+			break
+		}
+		if time.Since(window) >= time.Second {
+			window, count = time.Now(), 0
+		}
+		count++
+		if count > 240 {
 			break
 		}
 		write, stop := context.WithTimeout(ctx, 5*time.Second)

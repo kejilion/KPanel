@@ -16,6 +16,8 @@ KPanel.
 | `github.com/coder/websocket` | `v1.8.15` | ISC | [`LICENSES/coder-websocket-ISC.txt`](LICENSES/coder-websocket-ISC.txt) |
 | `github.com/chromedp/chromedp` (optional browser service) | `v0.21.0` | MIT | [`LICENSES/chromedp-MIT.txt`](LICENSES/chromedp-MIT.txt) |
 | `github.com/chromedp/cdproto` | `v0.157.8` | MIT | [`LICENSES/cdproto-MIT.txt`](LICENSES/cdproto-MIT.txt) |
+| [TigerVNC](https://github.com/TigerVNC/tigervnc) (optional browser image) | Alpine package version recorded in `/usr/share/kpanel-browser-packages.txt` | GPL-2.0-or-later and component notices | [`LICENSES/GPL-2.0.txt`](LICENSES/GPL-2.0.txt); [source and build recipe](https://git.alpinelinux.org/aports/tree/community/tigervnc?h=3.24-stable) |
+| [Openbox](http://openbox.org/) (optional browser image) | Alpine package version recorded in `/usr/share/kpanel-browser-packages.txt` | GPL-2.0-or-later | [`LICENSES/GPL-2.0.txt`](LICENSES/GPL-2.0.txt); [source and build recipe](https://git.alpinelinux.org/aports/tree/community/openbox?h=3.24-stable) |
 | `github.com/go-json-experiment/json` | `44df1a37e875` | BSD-3-Clause | [`LICENSES/go-json-experiment-BSD-3-Clause.txt`](LICENSES/go-json-experiment-BSD-3-Clause.txt) |
 | `github.com/anacrolix/dht/v2` | `v2.23.0` | MPL-2.0 | [`LICENSES/anacrolix-dht-MPL-2.0.txt`](LICENSES/anacrolix-dht-MPL-2.0.txt) |
 | `github.com/anacrolix/log` | `v0.17.1-0.20251118025802-918f1157b7bb` | MPL-2.0 | [`LICENSES/anacrolix-log-MPL-2.0.txt`](LICENSES/anacrolix-log-MPL-2.0.txt) |
@@ -30,7 +32,7 @@ KPanel.
 | `@xterm/xterm` | `6.0.0` | MIT | [`LICENSES/xterm-MIT.txt`](LICENSES/xterm-MIT.txt) |
 | `circle-flags` | `2.8.3` | MIT | [`LICENSES/circle-flags-MIT.txt`](LICENSES/circle-flags-MIT.txt) |
 | `simple-icons` | `16.27.1` | CC0-1.0; referenced brands retain their trademark rights | [`LICENSES/simple-icons-CC0-1.0.txt`](LICENSES/simple-icons-CC0-1.0.txt) |
-| `@novnc/novnc` | `1.7.0` (unmodified; lazy console client) | MPL-2.0 with bundled BSD notices | [MPL-2.0](LICENSES/noVNC-MPL-2.0.txt), [BSD](LICENSES/noVNC-BSD-3-Clause.txt), [pako](LICENSES/noVNC-pako.txt) |
+| `@novnc/novnc` | `1.7.0` (unmodified; lazy console and browser client) | MPL-2.0 with bundled BSD notices | [MPL-2.0](LICENSES/noVNC-MPL-2.0.txt), [BSD](LICENSES/noVNC-BSD-3-Clause.txt), [pako](LICENSES/noVNC-pako.txt) |
 | `vue` | `3.5.40` | MIT | [`LICENSES/vue-MIT.txt`](LICENSES/vue-MIT.txt) |
 | `vue-router` | `4.6.4` | MIT | [`LICENSES/vue-router-MIT.txt`](LICENSES/vue-router-MIT.txt) |
 

@@ -64,6 +64,7 @@ type Server struct {
 	browserCancels          map[uint64]context.CancelFunc
 	browserNext             uint64
 	browserGate             chan struct{}
+	browserVNCGate          chan struct{}
 	vmConsoleGate           chan struct{}
 	siteTraffic             *trafficHistory.Manager
 	requestsMu              sync.Mutex
@@ -281,6 +282,7 @@ func NewServer(config Config, authService *auth.Service, storage *store.Store, a
 	server := &Server{
 		browserCancels:      make(map[uint64]context.CancelFunc),
 		browserGate:         make(chan struct{}, 2),
+		browserVNCGate:      make(chan struct{}, 2),
 		vmConsoleGate:       make(chan struct{}, 4),
 		selfTLS:             selfTLS,
 		passkeys:            passkeys,
@@ -658,7 +660,7 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		s.handleSystemServiceAction(w, r)
 	case r.URL.Path == "/api/v1/browser/component" || r.URL.Path == "/api/v1/browser/component/actions":
 		s.handleBrowserComponent(w, r)
-	case r.URL.Path == "/api/v1/browser/status" || strings.HasPrefix(r.URL.Path, "/api/v1/browser/stream/"):
+	case r.URL.Path == "/api/v1/browser/status" || strings.HasPrefix(r.URL.Path, "/api/v1/browser/stream/") || strings.HasPrefix(r.URL.Path, "/api/v1/browser/vnc/"):
 		s.handleBrowser(w, r)
 	case r.URL.Path == "/api/v1/virtual-machines" || strings.HasPrefix(r.URL.Path, "/api/v1/virtual-machines/"):
 		s.handleVirtualMachines(w, r)

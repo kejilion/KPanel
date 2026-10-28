@@ -32,7 +32,7 @@ RUN --mount=type=secret,id=https_proxy,required=false \
     sed -i "s|https://dl-cdn.alpinelinux.org/alpine|$ALPINE_MIRROR|" /etc/apk/repositories; \
     cp /etc/ssl/certs/ca-certificates.crt /tmp/stock-ca; \
     if [ -f /run/secrets/proxy_ca ]; then cp /run/secrets/proxy_ca /etc/ssl/certs/ca-certificates.crt; fi; \
-    apk --cache-dir /var/cache/apk --update-cache add ca-certificates chromium chromium-swiftshader font-noto-cjk font-liberation tini \
+    apk --cache-dir /var/cache/apk --update-cache add ca-certificates chromium chromium-swiftshader font-noto-cjk font-liberation tini tigervnc openbox xauth xprop xrandr \
     && cp /tmp/stock-ca /etc/ssl/certs/ca-certificates.crt \
     && rm /tmp/stock-ca \
     && apk info -vv | sort > /usr/share/kpanel-browser-packages.txt \
@@ -45,7 +45,7 @@ WORKDIR /tmp
 
 FROM browser-base AS test
 COPY --from=build --chmod=0555 /out/browser-tests /usr/local/bin/browser-tests
-ENV KPANEL_TEST_CHROME=/usr/bin/chromium KPANEL_TEST_SANDBOX=1
+ENV KPANEL_TEST_CHROME=/usr/bin/chromium KPANEL_TEST_SANDBOX=1 KPANEL_TEST_VNC=1
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/browser-tests"]
 CMD ["-test.v", "-test.timeout=180s"]
 

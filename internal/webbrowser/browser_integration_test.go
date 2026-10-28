@@ -3,9 +3,8 @@ package webbrowser
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
-	"image/jpeg"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -37,7 +36,7 @@ func TestRealBrowserEnterSubmitsAndInsertsNewline(t *testing.T) {
 	}
 	execute(Command{Type: "new", URL: app.URL})
 	deadline := time.Now().Add(8 * time.Second)
-	for s.Snapshot().Tabs[0].Title != "Input" && time.Now().Before(deadline) {
+	for (s.Snapshot().Tabs[0].Title != "Input" || s.Snapshot().Tabs[0].Loading) && time.Now().Before(deadline) {
 		time.Sleep(30 * time.Millisecond)
 	}
 	click := func(y float64) {
@@ -56,7 +55,8 @@ func TestRealBrowserEnterSubmitsAndInsertsNewline(t *testing.T) {
 		time.Sleep(30 * time.Millisecond)
 	}
 	if s.Snapshot().Tabs[0].Title != "Submitted:query" {
-		t.Fatal("Enter did not submit the form")
+		state, _ := chromedp.Run(s.selected(s.active).ctx, chromedp.Evaluate[string](`JSON.stringify({title:document.title,active:document.activeElement?.outerHTML,value:document.querySelector('input')?.value,ready:document.readyState})`))
+		t.Fatalf("Enter did not submit the form: %s", state)
 	}
 	click(130)
 	execute(Command{Type: "text", Text: "first"})
@@ -65,6 +65,57 @@ func TestRealBrowserEnterSubmitsAndInsertsNewline(t *testing.T) {
 	value, err := chromedp.Run(s.selected(s.active).ctx, chromedp.Evaluate[string](`document.querySelector('textarea').value`))
 	if err != nil || value != "first\nsecond" {
 		t.Fatalf("Enter did not insert one newline: %q %v", value, err)
+	}
+}
+
+func TestRealBrowserWindowManagerFailureEndsSession(t *testing.T) {
+	executable := os.Getenv("KPANEL_TEST_CHROME")
+	if executable == "" {
+		t.Skip("set KPANEL_TEST_CHROME")
+	}
+	s := newBrowserSession(context.Background())
+	defer s.Close()
+	if err := s.Execute(Command{Type: "new"}, executable, nil); err != nil {
+		t.Fatal(err)
+	}
+	s.mu.Lock()
+	manager := s.display.wm.Process
+	s.mu.Unlock()
+	if err := manager.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case event := <-s.notices:
+		if event.Code != "browser_disconnected" {
+			t.Fatalf("unexpected notice: %v", event)
+		}
+	case <-time.After(8 * time.Second):
+		t.Fatal("window manager failure did not end the session")
+	}
+	if state := s.Snapshot(); len(state.Tabs) != 0 {
+		t.Fatal("window manager failure retained browser tabs")
+	}
+}
+
+func TestRealBrowserActivationFailureEndsSession(t *testing.T) {
+	executable := os.Getenv("KPANEL_TEST_CHROME")
+	if executable == "" {
+		t.Skip("set KPANEL_TEST_CHROME")
+	}
+	s := newBrowserSession(context.Background())
+	defer s.Close()
+	if err := s.Execute(Command{Type: "new"}, executable, nil); err != nil {
+		t.Fatal(err)
+	}
+	s.mu.Lock()
+	tab := s.selected(s.active)
+	tab.cancel()
+	tab.streaming = false
+	err := s.stream()
+	retained := s.root != nil || len(s.tabs) != 0
+	s.mu.Unlock()
+	if err == nil || retained {
+		t.Fatalf("failed activation retained workspace: err=%v retained=%v", err, retained)
 	}
 }
 
@@ -132,26 +183,13 @@ func TestRealBrowserWheelAndViewport(t *testing.T) {
 	if size != [2]int{1400, 800} {
 		t.Fatalf("selected tab kept stale viewport: %v", size)
 	}
-	// A static page need not emit another screencast frame. The guaranteed
-	// resume seed must itself contain the full current viewport pixels.
-	select {
-	case frame := <-s.keyframes:
-		if frame.Tab != first || frame.Width != 1400 || frame.Height != 800 {
-			t.Fatal("resumed static tab did not replace the previous tab's seed")
-		}
-		data, err := base64.StdEncoding.DecodeString(frame.Image)
-		if err != nil {
-			t.Fatal(err)
-		}
-		image, err := jpeg.DecodeConfig(bytes.NewReader(data))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if image.Width != 1400 || image.Height != 800 {
-			t.Fatalf("capture scaled inside viewport: %dx%d", image.Width, image.Height)
-		}
-	default:
-		t.Fatal("resumed static tab has no seed frame")
+	capture, err := chromedp.Run(tab.ctx, chromedp.CaptureScreenshot())
+	if err != nil {
+		t.Fatal(err)
+	}
+	image, err := png.DecodeConfig(bytes.NewReader(capture))
+	if err != nil || image.Width != 1400 || image.Height != 800 {
+		t.Fatalf("invalid selected tab viewport: %v %v", image, err)
 	}
 }
 
@@ -177,26 +215,6 @@ func TestRealBrowserNavigationCanStopAndPopupSelfClose(t *testing.T) {
 	defer app.Close()
 	s := newBrowserSession(context.Background())
 	defer s.Close()
-	frameContext, stopFrames := context.WithCancel(context.Background())
-	defer stopFrames()
-	frames := make(chan Event, 1)
-	go func() {
-		for {
-			select {
-			case <-frameContext.Done():
-				return
-			case event := <-s.frames:
-				select {
-				case <-frames:
-				default:
-				}
-				select {
-				case frames <- event:
-				default:
-				}
-			}
-		}
-	}()
 	ranges := []netip.Prefix{netip.MustParsePrefix("127.0.0.1/32")}
 	execute := func(c Command) {
 		t.Helper()
@@ -231,27 +249,24 @@ func TestRealBrowserNavigationCanStopAndPopupSelfClose(t *testing.T) {
 	execute(Command{Type: "new", URL: app.URL})
 	wait(func(e Event) bool { return len(e.Tabs) == 2 && e.Tabs[1].Title == "Main" })
 	active := s.Snapshot().Active
-	deadline := time.NewTimer(5 * time.Second)
-	defer deadline.Stop()
-	for {
-		select {
-		case <-deadline.C:
-			t.Fatal("closed popup prevented next tab frame")
-			return
-		case frame := <-frames:
-			if frame.Tab != active {
-				continue
-			}
-			data, err := base64.StdEncoding.DecodeString(frame.Image)
-			if err != nil {
-				t.Fatal(err)
-			}
-			image, err := jpeg.Decode(bytes.NewReader(data))
-			if err != nil || image.Bounds().Dx() < 320 {
-				t.Fatal("invalid new tab frame", err)
-			}
-			return
+	s.mu.Lock()
+	var activeContext context.Context
+	for _, tab := range s.tabs {
+		if tab.ID == active {
+			activeContext = tab.ctx
 		}
+	}
+	s.mu.Unlock()
+	if activeContext == nil {
+		t.Fatal("missing active tab")
+	}
+	capture, err := chromedp.Run(activeContext, chromedp.CaptureScreenshot())
+	if err != nil {
+		t.Fatal(err)
+	}
+	image, err := png.Decode(bytes.NewReader(capture))
+	if err != nil || image.Bounds().Dx() < 320 {
+		t.Fatal("invalid new tab capture", err)
 	}
 }
 
@@ -264,7 +279,11 @@ func TestRealBrowserRoundTrip(t *testing.T) {
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'")
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write([]byte(`<!doctype html><title>Fixture</title><style>body{margin:0}input{position:absolute;left:20px;top:20px;width:300px;height:40px}</style><input oninput="document.title=this.value"><a style="position:absolute;top:100px" href="/next">Next</a>`))
+		color := "17"
+		if r.URL.Path == "/second" {
+			color = "61"
+		}
+		_, _ = w.Write([]byte(`<!doctype html><title>Fixture</title><style>body{margin:0;background:rgb(` + color + `,` + color + `,` + color + `)}input{position:absolute;left:20px;top:20px;width:300px;height:40px}</style><input oninput="document.title=this.value"><a style="position:absolute;top:100px" href="/next">Next</a>`))
 	}))
 	defer app.Close()
 	service, err := NewService(executable, strings.Repeat("t", 48), []netip.Prefix{netip.MustParsePrefix("127.0.0.1/32")})
@@ -310,12 +329,39 @@ func TestRealBrowserRoundTrip(t *testing.T) {
 	}
 	readUntil(func(e Event) bool { return e.Type == "state" })
 	sendCommand(Command{Type: "new", URL: app.URL})
-	state := readUntil(func(e Event) bool { return e.Type == "state" && len(e.Tabs) > 0 && e.Tabs[0].Title == "Fixture" })
-	frame := readUntil(func(e Event) bool { return e.Type == "frame" })
-	data, _ := base64.StdEncoding.DecodeString(frame.Image)
-	image, err := jpeg.Decode(bytes.NewReader(data))
-	if err != nil || image.Bounds().Dx() < 300 {
-		t.Fatal("invalid browser frame", err)
+	state := readUntil(func(e Event) bool {
+		return e.Type == "state" && len(e.Tabs) > 0 && e.Tabs[0].Title == "Fixture" && !e.Tabs[0].Loading
+	})
+	vnc := openTestVNC(t, ctx, server.URL, strings.Repeat("a", 64), http.Header{"Authorization": {"Bearer " + service.Token}})
+	testFramebuffer(t, vnc)
+	waitTestGray(t, vnc, 17)
+	first := state.Active
+	sendCommand(Command{Type: "new", URL: app.URL + "/second"})
+	secondState := readUntil(func(e Event) bool {
+		return e.Type == "state" && len(e.Tabs) == 2 && e.Active != first && !e.Tabs[1].Loading
+	})
+	waitTestGray(t, vnc, 61)
+	sendCommand(Command{Type: "select", Tab: first})
+	readUntil(func(e Event) bool { return e.Type == "state" && e.Active == first })
+	waitTestGray(t, vnc, 17)
+	sendCommand(Command{Type: "close", Tab: secondState.Active})
+	readUntil(func(e Event) bool { return e.Type == "state" && len(e.Tabs) == 1 && e.Active == first })
+	// Raw VNC keyboard and pointer messages must never control the browser.
+	for _, packet := range [][]byte{{5, 1, 0, 60, 0, 40}, {5, 0, 0, 60, 0, 40}, {4, 1, 0, 0, 0, 0, 0, 97}, {4, 0, 0, 0, 0, 0, 0, 97}} {
+		if _, err := vnc.Write(packet); err != nil {
+			t.Fatal(err)
+		}
+	}
+	time.Sleep(100 * time.Millisecond)
+	service.mu.Lock()
+	actual := service.sessions[strings.Repeat("a", 64)].browser
+	service.mu.Unlock()
+	actual.mu.Lock()
+	activeContext := actual.selected(actual.active).ctx
+	actual.mu.Unlock()
+	focus, err := chromedp.Run(activeContext, chromedp.Evaluate[string](`document.activeElement.tagName`))
+	if err != nil || focus != "BODY" {
+		t.Fatalf("VNC pointer or keyboard changed browser focus: %q %v", focus, err)
 	}
 	id := state.Active
 	sendCommand(Command{Type: "mouse", Tab: id, Action: "mousePressed", Button: "left", X: 60, Y: 40})
@@ -331,7 +377,7 @@ func TestRealBrowserRoundTrip(t *testing.T) {
 		return e.Type == "state" && len(e.Tabs) > 0 && !strings.HasSuffix(e.Tabs[0].URL, "/next") && e.Tabs[0].Forward
 	})
 	sendCommand(Command{Type: "resize", Width: 640, Height: 480})
-	readUntil(func(e Event) bool { return e.Type == "frame" && e.Width == 640 && e.Height == 480 })
+	readUntil(func(e Event) bool { return e.Type == "state" })
 	sendCommand(Command{Type: "close", Tab: id})
 	readUntil(func(e Event) bool { return e.Type == "state" && len(e.Tabs) == 0 })
 	service.mu.Lock()
@@ -351,6 +397,6 @@ func TestRealBrowserRoundTrip(t *testing.T) {
 		t.Fatal("ninth tab did not respect the eight-tab limit", err)
 	}
 	sendCommand(Command{Type: "select", Tab: state.Tabs[0].ID})
-	readUntil(func(e Event) bool { return e.Type == "frame" && e.Tab == state.Tabs[0].ID })
+	readUntil(func(e Event) bool { return e.Type == "state" && e.Active == state.Tabs[0].ID })
 	sendCommand(Command{Type: "end"})
 }

@@ -1,8 +1,11 @@
 package webbrowser
 
 import (
+	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/binary"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,109 +16,149 @@ import (
 	"github.com/coder/websocket"
 )
 
-func TestResizeSeedKeepsLatestWithoutDroppingNotices(t *testing.T) {
-	session := newBrowserSession(context.Background())
-	defer session.Close()
-	for i := 0; i < cap(session.notices); i++ {
-		session.notice(Event{Type: "error"})
-	}
-	session.mu.Lock()
-	session.seedFrame(Event{Type: "frame", Image: "old"})
-	session.seedFrame(Event{Type: "frame", Image: "latest"})
-	session.mu.Unlock()
-	if len(session.keyframes) != 1 || (<-session.keyframes).Image != "latest" || len(session.notices) != cap(session.notices) {
-		t.Fatal("resize seed lost or displaced a notification")
-	}
-}
-
-func TestServiceDiscardsStaleViewportFramesFromBothQueues(t *testing.T) {
+func TestVNCAttachmentRequiresControlWorkspace(t *testing.T) {
 	executable, _ := os.Executable()
 	service, err := NewService(executable, strings.Repeat("s", 48), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer service.Close()
-	server := httptest.NewServer(service)
-	defer server.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	id := strings.Repeat("a", 64)
-	ws, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/v1/sessions/"+id, &websocket.DialOptions{HTTPHeader: http.Header{"Authorization": {"Bearer " + service.Token}}})
+	request := httptest.NewRequest("GET", "/v1/sessions/"+strings.Repeat("a", 64)+"/vnc", nil)
+	request.Header.Set("Authorization", "Bearer "+service.Token)
+	response := httptest.NewRecorder()
+	service.ServeHTTP(response, request)
+	if response.Code != http.StatusConflict {
+		t.Fatalf("VNC without control session: %d", response.Code)
+	}
+}
+
+func openTestVNC(t *testing.T, ctx context.Context, base, id string, header http.Header, size ...int) net.Conn {
+	t.Helper()
+	var ws *websocket.Conn
+	var err error
+	for attempts := 0; attempts < 40; attempts++ {
+		var response *http.Response
+		ws, response, err = websocket.Dial(ctx, "ws"+strings.TrimPrefix(base, "http")+"/v1/sessions/"+id+"/vnc", &websocket.DialOptions{HTTPHeader: header})
+		if err == nil || response == nil || response.StatusCode != http.StatusConflict {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ws.CloseNow()
-	read := func() Event {
-		t.Helper()
-		_, data, err := ws.Read(ctx)
-		if err != nil {
+	ws.SetReadLimit(8 << 20)
+	conn := websocket.NetConn(ctx, ws, websocket.MessageBinary)
+	t.Cleanup(func() { conn.Close() })
+	version := make([]byte, 12)
+	if _, err = io.ReadFull(conn, version); err != nil {
+		t.Fatal(err)
+	}
+	if string(version) != "RFB 003.008\n" {
+		t.Fatalf("unexpected RFB version %q", version)
+	}
+	if _, err = conn.Write(version); err != nil {
+		t.Fatal(err)
+	}
+	count := make([]byte, 1)
+	if _, err = io.ReadFull(conn, count); err != nil || count[0] == 0 {
+		t.Fatalf("invalid security types: %v", err)
+	}
+	types := make([]byte, int(count[0]))
+	if _, err = io.ReadFull(conn, types); err != nil || !bytes.Contains(types, []byte{1}) {
+		t.Fatalf("missing local socket security type: %v", err)
+	}
+	if _, err = conn.Write([]byte{1}); err != nil {
+		t.Fatal(err)
+	}
+	result := make([]byte, 4)
+	if _, err = io.ReadFull(conn, result); err != nil || binary.BigEndian.Uint32(result) != 0 {
+		t.Fatalf("RFB security failed: %v", err)
+	}
+	if _, err = conn.Write([]byte{1}); err != nil {
+		t.Fatal(err)
+	}
+	init := make([]byte, 24)
+	if _, err = io.ReadFull(conn, init); err != nil {
+		t.Fatal(err)
+	}
+	if binary.BigEndian.Uint16(init[:2]) < 320 || binary.BigEndian.Uint16(init[2:4]) < 240 {
+		t.Fatal("invalid RFB viewport")
+	}
+	if len(size) == 2 && (int(binary.BigEndian.Uint16(init[:2])) != size[0] || int(binary.BigEndian.Uint16(init[2:4])) != size[1]) {
+		t.Fatalf("unexpected RFB viewport: %dx%d, want %dx%d", binary.BigEndian.Uint16(init[:2]), binary.BigEndian.Uint16(init[2:4]), size[0], size[1])
+	}
+	n := binary.BigEndian.Uint32(init[20:24])
+	if n > 4096 {
+		t.Fatal("invalid RFB desktop name")
+	}
+	if _, err = io.CopyN(io.Discard, conn, int64(n)); err != nil {
+		t.Fatal(err)
+	}
+	return conn
+}
+
+func testFramebuffer(t *testing.T, conn net.Conn) {
+	t.Helper()
+	// Request a bounded raw rectangle to exercise the actual pixel transport.
+	if _, err := conn.Write([]byte{2, 0, 0, 1, 0, 0, 0, 0}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Write([]byte{3, 0, 0, 0, 0, 0, 1, 64, 0, 240}); err != nil {
+		t.Fatal(err)
+	}
+	header := make([]byte, 4)
+	if _, err := io.ReadFull(conn, header); err != nil || header[0] != 0 || binary.BigEndian.Uint16(header[2:]) == 0 || binary.BigEndian.Uint16(header[2:]) > 128 {
+		t.Fatalf("invalid framebuffer update: %v %v", header, err)
+	}
+	nonzero := false
+	for i := 0; i < int(binary.BigEndian.Uint16(header[2:])); i++ {
+		rect := make([]byte, 12)
+		if _, err := io.ReadFull(conn, rect); err != nil {
 			t.Fatal(err)
 		}
-		var event Event
-		if err := json.Unmarshal(data, &event); err != nil {
+		x, y := binary.BigEndian.Uint16(rect[0:2]), binary.BigEndian.Uint16(rect[2:4])
+		width, height := binary.BigEndian.Uint16(rect[4:6]), binary.BigEndian.Uint16(rect[6:8])
+		if width == 0 || height == 0 || int(x)+int(width) > 320 || int(y)+int(height) > 240 || binary.BigEndian.Uint32(rect[8:]) != 0 {
+			t.Fatalf("unexpected framebuffer rectangle: %v", rect)
+		}
+		pixels := make([]byte, int(width)*int(height)*4)
+		if _, err := io.ReadFull(conn, pixels); err != nil {
 			t.Fatal(err)
 		}
-		return event
+		nonzero = nonzero || bytes.Count(pixels, []byte{0}) != len(pixels)
 	}
-	if read().Type != "state" {
-		t.Fatal("missing initial state")
+	if !nonzero {
+		t.Fatal("framebuffer did not contain page pixels")
 	}
-	service.mu.Lock()
-	session := service.sessions[id].browser
-	service.mu.Unlock()
-	// Transport-only fixture: no Chromium process or fake CDP connection.
-	session.mu.Lock()
-	session.active, session.width, session.height = "tab-1", 640, 480
-	session.mu.Unlock()
-	session.signal()
-	if state := read(); state.Type != "state" || state.Active != "tab-1" {
-		t.Fatal("missing fixture state", state.Type)
-	}
-	for _, queue := range []chan Event{session.frames, session.notices} {
-		for _, frame := range []Event{
-			{Type: "frame", Tab: "tab-1", Width: 1280, Height: 720, Image: "stale"},
-			{Type: "frame", Tab: "tab-1", Width: 640, Height: 480, Image: "current"},
-		} {
-			select {
-			case queue <- frame:
-			case <-ctx.Done():
-				t.Fatal("frame delivery blocked")
-			}
+}
+
+// Verify a visible screen pixel rather than just the CDP target or RFB size.
+func waitTestGray(t *testing.T, conn net.Conn, gray byte) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := conn.Write([]byte{3, 0, 0, 5, 0, 5, 0, 1, 0, 1}); err != nil {
+			t.Fatal(err)
 		}
-		for {
-			event := read()
-			if event.Type != "frame" {
-				continue
-			}
-			if event.Image != "current" || event.Width != 640 || event.Height != 480 {
-				t.Fatal("delivered an obsolete viewport after resize")
-			}
-			break
+		header := make([]byte, 4)
+		if _, err := io.ReadFull(conn, header); err != nil || header[0] != 0 || binary.BigEndian.Uint16(header[2:]) != 1 {
+			t.Fatalf("invalid pixel update: %v %v", header, err)
 		}
-	}
-	session.mu.Lock()
-	session.seedFrame(Event{Type: "frame", Tab: "tab-1", Width: 640, Height: 480, Image: "seed"})
-	session.mu.Unlock()
-	for event := read(); ; event = read() {
-		if event.Type == "frame" {
-			if event.Image != "seed" {
-				t.Fatal("missing current resize seed")
-			}
-			break
+		rect := make([]byte, 12)
+		if _, err := io.ReadFull(conn, rect); err != nil || binary.BigEndian.Uint16(rect[4:6]) != 1 || binary.BigEndian.Uint16(rect[6:8]) != 1 || binary.BigEndian.Uint32(rect[8:]) != 0 {
+			t.Fatalf("invalid pixel rectangle: %v %v", rect, err)
 		}
+		pixel := make([]byte, 4)
+		if _, err := io.ReadFull(conn, pixel); err != nil {
+			t.Fatal(err)
+		}
+		if bytes.Count(pixel, []byte{gray}) >= 3 {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
-	// A resumed static tab may send only its seed, so that queue must publish
-	// the new active-tab state before the frame, just like ordinary capture.
-	session.mu.Lock()
-	session.active = "tab-2"
-	session.seedFrame(Event{Type: "frame", Tab: "tab-2", Width: 640, Height: 480, Image: "resumed"})
-	session.mu.Unlock()
-	if state := read(); state.Type != "state" || state.Active != "tab-2" {
-		t.Fatal("resume seed arrived before its active-tab state")
-	}
-	if event := read(); event.Type != "frame" || event.Tab != "tab-2" || event.Image != "resumed" {
-		t.Fatal("missing resumed tab frame after state")
-	}
+	t.Fatalf("visible framebuffer did not show expected gray %d", gray)
 }
 
 func TestServiceAuthenticationCapacityAndExpiry(t *testing.T) {

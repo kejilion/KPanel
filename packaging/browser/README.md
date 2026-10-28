@@ -1,14 +1,16 @@
 # KPanel Browser 镜像
 
-可选独立组件：Alpine 3.24、官方仓库 Chromium 及软件渲染组件、中文字体和 `kpanel-browser`。
+可选独立组件：Alpine 3.24、官方仓库 Chromium、TigerVNC、Openbox、软件渲染组件、中文字体和 `kpanel-browser`。
 不包含桌面环境，不挂载 Docker Socket，不发布宿主机端口，不改变 KPanel 主镜像。
 `amd64` / `arm64` 分别原生构建、运行和扫描后，才允许发布对应版本。
 
-当前验证版本为 `docker.io/kjlion/kpanel-browser:0.1.0-rc.2`，源码提交
+此前公开版本为 `docker.io/kjlion/kpanel-browser:0.1.0-rc.2`，源码提交
 `94d88f035ee5eb899896a29d25b2d2d1c71991c1`。两架构检查、完整 L3 及公开镜像拉取复测
 见[发布记录](https://github.com/kejilion/KPanel/actions/runs/40382052237)。接入时使用
-`.env.example` 中固定的镜像摘要，避免标签变化影响实际运行内容。
-`0.1.0-rc.1` 的公开复测发现静态标签恢复缺帧问题，保留作历史记录；接入使用已修复的 `rc.2`。
+`.env.example` 中固定的镜像摘要对应旧的截图协议，与此分支的 VNC 协议不兼容。
+本分支发布前必须先按本文件完成新组件两架构验收及发布，再将托管安装器和示例中
+所有固定摘要更新为新组件的已验证摘要；Panel 会拒绝旧组件，避免错误连接。
+`0.1.0-rc.1` 的公开复测发现静态标签恢复缺帧问题；`rc.2` 修复了旧协议中的该问题，两者均保留作历史记录。
 
 启动使用 UID/GID `65532:65532`，要求只读根目录、可写临时目录、独立共享内存、
 资源上限、`no-new-privileges` 和提供的 seccomp profile。组件启动前实际检查
@@ -33,7 +35,7 @@ sudo bash packaging/browser/verify.sh kpanel-browser:check kpanel-browser:test /
 
 测试使用临时凭据和只对本次夹具开放的 `127.0.0.1/32`。覆盖沙箱状态、实际服务启动、
 认证、带禁止嵌入响应头的页面、画面、中文输入、回车、滚动、缩放、8 标签上限和进程清理。
-成功后保留日志、版本、包清单、容器配置和截图；不保留 token。
+成功后保留日志、版本、包清单和容器配置；不保留 token。
 
 ## 接入现有 Panel
 
