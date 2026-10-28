@@ -204,7 +204,7 @@ async function perform(action: 'enable' | 'pause' | 'clear'): Promise<void> {
  } catch (reason) { error.value = reason instanceof Error ? localizeError(reason) : phrase('监控操作失败') }
  finally { busy.value = false }
 }
-function schedule(): void { timer = setTimeout(async () => { if (!disposed && document.visibilityState !== 'hidden' && data.value?.enabled && !busy.value) await load(); if (!disposed && document.visibilityState !== 'hidden' && view.value === 'security' && Date.now() - protectionLastRequested >= 30000) await loadProtectionStatus(); if (!disposed) schedule() }, 10000) }
+function schedule(): void { timer = setTimeout(async () => { if (!disposed && document.visibilityState !== 'hidden' && data.value?.enabled && !busy.value) await load(); if (!disposed && document.visibilityState !== 'hidden' && view.value === 'security' && !protectionStatusLoading.value && Date.now() - protectionLastRequested >= 30000) await loadProtectionStatus(); if (!disposed) schedule() }, 10000) }
 watch([period, host], () => { selectedCountry.value = ''; data.value = undefined; loading.value = true; void load() })
 watch(view, value => {
  selectedCountry.value = ''
