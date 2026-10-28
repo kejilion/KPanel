@@ -2,6 +2,7 @@ package webenv
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -10,6 +11,20 @@ import (
 	"testing"
 	"time"
 )
+
+func TestSummaryDecodesBanMigrationAndAPISiteJail(t *testing.T) {
+	var summary Summary
+	data := []byte(`{"protocolVersion":"1","protection":{"banMigration":{"state":"legacy-imported","importedRecords":12,"apiJailEnabled":true,"legacyCFDetected":true,"cfReentryRequired":true,"legacyReconcilerStopped":true},"siteJails":[{"name":"waf-api-invalid","available":true,"currentlyBanned":2,"totalBanned":7}]}}`)
+	if err := json.Unmarshal(data, &summary); err != nil {
+		t.Fatal(err)
+	}
+	if summary.Protection.BanMigration == nil || summary.Protection.BanMigration.State != "legacy-imported" || !summary.Protection.BanMigration.CFReentryRequired {
+		t.Fatalf("migration status was not decoded: %#v", summary.Protection.BanMigration)
+	}
+	if len(summary.Protection.SiteJails) != 1 || summary.Protection.SiteJails[0].Name != "waf-api-invalid" || summary.Protection.SiteJails[0].TotalBanned != 7 {
+		t.Fatalf("API jail was not decoded: %#v", summary.Protection.SiteJails)
+	}
+}
 
 func TestValidateActionUsesFixedEnumsAndResourceVersion(t *testing.T) {
 	summary := Summary{ResourceVersion: "resource-a"}

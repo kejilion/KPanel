@@ -576,4 +576,11 @@ export default [
   ["WAF 到 Fail2Ban 网站 Jail，再到 Cloudflare 的状态链路", "從 WAF 經 Fail2Ban 網站 Jail 再到 Cloudflare 的狀態鏈路"],
   ["Fail2Ban 网站 Jail", "Fail2Ban 網站 Jail"],
   ["可用 Jail", "可用 Jail"],
+  ["旧封禁已迁移", "舊封鎖已遷移"],
+  ["旧规则已接入统一后端", "舊規則已接入統一後端"],
+  ["旧防护待迁移", "舊防護待遷移"],
+  ["迁移状态待核验", "遷移狀態待確認"],
+  ["条封禁记录已导入", "筆封鎖記錄已匯入"],
+  ["旧 CF 凭据未迁移，请到环境防护页重新输入。", "舊 CF 憑證未遷移，請前往環境防護頁重新輸入。"],
+  ["前往环境防护", "前往環境防護"],
 ] satisfies PhraseCatalog

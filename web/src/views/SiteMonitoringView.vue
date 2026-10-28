@@ -60,6 +60,7 @@ const totalMap = computed(() => countries.value.reduce((sum, c) => sum + c.reque
 const protection = computed(() => protectionStatus.value?.protection)
 const siteJails = computed(() => protection.value?.siteJails || [])
 const fail2banLogEntries = computed(() => protection.value?.fail2banLogs?.entries || [])
+const banMigration = computed(() => protection.value?.banMigration)
 const defenseWafMode = computed(() => protection.value?.wafMode || (protection.value?.waf ? 'legacy' : 'unknown'))
 const defenseWafLabel = computed(() => phrase(({
  on: '拦截模式', off: '已关闭', detect: '检测模式', mixed: '按站点配置', legacy: '旧配置已启用', unknown: '状态待核验',
@@ -261,6 +262,12 @@ onBeforeUnmount(() => { disposed = true; sequence++; protectionSequence++; contr
       <div class="defense-flow-step"><span>{{ phrase('Fail2Ban 网站 Jail') }}</span><StatusBadge :status="fail2banBadge" :label="fail2banLabel" /><small v-if="siteJails.length">{{ siteJails.filter(jail => jail.available).length }}/{{ siteJails.length }} {{ phrase('可用 Jail') }}</small></div>
       <span class="defense-flow-arrow" aria-hidden="true">→</span>
       <div class="defense-flow-step"><span>Cloudflare</span><StatusBadge :status="cloudflareBadge" :label="cloudflareLabel" /><small v-if="protection?.cloudflareStatus">{{ phrase('活动封禁') }}：{{ number(protection?.cloudflareStatus?.activeBans || 0) }}</small></div>
+     </div>
+     <div v-if="banMigration && banMigration.state !== 'current'" class="defense-migration-note">
+      <strong>{{ phrase(banMigration.state === 'legacy-imported' ? '旧封禁已迁移' : banMigration.state === 'legacy-compatible' ? '旧规则已接入统一后端' : banMigration.state === 'legacy-pending' ? '旧防护待迁移' : '迁移状态待核验') }}</strong>
+      <span v-if="banMigration.state === 'legacy-imported'">{{ number(banMigration.importedRecords) }} {{ phrase('条封禁记录已导入') }}</span>
+      <span v-if="banMigration.cfReentryRequired">{{ phrase('旧 CF 凭据未迁移，请到环境防护页重新输入。') }}</span>
+      <RouterLink v-if="banMigration.cfReentryRequired" to="/sites/environment?section=protection">{{ phrase('前往环境防护') }}</RouterLink>
      </div>
      <div class="defense-status-grid">
       <div class="defense-status-item"><span>{{ phrase('DDoS 规则') }}</span><StatusBadge :status="ddosBadge" :label="ddosLabel" /></div>

@@ -1713,6 +1713,14 @@ export interface WebProtectionSummary {
     available: boolean
     entries: string[]
   }
+  banMigration?: {
+    state: 'current' | 'legacy-pending' | 'legacy-imported' | 'legacy-compatible' | 'unknown' | string
+    importedRecords: number
+    apiJailEnabled: boolean
+    legacyCFDetected: boolean
+    cfReentryRequired: boolean
+    legacyReconcilerStopped: boolean
+  }
 }
 
 export interface WebOptimizationSummary {

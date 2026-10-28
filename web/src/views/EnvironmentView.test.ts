@@ -46,6 +46,7 @@ interface EnvironmentBindings {
   wafBadge: Readonly<Ref<string>>
   fail2banInstalled: Readonly<Ref<boolean>>
   fail2banActionLabel: Readonly<Ref<string>>
+  banMigrationLabel: Readonly<Ref<string>>
   cloudflareLabel: Readonly<Ref<string>>
   cloudflareBadge: Readonly<Ref<string>>
   cloudflareShieldLabel: Readonly<Ref<string>>
@@ -163,9 +164,14 @@ describe('EnvironmentView background jobs', () => {
     view.summary.value.protection.ddosRulesAvailable = true
     view.summary.value.protection.ddosRuleCount = 5
     view.summary.value.protection.ddosRuleExpected = 8
+    view.summary.value.protection.banMigration = {
+      state: 'legacy-imported', importedRecords: 12, apiJailEnabled: true,
+      legacyCFDetected: true, cfReentryRequired: true, legacyReconcilerStopped: true,
+    }
 
     expect(view.fail2banInstalled.value).toBe(true)
-    expect(view.fail2banActionLabel.value).toBe('启动')
+    expect(view.fail2banActionLabel.value).toBe('检查迁移并修复防护')
+    expect(view.banMigrationLabel.value).toBe('旧封禁记录已迁移：12')
     expect(view.cloudflareLabel.value).toBe('等待同步')
     expect(view.cloudflareBadge.value).toBe('warning')
     expect(view.cloudflareShieldLabel.value).toBe('已安排')
@@ -176,7 +182,7 @@ describe('EnvironmentView background jobs', () => {
     view.summary.value.protection.cloudflareStatus.cleanupPending = true
     expect(view.cloudflareLabel.value).toBe('关闭清理待重试')
     view.summary.value.protection.fail2ban = true
-    expect(view.fail2banActionLabel.value).toBe('卸载')
+    expect(view.fail2banActionLabel.value).toBe('检查迁移并修复防护')
     view.summary.value.protection.cloudflareShield.scriptPresent = false
     expect(view.cloudflareShieldBadge.value).toBe('warning')
   })

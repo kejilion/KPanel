@@ -75,7 +75,17 @@ const wafBadge = computed(() => wafMode.value === 'on' || wafMode.value === 'leg
   : wafMode.value === 'mixed' || wafMode.value === 'detect' ? 'warning'
     : wafMode.value === 'off' ? 'stopped' : 'unknown')
 const fail2banInstalled = computed(() => Boolean(summary.value?.protection.fail2banInstalled || summary.value?.protection.fail2ban))
-const fail2banActionLabel = computed(() => summary.value?.protection.fail2ban ? phrase('卸载') : fail2banInstalled.value ? phrase('启动') : phrase('安装'))
+const fail2banActionLabel = computed(() => fail2banInstalled.value ? phrase('检查迁移并修复防护') : phrase('安装防护'))
+const banMigration = computed(() => summary.value?.protection.banMigration)
+const banMigrationLabel = computed(() => {
+  const migration = banMigration.value
+  if (!migration) return ''
+  if (migration.state === 'legacy-imported') return `${phrase('旧封禁记录已迁移')}：${migration.importedRecords}`
+  if (migration.state === 'legacy-compatible') return phrase('旧防护规则已接入统一后端')
+  if (migration.state === 'legacy-pending') return phrase('旧防护待迁移')
+  if (migration.state === 'current') return phrase('统一封禁后端已启用')
+  return phrase('迁移状态待核验')
+})
 const cloudflareStatus = computed(() => summary.value?.protection.cloudflareStatus)
 const cloudflareLabel = computed(() => {
   const status = cloudflareStatus.value
@@ -580,10 +590,13 @@ onBeforeUnmount(() => {
           <article>
             <div><strong>Fail2Ban</strong><StatusBadge :status="summary.protection.fail2ban ? 'healthy' : fail2banInstalled ? 'warning' : 'stopped'" :label="fail2banInstalled && !summary.protection.fail2ban ? phrase('已安装，未运行') : undefined" /></div>
             <p>管理 SSH 与网站 Jail、封禁状态和日志。</p>
+            <p v-if="banMigrationLabel" class="environment-inline-status">{{ banMigrationLabel }}</p>
+            <p v-if="banMigration?.cfReentryRequired" class="environment-inline-status environment-inline-status--warning">{{ phrase('旧 CF 凭据未自动迁移，请重新输入后重新开启 CF 封禁模式。') }}</p>
             <div>
-              <button class="button button--secondary" :disabled="jobActive" @click="protection(summary.protection.fail2ban ? 'fail2ban-uninstall' : 'fail2ban-install')">
+              <button class="button button--secondary" :disabled="jobActive" @click="protection('fail2ban-install')">
                 {{ fail2banActionLabel }}
               </button>
+              <button v-if="summary.protection.fail2ban" class="button button--secondary" :disabled="jobActive" @click="protection('fail2ban-uninstall')">{{ phrase('卸载') }}</button>
               <button class="button button--secondary" :disabled="jobActive || !summary.protection.fail2ban" @click="protection('unban-all')">全部解封</button>
             </div>
           </article>
@@ -764,6 +777,7 @@ onBeforeUnmount(() => {
 .environment-action-grid article > div, .environment-action-grid article > div:last-child { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .environment-action-grid article p { flex: 1; }
 .environment-inline-status { color: var(--muted); font-size: 12px; }
+.environment-inline-status--warning { color: var(--warning); }
 .environment-action-grid label { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
 .environment-action-grid input { min-height: 38px; padding: 0 10px; border: 1px solid var(--border); border-radius: 9px; color: var(--text); background: var(--surface-raised); }
 .environment-mode-actions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }

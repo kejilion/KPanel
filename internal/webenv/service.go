@@ -74,6 +74,16 @@ type Protection struct {
 	DDoSRulesAvailable *bool             `json:"ddosRulesAvailable,omitempty"`
 	SiteJails          []SiteJail        `json:"siteJails"`
 	Fail2BanLogs       Fail2BanLogs      `json:"fail2banLogs"`
+	BanMigration       *BanMigration     `json:"banMigration,omitempty"`
+}
+
+type BanMigration struct {
+	State                   string `json:"state"`
+	ImportedRecords         int    `json:"importedRecords"`
+	APIJailEnabled          bool   `json:"apiJailEnabled"`
+	LegacyCFDetected        bool   `json:"legacyCFDetected"`
+	CFReentryRequired       bool   `json:"cfReentryRequired"`
+	LegacyReconcilerStopped bool   `json:"legacyReconcilerStopped"`
 }
 
 type SiteJail struct {
