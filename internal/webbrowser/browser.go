@@ -126,6 +126,21 @@ func (s *browserSession) start(executable string, private []netip.Prefix) error 
 		return errors.New("browser_start_failed")
 	}
 	s.display = display
+	go func() {
+		select {
+		case <-display.done:
+		case <-display.wmDone:
+		case <-s.ctx.Done():
+			return
+		}
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.display == display && s.ctx.Err() == nil {
+			s.stopBrowser()
+			s.notice(Event{Type: "error", Code: "browser_disconnected"})
+			s.signal()
+		}
+	}()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		s.stopBrowser()
@@ -190,7 +205,9 @@ func (s *browserSession) listenBrowser() {
 				if len(s.tabs) == 0 {
 					s.stopBrowser()
 				} else {
-					_ = s.stream()
+					if err := s.stream(); err != nil {
+						s.notice(Event{Type: "error", Code: "browser_disconnected"})
+					}
 				}
 				break
 			}
@@ -228,7 +245,9 @@ func (s *browserSession) listenBrowser() {
 			s.listen(tab)
 			s.tabs = append(s.tabs, tab)
 			s.active = tab.ID
-			_ = s.stream()
+			if err := s.stream(); err != nil {
+				s.notice(Event{Type: "error", Code: "browser_disconnected"})
+			}
 			s.mu.Unlock()
 			s.signal()
 		}
@@ -278,7 +297,14 @@ func (s *browserSession) listen(tab *browserTab) {
 		}
 	}()
 }
-func (s *browserSession) stream() error {
+func (s *browserSession) stream() (err error) {
+	// A partially activated window must never remain paired with a different
+	// input target. End the workspace if display synchronization fails.
+	defer func() {
+		if err != nil && s.root != nil {
+			s.stopBrowser()
+		}
+	}()
 	if s.visible && s.display != nil && (s.display.width != s.width || s.display.height != s.height) {
 		ctx, cancel := context.WithTimeout(s.ctx, 5*time.Second)
 		err := s.display.resize(ctx, s.width, s.height)

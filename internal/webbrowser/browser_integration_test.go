@@ -68,6 +68,57 @@ func TestRealBrowserEnterSubmitsAndInsertsNewline(t *testing.T) {
 	}
 }
 
+func TestRealBrowserWindowManagerFailureEndsSession(t *testing.T) {
+	executable := os.Getenv("KPANEL_TEST_CHROME")
+	if executable == "" {
+		t.Skip("set KPANEL_TEST_CHROME")
+	}
+	s := newBrowserSession(context.Background())
+	defer s.Close()
+	if err := s.Execute(Command{Type: "new"}, executable, nil); err != nil {
+		t.Fatal(err)
+	}
+	s.mu.Lock()
+	manager := s.display.wm.Process
+	s.mu.Unlock()
+	if err := manager.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case event := <-s.notices:
+		if event.Code != "browser_disconnected" {
+			t.Fatalf("unexpected notice: %v", event)
+		}
+	case <-time.After(8 * time.Second):
+		t.Fatal("window manager failure did not end the session")
+	}
+	if state := s.Snapshot(); len(state.Tabs) != 0 {
+		t.Fatal("window manager failure retained browser tabs")
+	}
+}
+
+func TestRealBrowserActivationFailureEndsSession(t *testing.T) {
+	executable := os.Getenv("KPANEL_TEST_CHROME")
+	if executable == "" {
+		t.Skip("set KPANEL_TEST_CHROME")
+	}
+	s := newBrowserSession(context.Background())
+	defer s.Close()
+	if err := s.Execute(Command{Type: "new"}, executable, nil); err != nil {
+		t.Fatal(err)
+	}
+	s.mu.Lock()
+	tab := s.selected(s.active)
+	tab.cancel()
+	tab.streaming = false
+	err := s.stream()
+	retained := s.root != nil || len(s.tabs) != 0
+	s.mu.Unlock()
+	if err == nil || retained {
+		t.Fatalf("failed activation retained workspace: err=%v retained=%v", err, retained)
+	}
+}
+
 func TestRealBrowserWheelAndViewport(t *testing.T) {
 	executable := os.Getenv("KPANEL_TEST_CHROME")
 	if executable == "" {
