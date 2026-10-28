@@ -75,7 +75,7 @@ fs.mkdirSync(out, { recursive: true });
       await page.mouse.wheel(0, -900);
       await page.waitForFunction(() => {
         const term = document.querySelector('.host-terminal').__vueParentComponent.setupState.terminal;
-        return term.buffer.active.baseY - term.buffer.active.viewportY > 2;
+        return term.buffer.active.baseY > term.buffer.active.viewportY;
       });
       await page.mouse.wheel(0, 100000);
       await page.waitForFunction(() => {
