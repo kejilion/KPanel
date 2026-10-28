@@ -8,7 +8,7 @@
 
 ### Fixed
 - 浏览器帧队列与当前活动画面保持一致，改善切换标签后的首帧输入、滚动响应和远端光标遮挡。
-- CF 凭据仍存在但封禁 owner 状态缺失时，解封和卸载保持 fail-closed。
+- CF 凭据配置仍在而封禁 owner 状态缺失时，共享 WAF 拒绝继续清理，相关卸载停止。
 
 ### Compatibility
 - 本镜像固定配套 `kejilion/sh` 提交 `b408d60d7ed1c9a935bb1ff0d6e41b73469898ff`（根/CN 脚本 SHA-256 `2f814354d0d0de113e44c788a2b79484eca0762293a168da1baebec8fdac312d`）及共享 WAF 包 `kejilion/nginx@42698292499f6e6ba4ebe4f833e164805e6b5641`。
