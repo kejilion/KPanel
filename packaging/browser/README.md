@@ -4,13 +4,10 @@
 不包含桌面环境，不挂载 Docker Socket，不发布宿主机端口，不改变 KPanel 主镜像。
 `amd64` / `arm64` 分别原生构建、运行和扫描后，才允许发布对应版本。
 
+RC12 配套组件已发布为 `docker.io/kjlion/kpanel-browser:0.1.0-rc.3`，固定多架构摘要为
+`sha256:0660b4608e9219e8d03c4d72dc8ba3e9c64f6310df36c766933373855f918839`。两架构原生构建、运行、扫描、完整 L3 和匿名公开拉取复测均通过，见[发布记录](https://github.com/kejilion/KPanel/actions/runs/40643636034)。`.env.example` 与托管 Compose 使用这个固定摘要；旧 RC2 截图协议与本分支 VNC 协议不兼容，Panel 会拒绝旧组件，避免错误连接。
 此前公开版本为 `docker.io/kjlion/kpanel-browser:0.1.0-rc.2`，源码提交
-`94d88f035ee5eb899896a29d25b2d2d1c71991c1`。两架构检查、完整 L3 及公开镜像拉取复测
-见[发布记录](https://github.com/kejilion/KPanel/actions/runs/40382052237)。接入时使用
-`.env.example` 中固定的镜像摘要对应旧的截图协议，与此分支的 VNC 协议不兼容。
-本分支发布前必须先按本文件完成新组件两架构验收及发布，再将托管安装器和示例中
-所有固定摘要更新为新组件的已验证摘要；Panel 会拒绝旧组件，避免错误连接。
-`0.1.0-rc.1` 的公开复测发现静态标签恢复缺帧问题；`rc.2` 修复了旧协议中的该问题，两者均保留作历史记录。
+`94d88f035ee5eb899896a29d25b2d2d1c71991c1`，其[发布记录](https://github.com/kejilion/KPanel/actions/runs/40382052237)保留作历史参考。`0.1.0-rc.1` 的公开复测发现静态标签恢复缺帧问题；`rc.2` 修复了旧协议中的该问题。
 
 启动使用 UID/GID `65532:65532`，要求只读根目录、可写临时目录、独立共享内存、
 资源上限、`no-new-privileges` 和提供的 seccomp profile。组件启动前实际检查
