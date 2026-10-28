@@ -8,9 +8,10 @@
 
 ### Fixed
 - 浏览器帧队列与当前活动画面保持一致，改善切换标签后的首帧输入、滚动响应和远端光标遮挡。
+- CF 凭据仍存在但封禁 owner 状态缺失时，解封和卸载保持 fail-closed。
 
 ### Compatibility
-- 本镜像固定配套 `kejilion/sh` 提交 `af49b129a20a406893ad498b078b3e1f5eea7971`（根/CN 脚本 SHA-256 `7a1d1fea0223b1d11802ae6879ad0190b9672a25ab2636d224cb328c5ac83a0e`）及共享 WAF 包 `kejilion/nginx@538af11069ea68f37d06d7508e14e763af032df5`。
+- 本镜像固定配套 `kejilion/sh` 提交 `2e64113e60f64bda4a3fe73bfcc31c7387baee89`（根/CN 脚本 SHA-256 `ab891461e60be95836d860e12ee1ef71fd975fb7f4a4b01fbbd32b8ef915f67a`）及共享 WAF 包 `kejilion/nginx@538af11069ea68f37d06d7508e14e763af032df5`。
 
 ### Upgrade Notes
 - 旧 CF 凭据不会自动迁移，需在面板重新录入；新凭据完成配置前封禁仍由源站执行。更新前请备份配置；回退请恢复 `v1.28.0-rc.13` 配套版本。本版为预览版，加入预览不会自动安装，退出预览不会自动降级；稳定版保持 `1.27.2`。

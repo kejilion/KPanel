@@ -54,13 +54,13 @@ LABEL org.opencontainers.image.title="KPanel" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.revision="${REVISION}" \
       io.kejilion.kpanel.update-freeze="1" \
-      io.kejilion.script.revision="af49b129a20a406893ad498b078b3e1f5eea7971" \
-      io.kejilion.script.sha256="7a1d1fea0223b1d11802ae6879ad0190b9672a25ab2636d224cb328c5ac83a0e"
+      io.kejilion.script.revision="2e64113e60f64bda4a3fe73bfcc31c7387baee89" \
+      io.kejilion.script.sha256="ab891461e60be95836d860e12ee1ef71fd975fb7f4a4b01fbbd32b8ef915f67a"
 COPY --from=go-build /out/paneld /paneld
 COPY --from=go-build /out/kejilion-agent /release/kejilion-agent
 COPY --from=go-build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
-ADD --checksum=sha256:7a1d1fea0223b1d11802ae6879ad0190b9672a25ab2636d224cb328c5ac83a0e \
-    https://raw.githubusercontent.com/kejilion/sh/af49b129a20a406893ad498b078b3e1f5eea7971/kejilion.sh \
+ADD --checksum=sha256:ab891461e60be95836d860e12ee1ef71fd975fb7f4a4b01fbbd32b8ef915f67a \
+    https://raw.githubusercontent.com/kejilion/sh/2e64113e60f64bda4a3fe73bfcc31c7387baee89/kejilion.sh \
     /release/kejilion.sh
 COPY --from=web-build /src/web/dist /app/web
 COPY VERSION /release/VERSION
