@@ -8,6 +8,7 @@ import { phraseCatalogVersion, translatePhrase, usePhraseCatalog } from '@/i18n/
 import { api } from '@/lib/api'
 import { formatBytes, formatDateTime } from '@/lib/format'
 import type { SiteTrafficSnapshot } from '@/types/siteTraffic'
+import type { WebEnvironmentSummary } from '@/types/api'
 import WorldTrafficMap from '@/components/sites/WorldTrafficMap.vue'
 import SitesSectionTabs from '@/components/sites/SitesSectionTabs.vue'
 import SiteFavicon from '@/components/sites/SiteFavicon.vue'
@@ -15,13 +16,16 @@ import CountryFlagIcon from '@/components/overview/CountryFlagIcon.vue'
 import ErrorState from '@/components/feedback/ErrorState.vue'
 import LoadingState from '@/components/feedback/LoadingState.vue'
 import ModalDialog from '@/components/common/ModalDialog.vue'
+import StatusBadge from '@/components/feedback/StatusBadge.vue'
 usePhraseCatalog(locale => locale === 'en-US'
  ? import('@/i18n/pages/SiteMonitoringView/en-US').then(m => m.default)
  : import('@/i18n/pages/SiteMonitoringView/zh-TW').then(m => m.default))
 const i18n = useI18n()
 function phrase(value: string): string { phraseCatalogVersion.value; return translatePhrase(value) }
 const data = ref<SiteTrafficSnapshot>()
+const protectionStatus = ref<WebEnvironmentSummary>()
 const loading = ref(true), refreshing = ref(false), error = ref(''), notice = ref('')
+const protectionStatusLoading = ref(false), protectionStatusError = ref('')
 const period = ref('24h'), host = ref(''), view = ref<'traffic' | 'security'>('traffic'), selectedCountry = ref('')
 const busy = ref(false), guideOpen = ref(false), clearOpen = ref(false)
 const siteIDs = ref(new Map<string, string>())
@@ -38,8 +42,9 @@ async function loadSiteIcons(): Promise<void> {
  } catch { /* Site metadata is optional; traffic remains usable with local globe icons. */ }
 }
 let controller: AbortController | undefined
+let protectionController: AbortController | undefined
 let timer: ReturnType<typeof setTimeout> | undefined
-let sequence = 0, disposed = false
+let sequence = 0, protectionSequence = 0, protectionLastRequested = 0, disposed = false
 const number = (value: number) => new Intl.NumberFormat(i18n.locale.value, { maximumFractionDigits: 1 }).format(value)
 const countries = computed(() => view.value === 'traffic' ? data.value?.countries || [] : data.value?.protection.countries || [])
 const countryCounts = computed(() => new Map(countries.value.map(item => [item.code, item.requests])))
@@ -52,6 +57,65 @@ const healthy = computed(() => data.value?.enabled && data.value.state === 'acti
 const errorRate = computed(() => data.value?.requests ? number(data.value.errors / data.value.requests * 100) + '%' : '—')
 const totalLocated = computed(() => countries.value.filter(c => c.code !== 'ZZ').reduce((sum, c) => sum + c.requests, 0))
 const totalMap = computed(() => countries.value.reduce((sum, c) => sum + c.requests, 0))
+const protection = computed(() => protectionStatus.value?.protection)
+const siteJails = computed(() => protection.value?.siteJails || [])
+const fail2banLogEntries = computed(() => protection.value?.fail2banLogs?.entries || [])
+const defenseWafMode = computed(() => protection.value?.wafMode || (protection.value?.waf ? 'legacy' : 'unknown'))
+const defenseWafLabel = computed(() => phrase(({
+ on: '拦截模式', off: '已关闭', detect: '检测模式', mixed: '按站点配置', legacy: '旧配置已启用', unknown: '状态待核验',
+} as Record<string, string>)[defenseWafMode.value] || '状态待核验'))
+const fail2banInstalled = computed(() => Boolean(protection.value?.fail2banInstalled || protection.value?.fail2ban))
+const fail2banLabel = computed(() => protection.value?.fail2ban ? phrase('运行中')
+ : fail2banInstalled.value ? phrase('已安装，未运行') : phrase('未安装'))
+const fail2banBadge = computed(() => protection.value?.fail2ban ? 'healthy' : fail2banInstalled.value ? 'warning' : 'stopped')
+const cloudflareLabel = computed(() => {
+ const status = protection.value?.cloudflareStatus
+ if (!status) return phrase(protection.value?.cloudflare ? '已配置' : '未配置')
+ if (status.cleanupPending) return phrase('关闭清理待重试')
+ if (status.mode === 'local') return phrase('源站封禁')
+ if (status.mode === 'cloudflare') {
+  if (status.pending) return phrase('等待同步')
+  if (!status.healthy) return phrase('同步待核验')
+  return phrase(status.running ? '已同步' : '已配置，未运行')
+ }
+ return phrase('状态待核验')
+})
+const cloudflareBadge = computed(() => {
+ const status = protection.value?.cloudflareStatus
+ if (!status) return protection.value?.cloudflare ? 'healthy' : 'unknown'
+ if (status.cleanupPending || status.pending || (status.mode === 'cloudflare' && (!status.healthy || !status.running))) return 'warning'
+ if (status.mode === 'cloudflare' && status.running && status.healthy) return 'healthy'
+ if (status.mode === 'local') return 'stopped'
+ return 'unknown'
+})
+const ddosLabel = computed(() => {
+ const state = protection.value
+ if (!state?.ddosRulesAvailable) return phrase('状态待核验')
+ const expected = state.ddosRuleExpected || 8
+ const count = state.ddosRuleCount || 0
+ return phrase(count === expected ? '规则完整' : count ? '规则未完整' : '已关闭') + ` (${count}/${expected})`
+})
+const ddosBadge = computed(() => {
+ const state = protection.value
+ if (!state?.ddosRulesAvailable) return 'unknown'
+ const expected = state.ddosRuleExpected || 8
+ const count = state.ddosRuleCount || 0
+ return count === expected ? 'healthy' : count ? 'warning' : 'stopped'
+})
+const cloudflareShieldLabel = computed(() => {
+ const shield = protection.value?.cloudflareShield
+ if (!shield?.available) return phrase('状态待核验')
+ if (shield.scheduled && shield.scriptPresent) return phrase('已安排')
+ if (shield.scheduled || shield.scriptPresent) return phrase('配置不完整')
+ return phrase('未安排')
+})
+const cloudflareShieldBadge = computed(() => {
+ const shield = protection.value?.cloudflareShield
+ if (!shield?.available) return 'unknown'
+ if (shield.scheduled && shield.scriptPresent) return 'healthy'
+ if (shield.scheduled || shield.scriptPresent) return 'warning'
+ return 'stopped'
+})
 const share = (value: number, total: number) => total > 0 ? number(value / total * 100) + '%' : '—'
 const rankingWidth = (value: number, rows: { requests: number }[]) => Math.min(100, Math.max(0, value / Math.max(1, ...rows.map(row => row.requests)) * 100)) + '%'
 const geoCoverage = computed(() => totalMap.value ? number(totalLocated.value / totalMap.value * 100) + '%' : '—')
@@ -107,6 +171,29 @@ async function load(): Promise<void> {
   error.value = reason instanceof Error ? localizeError(reason) : phrase('监控数据读取失败')
  } finally { if (current === sequence) { loading.value = false; refreshing.value = false } }
 }
+async function loadProtectionStatus(): Promise<void> {
+ if (disposed) return
+ const current = ++protectionSequence
+ protectionController?.abort()
+ const requestController = new AbortController()
+ protectionController = requestController
+ protectionLastRequested = Date.now()
+ protectionStatusLoading.value = true
+ try {
+  const summary = await api.webEnvironment.summary(requestController.signal)
+  if (disposed || current !== protectionSequence) return
+  protectionStatus.value = summary
+  protectionStatusError.value = ''
+ } catch (reason) {
+  if (disposed || current !== protectionSequence || requestController.signal.aborted) return
+  protectionStatusError.value = reason instanceof Error ? localizeError(reason) : phrase('防护状态读取失败')
+ } finally {
+  if (current === protectionSequence) protectionStatusLoading.value = false
+ }
+}
+async function refreshCurrent(): Promise<void> {
+ await Promise.all([load(), view.value === 'security' ? loadProtectionStatus() : Promise.resolve()])
+}
 async function perform(action: 'enable' | 'pause' | 'clear'): Promise<void> {
  if (busy.value) return
  busy.value = true; notice.value = ''
@@ -117,11 +204,15 @@ async function perform(action: 'enable' | 'pause' | 'clear'): Promise<void> {
  } catch (reason) { error.value = reason instanceof Error ? localizeError(reason) : phrase('监控操作失败') }
  finally { busy.value = false }
 }
-function schedule(): void { timer = setTimeout(async () => { if (!disposed && document.visibilityState !== 'hidden' && data.value?.enabled && !busy.value) await load(); if (!disposed) schedule() }, 10000) }
+function schedule(): void { timer = setTimeout(async () => { if (!disposed && document.visibilityState !== 'hidden' && data.value?.enabled && !busy.value) await load(); if (!disposed && document.visibilityState !== 'hidden' && view.value === 'security' && !protectionStatusLoading.value && Date.now() - protectionLastRequested >= 30000) await loadProtectionStatus(); if (!disposed) schedule() }, 10000) }
 watch([period, host], () => { selectedCountry.value = ''; data.value = undefined; loading.value = true; void load() })
-watch(view, () => { selectedCountry.value = '' })
+watch(view, value => {
+ selectedCountry.value = ''
+ if (value === 'security') void loadProtectionStatus()
+ else { protectionController?.abort(); protectionStatusLoading.value = false }
+})
 onMounted(() => { void load(); void loadSiteIcons(); schedule() })
-onBeforeUnmount(() => { disposed = true; sequence++; controller?.abort(); iconController.abort(); if (timer) clearTimeout(timer) })
+onBeforeUnmount(() => { disposed = true; sequence++; protectionSequence++; controller?.abort(); protectionController?.abort(); iconController.abort(); if (timer) clearTimeout(timer) })
 </script>
 
 <template>
@@ -133,7 +224,7 @@ onBeforeUnmount(() => { disposed = true; sequence++; controller?.abort(); iconCo
    <div class="monitor-toolbar">
     <div class="monitor-view-switch" role="group" aria-label="监控视图"><button :class="{ active: view === 'traffic' }" :aria-pressed="view === 'traffic'" @click="view = 'traffic'"><BarChart3 :size="17" />流量分析</button><button :class="{ active: view === 'security' }" :aria-pressed="view === 'security'" @click="view = 'security'"><ShieldCheck :size="17" />WAF 防御</button></div>
     <div class="monitor-filters"><label><span class="sr-only">站点筛选</span><select v-model="host" aria-label="站点筛选"><option value="">全部站点</option><option v-for="name in data.hosts" :key="name" :value="name">{{ name }}</option></select></label><label><span class="sr-only">统计时间</span><select v-model="period" aria-label="统计时间"><option value="24h">近 24 小时</option><option value="7d">近 7 天</option><option value="30d">近 30 天</option></select></label><button class="icon-button" aria-label="统计口径与设置" title="统计口径与设置" @click="guideOpen = true"><CircleHelp :size="18" /></button></div>
-    <div class="monitor-actions"><span class="collection-status" :class="{ 'is-live': healthy }"><span aria-hidden="true" />{{ status }}</span><button class="button button--secondary" :disabled="refreshing || loading" @click="load"><RefreshCw :size="16" :class="{ spinning: refreshing }" /><span>刷新</span></button></div>
+    <div class="monitor-actions"><span class="collection-status" :class="{ 'is-live': healthy }"><span aria-hidden="true" />{{ status }}</span><button class="button button--secondary" :disabled="refreshing || loading || (view === 'security' && protectionStatusLoading)" @click="refreshCurrent"><RefreshCw :size="16" :class="{ spinning: refreshing || protectionStatusLoading }" /><span>刷新</span></button></div>
    </div>
    <div class="monitor-scope"><span class="scope-icon" aria-hidden="true"><SiteFavicon v-if="host && siteID(host)" :site-id="siteID(host)!" :domain="host" :refresh-key="0" /><Globe2 v-else-if="host" :size="22" /><Layers3 v-else :size="22" /></span><div><strong>{{ host || phrase('全部站点') }}</strong><span>{{ phrase('源站日志统计') }}</span></div><span class="scope-summary"><Globe2 :size="15" aria-hidden="true" />{{ number(visibleCountries.length ? countries.filter(item => item.code !== 'ZZ' && item.requests > 0).length : 0) }} {{ phrase('个地区') }}</span></div>
    <div v-if="!data.enabled" class="monitor-callout"><Database :size="21" /><div><strong>{{ data.startedAt ? phrase('采集已暂停') : phrase('开启您的网站监控') }}</strong><p>增量采集访问与防御日志，保留最长 30 天的聚合统计。</p></div><button class="button button--primary" :disabled="busy" @click="perform('enable')"><Play :size="15" />开始监控</button></div>
@@ -150,6 +241,43 @@ onBeforeUnmount(() => { disposed = true; sequence++; controller?.abort(); iconCo
     <article class="metric-card metric-card--warning"><span class="metric-heading"><span>限流拒绝</span><span class="metric-icon" aria-hidden="true"><Timer :size="20" /></span></span><strong>{{ displayValue(data.protection.limited) }}</strong><small>请求频率或连接数限制</small></article>
     <article class="metric-card metric-card--success"><span class="metric-heading"><span>其他防御事件</span><span class="metric-icon" aria-hidden="true"><ShieldCheck :size="20" /></span></span><strong>{{ displayValue(data.protection.matched) }}</strong><small>命中、检测与延迟处理</small></article>
    </div>
+   <article v-if="view === 'security'" class="monitor-card defense-status-card">
+    <header>
+     <div><h3><ShieldCheck :size="18" aria-hidden="true" />{{ phrase('防护链路状态') }}</h3><p>{{ phrase('从环境管理读取最新状态；此处仅监控，不修改防护配置。') }}</p></div>
+     <div class="defense-header-actions">
+      <button class="text-button" :disabled="protectionStatusLoading" @click="loadProtectionStatus"><RefreshCw :size="14" :class="{ spinning: protectionStatusLoading }" />{{ phrase('刷新防护状态') }}</button>
+      <RouterLink class="text-button" to="/sites/environment?section=protection">{{ phrase('打开防护设置') }}<ArrowUpRight :size="14" /></RouterLink>
+     </div>
+    </header>
+    <LoadingState v-if="protectionStatusLoading && !protectionStatus" :rows="2" />
+    <div v-else-if="protectionStatusError && !protectionStatus" class="defense-status-error" role="alert">
+     <ShieldAlert :size="19" /><span>{{ protectionStatusError }}</span><button class="text-button" @click="loadProtectionStatus">{{ phrase('重试') }}</button>
+    </div>
+    <template v-else-if="protectionStatus">
+     <p v-if="protectionStatusError" class="monitor-warning defense-inline-warning" role="status">{{ protectionStatusError }}</p>
+     <div class="defense-flow" :aria-label="phrase('WAF 到 Fail2Ban 网站 Jail，再到 Cloudflare 的状态链路')">
+      <div class="defense-flow-step"><span>WAF / Nginx</span><StatusBadge :status="defenseWafMode === 'on' || defenseWafMode === 'legacy' ? 'healthy' : defenseWafMode === 'detect' || defenseWafMode === 'mixed' ? 'warning' : defenseWafMode === 'off' ? 'stopped' : 'unknown'" :label="defenseWafLabel" /></div>
+      <span class="defense-flow-arrow" aria-hidden="true">→</span>
+      <div class="defense-flow-step"><span>{{ phrase('Fail2Ban 网站 Jail') }}</span><StatusBadge :status="fail2banBadge" :label="fail2banLabel" /><small v-if="siteJails.length">{{ siteJails.filter(jail => jail.available).length }}/{{ siteJails.length }} {{ phrase('可用 Jail') }}</small></div>
+      <span class="defense-flow-arrow" aria-hidden="true">→</span>
+      <div class="defense-flow-step"><span>Cloudflare</span><StatusBadge :status="cloudflareBadge" :label="cloudflareLabel" /><small v-if="protection?.cloudflareStatus">{{ phrase('活动封禁') }}：{{ number(protection?.cloudflareStatus?.activeBans || 0) }}</small></div>
+     </div>
+     <div class="defense-status-grid">
+      <div class="defense-status-item"><span>{{ phrase('DDoS 规则') }}</span><StatusBadge :status="ddosBadge" :label="ddosLabel" /></div>
+      <div class="defense-status-item"><span>{{ phrase('高负载五秒盾') }}</span><StatusBadge :status="cloudflareShieldBadge" :label="cloudflareShieldLabel" /></div>
+     </div>
+     <section class="defense-detail-section">
+      <header><h4>{{ phrase('站点 Jail 封禁计数') }}</h4><span>{{ phrase('仅展示网站防护 Jail') }}</span></header>
+      <div v-if="siteJails.length" class="defense-jails-table-wrap"><table class="defense-jails-table"><thead><tr><th>{{ phrase('Jail') }}</th><th>{{ phrase('当前封禁') }}</th><th>{{ phrase('累计封禁') }}</th><th>{{ phrase('状态') }}</th></tr></thead><tbody><tr v-for="jail in siteJails" :key="jail.name"><td><code>{{ jail.name }}</code></td><td>{{ jail.available ? number(jail.currentlyBanned) : '—' }}</td><td>{{ jail.available ? number(jail.totalBanned) : '—' }}</td><td><StatusBadge :status="jail.available ? 'healthy' : 'unknown'" :label="phrase(jail.available ? '运行中' : '不可用')" /></td></tr></tbody></table></div>
+      <p v-else class="inline-empty">{{ phrase('站点 Jail 状态暂不可用') }}</p>
+     </section>
+     <section class="defense-detail-section defense-log-section">
+      <header><h4>{{ phrase('最近 Fail2Ban 网站日志') }}</h4><span>{{ phrase('最近 20 条') }}</span></header>
+      <ul v-if="protection?.fail2banLogs?.available && fail2banLogEntries.length"><li v-for="(entry, index) in fail2banLogEntries" :key="`${index}-${entry}`"><code>{{ entry }}</code></li></ul>
+      <p v-else class="inline-empty">{{ phrase(protection?.fail2banLogs?.available ? '暂无网站 Jail 日志' : '日志源不可用') }}</p>
+     </section>
+    </template>
+   </article>
    <article class="monitor-card trend-card">
     <header><div><h3>{{ view === 'traffic' ? phrase('访问趋势') : phrase('防御事件趋势') }}</h3><p>{{ view === 'traffic' ? phrase('请求变化与访问高峰') : phrase('规则命中与防御活动') }}</p></div><span class="chart-legend"><i />{{ view === 'traffic' ? phrase('请求数') : phrase('安全事件') }}</span></header>
     <div v-if="chart.line" class="trend-chart" role="img" :aria-label="view === 'traffic' ? phrase('访问请求趋势图') : phrase('防御事件趋势图')"><span class="chart-maximum">{{ number(chart.max) }}</span><svg viewBox="0 0 1000 160" preserveAspectRatio="none" aria-hidden="true"><path v-for="y in [15, 60, 105, 150]" :key="y" :d="`M0,${y} H1000`" class="chart-grid" /><path :d="chart.area" class="chart-area" /><polyline :points="chart.line" class="chart-line" /></svg><div class="chart-ticks"><span>{{ shortTime(chart.first) }}</span><span>{{ shortTime(chart.last) }}</span></div></div>

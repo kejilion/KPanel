@@ -1681,10 +1681,38 @@ export interface WebEnvironmentComponent {
 
 export interface WebProtectionSummary {
   fail2ban: boolean
+  fail2banInstalled?: boolean
   waf: boolean
   wafMode?: 'on' | 'off' | 'detect' | 'mixed' | 'legacy' | 'unknown'
   cloudflare: boolean
+  cloudflareStatus?: {
+    mode: 'cloudflare' | 'local' | 'unknown' | string
+    configured: boolean
+    running: boolean
+    healthy: boolean
+    pending: boolean
+    cleanupPending: boolean
+    activeBans: number
+  }
+  cloudflareShield?: {
+    available: boolean
+    scheduled: boolean
+    scriptPresent: boolean
+  }
   ddos: boolean
+  ddosRuleCount?: number
+  ddosRuleExpected?: number
+  ddosRulesAvailable?: boolean
+  siteJails?: Array<{
+    name: string
+    available: boolean
+    currentlyBanned: number
+    totalBanned: number
+  }>
+  fail2banLogs?: {
+    available: boolean
+    entries: string[]
+  }
 }
 
 export interface WebOptimizationSummary {

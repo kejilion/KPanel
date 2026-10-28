@@ -23,6 +23,8 @@ func TestValidateActionUsesFixedEnumsAndResourceVersion(t *testing.T) {
 		{"update", ActionRequest{Action: "update.component", Component: "mysql", Version: "8.4", BackupBeforeChange: true, ExpectedResourceVersion: "resource-a"}, []string{"update", "mysql", "8.4", "true"}},
 		{"backup delete", ActionRequest{Action: "backup.delete", BackupID: "web_20260728112233.tar.gz", ExpectedResourceVersion: "resource-a"}, []string{"backup", "delete", "web_20260728112233.tar.gz"}},
 		{"restore", ActionRequest{Action: "restore", BackupID: "web_20260728112233.tar.gz", ExpectedResourceVersion: "resource-a"}, []string{"restore", "web_20260728112233.tar.gz"}},
+		{"cloudflare off", ActionRequest{Action: "protection.configure", Operation: "cloudflare-off", ExpectedResourceVersion: "resource-a"}, []string{"protect", "cloudflare-off"}},
+		{"cloudflare shield off", ActionRequest{Action: "protection.configure", Operation: "cloudflare-shield-off", ExpectedResourceVersion: "resource-a"}, []string{"protect", "cloudflare-shield-off"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -87,6 +89,8 @@ func TestStoredArgumentsRemainFixedEnums(t *testing.T) {
 	}{
 		{"install", []string{"install", "full"}},
 		{"protection.configure", []string{"protect", "waf-on"}},
+		{"protection.configure", []string{"protect", "cloudflare-off"}},
+		{"protection.configure", []string{"protect", "cloudflare-shield-off"}},
 		{"optimization.apply", []string{"optimize", "brotli-off"}},
 		{"update.component", []string{"update", "mysql", "8.4", "true"}},
 		{"backup.create", []string{"backup"}},

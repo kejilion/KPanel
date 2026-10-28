@@ -44,6 +44,6 @@ func freezeManagedSchema(name string, schema map[string]any) {
 		enum("action", "mount", "unmount", "format", "check", "repair")
 	case "host_web_action":
 		enum("action", "install", "protection.configure", "optimization.apply", "update.component", "update.all", "backup.create", "backup.delete", "restore", "uninstall")
-		enum("operation", "fail2ban-install", "fail2ban-uninstall", "unban-all", "waf-on", "waf-off", "ddos-on", "ddos-off", "cloudflare-fail2ban", "cloudflare-shield", "standard", "high", "gzip-on", "gzip-off", "brotli-on", "brotli-off", "zstd-on", "zstd-off")
+		enum("operation", "fail2ban-install", "fail2ban-uninstall", "unban-all", "waf-on", "waf-off", "ddos-on", "ddos-off", "cloudflare-fail2ban", "cloudflare-off", "cloudflare-shield", "cloudflare-shield-off", "standard", "high", "gzip-on", "gzip-off", "brotli-on", "brotli-off", "zstd-on", "zstd-off")
 	}
 }

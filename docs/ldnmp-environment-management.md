@@ -61,6 +61,19 @@ POST /v1/web-environment/jobs/{id}/input
 GET  /v1/web-environment/backups/{id}
 ```
 
+## 网站流量与安全监控
+
+网站 → 流量与安全页的“WAF 防御”视图在显示流量统计与 WAF 审计事件之外，复用 `GET /v1/web-environment` 返回的 `protection` 状态；环境管理页仍是所有防护配置与开关的唯一操作入口。监控页只读，不再提供第二组开关。
+
+共享状态由 `kejilion.sh` 采集，KPanel 不自行探测或拼装另一份状态：
+
+- Fail2Ban 通过 daemon ping 确认运行状态；只查询固定网站 Jail `waf-attack` 和 `waf-rate`，缺失或不可用时返回 `available=false`，不会轮询不存在的 Jail 名称。网站日志只显示这两个 Jail 最近 20 条记录，不混入 SSH 防护日志。
+- Cloudflare 沿用共享 WAF 的 `ban-status`，只传递模式、配置/运行/健康状态、同步等待、关闭清理待重试和活动封禁数；账号、Token、Zone ID 不进入状态响应。
+- DDoS 状态按 8 条既定 iptables 规则完整计数；无 iptables 工具时标为不可核验，不能把“无法检查”显示成“已关闭”。
+- 高负载五秒盾同时核验 crontab 定时项与 `/root/CF-Under-Attack.sh` 是否存在，并区分未安排、配置不完整和状态不可用。
+
+防护页切换到该视图时读取一次状态，提供手动刷新，并在页面可见期间每 30 秒复核；每 10 秒的流量采集轮询不会调用较重的环境摘要接口。Cloudflare 关闭与高负载盾关闭仍通过 `protection.configure` 的固定动作 `cloudflare-off` / `cloudflare-shield-off` 完成。
+
 任务动作固定为：
 
 - `install`

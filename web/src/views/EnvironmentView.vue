@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { RouterLink, useRoute } from 'vue-router'
 import { phraseCatalogVersion, translatePhrase, usePhraseCatalog } from '@/i18n/phrase'
 
 usePhraseCatalog((locale) => locale === 'en-US'
@@ -57,7 +58,8 @@ const sections: Array<{ id: Section; label: string }> = [
   { id: 'uninstall', label: '卸载' },
 ]
 
-const section = ref<Section>('overview')
+const route = useRoute()
+const section = ref<Section>(route.query.section === 'protection' ? 'protection' : 'overview')
 const summary = ref<WebEnvironmentSummary>()
 const wafMode = computed(() => summary.value?.protection.wafMode || (summary.value?.protection.waf ? 'legacy' : 'off'))
 const wafModeLabels = new Map<string, string>([
@@ -72,6 +74,58 @@ const wafLabel = computed(() => phrase(wafModeLabels.get(wafMode.value) || '状�
 const wafBadge = computed(() => wafMode.value === 'on' || wafMode.value === 'legacy' ? 'healthy'
   : wafMode.value === 'mixed' || wafMode.value === 'detect' ? 'warning'
     : wafMode.value === 'off' ? 'stopped' : 'unknown')
+const fail2banInstalled = computed(() => Boolean(summary.value?.protection.fail2banInstalled || summary.value?.protection.fail2ban))
+const fail2banActionLabel = computed(() => summary.value?.protection.fail2ban ? phrase('卸载') : fail2banInstalled.value ? phrase('启动') : phrase('安装'))
+const cloudflareStatus = computed(() => summary.value?.protection.cloudflareStatus)
+const cloudflareLabel = computed(() => {
+  const status = cloudflareStatus.value
+  if (!status) return phrase(summary.value?.protection.cloudflare ? '已配置' : '未配置')
+  if (status.cleanupPending) return phrase('关闭清理待重试')
+  if (status.mode === 'local') return phrase('源站封禁')
+  if (status.mode === 'cloudflare') {
+    if (status.pending) return phrase('等待同步')
+    if (!status.healthy) return phrase('同步待核验')
+    return phrase(status.running ? '已同步' : '已配置，未运行')
+  }
+  return phrase('状态待核验')
+})
+const cloudflareBadge = computed(() => {
+  const status = cloudflareStatus.value
+  if (!status) return summary.value?.protection.cloudflare ? 'healthy' : 'unknown'
+  if (status.cleanupPending || status.pending || (status.mode === 'cloudflare' && !status.healthy)) return 'warning'
+  if (status.mode === 'cloudflare' && status.running && status.healthy) return 'healthy'
+  if (status.mode === 'local') return 'stopped'
+  return 'unknown'
+})
+const cloudflareShield = computed(() => summary.value?.protection.cloudflareShield)
+const cloudflareShieldLabel = computed(() => {
+  const shield = cloudflareShield.value
+  if (!shield?.available) return phrase('状态待核验')
+  if (shield.scheduled && shield.scriptPresent) return phrase('已安排')
+  if (shield.scheduled || shield.scriptPresent) return phrase('配置不完整')
+  return phrase('未安排')
+})
+const cloudflareShieldBadge = computed(() => {
+  const shield = cloudflareShield.value
+  if (!shield?.available) return 'unknown'
+  if (shield.scheduled && shield.scriptPresent) return 'healthy'
+  if (shield.scheduled || shield.scriptPresent) return 'warning'
+  return 'stopped'
+})
+const ddosLabel = computed(() => {
+  const protection = summary.value?.protection
+  if (!protection?.ddosRulesAvailable) return phrase('状态待核验')
+  const expected = protection.ddosRuleExpected || 8
+  const count = protection.ddosRuleCount || 0
+  return phrase(count === expected ? '规则完整' : count ? '规则未完整' : '已关闭') + ` (${count}/${expected})`
+})
+const ddosBadge = computed(() => {
+  const protection = summary.value?.protection
+  if (!protection?.ddosRulesAvailable) return 'unknown'
+  const expected = protection.ddosRuleExpected || 8
+  const count = protection.ddosRuleCount || 0
+  return count === expected ? 'healthy' : count ? 'warning' : 'stopped'
+})
 const catalog = ref<WebEnvironmentCatalog>()
 const backups = ref<WebEnvironmentBackup[]>([])
 const jobs = ref<WebEnvironmentJob[]>([])
@@ -521,14 +575,14 @@ onBeforeUnmount(() => {
       </template>
 
       <section v-else-if="section === 'protection'" class="environment-panel">
-        <header><ShieldCheck :size="20" /><div><h2>环境防护</h2><p>配置后重新读取 Fail2Ban、Nginx 与 iptables 的真实状态。</p></div></header>
+        <header><ShieldCheck :size="20" /><div><h2>环境防护</h2><p>配置后重新读取 Fail2Ban、Nginx 与 iptables 的真实状态。</p></div><RouterLink class="button button--secondary" to="/sites/monitor">{{ phrase('查看网站流量与安全') }}</RouterLink></header>
         <div class="environment-action-grid">
           <article>
-            <div><strong>Fail2Ban</strong><StatusBadge :status="summary.protection.fail2ban ? 'healthy' : 'stopped'" /></div>
+            <div><strong>Fail2Ban</strong><StatusBadge :status="summary.protection.fail2ban ? 'healthy' : fail2banInstalled ? 'warning' : 'stopped'" :label="fail2banInstalled && !summary.protection.fail2ban ? phrase('已安装，未运行') : undefined" /></div>
             <p>管理 SSH 与网站 Jail、封禁状态和日志。</p>
             <div>
               <button class="button button--secondary" :disabled="jobActive" @click="protection(summary.protection.fail2ban ? 'fail2ban-uninstall' : 'fail2ban-install')">
-                {{ summary.protection.fail2ban ? '卸载' : '安装' }}
+                {{ fail2banActionLabel }}
               </button>
               <button class="button button--secondary" :disabled="jobActive || !summary.protection.fail2ban" @click="protection('unban-all')">全部解封</button>
             </div>
@@ -541,14 +595,15 @@ onBeforeUnmount(() => {
             </button>
           </article>
           <article>
-            <div><strong>DDoS 规则</strong><StatusBadge :status="summary.protection.ddos ? 'healthy' : 'stopped'" /></div>
+            <div><strong>DDoS 规则</strong><StatusBadge :status="ddosBadge" :label="ddosLabel" /></div>
             <p>读取并管理宿主机 iptables 防护规则。</p>
             <button class="button button--secondary" :disabled="jobActive" @click="protection(summary.protection.ddos ? 'ddos-off' : 'ddos-on')">
               {{ summary.protection.ddos ? '关闭' : '开启' }}
             </button>
           </article>
           <article>
-            <div><strong>Cloudflare</strong><StatusBadge :status="summary.protection.cloudflare ? 'healthy' : 'unknown'" :label="summary.protection.cloudflare ? '已配置' : '未配置'" /></div>
+            <div><strong>Cloudflare</strong><StatusBadge :status="cloudflareBadge" :label="cloudflareLabel" /></div>
+            <p v-if="cloudflareStatus" class="environment-inline-status">{{ phrase('活动封禁') }}：{{ cloudflareStatus.activeBans }}<span v-if="cloudflareStatus.cleanupPending"> · {{ phrase('关闭清理待重试') }}</span></p>
             <p>凭据只通过任务专属 0600 文件传递，不写入任务、终端、审计或面板数据库。</p>
             <label><span>账号</span><input v-model.trim="cloudflare.account" autocomplete="username" placeholder="name@example.com" /></label>
             <label><span>API Key / Token</span><input v-model="cloudflare.token" type="password" autocomplete="new-password" placeholder="••••••••" /></label>
@@ -556,7 +611,13 @@ onBeforeUnmount(() => {
             <div>
               <button class="button button--secondary" :disabled="jobActive" @click="configureCloudflare('cloudflare-fail2ban')">Fail2Ban 模式</button>
               <button class="button button--secondary" :disabled="jobActive" @click="configureCloudflare('cloudflare-shield')">高负载五秒盾</button>
+              <button class="button button--secondary" :disabled="jobActive || !(cloudflareStatus?.mode === 'cloudflare' || cloudflareStatus?.cleanupPending || summary.protection.cloudflare)" @click="protection('cloudflare-off')">{{ phrase('关闭 CF 封禁模式') }}</button>
             </div>
+          </article>
+          <article>
+            <div><strong>{{ phrase('高负载五秒盾') }}</strong><StatusBadge :status="cloudflareShieldBadge" :label="cloudflareShieldLabel" /></div>
+            <p>{{ phrase('查看定时任务与脚本文件是否同时存在。') }}</p>
+            <button class="button button--secondary" :disabled="jobActive || !cloudflareShield?.available || !(cloudflareShield.scheduled || cloudflareShield.scriptPresent)" @click="protection('cloudflare-shield-off')">{{ phrase('关闭高负载五秒盾') }}</button>
           </article>
         </div>
       </section>
@@ -702,6 +763,7 @@ onBeforeUnmount(() => {
 .environment-action-grid article:last-child > div:last-child { justify-content: flex-end; }
 .environment-action-grid article > div, .environment-action-grid article > div:last-child { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .environment-action-grid article p { flex: 1; }
+.environment-inline-status { color: var(--muted); font-size: 12px; }
 .environment-action-grid label { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
 .environment-action-grid input { min-height: 38px; padding: 0 10px; border: 1px solid var(--border); border-radius: 9px; color: var(--text); background: var(--surface-raised); }
 .environment-mode-actions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }

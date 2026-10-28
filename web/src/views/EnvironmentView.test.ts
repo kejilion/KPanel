@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   start: vi.fn(),
   toastSuccess: vi.fn(),
   toastDanger: vi.fn(),
+  route: { query: {} as Record<string, unknown> },
 }))
 
 vi.mock('@/lib/api', () => ({
@@ -34,9 +35,23 @@ vi.mock('@/stores/toast', () => ({
   }),
 }))
 
+vi.mock('vue-router', async () => {
+  const actual = await vi.importActual<typeof import('vue-router')>('vue-router')
+  return { ...actual, useRoute: () => mocks.route }
+})
+
 interface EnvironmentBindings {
+  section: Ref<string>
   wafLabel: Readonly<Ref<string>>
   wafBadge: Readonly<Ref<string>>
+  fail2banInstalled: Readonly<Ref<boolean>>
+  fail2banActionLabel: Readonly<Ref<string>>
+  cloudflareLabel: Readonly<Ref<string>>
+  cloudflareBadge: Readonly<Ref<string>>
+  cloudflareShieldLabel: Readonly<Ref<string>>
+  cloudflareShieldBadge: Readonly<Ref<string>>
+  ddosLabel: Readonly<Ref<string>>
+  ddosBadge: Readonly<Ref<string>>
   summary: Ref<WebEnvironmentSummary | undefined>
   backups: Ref<WebEnvironmentBackup[]>
   jobs: Ref<WebEnvironmentJob[]>
@@ -98,6 +113,7 @@ function summary(): WebEnvironmentSummary {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mocks.route.query = {}
   vi.useFakeTimers()
   vi.stubGlobal('window', {
     setTimeout: globalThis.setTimeout,
@@ -111,6 +127,12 @@ afterEach(() => {
 })
 
 describe('EnvironmentView background jobs', () => {
+  it('opens the protection section from a focused environment link', () => {
+    mocks.route.query = { section: 'protection' }
+
+    expect(setupView().section.value).toBe('protection')
+  })
+
   it('distinguishes detection, mixed and unknown WAF state from blocking', () => {
     const view = setupView()
     view.summary.value = summary()
@@ -127,6 +149,36 @@ describe('EnvironmentView background jobs', () => {
     view.summary.value.protection.wafMode = 'on'
     expect(view.wafLabel.value).toBe('拦截模式')
     expect(view.wafBadge.value).toBe('healthy')
+  })
+
+  it('shows the running and cleanup state for each defense control', () => {
+    const view = setupView()
+    view.summary.value = summary()
+    view.summary.value.protection.fail2banInstalled = true
+    view.summary.value.protection.cloudflareStatus = {
+      mode: 'cloudflare', configured: true, running: true, healthy: true,
+      pending: true, cleanupPending: false, activeBans: 4,
+    }
+    view.summary.value.protection.cloudflareShield = { available: true, scheduled: true, scriptPresent: true }
+    view.summary.value.protection.ddosRulesAvailable = true
+    view.summary.value.protection.ddosRuleCount = 5
+    view.summary.value.protection.ddosRuleExpected = 8
+
+    expect(view.fail2banInstalled.value).toBe(true)
+    expect(view.fail2banActionLabel.value).toBe('启动')
+    expect(view.cloudflareLabel.value).toBe('等待同步')
+    expect(view.cloudflareBadge.value).toBe('warning')
+    expect(view.cloudflareShieldLabel.value).toBe('已安排')
+    expect(view.cloudflareShieldBadge.value).toBe('healthy')
+    expect(view.ddosLabel.value).toBe('规则未完整 (5/8)')
+    expect(view.ddosBadge.value).toBe('warning')
+
+    view.summary.value.protection.cloudflareStatus.cleanupPending = true
+    expect(view.cloudflareLabel.value).toBe('关闭清理待重试')
+    view.summary.value.protection.fail2ban = true
+    expect(view.fail2banActionLabel.value).toBe('卸载')
+    view.summary.value.protection.cloudflareShield.scriptPresent = false
+    expect(view.cloudflareShieldBadge.value).toBe('warning')
   })
 
   it('renders the environment summary without requesting heavy section data', async () => {
