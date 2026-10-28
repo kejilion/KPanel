@@ -61,11 +61,47 @@ type Component struct {
 }
 
 type Protection struct {
-	Fail2Ban   bool   `json:"fail2ban"`
-	WAF        bool   `json:"waf"`
-	WAFMode    string `json:"wafMode,omitempty"`
-	Cloudflare bool   `json:"cloudflare"`
-	DDoS       bool   `json:"ddos"`
+	Fail2Ban           bool              `json:"fail2ban"`
+	Fail2BanInstalled  bool              `json:"fail2banInstalled"`
+	WAF                bool              `json:"waf"`
+	WAFMode            string            `json:"wafMode,omitempty"`
+	Cloudflare         bool              `json:"cloudflare"`
+	CloudflareStatus   *CloudflareStatus `json:"cloudflareStatus,omitempty"`
+	CloudflareShield   *CloudflareShield `json:"cloudflareShield,omitempty"`
+	DDoS               bool              `json:"ddos"`
+	DDoSRuleCount      int               `json:"ddosRuleCount"`
+	DDoSRuleExpected   int               `json:"ddosRuleExpected"`
+	DDoSRulesAvailable *bool             `json:"ddosRulesAvailable,omitempty"`
+	SiteJails          []SiteJail        `json:"siteJails"`
+	Fail2BanLogs       Fail2BanLogs      `json:"fail2banLogs"`
+}
+
+type SiteJail struct {
+	Name            string `json:"name"`
+	Available       bool   `json:"available"`
+	CurrentlyBanned int    `json:"currentlyBanned"`
+	TotalBanned     int    `json:"totalBanned"`
+}
+
+type Fail2BanLogs struct {
+	Available bool     `json:"available"`
+	Entries   []string `json:"entries"`
+}
+
+type CloudflareStatus struct {
+	Mode           string `json:"mode"`
+	Configured     bool   `json:"configured"`
+	Running        bool   `json:"running"`
+	Healthy        bool   `json:"healthy"`
+	Pending        bool   `json:"pending"`
+	CleanupPending bool   `json:"cleanupPending"`
+	ActiveBans     int    `json:"activeBans"`
+}
+
+type CloudflareShield struct {
+	Available     bool `json:"available"`
+	Scheduled     bool `json:"scheduled"`
+	ScriptPresent bool `json:"scriptPresent"`
 }
 
 type Optimization struct {
@@ -250,6 +286,12 @@ func (s *Service) Summary(ctx context.Context) (Summary, error) {
 	if result.PortConflicts == nil {
 		result.PortConflicts = []string{}
 	}
+	if result.Protection.SiteJails == nil {
+		result.Protection.SiteJails = []SiteJail{}
+	}
+	if result.Protection.Fail2BanLogs.Entries == nil {
+		result.Protection.Fail2BanLogs.Entries = []string{}
+	}
 	return result, nil
 }
 
@@ -426,7 +468,7 @@ func validateAction(input ActionRequest, summary Summary) ([]string, string, err
 	case "protection.configure":
 		allowed := map[string]bool{"fail2ban-install": true, "fail2ban-uninstall": true, "unban-all": true,
 			"waf-on": true, "waf-off": true, "ddos-on": true, "ddos-off": true,
-			"cloudflare-fail2ban": true, "cloudflare-shield": true}
+			"cloudflare-fail2ban": true, "cloudflare-off": true, "cloudflare-shield": true, "cloudflare-shield-off": true}
 		if !allowed[input.Operation] {
 			return nil, "", ErrInvalid
 		}
@@ -980,7 +1022,7 @@ func storedArgumentsAllowed(action string, args []string) bool {
 		return len(args) == 2 && args[0] == "protect" && map[string]bool{
 			"fail2ban-install": true, "fail2ban-uninstall": true, "unban-all": true,
 			"waf-on": true, "waf-off": true, "ddos-on": true, "ddos-off": true,
-			"cloudflare-fail2ban": true, "cloudflare-shield": true,
+			"cloudflare-fail2ban": true, "cloudflare-off": true, "cloudflare-shield": true, "cloudflare-shield-off": true,
 		}[args[1]]
 	case "optimization.apply":
 		return len(args) == 2 && args[0] == "optimize" && map[string]bool{
