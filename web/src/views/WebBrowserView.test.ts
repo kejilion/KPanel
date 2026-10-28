@@ -282,4 +282,34 @@ describe('desktop remote browser', () => {
     expect(newCanvas).not.toBe(oldCanvas)
     wrapper.unmount()
   })
+  it('restores the display when the control connection resumes the same tab', async () => {
+    const wrapper = await render(ref(true), 'https://example.com/'), socket = Socket.instances[0]!
+    const tabs = [{ id: 'first', url: 'https://example.com/', title: 'First', loading: false, back: false, forward: false }]
+    socket.state(); await nextTick(); socket.state(tabs, 'first'); await nextTick()
+    const oldCanvas = await attachVNC(1280, 720)
+    socket.onclose?.(); await nextTick()
+    expect(oldCanvas.parentElement).toBeNull()
+    const retry = wrapper.findAll('button').find(button => button.text() === '重新连接')!
+    await retry.trigger('click'); await flushPromises()
+    const resumed = Socket.instances.filter(item => String(item.url).includes('/browser/stream/')).at(-1)!
+    expect(resumed).not.toBe(socket)
+    resumed.state(tabs, 'first'); await nextTick()
+    const newCanvas = await attachVNC(1280, 720)
+    expect(newCanvas).not.toBe(oldCanvas)
+    wrapper.unmount()
+  })
+  it('ignores clicks and scrolling outside the scaled framebuffer', async () => {
+    const wrapper = await render(ref(true), 'https://example.com/'), socket = Socket.instances[0]!
+    socket.state(); await nextTick()
+    socket.state([{ id: 'first', url: 'https://example.com/', title: 'First', loading: false, back: false, forward: false }], 'first'); await nextTick()
+    const canvas = await attachVNC(1280, 720)
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ left: 100, top: 50, width: 600, height: 400 } as DOMRect)
+    socket.sent.length = 0
+    const down = new Event('pointerdown', { cancelable: true })
+    for (const [key, value] of Object.entries({ pointerType: 'mouse', clientX: 20, clientY: 100, button: 0 })) Object.defineProperty(down, key, { value })
+    wrapper.get('.web-browser__frame').element.dispatchEvent(down)
+    wrapper.get('.web-browser__frame').element.dispatchEvent(new WheelEvent('wheel', { clientX: 20, clientY: 100, deltaY: 100, cancelable: true }))
+    expect(socket.sent).toHaveLength(0)
+    wrapper.unmount()
+  })
 })

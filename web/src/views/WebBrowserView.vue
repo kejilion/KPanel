@@ -42,6 +42,7 @@ const startURL = ref('')
 let preferencesController: AbortController | undefined
 const tabCount = computed(() => tabs.value.length + Number(startPage.value && newTabPending.value))
 const imageReady = ref(false)
+const vncFailed = ref(false)
 const width = ref(1280)
 const height = ref(720)
 const activeTab = computed(() => tabs.value.find(tab => tab.id === activeID.value))
@@ -81,7 +82,7 @@ function errorMessage(code = ''): string {
 }
 function disconnectVNC(): void {
   vncEpoch++; clearTimeout(vncTimer); vncObserver?.disconnect(); vncObserver = undefined
-  vncSocket?.close(); vncSocket = undefined; rfb?.disconnect(); rfb = undefined; imageReady.value = false
+  vncSocket?.close(); vncSocket = undefined; rfb?.disconnect(); rfb = undefined; imageReady.value = false; vncFailed.value = false
 }
 function updateVNCSize(): void {
   const canvas = vncScreen.value?.querySelector('canvas')
@@ -100,7 +101,7 @@ async function connectVNC(attempt = 0): Promise<void> {
       if (current !== vncEpoch) return
       disconnectVNC()
       if (attempt < 3 && visible.value && activeID.value) vncTimer = setTimeout(() => void connectVNC(attempt + 1), 500)
-      else notice.value = t('failed')
+      else { vncFailed.value = true; notice.value = t('failed') }
     }
     vncTimer = setTimeout(failed, 15000)
     channel.onopen = () => channel.send(JSON.stringify({ csrf: api.browser.csrf() }))
@@ -117,9 +118,10 @@ async function connectVNC(attempt = 0): Promise<void> {
       rfb.addEventListener('disconnect', failed)
       rfb.addEventListener('securityfailure', failed)
     }
-  } catch { if (current === vncEpoch) notice.value = t('failed') }
+  } catch { if (current === vncEpoch) { vncFailed.value = true; notice.value = t('failed') } }
 }
 function canvasBox(): DOMRect | undefined { return vncScreen.value?.querySelector('canvas')?.getBoundingClientRect() }
+function insideCanvas(x: number, y: number, box: DOMRect): boolean { return x >= box.left && x <= box.left + box.width && y >= box.top && y <= box.top + box.height }
 function receive(raw: unknown): void {
   const event = browserEvent(raw)
   if (!event) return
@@ -157,11 +159,13 @@ async function connect(): Promise<void> {
       if (current !== epoch) return
       const parsed = browserEvent(event.data)
       if (!parsed) return
+      const resume = status.value !== 'connected' && parsed.type === 'state' && Boolean(activeID.value) && parsed.active === activeID.value
       if (status.value !== 'connected') { clearTimeout(connectTimer); status.value = 'connected'; send({ type: 'visible', visible: visible.value }); resize() }
       receive(event.data)
+      if (resume && visible.value) void connectVNC()
     }
     channel.onerror = () => { if (current === epoch) status.value = 'disconnected' }
-    channel.onclose = () => { if (current === epoch) { clearTimeout(connectTimer); status.value = 'disconnected'; imageReady.value = false } }
+    channel.onclose = () => { if (current === epoch) { clearTimeout(connectTimer); status.value = 'disconnected'; disconnectVNC() } }
   } catch { if (current === epoch) status.value = 'unavailable' }
 }
 function openURL(url: string): void {
@@ -211,6 +215,7 @@ function pointer(event: PointerEvent, action: string): void {
   if (action === 'mouseMoved' && performance.now() - lastPointer < 40) return
   lastPointer = performance.now()
   const box = canvasBox(); if (!box) return
+  if (action === 'mousePressed' && !insideCanvas(event.clientX, event.clientY, box)) return
   const point = browserCoordinates(event.clientX, event.clientY, box, requestedViewport?.width || width.value, requestedViewport?.height || height.value)
   if (!point) return
   if (action === 'mousePressed') { typing.value?.focus({ preventScroll: true }); frame.value.setPointerCapture?.(event.pointerId) }
@@ -220,6 +225,7 @@ function touch(event: PointerEvent, action: string): void {
   const canvas = frame.value
   if (!canvas) return
   if (action === 'mousePressed') {
+    const box = canvasBox(); if (!box || !insideCanvas(event.clientX, event.clientY, box)) return
     if (touchGesture) { touchGesture = undefined; return }
     touchGesture = { id: event.pointerId, startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY, sentX: event.clientX, sentY: event.clientY, moved: false, sentAt: 0 }
     canvas.setPointerCapture?.(event.pointerId)
@@ -251,6 +257,7 @@ function touch(event: PointerEvent, action: string): void {
 function wheel(event: WheelEvent): void {
   if (!frame.value || !imageReady.value || !viewportReady()) return
   const box = canvasBox(); if (!box) return
+  if (!insideCanvas(event.clientX, event.clientY, box)) return
   const point = browserCoordinates(event.clientX, event.clientY, box, width.value, height.value)
   const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? box.height : 1
   if (point) send({ type: 'mouse', action: 'mouseWheel', ...point, deltaX: Math.max(-3000, Math.min(3000, event.deltaX * unit * width.value / box.width)), deltaY: Math.max(-3000, Math.min(3000, event.deltaY * unit * height.value / box.height)), button: 'none', modifiers: modifiers(event) })
@@ -331,7 +338,7 @@ onBeforeUnmount(() => { preferencesController?.abort(); disconnect(true); observ
         <div v-if="links.length" class="web-browser__quick"><h2>{{ t('quick') }}</h2><div><button v-for="link in links.slice(0, 12)" :key="link.id" @click="openURL(link.url)"><img v-if="link.iconURL" :src="link.iconURL" alt="" /><Globe2 v-else :size="24" /><span>{{ link.name }}</span></button></div></div>
       </div>
       <div v-else class="web-browser__viewport">
-        <div v-if="!imageReady" class="web-browser__loading" role="status"><LoaderCircle :size="24" class="is-spinning" /><span>{{ t('loading') }}</span></div>
+        <div v-if="!imageReady" class="web-browser__loading" role="status"><LoaderCircle v-if="!vncFailed" :size="24" class="is-spinning" /><span>{{ t(vncFailed ? 'failed' : 'loading') }}</span><button v-if="vncFailed" class="button button--secondary" @click="connectVNC()">{{ t('retry') }}</button></div>
         <div ref="frame" class="web-browser__frame" :aria-label="t('screen')" @pointerdown.prevent="pointer($event, 'mousePressed')" @pointerup.prevent="pointer($event, 'mouseReleased')" @pointermove.prevent="pointer($event, 'mouseMoved')" @pointercancel="touchGesture = undefined" @wheel.prevent="wheel" @contextmenu.prevent><div ref="vncScreen" class="web-browser__vnc" :class="{ 'is-ready': imageReady }" /></div>
         <textarea ref="typing" class="web-browser__keyboard" :aria-label="t('input')" autocapitalize="off" autocomplete="off" spellcheck="false" @keydown="key($event, 'keyDown')" @keyup="key($event, 'keyUp')" @beforeinput="beforeTextInput" @compositionstart="composing = true" @compositionend="composing = false; textInput($event)" @input="textInput" />
       </div>
@@ -373,7 +380,7 @@ onBeforeUnmount(() => { preferencesController?.abort(); disconnect(true); observ
 .web-browser__emblem{display:grid;place-items:center;width:5rem;height:5rem;border-radius:var(--radius-lg);background:var(--brand-soft);color:var(--brand);margin-bottom:1rem}.web-browser__start h1{font-size:clamp(1.25rem,2vw,1.65rem);line-height:1.4;font-weight:600;margin:0 0 .6rem}
 .web-browser__search{display:flex;align-items:center;gap:.75rem;width:min(100%,36rem);padding:.55rem .6rem .55rem 1rem;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface-raised);box-shadow:var(--shadow-sm)}.web-browser__search>svg{flex-shrink:0;color:var(--muted)}.web-browser__search input{min-width:0;flex:1;border:0;background:none;color:var(--text);font:inherit;outline:none}.web-browser__search:focus-within{border-color:var(--brand)}.web-browser__search .button{display:flex;align-items:center;gap:.4rem;white-space:nowrap;font-size:.875rem}
 .web-browser__quick{width:min(100%,36rem);margin-top:2rem;text-align:left}.web-browser__quick h2{font-size:.8125rem;font-weight:500;color:var(--muted);margin:0 0 .75rem}.web-browser__quick>div{display:grid;grid-template-columns:repeat(auto-fit,minmax(5rem,1fr));gap:.5rem}.web-browser__quick button{display:flex;flex-direction:column;align-items:center;gap:.6rem;min-width:0;padding:.8rem .4rem;border:0;border-radius:var(--radius-sm);background:none;color:var(--text);font:inherit;cursor:pointer}.web-browser__quick button:hover{background:var(--surface-subtle)}.web-browser__quick img{width:2rem;height:2rem;object-fit:contain}.web-browser__quick span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
-.web-browser__viewport{position:absolute;inset:0;overflow:hidden;display:flex;align-items:flex-start;justify-content:center;background:var(--surface-subtle)}.web-browser__frame,.web-browser__vnc{width:100%;height:100%;touch-action:none}.web-browser__vnc{visibility:hidden;pointer-events:none}.web-browser__vnc.is-ready{visibility:visible}.web-browser__loading{position:absolute;inset:0;display:flex;gap:.75rem;align-items:center;justify-content:center;color:var(--muted);pointer-events:none}.web-browser__keyboard{position:absolute;left:0;top:0;width:1px;height:1px;opacity:0;resize:none;padding:0;border:0}
+.web-browser__viewport{position:absolute;inset:0;overflow:hidden;display:flex;align-items:flex-start;justify-content:center;background:var(--surface-subtle)}.web-browser__frame,.web-browser__vnc{width:100%;height:100%;touch-action:none}.web-browser__vnc{visibility:hidden;pointer-events:none}.web-browser__vnc.is-ready{visibility:visible}.web-browser__loading{position:absolute;z-index:1;inset:0;display:flex;gap:.75rem;align-items:center;justify-content:center;color:var(--muted);pointer-events:none}.web-browser__loading button{pointer-events:auto}.web-browser__keyboard{position:absolute;left:0;top:0;width:1px;height:1px;opacity:0;resize:none;padding:0;border:0}
 .web-browser__footer{display:flex;align-items:center;flex-shrink:0;gap:1rem;min-height:1.75rem;box-sizing:border-box;border-top:1px solid var(--border);padding:.25rem .75rem;color:var(--muted);font-size:.8125rem}.web-browser__footer>span:first-child{display:flex;gap:.4rem;align-items:center;white-space:nowrap}.web-browser__dot{width:.4rem;height:.4rem;border-radius:50%;background:var(--muted)}.web-browser__dot.is-connected{background:var(--brand)}.web-browser__notice{display:flex;gap:.75rem;align-items:center;justify-content:space-between;padding:.4rem .85rem;border-bottom:1px solid var(--border);background:var(--brand-soft);font-size:.875rem;line-height:1.5}.web-browser__dialog{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.875rem;line-height:1.6}
 .web-browser__sheet-action{display:flex;align-items:center;gap:.5rem;min-height:2.75rem}.web-browser__tab-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.75rem}.web-browser__tab-card{position:relative;min-width:0;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface-subtle);overflow:hidden}.web-browser__tab-card.is-active{border:2px solid var(--brand);background:var(--brand-soft)}.web-browser__tab-choice{display:flex;flex-direction:column;align-items:flex-start;gap:.75rem;width:100%;min-height:10rem;padding:1rem;border:0;background:none;color:var(--text);text-align:left;cursor:pointer}.web-browser__tab-choice>svg{margin:.25rem 0;color:var(--brand)}.web-browser__tab-choice strong{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;font-size:.875rem;line-height:1.5;font-weight:500}.web-browser__tab-choice span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:.8125rem}.web-browser__card-close{position:absolute;right:0;top:0;display:grid;place-items:center;width:2.75rem;height:2.75rem;border:0;background:none;color:var(--text);cursor:pointer}.web-browser__card-close:hover{background:var(--surface-raised)}
 .web-browser__menu-actions{display:grid;gap:.25rem}.web-browser__menu-actions button{display:flex;align-items:center;gap:.75rem;min-height:2.75rem;padding:.65rem .5rem;border:0;border-radius:var(--radius-sm);background:none;color:var(--text);font-size:.875rem;text-align:left;cursor:pointer}.web-browser__menu-actions button:hover{background:var(--surface-subtle)}.web-browser__menu-actions button:disabled{opacity:.4;cursor:default}.web-browser__menu-info{display:flex;align-items:center;gap:.4rem;margin:1rem 0 .5rem;color:var(--muted);font-size:.8125rem}.web-browser__menu-hint{margin:0;color:var(--muted);font-size:.8125rem;line-height:1.6}
