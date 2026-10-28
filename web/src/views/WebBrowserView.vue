@@ -189,8 +189,8 @@ async function connect(): Promise<void> {
       receive(event.data)
       if (resume && visible.value) void connectVNC()
     }
-    channel.onerror = () => { if (current === epoch) status.value = 'disconnected' }
-    channel.onclose = () => { if (current === epoch) { clearTimeout(connectTimer); status.value = 'disconnected'; disconnectVNC() } }
+    channel.onerror = () => { if (current === epoch) { inputQueue.clear(); status.value = 'disconnected' } }
+    channel.onclose = () => { if (current === epoch) { inputQueue.clear(); clearTimeout(connectTimer); status.value = 'disconnected'; disconnectVNC() } }
   } catch { if (current === epoch) status.value = 'unavailable' }
 }
 function openURL(url: string): void {

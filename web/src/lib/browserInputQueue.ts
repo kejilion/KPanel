@@ -1,6 +1,6 @@
-// Continuous input is lossy in position, but not in wheel distance. Keep at
-// most one sample of each. A bounded residual spans at most eight packets;
-// discrete actions end the gesture and discard any obsolete remaining motion.
+// Continuous input is lossy in position. Keep at most one sample of each;
+// retry wheel distance while connected, with a bounded residual of eight
+// packets. Discrete actions end the gesture and discard obsolete motion.
 type Command = Record<string, unknown>
 const inputBatchDelayMs = 8
 export function browserInputQueue(send: (command: Command) => boolean) {
@@ -14,7 +14,10 @@ export function browserInputQueue(send: (command: Command) => boolean) {
     if (w) {
       const x = Number(w.deltaX || 0), y = Number(w.deltaY || 0)
       const dx = Math.max(-3000, Math.min(3000, x)), dy = Math.max(-3000, Math.min(3000, y))
-      if (send({ ...w, deltaX: dx, deltaY: dy }) && (x !== dx || y !== dy)) {
+      if (!send({ ...w, deltaX: dx, deltaY: dy })) {
+        wheel = w
+        timer = setTimeout(flush, 25)
+      } else if (x !== dx || y !== dy) {
         wheel = { ...w, deltaX: x - dx, deltaY: y - dy }
         timer = setTimeout(flush, 25)
       }
