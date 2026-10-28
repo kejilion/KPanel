@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { chromium } = require(process.env.KPANEL_PLAYWRIGHT_MODULE || 'playwright');
-const root = path.resolve(__dirname, '../..');
+const root = path.resolve(__dirname, '../../..');
 const out = process.env.FOLLOW_EVIDENCE || path.join(root, '.codex-tmp/terminal-follow');
 fs.mkdirSync(out, { recursive: true });
 (async () => {
