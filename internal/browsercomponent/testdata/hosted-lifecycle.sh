@@ -39,7 +39,7 @@ mkdir -m 0755 "$runtime/runtime-parent"
 cd "$repo"
 go build -buildvcs=false -o "$runtime/agent" ./cmd/kejilion-agent
 go build -buildvcs=false -o "$runtime/reconcile" "$evidence/reconcile.go"
-CGO_ENABLED=0 go build -buildvcs=false -o "$runtime/probe" "$evidence/live-browser-probe.go"
+CGO_ENABLED=0 go build -buildvcs=false -o "$runtime/probe" "$evidence/live-browser-probe/main.go"
 chmod 0555 "$runtime/probe"
 docker pull docker.io/kjlion/kpanel-browser@sha256:0660b4608e9219e8d03c4d72dc8ba3e9c64f6310df36c766933373855f918839 >/dev/null
 start_panel() { docker run -d --name kejilion-panel --label com.docker.compose.project=kpanel \
