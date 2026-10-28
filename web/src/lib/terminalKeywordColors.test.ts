@@ -11,7 +11,7 @@ function fixture(texts = ['ERROR WARNING SUCCESS']) {
   const lines = texts.map(text => {
     const cells = Array.from(text).flatMap(char => {
       const width = /[\u4e00-\u9fff]/.test(char) ? 2 : 1
-      const cell = { getWidth: () => width, getChars: () => char, isFgDefault: () => true, isInverse: () => false }
+      const cell = { getWidth: () => width, getChars: () => char, isFgDefault: () => true, isBgDefault: () => true, isInverse: () => false }
       return width === 2 ? [cell, { ...cell, getWidth: () => 0 }] : [cell]
     })
     return { length: cells.length, getCell: (x: number) => cells[x], cells, isWrapped: false }
@@ -129,6 +129,14 @@ describe('terminal keyword colors', () => {
     f.lines[0]!.cells[6]!.isInverse = () => true
     vi.advanceTimersByTime(100)
     expect(f.options().map(item => item.foregroundColor)).toEqual(['#00ff00'])
+    f.addon.dispose()
+  })
+
+  it('preserves explicit ANSI backgrounds instead of risking unreadable foreground colors', () => {
+    const f = fixture(['ERROR 127.0.0.1:80 /tmp/log https://example.com'])
+    f.lines[0]!.cells.forEach(cell => { cell.isBgDefault = () => false })
+    vi.advanceTimersByTime(100)
+    expect(f.options()).toHaveLength(0)
     f.addon.dispose()
   })
 

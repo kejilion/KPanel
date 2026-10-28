@@ -84,7 +84,7 @@ export class TerminalKeywordColorsAddon implements ITerminalAddon {
               const chars = cell.getChars() || ' '
               for (let i = 0; i < chars.length; i++) {
                 columns.push(offset + x)
-                plain.push(cell.isFgDefault() && !cell.isInverse())
+                plain.push(cell.isFgDefault() && cell.isBgDefault() && !cell.isInverse())
               }
               text += chars
             }
