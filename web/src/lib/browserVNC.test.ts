@@ -1,5 +1,25 @@
 import { describe, expect, it, vi } from 'vitest'
-import { observeVNCFrame } from './browserVNC'
+import { observeVNCFrame, suppressVNCCursor } from './browserVNC'
+
+describe('VNC cursor suppression', () => {
+  it('clears the remote cursor on connect and every later cursor update', () => {
+    const clear = vi.fn()
+    const update = vi.fn()
+    const client = { _updateCursor: update, _cursor: { clear } }
+    const restore = suppressVNCCursor(client)
+    expect(clear).toHaveBeenCalledTimes(1)
+    client._updateCursor('shape')
+    expect(update).toHaveBeenCalledWith('shape')
+    expect(clear).toHaveBeenCalledTimes(2)
+    restore()
+    expect(client._updateCursor).toBe(update)
+    expect(clear).toHaveBeenCalledTimes(3)
+  })
+
+  it('fails closed if noVNC changes its cursor interface', () => {
+    expect(() => suppressVNCCursor({})).toThrow('Unsupported VNC cursor interface')
+  })
+})
 
 describe('VNC painted-frame barrier', () => {
   it('ignores handshake/resize/cursor updates and waits for decoded pixels to paint', async () => {

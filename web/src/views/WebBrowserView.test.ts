@@ -8,11 +8,13 @@ import { api } from '@/lib/api'
 import { browserLinksKey, browserLaunchKey } from '@/lib/webBrowser'
 import { desktopWindowTitlebarTargetKey, desktopWindowVisibleKey } from '@/lib/desktopRouteKeys'
 
-const vncClients = vi.hoisted(() => [] as Array<{ canvas: HTMLCanvasElement; _framebufferUpdate(): boolean; dispatchEvent(event: Event): boolean }>)
+const vncClients = vi.hoisted(() => [] as Array<{ canvas: HTMLCanvasElement; _framebufferUpdate(): boolean; _cursor: { clear(): void }; _updateCursor(...args: unknown[]): void; dispatchEvent(event: Event): boolean }>)
 vi.mock('@novnc/novnc', () => ({ default: class extends EventTarget {
   canvas: HTMLCanvasElement
   _FBU = { encoding: 7 }
   _display = { flush: () => Promise.resolve() }
+  _cursor = { clear() {} }
+  _updateCursor(..._args: unknown[]) {}
   _handleRect() { return true }
   _framebufferUpdate() { this._handleRect(); return true }
   viewOnly = false
@@ -201,8 +203,13 @@ describe('desktop remote browser', () => {
     expect(wrapper.get('.web-browser__vnc canvas').element).toBe(canvas)
     const choices = document.querySelectorAll<HTMLButtonElement>('.web-browser__tab-choice')
     expect(choices).toHaveLength(2)
+    const vncSocketCount = Socket.instances.filter(item => String(item.url).includes('/browser/vnc/')).length
+    const resizeCount = socket.sent.filter(command => command.type === 'resize').length
     choices[1]!.click(); await flushPromises()
     expect(socket.sent).toContainEqual({ type: 'select', tab: 'tab-1' })
+    expect(socket.sent.filter(command => command.type === 'resize')).toHaveLength(resizeCount)
+    expect(Socket.instances.filter(item => String(item.url).includes('/browser/vnc/'))).toHaveLength(vncSocketCount)
+    expect(wrapper.get('.web-browser__vnc canvas').element).toBe(canvas)
     expect(socket.sent).toContainEqual({ type: 'visible', visible: true })
     expect(document.querySelector('.web-browser__tab-choice')).toBeNull()
     socket.state(Array.from({ length: 8 }, (_, index) => ({ ...pages[0]!, id: `tab-${index}` })), 'tab-1'); await nextTick()
@@ -282,27 +289,19 @@ describe('desktop remote browser', () => {
     expect(socket.sent.at(-1)).toMatchObject({ action: 'mouseMoved', x: 799, y: 499 })
     wrapper.unmount()
   })
-  it('retains a frozen frame and waits for a fresh paint after closing the active tab', async () => {
+  it('reuses the display connection when closing the active tab', async () => {
     const wrapper = await render(ref(true), 'https://example.com/'), socket = Socket.instances[0]!
     const tabs = [{ id: 'first', url: 'https://example.com/1', title: 'First', loading: false, back: false, forward: false }, { id: 'second', url: 'https://example.com/2', title: 'Second', loading: false, back: false, forward: false }]
     socket.state(); await nextTick(); socket.state(tabs, 'second'); await nextTick()
     const oldCanvas = await attachVNC(1280, 720)
+    const vncSocketCount = Socket.instances.filter(item => String(item.url).includes('/browser/vnc/')).length
     await wrapper.get('button[aria-label="关闭标签页 · Second"]').trigger('click')
-    expect(wrapper.get('.web-browser__previous').isVisible()).toBe(true)
     socket.state([tabs[0]], 'first'); await flushPromises()
-    const channel = Socket.instances.filter(item => String(item.url).includes('/browser/vnc/')).at(-1)!
-    channel.onmessage?.({ data: JSON.stringify({ ready: true }) })
-    const client = vncClients.at(-1)!
-    client.dispatchEvent(new Event('connect')); await nextTick()
+    expect(Socket.instances.filter(item => String(item.url).includes('/browser/vnc/'))).toHaveLength(vncSocketCount)
+    expect(wrapper.get('.web-browser__vnc canvas').element).toBe(oldCanvas)
     socket.sent.length = 0
-    await wrapper.get('textarea').setValue('must not reach the unseen tab')
-    expect(socket.sent).toHaveLength(0)
-    client.canvas.width = 1280; client.canvas.height = 720
-    client._framebufferUpdate(); await Promise.resolve(); await nextTick()
-    expect((wrapper.get('.web-browser__previous').element as HTMLCanvasElement).style.display).toBe('none')
-    expect(wrapper.get('.web-browser__vnc canvas').element).not.toBe(oldCanvas)
-    await wrapper.get('textarea').setValue('fresh')
-    expect(socket.sent.at(-1)).toMatchObject({ type: 'text', tab: 'first', text: 'fresh' })
+    await wrapper.get('textarea').setValue('routes to the selected tab')
+    expect(socket.sent.at(-1)).toMatchObject({ type: 'text', tab: 'first', text: 'routes to the selected tab' })
     wrapper.unmount()
   })
   it('restores the display when the control connection resumes the same tab', async () => {

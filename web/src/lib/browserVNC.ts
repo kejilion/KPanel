@@ -7,7 +7,30 @@ type Decoder = {
   _framebufferUpdate(): boolean
   _display: { flush(): Promise<void> }
 }
+type CursorClient = {
+  _updateCursor: (...args: unknown[]) => void
+  _cursor: { clear(): void }
+}
 const pixelEncodings = new Set([0, 1, 2, 5, 6, 7, 16, 21, 50, -260])
+
+// noVNC can install the remote cursor as either a CSS cursor URL or a separate
+// fixed canvas on touch devices. Clearing it at the decoder boundary covers
+// both implementations, including cursor shapes that arrive after connect.
+export function suppressVNCCursor(client: unknown): () => void {
+  const rfb = client as CursorClient
+  if (typeof rfb?._updateCursor !== 'function' || typeof rfb._cursor?.clear !== 'function') throw new Error('Unsupported VNC cursor interface')
+  const updateCursor = rfb._updateCursor
+  rfb._updateCursor = function (...args) {
+    updateCursor.apply(rfb, args)
+    rfb._cursor.clear()
+  }
+  rfb._cursor.clear()
+  return () => {
+    rfb._updateCursor = updateCursor
+    rfb._cursor.clear()
+  }
+}
+
 export function observeVNCFrame(client: unknown, painted: () => void): () => void {
   const decoder = client as Decoder
   if (typeof decoder._handleRect !== 'function' || typeof decoder._framebufferUpdate !== 'function' || typeof decoder._display?.flush !== 'function') throw new Error('Unsupported VNC decoder')
