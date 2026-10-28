@@ -11,7 +11,7 @@
 - CF 凭据仍存在但封禁 owner 状态缺失时，解封和卸载保持 fail-closed。
 
 ### Compatibility
-- 本镜像固定配套 `kejilion/sh` 提交 `2e64113e60f64bda4a3fe73bfcc31c7387baee89`（根/CN 脚本 SHA-256 `ab891461e60be95836d860e12ee1ef71fd975fb7f4a4b01fbbd32b8ef915f67a`）及共享 WAF 包 `kejilion/nginx@538af11069ea68f37d06d7508e14e763af032df5`。
+- 本镜像固定配套 `kejilion/sh` 提交 `b408d60d7ed1c9a935bb1ff0d6e41b73469898ff`（根/CN 脚本 SHA-256 `2f814354d0d0de113e44c788a2b79484eca0762293a168da1baebec8fdac312d`）及共享 WAF 包 `kejilion/nginx@42698292499f6e6ba4ebe4f833e164805e6b5641`。
 
 ### Upgrade Notes
 - 旧 CF 凭据不会自动迁移，需在面板重新录入；新凭据完成配置前封禁仍由源站执行。更新前请备份配置；回退请恢复 `v1.28.0-rc.13` 配套版本。本版为预览版，加入预览不会自动安装，退出预览不会自动降级；稳定版保持 `1.27.2`。
