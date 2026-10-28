@@ -7,6 +7,7 @@ type Decoder = {
   _framebufferUpdate(): boolean
   _display: { flush(): Promise<void> }
 }
+const pixelEncodings = new Set([0, 1, 2, 5, 6, 7, 16, 21, 50, -260])
 export function observeVNCFrame(client: unknown, painted: () => void): () => void {
   const decoder = client as Decoder
   if (typeof decoder._handleRect !== 'function' || typeof decoder._framebufferUpdate !== 'function' || typeof decoder._display?.flush !== 'function') throw new Error('Unsupported VNC decoder')
@@ -15,10 +16,8 @@ export function observeVNCFrame(client: unknown, painted: () => void): () => voi
   decoder._handleRect = function () {
     const encoding = this._FBU.encoding
     const complete = rect.call(this)
-    // Standard pixel encodings are nonnegative; TightPNG is -260. Negative
-    // cursor, desktop-size, last-rectangle and capability pseudo-encodings
-    // must never unlock input.
-    if (complete && encoding !== null && (encoding >= 0 || encoding === -260)) pixels = true
+    // Explicit allowlist: VMware cursor is a positive pseudo-encoding.
+    if (complete && encoding !== null && pixelEncodings.has(encoding)) pixels = true
     return complete
   }
   decoder._framebufferUpdate = function () {

@@ -17,6 +17,9 @@ describe('VNC painted-frame barrier', () => {
     decoder._FBU.encoding = -239
     decoder._framebufferUpdate()
     expect(painted).not.toHaveBeenCalled()
+    decoder._FBU.encoding = 0x574d5664
+    decoder._framebufferUpdate()
+    expect(painted).not.toHaveBeenCalled()
     decoder._FBU.encoding = 7
     decoder._framebufferUpdate()
     expect(painted).not.toHaveBeenCalled()
