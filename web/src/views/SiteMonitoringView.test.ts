@@ -6,7 +6,7 @@ import { api } from '@/lib/api'
 import type { SiteTrafficSnapshot } from '@/types/siteTraffic'
 import type { Site, WebEnvironmentSummary } from '@/types/api'
 vi.mock('@/lib/api', () => ({ api: { siteTraffic: { summary: vi.fn(), action: vi.fn() }, webEnvironment: { summary: vi.fn() }, sites: { list: vi.fn() } } }))
-interface Bindings { data: Ref<SiteTrafficSnapshot | undefined>; protectionStatus: Ref<WebEnvironmentSummary | undefined>; protectionStatusError: Ref<string>; protectionStatusLoading: Ref<boolean>; fail2banLogEntries: Readonly<Ref<string[]>>; load: () => Promise<void>; loadProtectionStatus: () => Promise<void>; error: Ref<string>; loading: Ref<boolean>; host: Ref<string>; busy: Ref<boolean>; loadSiteIcons: () => Promise<void>; siteID: (host: string) => string | undefined; perform: (action: 'enable' | 'pause' | 'clear') => Promise<void> }
+interface Bindings { data: Ref<SiteTrafficSnapshot | undefined>; protectionStatus: Ref<WebEnvironmentSummary | undefined>; protectionStatusError: Ref<string>; protectionStatusLoading: Ref<boolean>; fail2banLogEntries: Readonly<Ref<string[]>>; view: Ref<'traffic' | 'security'>; schedule: () => void; load: () => Promise<void>; loadProtectionStatus: () => Promise<void>; error: Ref<string>; loading: Ref<boolean>; host: Ref<string>; busy: Ref<boolean>; loadSiteIcons: () => Promise<void>; siteID: (host: string) => string | undefined; perform: (action: 'enable' | 'pause' | 'clear') => Promise<void> }
 function setup(): Bindings {
  const app = createSSRApp({ render: () => null }); app.provide(ssrContextKey, { modules: new Set<string>() })
  const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
@@ -14,7 +14,7 @@ function setup(): Bindings {
 }
 function snapshot(requests = 1): SiteTrafficSnapshot { return { requests, enabled: true } as SiteTrafficSnapshot }
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(r => { resolve = r }); return { promise, resolve } }
-afterEach(() => vi.resetAllMocks())
+afterEach(() => { vi.clearAllTimers(); vi.unstubAllGlobals(); vi.useRealTimers(); vi.resetAllMocks() })
 describe('website monitoring request lifecycle', () => {
  it('resolves primary and alias hosts to managed icons without treating external referrers as site IDs', async () => {
   vi.mocked(api.sites.list).mockResolvedValue({ total: 1, items: [{ id: 'managed-site', primaryDomain: 'example.com', domains: ['www.example.com'] } as Site] })
@@ -53,6 +53,19 @@ describe('website monitoring request lifecycle', () => {
   expect(view.protectionStatus.value?.protection.siteJails?.[0]?.currentlyBanned).toBe(1)
   expect(view.fail2banLogEntries.value).toEqual(['[waf-attack] Ban 192.0.2.1'])
   expect(view.protectionStatusError.value).toBe('')
+ })
+ it('does not abort a slow defense status request when the refresh interval elapses', async () => {
+  vi.useFakeTimers(); vi.setSystemTime(new Date('2026-10-28T00:00:00Z'))
+  vi.stubGlobal('document', { visibilityState: 'visible' })
+  const pending = deferred<WebEnvironmentSummary>()
+  vi.mocked(api.webEnvironment.summary).mockReturnValue(pending.promise)
+  const view = setup(); view.view.value = 'security'; await nextTick()
+  expect(api.webEnvironment.summary).toHaveBeenCalledTimes(1)
+  view.schedule()
+  await vi.advanceTimersByTimeAsync(30000)
+  expect(api.webEnvironment.summary).toHaveBeenCalledTimes(1)
+  pending.resolve({ protection: {} } as WebEnvironmentSummary)
+  await nextTick()
  })
  it('discards an older response after a newer request has completed', async () => {
   const old = deferred<SiteTrafficSnapshot>(), latest = deferred<SiteTrafficSnapshot>()
