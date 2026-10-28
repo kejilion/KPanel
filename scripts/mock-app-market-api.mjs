@@ -1571,7 +1571,21 @@ const environmentSummary = {
       updateReason: '',
     },
   ],
-  protection: { fail2ban: true, waf: true, cloudflare: false, ddos: true },
+  protection: {
+    fail2ban: true,
+    fail2banInstalled: true,
+    waf: true,
+    wafMode: 'on',
+    cloudflare: true,
+    ddos: true,
+    cloudflareStatus: { mode: 'cloudflare', configured: true, running: true, healthy: true, pending: false, cleanupPending: false, activeBans: 2 },
+    banMigration: { state: 'legacy-imported', importedRecords: 466, apiJailEnabled: true, legacyCFDetected: true, cfReentryRequired: true, legacyReconcilerStopped: true },
+    siteJails: [
+      { name: 'waf-attack', available: true, currentlyBanned: 0, totalBanned: 466 },
+      { name: 'waf-api-invalid', available: true, currentlyBanned: 0, totalBanned: 128 },
+    ],
+    fail2banLogs: { available: true, entries: ['[waf-api-invalid] Ban 192.0.2.50', '[waf-attack] Ban 192.0.2.51'] },
+  },
   optimization: { mode: 'standard', gzip: true, brotli: true, zstd: false },
   observedAt: new Date().toISOString(),
 }
