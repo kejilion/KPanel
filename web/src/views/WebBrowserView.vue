@@ -153,13 +153,15 @@ async function connect(): Promise<void> {
     if (!health.ready) { status.value = health.reason === 'browser_unconfigured' ? 'unconfigured' : 'unavailable'; return }
     const url = new URL(`/api/v1/browser/stream/${workspace}`, location.href); url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
     const channel = new WebSocket(url); socket = channel
+    let awaitingInitialState = true
     connectTimer = setTimeout(() => { if (current === epoch) { disconnect(); status.value = 'unavailable' } }, 15000)
     channel.onopen = () => { if (current !== epoch) return; channel.send(JSON.stringify({ csrf: api.browser.csrf() })) }
     channel.onmessage = event => {
       if (current !== epoch) return
       const parsed = browserEvent(event.data)
       if (!parsed) return
-      const resume = status.value !== 'connected' && parsed.type === 'state' && Boolean(activeID.value) && parsed.active === activeID.value
+      const resume = awaitingInitialState && parsed.type === 'state' && Boolean(activeID.value) && parsed.active === activeID.value
+      if (parsed.type === 'state') awaitingInitialState = false
       if (status.value !== 'connected') { clearTimeout(connectTimer); status.value = 'connected'; send({ type: 'visible', visible: visible.value }); resize() }
       receive(event.data)
       if (resume && visible.value) void connectVNC()

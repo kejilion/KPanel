@@ -293,6 +293,7 @@ describe('desktop remote browser', () => {
     await retry.trigger('click'); await flushPromises()
     const resumed = Socket.instances.filter(item => String(item.url).includes('/browser/stream/')).at(-1)!
     expect(resumed).not.toBe(socket)
+    resumed.onmessage?.({ data: JSON.stringify({ type: 'error', code: 'browser_action_failed' }) }); await nextTick()
     resumed.state(tabs, 'first'); await nextTick()
     const newCanvas = await attachVNC(1280, 720)
     expect(newCanvas).not.toBe(oldCanvas)
