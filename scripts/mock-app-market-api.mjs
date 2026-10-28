@@ -1576,9 +1576,9 @@ const environmentSummary = {
     fail2banInstalled: true,
     waf: true,
     wafMode: 'on',
-    cloudflare: true,
+    cloudflare: false,
     ddos: true,
-    cloudflareStatus: { mode: 'cloudflare', configured: true, running: true, healthy: true, pending: false, cleanupPending: false, activeBans: 2 },
+    cloudflareStatus: { mode: 'local', configured: true, running: true, healthy: true, pending: false, cleanupPending: false, activeBans: 0 },
     banMigration: { state: 'legacy-imported', importedRecords: 466, apiJailEnabled: true, legacyCFDetected: true, cfReentryRequired: true, legacyReconcilerStopped: true },
     siteJails: [
       { name: 'waf-attack', available: true, currentlyBanned: 0, totalBanned: 466 },
