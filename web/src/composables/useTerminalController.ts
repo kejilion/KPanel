@@ -2,6 +2,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch,
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { TerminalWebLinksAddon } from '@/lib/terminalWrappedLinks'
+import { TerminalKeywordColorsAddon } from '@/lib/terminalKeywordColors'
 import '@xterm/xterm/css/xterm.css'
 import type TerminalContextMenu from '@/components/terminal/TerminalContextMenu.vue'
 import type { TerminalAdapter, TerminalChunk } from '@/lib/terminalAdapters'
@@ -422,13 +423,14 @@ export function useTerminalController(options: Options) {
     const screen = new Terminal({
       ...terminalCursorOptions, convertEol: false,
       fontFamily: '"Cascadia Code", "SFMono-Regular", Consolas, monospace', fontSize: 13,
-      lineHeight: 1.25, scrollback: 5000, allowTransparency: true,
+      lineHeight: 1.25, scrollback: 5000, allowTransparency: true, allowProposedApi: true,
       theme: host.value ? readTerminalTheme(host.value) : undefined,
     })
     terminal.value = screen
     fitAddon = new FitAddon()
     screen.loadAddon(fitAddon)
     screen.loadAddon(new TerminalWebLinksAddon((_event, uri) => void openTerminalURL(uri)))
+    screen.loadAddon(new TerminalKeywordColorsAddon())
     // Both viewers ignore hyperlinks/clipboard escape sequences from untrusted output.
     screen.parser.registerOscHandler(8, () => true)
     screen.parser.registerOscHandler(52, () => true)
