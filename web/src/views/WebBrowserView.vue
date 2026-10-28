@@ -9,7 +9,7 @@ import { useBrowserText } from '@/i18n/webBrowser'
 import { usePhraseCatalog } from '@/i18n/phrase'
 import ModalDialog from '@/components/common/ModalDialog.vue'
 import BrowserSettings from '@/components/browser/BrowserSettings.vue'
-import { observeVNCFrame } from '@/lib/browserVNC'
+import { observeVNCFrame, suppressVNCCursor } from '@/lib/browserVNC'
 import { browserInputQueue } from '@/lib/browserInputQueue'
 import type RFB from '@novnc/novnc'
 
@@ -31,9 +31,8 @@ const status = ref<'connecting' | 'connected' | 'disconnected' | 'unconfigured' 
 const notice = ref('')
 const frame = ref<HTMLElement>()
 const vncScreen = ref<HTMLElement>()
-const previousFrame = ref<HTMLCanvasElement>()
-const holdingFrame = ref(false)
 let restorePaint: (() => void) | undefined
+let restoreCursor: (() => void) | undefined
 const tabStrip = ref<HTMLElement>()
 const screen = ref<HTMLElement>()
 const addressInput = ref<HTMLInputElement>()
@@ -94,16 +93,8 @@ function errorMessage(code = ''): string {
   if (code === 'upload_unavailable') return t('upload')
   return t('failed')
 }
-function disconnectVNC(keepFrame = false): void {
-  if (keepFrame && imageReady.value) {
-    const canvas = vncScreen.value?.querySelector('canvas'), frozen = previousFrame.value
-    if (canvas && frozen) {
-      frozen.width = canvas.width; frozen.height = canvas.height
-      const context = frozen.getContext('2d')
-      if (context) { context.drawImage(canvas, 0, 0); holdingFrame.value = true }
-    }
-  } else if (!keepFrame) holdingFrame.value = false
-  restorePaint?.(); restorePaint = undefined
+function disconnectVNC(): void {
+  restorePaint?.(); restorePaint = undefined; restoreCursor?.(); restoreCursor = undefined
   vncEpoch++; clearTimeout(vncTimer); vncObserver?.disconnect(); vncObserver = undefined
   vncSocket?.close(); vncSocket = undefined; rfb?.disconnect(); rfb = undefined; imageReady.value = false; vncFailed.value = false
 }
@@ -136,10 +127,11 @@ async function connectVNC(attempt = 0): Promise<void> {
       try { if (JSON.parse(event.data).ready !== true) throw new Error('invalid handshake') } catch { failed(); return }
       channel.onmessage = null
       rfb = new Client(vncScreen.value, channel); rfb.viewOnly = true; rfb.scaleViewport = true; rfb.resizeSession = false
+      restoreCursor = suppressVNCCursor(rfb)
       vncObserver = new MutationObserver(updateVNCSize)
       vncObserver.observe(vncScreen.value, { childList: true, subtree: true, attributes: true, attributeFilter: ['width', 'height'] })
       restorePaint = observeVNCFrame(rfb, () => {
-        if (current === vncEpoch) { clearTimeout(vncTimer); updateVNCSize(); imageReady.value = true; holdingFrame.value = false }
+        if (current === vncEpoch) { clearTimeout(vncTimer); updateVNCSize(); imageReady.value = true }
       })
       rfb.addEventListener('disconnect', failed)
       rfb.addEventListener('securityfailure', failed)
@@ -161,7 +153,11 @@ function receive(raw: unknown): void {
   const changed = activeID.value !== nextActive
   tabs.value = remaining; activeID.value = nextActive
   if (tabs.value.length >= BROWSER_MAX_TABS && newTabPending.value) { newTabPending.value = false; startPage.value = false }
-  if (changed) { inputQueue.clear(); disconnectVNC(true); void connectVNC() }
+  if (changed) {
+    inputQueue.clear()
+    if (!nextActive) disconnectVNC()
+    else if (!rfb && !vncSocket) void connectVNC()
+  }
   if (!editingAddress.value) address.value = activeTab.value?.url === 'about:blank' ? '' : activeTab.value?.url || ''
   setTitle?.(activeTab.value?.title || t('title'))
   if (pendingURL) { const target = pendingURL; pendingURL = undefined; openURL(target) }
@@ -207,12 +203,12 @@ function openURL(url: string): void {
   void nextTick(() => { resize(); if (!mobile.value) typing.value?.focus() })
 }
 function submit(): void { const url = browserInput(address.value); if (!url) { notice.value = t('invalid'); return }; openURL(url); if (mobile.value) addressInput.value?.blur() }
-function select(tab: BrowserTab): void { startPage.value = false; newTabPending.value = false; if (tab.id !== activeID.value) { inputQueue.clear(); disconnectVNC(true) }; send({ type: 'select', tab: tab.id }); void nextTick(resize) }
+function select(tab: BrowserTab): void { startPage.value = false; newTabPending.value = false; if (tab.id !== activeID.value) inputQueue.clear(); send({ type: 'select', tab: tab.id }) }
 function close(tab: BrowserTab): void {
   if (!send({ type: 'close', tab: tab.id })) return
   closingTabIDs.add(tab.id)
   tabs.value = tabs.value.filter(item => item.id !== tab.id)
-  if (activeID.value === tab.id) { inputQueue.clear(); disconnectVNC(true) }
+  if (activeID.value === tab.id) { inputQueue.clear(); if (!tabs.value.length) disconnectVNC() }
   if (!tabs.value.length) { startPage.value = true; newTabPending.value = true }
 }
 function home(newPage = false): void { startPage.value = true; newTabPending.value = newPage || !activeTab.value; address.value = ''; if (startURL.value) openURL(startURL.value); else void nextTick(() => addressInput.value?.focus()) }
@@ -367,7 +363,7 @@ onBeforeUnmount(() => { preferencesController?.abort(); disconnect(true); observ
       </div>
       <div v-show="status === 'connected' && !startPage && tabs.length > 0" class="web-browser__viewport">
         <div v-if="!imageReady" class="web-browser__loading" role="status"><LoaderCircle v-if="!vncFailed" :size="24" class="is-spinning" /><span>{{ t(vncFailed ? 'failed' : 'loading') }}</span><button v-if="vncFailed" class="button button--secondary" @click="connectVNC()">{{ t('retry') }}</button></div>
-        <div ref="frame" class="web-browser__frame" :aria-label="t('screen')" @pointerdown.prevent="pointer($event, 'mousePressed')" @pointerup.prevent="pointer($event, 'mouseReleased')" @pointermove.prevent="pointer($event, 'mouseMoved')" @pointercancel="touchGesture = undefined" @wheel.prevent="wheel" @contextmenu.prevent><canvas ref="previousFrame" v-show="holdingFrame" class="web-browser__previous" aria-hidden="true" /><div ref="vncScreen" class="web-browser__vnc" :class="{ 'is-ready': imageReady }" /></div>
+        <div ref="frame" class="web-browser__frame" :aria-label="t('screen')" @pointerdown.prevent="pointer($event, 'mousePressed')" @pointerup.prevent="pointer($event, 'mouseReleased')" @pointermove.prevent="pointer($event, 'mouseMoved')" @pointercancel="touchGesture = undefined" @wheel.prevent="wheel" @contextmenu.prevent><div ref="vncScreen" class="web-browser__vnc" :class="{ 'is-ready': imageReady }" /></div>
         <textarea ref="typing" class="web-browser__keyboard" :aria-label="t('input')" autocapitalize="off" autocomplete="off" spellcheck="false" @keydown="key($event, 'keyDown')" @keyup="key($event, 'keyUp')" @beforeinput="beforeTextInput" @compositionstart="composing = true" @compositionend="composing = false; textInput($event)" @input="textInput" />
       </div>
     </main>
@@ -408,7 +404,7 @@ onBeforeUnmount(() => { preferencesController?.abort(); disconnect(true); observ
 .web-browser__emblem{display:grid;place-items:center;width:5rem;height:5rem;border-radius:var(--radius-lg);background:var(--brand-soft);color:var(--brand);margin-bottom:1rem}.web-browser__start h1{font-size:clamp(1.25rem,2vw,1.65rem);line-height:1.4;font-weight:600;margin:0 0 .6rem}
 .web-browser__search{display:flex;align-items:center;gap:.75rem;width:min(100%,36rem);padding:.55rem .6rem .55rem 1rem;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface-raised);box-shadow:var(--shadow-sm)}.web-browser__search>svg{flex-shrink:0;color:var(--muted)}.web-browser__search input{min-width:0;flex:1;border:0;background:none;color:var(--text);font:inherit;outline:none}.web-browser__search:focus-within{border-color:var(--brand)}.web-browser__search .button{display:flex;align-items:center;gap:.4rem;white-space:nowrap;font-size:.875rem}
 .web-browser__quick{width:min(100%,36rem);margin-top:2rem;text-align:left}.web-browser__quick h2{font-size:.8125rem;font-weight:500;color:var(--muted);margin:0 0 .75rem}.web-browser__quick>div{display:grid;grid-template-columns:repeat(auto-fit,minmax(5rem,1fr));gap:.5rem}.web-browser__quick button{display:flex;flex-direction:column;align-items:center;gap:.6rem;min-width:0;padding:.8rem .4rem;border:0;border-radius:var(--radius-sm);background:none;color:var(--text);font:inherit;cursor:pointer}.web-browser__quick button:hover{background:var(--surface-subtle)}.web-browser__quick img{width:2rem;height:2rem;object-fit:contain}.web-browser__quick span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
-.web-browser__previous{position:absolute;max-width:100%;max-height:100%;object-fit:contain;pointer-events:none;z-index:1}.web-browser__viewport{position:absolute;inset:0;overflow:hidden;display:flex;align-items:flex-start;justify-content:center;background:var(--surface-subtle)}.web-browser__frame,.web-browser__vnc{width:100%;height:100%;touch-action:none}.web-browser__vnc{visibility:hidden;pointer-events:none}.web-browser__vnc.is-ready{visibility:visible}.web-browser__loading{position:absolute;z-index:1;inset:0;display:flex;gap:.75rem;align-items:center;justify-content:center;color:var(--muted);pointer-events:none}.web-browser__loading button{pointer-events:auto}.web-browser__keyboard{position:absolute;left:0;top:0;width:1px;height:1px;opacity:0;resize:none;padding:0;border:0}
+:deep(.web-browser__frame),:deep(.web-browser__frame *),:deep(.web-browser__vnc),:deep(.web-browser__vnc *){cursor:none!important}.web-browser__viewport{position:absolute;inset:0;overflow:hidden;display:flex;align-items:flex-start;justify-content:center;background:var(--surface-subtle)}.web-browser__frame,.web-browser__vnc{width:100%;height:100%;touch-action:none}.web-browser__vnc{visibility:hidden;pointer-events:none}.web-browser__vnc.is-ready{visibility:visible}.web-browser__loading{position:absolute;z-index:1;inset:0;display:flex;gap:.75rem;align-items:center;justify-content:center;color:var(--muted);pointer-events:none}.web-browser__loading button{pointer-events:auto}.web-browser__keyboard{position:absolute;left:0;top:0;width:1px;height:1px;opacity:0;resize:none;padding:0;border:0}
 .web-browser__footer{display:flex;align-items:center;flex-shrink:0;gap:1rem;min-height:1.75rem;box-sizing:border-box;border-top:1px solid var(--border);padding:.25rem .75rem;color:var(--muted);font-size:.8125rem}.web-browser__footer>span:first-child{display:flex;gap:.4rem;align-items:center;white-space:nowrap}.web-browser__dot{width:.4rem;height:.4rem;border-radius:50%;background:var(--muted)}.web-browser__dot.is-connected{background:var(--brand)}.web-browser__notice{display:flex;gap:.75rem;align-items:center;justify-content:space-between;padding:.4rem .85rem;border-bottom:1px solid var(--border);background:var(--brand-soft);font-size:.875rem;line-height:1.5}.web-browser__dialog{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.875rem;line-height:1.6}
 .web-browser__sheet-action{display:flex;align-items:center;gap:.5rem;min-height:2.75rem}.web-browser__tab-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.75rem}.web-browser__tab-card{position:relative;min-width:0;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface-subtle);overflow:hidden}.web-browser__tab-card.is-active{border:2px solid var(--brand);background:var(--brand-soft)}.web-browser__tab-choice{display:flex;flex-direction:column;align-items:flex-start;gap:.75rem;width:100%;min-height:10rem;padding:1rem;border:0;background:none;color:var(--text);text-align:left;cursor:pointer}.web-browser__tab-choice>svg{margin:.25rem 0;color:var(--brand)}.web-browser__tab-choice strong{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;font-size:.875rem;line-height:1.5;font-weight:500}.web-browser__tab-choice span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:.8125rem}.web-browser__card-close{position:absolute;right:0;top:0;display:grid;place-items:center;width:2.75rem;height:2.75rem;border:0;background:none;color:var(--text);cursor:pointer}.web-browser__card-close:hover{background:var(--surface-raised)}
 .web-browser__menu-actions{display:grid;gap:.25rem}.web-browser__menu-actions button{display:flex;align-items:center;gap:.75rem;min-height:2.75rem;padding:.65rem .5rem;border:0;border-radius:var(--radius-sm);background:none;color:var(--text);font-size:.875rem;text-align:left;cursor:pointer}.web-browser__menu-actions button:hover{background:var(--surface-subtle)}.web-browser__menu-actions button:disabled{opacity:.4;cursor:default}.web-browser__menu-info{display:flex;align-items:center;gap:.4rem;margin:1rem 0 .5rem;color:var(--muted);font-size:.8125rem}.web-browser__menu-hint{margin:0;color:var(--muted);font-size:.8125rem;line-height:1.6}

@@ -24,6 +24,17 @@ describe('browser continuous input', () => {
     expect(send.mock.calls[0]?.[0]).toMatchObject({ x: 199 })
     expect(send.mock.calls[1]?.[0]).toMatchObject({ deltaY: 400, deltaX: 200 })
   })
+  it('flushes continuous input within one short batch window', () => {
+    vi.useFakeTimers()
+    const send = vi.fn((_command: Record<string, unknown>) => true), queue = browserInputQueue(send)
+    queue.push({ type: 'mouse', action: 'mouseWheel', deltaY: 80 })
+    queue.push({ type: 'mouse', action: 'mouseMoved', x: 10, y: 12 })
+    vi.advanceTimersByTime(7)
+    expect(send).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(1)
+    expect(send).toHaveBeenCalledTimes(2)
+    expect(send.mock.calls.map(([command]) => command.action)).toEqual(['mouseMoved', 'mouseWheel'])
+  })
   it('flushes motion before release and text without delaying discrete input', () => {
     vi.useFakeTimers()
     const send = vi.fn((_command: Record<string, unknown>) => true), queue = browserInputQueue(send)
