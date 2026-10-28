@@ -56,7 +56,7 @@ func startVisualDisplay(ctx context.Context, width, height int64) (*visualDispla
 		return nil, errors.New("browser_display_failed")
 	}
 	defer read.Close()
-	d.cmd = exec.CommandContext(ctx, "Xvnc", "-displayfd", "3", "-geometry", fmt.Sprintf("%dx%d", width, height), "-depth", "24", "-auth", d.auth,
+	d.cmd = exec.CommandContext(ctx, "Xvnc", "-displayfd", "3", "-geometry", fmt.Sprintf("%dx%d", width, height), "-depth", "24", "-nocursor", "-auth", d.auth,
 		"-rfbunixpath", d.socket, "-rfbunixmode", "0600", "-rfbport", "-1", "-SecurityTypes", "None", "-NeverShared",
 		"-AcceptKeyEvents=0", "-AcceptPointerEvents=0", "-AcceptCutText=0", "-SendCutText=0", "-AcceptSetDesktopSize=0", "-AllowOverride=", "-nolisten", "tcp")
 	d.cmd.ExtraFiles = []*os.File{write}

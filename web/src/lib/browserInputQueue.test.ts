@@ -1,0 +1,47 @@
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { browserInputQueue } from './browserInputQueue'
+
+afterEach(() => vi.useRealTimers())
+describe('browser continuous input', () => {
+  it('splits large legal scroll bursts without truncating accumulated distance', () => {
+    vi.useFakeTimers()
+    const send = vi.fn((_command: Record<string, unknown>) => true), queue = browserInputQueue(send)
+    queue.push({ type: 'mouse', action: 'mouseWheel', deltaY: 2000 })
+    queue.push({ type: 'mouse', action: 'mouseWheel', deltaY: 2000 })
+    vi.advanceTimersByTime(50)
+    expect(send.mock.calls.map(([c]) => c.deltaY)).toEqual([3000, 1000])
+  })
+  it('coalesces a trackpad burst, preserving distance and the latest pointer', () => {
+    vi.useFakeTimers()
+    const send = vi.fn((_command: Record<string, unknown>) => true), queue = browserInputQueue(send)
+    for (let i = 0; i < 200; i++) {
+      queue.push({ type: 'mouse', action: 'mouseWheel', tab: 'a', deltaY: 2, deltaX: 1, modifiers: 0 })
+      queue.push({ type: 'mouse', action: 'mouseMoved', tab: 'a', x: i, y: 10 })
+    }
+    expect(send).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(25)
+    expect(send).toHaveBeenCalledTimes(2)
+    expect(send.mock.calls[0]?.[0]).toMatchObject({ x: 199 })
+    expect(send.mock.calls[1]?.[0]).toMatchObject({ deltaY: 400, deltaX: 200 })
+  })
+  it('flushes motion before release and text without delaying discrete input', () => {
+    vi.useFakeTimers()
+    const send = vi.fn((_command: Record<string, unknown>) => true), queue = browserInputQueue(send)
+    queue.push({ type: 'mouse', action: 'mouseMoved', x: 12 })
+    queue.push({ type: 'mouse', action: 'mouseReleased' })
+    queue.push({ type: 'text', text: '你好' })
+    expect(send.mock.calls.map(([c]) => c.action || c.type)).toEqual(['mouseMoved', 'mouseReleased', 'text'])
+    vi.advanceTimersByTime(100)
+    expect(send).toHaveBeenCalledTimes(3)
+  })
+  it('discards old workspace motion and never combines different modifier gestures', () => {
+    vi.useFakeTimers()
+    const send = vi.fn((_command: Record<string, unknown>) => true), queue = browserInputQueue(send)
+    queue.push({ type: 'mouse', action: 'mouseWheel', tab: 'a', deltaY: 5, modifiers: 0 })
+    queue.push({ type: 'mouse', action: 'mouseWheel', tab: 'a', deltaY: 7, modifiers: 2 })
+    expect(send).toHaveBeenCalledTimes(1)
+    queue.clear()
+    vi.advanceTimersByTime(100)
+    expect(send).toHaveBeenCalledTimes(1)
+  })
+})
