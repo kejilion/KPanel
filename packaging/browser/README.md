@@ -1,6 +1,6 @@
 # KPanel Browser 镜像
 
-可选独立组件：Alpine 3.24、官方仓库 Chromium、TigerVNC、软件渲染组件、中文字体和 `kpanel-browser`。
+可选独立组件：Alpine 3.24、官方仓库 Chromium、TigerVNC、Openbox、软件渲染组件、中文字体和 `kpanel-browser`。
 不包含桌面环境，不挂载 Docker Socket，不发布宿主机端口，不改变 KPanel 主镜像。
 `amd64` / `arm64` 分别原生构建、运行和扫描后，才允许发布对应版本。
 

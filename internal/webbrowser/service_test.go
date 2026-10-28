@@ -133,6 +133,34 @@ func testFramebuffer(t *testing.T, conn net.Conn) {
 	}
 }
 
+// Verify a visible screen pixel rather than just the CDP target or RFB size.
+func waitTestGray(t *testing.T, conn net.Conn, gray byte) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := conn.Write([]byte{3, 0, 0, 5, 0, 5, 0, 1, 0, 1}); err != nil {
+			t.Fatal(err)
+		}
+		header := make([]byte, 4)
+		if _, err := io.ReadFull(conn, header); err != nil || header[0] != 0 || binary.BigEndian.Uint16(header[2:]) != 1 {
+			t.Fatalf("invalid pixel update: %v %v", header, err)
+		}
+		rect := make([]byte, 12)
+		if _, err := io.ReadFull(conn, rect); err != nil || binary.BigEndian.Uint16(rect[4:6]) != 1 || binary.BigEndian.Uint16(rect[6:8]) != 1 || binary.BigEndian.Uint32(rect[8:]) != 0 {
+			t.Fatalf("invalid pixel rectangle: %v %v", rect, err)
+		}
+		pixel := make([]byte, 4)
+		if _, err := io.ReadFull(conn, pixel); err != nil {
+			t.Fatal(err)
+		}
+		if bytes.Count(pixel, []byte{gray}) >= 3 {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("visible framebuffer did not show expected gray %d", gray)
+}
+
 func TestServiceAuthenticationCapacityAndExpiry(t *testing.T) {
 	executable, _ := os.Executable()
 	service, err := NewService(executable, strings.Repeat("s", 48), nil)

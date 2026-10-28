@@ -25,6 +25,8 @@ type visualDisplay struct {
 	dir, auth, socket, display string
 	cmd                        *exec.Cmd
 	done                       chan struct{}
+	wm                         *exec.Cmd
+	wmDone                     chan struct{}
 	width, height              int64
 	mode                       string
 	once                       sync.Once
@@ -103,6 +105,40 @@ func startVisualDisplay(ctx context.Context, width, height int64) (*visualDispla
 		err = errors.New("browser_display_failed")
 		return nil, err
 	}
+	// Kiosk fullscreen needs an X11 window manager; without one Chromium's
+	// toolbar remains visible and page input coordinates no longer match.
+	d.wm = exec.CommandContext(ctx, "openbox", "--sm-disable")
+	d.wm.Env = d.environment()
+	d.wm.Stdout, d.wm.Stderr = io.Discard, io.Discard
+	if err = d.wm.Start(); err != nil {
+		return nil, errors.New("browser_display_failed")
+	}
+	d.wmDone = make(chan struct{})
+	go func() { _ = d.wm.Wait(); close(d.wmDone) }()
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
+	for {
+		probeCtx, stop := context.WithTimeout(ctx, 500*time.Millisecond)
+		probe := exec.CommandContext(probeCtx, "xprop", "-root", "_NET_SUPPORTING_WM_CHECK")
+		probe.Env = d.environment()
+		output, probeErr := probe.Output()
+		stop()
+		if probeErr == nil && strings.Contains(string(output), "window id # 0x") {
+			break
+		}
+		select {
+		case <-d.wmDone:
+			err = errors.New("browser_display_failed")
+			return nil, err
+		case <-ctx.Done():
+			err = errors.New("browser_display_failed")
+			return nil, err
+		case <-deadline.C:
+			err = errors.New("browser_display_failed")
+			return nil, err
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
 	return d, nil
 }
 
@@ -148,6 +184,15 @@ func (d *visualDisplay) resize(ctx context.Context, width, height int64) error {
 
 func (d *visualDisplay) Close() {
 	d.once.Do(func() {
+		if d.wm != nil && d.wm.Process != nil {
+			_ = d.wm.Process.Kill()
+			if d.wmDone != nil {
+				select {
+				case <-d.wmDone:
+				case <-time.After(3 * time.Second):
+				}
+			}
+		}
 		if d.cmd != nil && d.cmd.Process != nil {
 			_ = d.cmd.Process.Kill()
 			if d.done != nil {

@@ -228,7 +228,11 @@ func TestRealBrowserRoundTrip(t *testing.T) {
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'")
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write([]byte(`<!doctype html><title>Fixture</title><style>body{margin:0}input{position:absolute;left:20px;top:20px;width:300px;height:40px}</style><input oninput="document.title=this.value"><a style="position:absolute;top:100px" href="/next">Next</a>`))
+		color := "17"
+		if r.URL.Path == "/second" {
+			color = "61"
+		}
+		_, _ = w.Write([]byte(`<!doctype html><title>Fixture</title><style>body{margin:0;background:rgb(` + color + `,` + color + `,` + color + `)}input{position:absolute;left:20px;top:20px;width:300px;height:40px}</style><input oninput="document.title=this.value"><a style="position:absolute;top:100px" href="/next">Next</a>`))
 	}))
 	defer app.Close()
 	service, err := NewService(executable, strings.Repeat("t", 48), []netip.Prefix{netip.MustParsePrefix("127.0.0.1/32")})
@@ -274,9 +278,23 @@ func TestRealBrowserRoundTrip(t *testing.T) {
 	}
 	readUntil(func(e Event) bool { return e.Type == "state" })
 	sendCommand(Command{Type: "new", URL: app.URL})
-	state := readUntil(func(e Event) bool { return e.Type == "state" && len(e.Tabs) > 0 && e.Tabs[0].Title == "Fixture" })
+	state := readUntil(func(e Event) bool {
+		return e.Type == "state" && len(e.Tabs) > 0 && e.Tabs[0].Title == "Fixture" && !e.Tabs[0].Loading
+	})
 	vnc := openTestVNC(t, ctx, server.URL, strings.Repeat("a", 64), http.Header{"Authorization": {"Bearer " + service.Token}})
 	testFramebuffer(t, vnc)
+	waitTestGray(t, vnc, 17)
+	first := state.Active
+	sendCommand(Command{Type: "new", URL: app.URL + "/second"})
+	secondState := readUntil(func(e Event) bool {
+		return e.Type == "state" && len(e.Tabs) == 2 && e.Active != first && !e.Tabs[1].Loading
+	})
+	waitTestGray(t, vnc, 61)
+	sendCommand(Command{Type: "select", Tab: first})
+	readUntil(func(e Event) bool { return e.Type == "state" && e.Active == first })
+	waitTestGray(t, vnc, 17)
+	sendCommand(Command{Type: "close", Tab: secondState.Active})
+	readUntil(func(e Event) bool { return e.Type == "state" && len(e.Tabs) == 1 && e.Active == first })
 	// Raw VNC keyboard and pointer messages must never control the browser.
 	for _, packet := range [][]byte{{5, 1, 0, 60, 0, 40}, {5, 0, 0, 60, 0, 40}, {4, 1, 0, 0, 0, 0, 0, 97}, {4, 0, 0, 0, 0, 0, 0, 97}} {
 		if _, err := vnc.Write(packet); err != nil {
