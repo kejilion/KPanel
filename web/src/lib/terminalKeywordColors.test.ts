@@ -54,7 +54,7 @@ describe('terminal keyword colors', () => {
   })
 
   it('does not treat arbitrary numbers, timestamps, MAC addresses or invalid IP/ports as endpoints', () => {
-    expect(terminalColorTokens('2026 8080 12:34:56 aa:bb:cc:dd:ee:ff 999.1.2.3 1.2.3.400 1.2.3.4.5 port 65536 host:99999')).toEqual([])
+    expect(terminalColorTokens('2026 8080 12:34:56 aa:bb:cc:dd:ee:ff aa:12:cc:34:ee:56 999.1.2.3 1.2.3.400 1.2.3.4.5 port 65536 host:99999')).toEqual([])
   })
 
   it('recognizes absolute, relative, home, Windows and quoted paths without nested keyword colors', () => {

@@ -10,7 +10,7 @@ const quotedPaths = new RegExp(String.raw`(["'])(${pathStart}[^\r\n]*?)\1`, 'gi'
 const paths = new RegExp(String.raw`(?<![\w/\\])${pathStart}[^\s"'<>|;,，；）)\]}]*`, 'gi')
 const ipv4 = /(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])/g
 const ipv6 = /(?<![\w:.])(?:[a-f\d]*:){2,}[a-f\d:.]*(?:%[\w.-]+)?(?![\w:.])/gi
-const ports = /(?:\bport\s*[:=]?\s*|端口\s*[:：=]?\s*|(?:\b(?:[a-z][\w.-]*|(?:\d{1,3}\.){3}\d{1,3})|\[[a-f\d:.%\w-]+\]|\*):)(\d{1,5})(?!\w)|\b(\d{1,5})(?=\/(?:tcp|udp)\b)/gi
+const ports = /(?:\bport\s*[:=]?\s*|端口\s*[:：=]?\s*|(?:(?<![\w:])(?:[a-z][\w.-]*|(?:\d{1,3}\.){3}\d{1,3})|\[[a-f\d:.%\w-]+\]|\*):)(\d{1,5})(?![\w:])|\b(\d{1,5})(?=\/(?:tcp|udp)\b)/gi
 
 /** Prefer complete paths over words/addresses inside them; bare numbers are not ports. */
 export function terminalColorTokens(text: string): Token[] {
