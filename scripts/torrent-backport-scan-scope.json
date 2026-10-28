@@ -6,7 +6,7 @@
   "sourceManifestSha256": "3165b3c3e3fcdefe8dc52fba19a0a872eb26238692d6fedff4db2fc48ecf2580",
   "selectedGraphSha256": "b28b6ce7c6d851577e77a9abf33319be3a0e3ae727fb3ef3640d72663813d75b",
   "buildTargetFilesSha256": {
-    "Dockerfile": "4180007cf0a4b1cdd3b26be669c44f1d7ddc2c7f540adc2a2ff8ddf1dbb5af39",
+    "Dockerfile": "9a44552fadad1d43b3a6e37a8346021c3049943a8e9e9724d19c248fc3da3b23",
     ".github/workflows/release.yml": "f2179cdc8358290e826f92c27316b265dade18275d1e9b89f83b0917f9d73bdc",
     "scripts/build-mcp-clients.sh": "29b0e82668f585aa46d10432912e1050954430cfac6a0550dd408d728979e113",
     "Makefile": "f651d8ce2f10adc487118e1ccb476615347661922a8c8ef529f1b8013da5d53e"
@@ -28,6 +28,8 @@
     "securityClosureObservationSha256": "facb75be50ad173b5dffa7e3e763369e726bebe0c997db72709ef7ca04ca0dd7",
     "securityClosureSummary": "Independent source and raw GitHub evidence review at 1a38c7f6403e166f7e8d801f6d2950bcb3c8d34e verified 1021 first-party Go files against Git objects and six actual/original production closures. Linux filemanager GoFiles changes exactly explain the closure delta; 110 production modules, versions, selected graph, vendored source and build targets are unchanged. Rebind source and closure identity only. All 37 findings/dispositions and original observation/expiry remain unchanged. Final exact-candidate CI and conservative scans are required; this review does not claim scanner or release success.",
     "nodeSecurityPatchEvidenceSha256": "9ac599260ddaac5a66b837f48ff22eff5bc6a40123ad3e138360f17b8c340019",
+    "rc14SourceQualificationEvidenceSha256": "30a12176c39fbee6bf635b57214455289548c2d96d7b6c3f53f32526a20205a6",
+    "rc14SourceQualificationSummary": "Independent read-only review verified the public kejilion/sh b408d60d7ed1c9a935bb1ff0d6e41b73469898ff script bytes and Dockerfile SHA-256 2f814354d0d0de113e44c788a2b79484eca0762293a168da1baebec8fdac312d; rebound the Dockerfile build target to canonical LF SHA-256 9a44552fadad1d43b3a6e37a8346021c3049943a8e9e9724d19c248fc3da3b23. Git-tree verification confirmed the existing 1,254-file first-party source identity. Exact-candidate module graph and six-platform actual/original closures still require fresh release evidence.",
     "nodeSecurityPatchSummary": "Node 24.22.1 security patch: independent read-only review of accb4c12..fb18f425 confirms that only Node pins change in Dockerfile and release.yml; their UTF-8 LF build hashes are rebound. No Go source, module, vendor, production GoFiles, finding disposition, observation date or expiry changes. Canonical Go 1.27.3 inventory requalified all six actual/original production closures and the unchanged first-party source identity. Review is PASS WITH FOLLOW-UP, not integration or publication approval; exact-candidate Linux L2 and release L3 remain required.",
     "advisoryEvidenceSha256": "32c054b8eebcda02c82748fd29981fa8c3988fa19605e1deed1628d7a6ab4607",
     "additionalSelectedEvidenceSha256": "93a256970a82a7c224c5e38aadbb21431fdbd8e5f6621da469473d7955d80bf2",
