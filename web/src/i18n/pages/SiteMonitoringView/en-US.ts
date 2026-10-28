@@ -576,4 +576,11 @@ export default [
   ["WAF 到 Fail2Ban 网站 Jail，再到 Cloudflare 的状态链路", "Status chain from WAF through the Fail2Ban website jails to Cloudflare"],
   ["Fail2Ban 网站 Jail", "Fail2Ban website jails"],
   ["可用 Jail", "available jails"],
+  ["旧封禁已迁移", "Legacy bans migrated"],
+  ["旧规则已接入统一后端", "Legacy rules now use the unified backend"],
+  ["旧防护待迁移", "Legacy defense migration pending"],
+  ["迁移状态待核验", "Migration status needs verification"],
+  ["条封禁记录已导入", "ban records imported"],
+  ["旧 CF 凭据未迁移，请到环境防护页重新输入。", "Legacy CF credentials were not imported. Re-enter them in Environment Protection."],
+  ["前往环境防护", "Go to Environment Protection"],
 ] satisfies PhraseCatalog

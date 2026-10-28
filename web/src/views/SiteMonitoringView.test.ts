@@ -6,7 +6,7 @@ import { api } from '@/lib/api'
 import type { SiteTrafficSnapshot } from '@/types/siteTraffic'
 import type { Site, WebEnvironmentSummary } from '@/types/api'
 vi.mock('@/lib/api', () => ({ api: { siteTraffic: { summary: vi.fn(), action: vi.fn() }, webEnvironment: { summary: vi.fn() }, sites: { list: vi.fn() } } }))
-interface Bindings { data: Ref<SiteTrafficSnapshot | undefined>; protectionStatus: Ref<WebEnvironmentSummary | undefined>; protectionStatusError: Ref<string>; protectionStatusLoading: Ref<boolean>; fail2banLogEntries: Readonly<Ref<string[]>>; view: Ref<'traffic' | 'security'>; schedule: () => void; load: () => Promise<void>; loadProtectionStatus: () => Promise<void>; error: Ref<string>; loading: Ref<boolean>; host: Ref<string>; busy: Ref<boolean>; loadSiteIcons: () => Promise<void>; siteID: (host: string) => string | undefined; perform: (action: 'enable' | 'pause' | 'clear') => Promise<void> }
+interface Bindings { data: Ref<SiteTrafficSnapshot | undefined>; protectionStatus: Ref<WebEnvironmentSummary | undefined>; protectionStatusError: Ref<string>; protectionStatusLoading: Ref<boolean>; fail2banLogEntries: Readonly<Ref<string[]>>; siteJails: Readonly<Ref<NonNullable<WebEnvironmentSummary['protection']['siteJails']>>>; banMigration: Readonly<Ref<WebEnvironmentSummary['protection']['banMigration']>>; view: Ref<'traffic' | 'security'>; schedule: () => void; load: () => Promise<void>; loadProtectionStatus: () => Promise<void>; error: Ref<string>; loading: Ref<boolean>; host: Ref<string>; busy: Ref<boolean>; loadSiteIcons: () => Promise<void>; siteID: (host: string) => string | undefined; perform: (action: 'enable' | 'pause' | 'clear') => Promise<void> }
 function setup(): Bindings {
  const app = createSSRApp({ render: () => null }); app.provide(ssrContextKey, { modules: new Set<string>() })
  const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
@@ -36,7 +36,11 @@ describe('website monitoring request lifecycle', () => {
     fail2ban: true,
     fail2banInstalled: true,
     cloudflareStatus: { mode: 'cloudflare', configured: true, running: true, healthy: true, pending: false, cleanupPending: false, activeBans: 2 },
-    siteJails: [{ name: 'waf-attack', available: true, currentlyBanned: 1, totalBanned: 5 }],
+    siteJails: [
+     { name: 'waf-attack', available: true, currentlyBanned: 1, totalBanned: 5 },
+     { name: 'waf-api-invalid', available: true, currentlyBanned: 2, totalBanned: 7 },
+    ],
+    banMigration: { state: 'legacy-imported', importedRecords: 12, apiJailEnabled: true, legacyCFDetected: true, cfReentryRequired: true, legacyReconcilerStopped: true },
     fail2banLogs: { available: true, entries: ['[waf-attack] Ban 192.0.2.1'] },
    },
   } as WebEnvironmentSummary
@@ -51,6 +55,8 @@ describe('website monitoring request lifecycle', () => {
   await view.loadProtectionStatus()
   expect(api.webEnvironment.summary).toHaveBeenCalledTimes(1)
   expect(view.protectionStatus.value?.protection.siteJails?.[0]?.currentlyBanned).toBe(1)
+  expect(view.siteJails.value[1]?.name).toBe('waf-api-invalid')
+  expect(view.banMigration.value?.cfReentryRequired).toBe(true)
   expect(view.fail2banLogEntries.value).toEqual(['[waf-attack] Ban 192.0.2.1'])
   expect(view.protectionStatusError.value).toBe('')
  })
