@@ -9,6 +9,7 @@ import { useBrowserText } from '@/i18n/webBrowser'
 import { usePhraseCatalog } from '@/i18n/phrase'
 import ModalDialog from '@/components/common/ModalDialog.vue'
 import BrowserSettings from '@/components/browser/BrowserSettings.vue'
+import { observeVNCFrame } from '@/lib/browserVNC'
 import { browserInputQueue } from '@/lib/browserInputQueue'
 import type RFB from '@novnc/novnc'
 
@@ -83,6 +84,7 @@ function send(command: Record<string, unknown>): boolean {
     return inputQueue.push({ ...command, tab: activeID.value })
   }
   inputQueue.flush()
+  inputQueue.clear()
   return sendRaw(command)
 }
 function errorMessage(code = ''): string {
@@ -136,17 +138,9 @@ async function connectVNC(attempt = 0): Promise<void> {
       rfb = new Client(vncScreen.value, channel); rfb.viewOnly = true; rfb.scaleViewport = true; rfb.resizeSession = false
       vncObserver = new MutationObserver(updateVNCSize)
       vncObserver.observe(vncScreen.value, { childList: true, subtree: true, attributes: true, attributeFilter: ['width', 'height'] })
-      // noVNC 'connect' only acknowledges the RFB handshake, not a painted
-      // framebuffer. Observe this canvas instance's final 2D blit, never a
-      // global prototype or a guessed network delay.
-      const canvas = vncScreen.value.querySelector('canvas'), context = canvas?.getContext('2d')
-      if (!context) { failed(); return }
-      const draw = context.drawImage
-      context.drawImage = function (...args: Parameters<CanvasRenderingContext2D['drawImage']>) {
-        draw.apply(this, args)
+      restorePaint = observeVNCFrame(rfb, () => {
         if (current === vncEpoch) { clearTimeout(vncTimer); updateVNCSize(); imageReady.value = true; holdingFrame.value = false }
-      } as CanvasRenderingContext2D['drawImage']
-      restorePaint = () => { context.drawImage = draw }
+      })
       rfb.addEventListener('disconnect', failed)
       rfb.addEventListener('securityfailure', failed)
     }

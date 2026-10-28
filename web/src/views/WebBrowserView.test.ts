@@ -8,9 +8,13 @@ import { api } from '@/lib/api'
 import { browserLinksKey, browserLaunchKey } from '@/lib/webBrowser'
 import { desktopWindowTitlebarTargetKey, desktopWindowVisibleKey } from '@/lib/desktopRouteKeys'
 
-const vncClients = vi.hoisted(() => [] as Array<{ canvas: HTMLCanvasElement; dispatchEvent(event: Event): boolean }>)
+const vncClients = vi.hoisted(() => [] as Array<{ canvas: HTMLCanvasElement; _framebufferUpdate(): boolean; dispatchEvent(event: Event): boolean }>)
 vi.mock('@novnc/novnc', () => ({ default: class extends EventTarget {
   canvas: HTMLCanvasElement
+  _FBU = { encoding: 7 }
+  _display = { flush: () => Promise.resolve() }
+  _handleRect() { return true }
+  _framebufferUpdate() { this._handleRect(); return true }
   viewOnly = false
   scaleViewport = false
   resizeSession = false
@@ -62,8 +66,8 @@ describe('desktop remote browser', () => {
     const client = vncClients.at(-1)!
     client.canvas.width = width; client.canvas.height = height
     client.dispatchEvent(new Event('connect'))
-    client.canvas.getContext('2d')!.drawImage(client.canvas, 0, 0)
-    await nextTick()
+    client._framebufferUpdate()
+    await Promise.resolve(); await nextTick()
     return client.canvas
   }
   it('explains a missing optional component and keeps external opening available', async () => {
@@ -294,7 +298,7 @@ describe('desktop remote browser', () => {
     await wrapper.get('textarea').setValue('must not reach the unseen tab')
     expect(socket.sent).toHaveLength(0)
     client.canvas.width = 1280; client.canvas.height = 720
-    client.canvas.getContext('2d')!.drawImage(client.canvas, 0, 0); await nextTick()
+    client._framebufferUpdate(); await Promise.resolve(); await nextTick()
     expect((wrapper.get('.web-browser__previous').element as HTMLCanvasElement).style.display).toBe('none')
     expect(wrapper.get('.web-browser__vnc canvas').element).not.toBe(oldCanvas)
     await wrapper.get('textarea').setValue('fresh')
