@@ -1591,9 +1591,7 @@ const environmentCatalog = {
     'ddos-on',
     'ddos-off',
     'cloudflare-fail2ban',
-    'cloudflare-off',
     'cloudflare-shield',
-    'cloudflare-shield-off',
   ],
   optimizationActions: ['standard', 'high', 'gzip-on', 'gzip-off', 'brotli-on', 'brotli-off', 'zstd-on', 'zstd-off'],
   updateComponents: [
