@@ -9,6 +9,7 @@ import { useBrowserText } from '@/i18n/webBrowser'
 import { usePhraseCatalog } from '@/i18n/phrase'
 import ModalDialog from '@/components/common/ModalDialog.vue'
 import BrowserSettings from '@/components/browser/BrowserSettings.vue'
+import { browserInputQueue } from '@/lib/browserInputQueue'
 import type RFB from '@novnc/novnc'
 
 const t = useBrowserText()
@@ -47,7 +48,7 @@ const width = ref(1280)
 const height = ref(720)
 const activeTab = computed(() => tabs.value.find(tab => tab.id === activeID.value))
 const workspace = Array.from(crypto.getRandomValues(new Uint8Array(16)), value => value.toString(16).padStart(2, '0')).join('')
-const visible = computed(() => windowVisible.value && !startPage.value && documentVisible.value && !tabsOpen.value && !moreOpen.value && !settingsOpen.value)
+const visible = computed(() => windowVisible.value && !startPage.value && documentVisible.value)
 const documentVisible = ref(!document.hidden)
 let socket: WebSocket | undefined
 let epoch = 0
@@ -60,7 +61,6 @@ let controller: AbortController | undefined
 let observer: ResizeObserver | undefined
 let resizeTimer: ReturnType<typeof setTimeout> | undefined
 let connectTimer: ReturnType<typeof setTimeout> | undefined
-let lastPointer = 0
 let requestedViewport: { width: number; height: number } | undefined
 const composing = ref(false)
 let pendingURL: string | undefined
@@ -68,10 +68,16 @@ const closingTabIDs = new Set<string>()
 let mobileQuery: MediaQueryList | undefined
 let touchGesture: { id: number; startX: number; startY: number; x: number; y: number; sentX: number; sentY: number; moved: boolean; sentAt: number } | undefined
 
-function send(command: Record<string, unknown>): boolean {
+function sendRaw(command: Record<string, unknown>): boolean {
   if (socket?.readyState !== WebSocket.OPEN || status.value !== 'connected') return false
   if (socket.bufferedAmount > 128 * 1024) { notice.value = t('failed'); return false }
   socket.send(JSON.stringify(command)); return true
+}
+const inputQueue = browserInputQueue(sendRaw)
+function send(command: Record<string, unknown>): boolean {
+  if (['mouse', 'key', 'text'].includes(String(command.type))) return inputQueue.push({ ...command, tab: activeID.value })
+  inputQueue.flush()
+  return sendRaw(command)
 }
 function errorMessage(code = ''): string {
   if (code === 'tab_limit') return t('limit')
@@ -89,7 +95,8 @@ function updateVNCSize(): void {
   if (canvas && canvas.width >= 320 && canvas.height >= 240) { width.value = canvas.width; height.value = canvas.height }
 }
 async function connectVNC(attempt = 0): Promise<void> {
-  disconnectVNC(); const current = vncEpoch
+  if (rfb || vncSocket) return
+  const current = ++vncEpoch
   if (!visible.value || !activeID.value || status.value !== 'connected') return
   try {
     const { default: Client } = await import('@novnc/novnc')
@@ -135,13 +142,14 @@ function receive(raw: unknown): void {
   const changed = activeID.value !== nextActive
   tabs.value = remaining; activeID.value = nextActive
   if (tabs.value.length >= BROWSER_MAX_TABS && newTabPending.value) { newTabPending.value = false; startPage.value = false }
-  if (changed) void connectVNC()
+  if (changed) { inputQueue.clear(); void connectVNC() }
   if (!editingAddress.value) address.value = activeTab.value?.url === 'about:blank' ? '' : activeTab.value?.url || ''
   setTitle?.(activeTab.value?.title || t('title'))
   if (pendingURL) { const target = pendingURL; pendingURL = undefined; openURL(target) }
 }
 function disconnect(end = false): void {
   if (end) send({ type: 'end' })
+  inputQueue.clear()
   epoch++; clearTimeout(connectTimer); controller?.abort(); socket?.close(); socket = undefined; disconnectVNC(); requestedViewport = undefined
 }
 async function connect(): Promise<void> {
@@ -180,12 +188,12 @@ function openURL(url: string): void {
   void nextTick(() => { resize(); if (!mobile.value) typing.value?.focus() })
 }
 function submit(): void { const url = browserInput(address.value); if (!url) { notice.value = t('invalid'); return }; openURL(url); if (mobile.value) addressInput.value?.blur() }
-function select(tab: BrowserTab): void { startPage.value = false; newTabPending.value = false; if (tab.id !== activeID.value) disconnectVNC(); send({ type: 'select', tab: tab.id }); void nextTick(resize) }
+function select(tab: BrowserTab): void { startPage.value = false; newTabPending.value = false; if (tab.id !== activeID.value) inputQueue.clear(); send({ type: 'select', tab: tab.id }); void nextTick(resize) }
 function close(tab: BrowserTab): void {
   if (!send({ type: 'close', tab: tab.id })) return
   closingTabIDs.add(tab.id)
   tabs.value = tabs.value.filter(item => item.id !== tab.id)
-  if (activeID.value === tab.id) disconnectVNC()
+  if (activeID.value === tab.id) inputQueue.clear()
   if (!tabs.value.length) { startPage.value = true; newTabPending.value = true }
 }
 function home(newPage = false): void { startPage.value = true; newTabPending.value = newPage || !activeTab.value; address.value = ''; if (startURL.value) openURL(startURL.value); else void nextTick(() => addressInput.value?.focus()) }
@@ -214,8 +222,6 @@ function pointer(event: PointerEvent, action: string): void {
   // the new viewport; an outstanding mouse press may still be released safely.
   if (!viewportReady() && (event.pointerType === 'touch' || action !== 'mouseReleased')) return
   if (event.pointerType === 'touch') { touch(event, action); return }
-  if (action === 'mouseMoved' && performance.now() - lastPointer < 40) return
-  lastPointer = performance.now()
   const box = canvasBox(); if (!box) return
   if (action === 'mousePressed' && !insideCanvas(event.clientX, event.clientY, box)) return
   const point = browserCoordinates(event.clientX, event.clientY, box, requestedViewport?.width || width.value, requestedViewport?.height || height.value)
@@ -240,7 +246,7 @@ function touch(event: PointerEvent, action: string): void {
   const box = canvasBox(); if (!box) return
   const point = browserCoordinates(gesture.x, gesture.y, box, width.value, height.value)
   if (!point) { touchGesture = undefined; return }
-  if (gesture.moved && (gesture.sentX !== gesture.x || gesture.sentY !== gesture.y) && (action === 'mouseReleased' || performance.now() - gesture.sentAt >= 40)) {
+  if (gesture.moved && (gesture.sentX !== gesture.x || gesture.sentY !== gesture.y)) {
     send({ type: 'mouse', action: 'mouseWheel', ...point, button: 'none', deltaX: Math.max(-3000, Math.min(3000, (gesture.sentX - gesture.x) * width.value / box.width)), deltaY: Math.max(-3000, Math.min(3000, (gesture.sentY - gesture.y) * height.value / box.height)) })
     gesture.sentX = gesture.x; gesture.sentY = gesture.y; gesture.sentAt = performance.now()
   }
@@ -254,6 +260,7 @@ function touch(event: PointerEvent, action: string): void {
     send({ type: 'mouse', action: 'mousePressed', ...point, button: 'left' })
     send({ type: 'mouse', action: 'mouseReleased', ...point, button: 'left' })
   }
+  inputQueue.flush()
   touchGesture = undefined
 }
 function wheel(event: WheelEvent): void {
@@ -290,7 +297,7 @@ async function initialize(): Promise<void> {
 }
 function serviceChanged(action: string): void { if (['install', 'start', 'restart'].includes(action)) void connect(); else { disconnect(); status.value = 'unavailable'; imageReady.value = false } }
 watch(() => [route.query.settings, route.query.request], () => { if (route.query.settings === '1') settingsOpen.value = true }, { immediate: true })
-watch(visible, value => { send({ type: 'visible', visible: value }); if (value) { void nextTick(resize); void connectVNC() } else { touchGesture = undefined; disconnectVNC() } })
+watch(visible, value => { send({ type: 'visible', visible: value }); if (value) { void nextTick(resize); void connectVNC() } else { inputQueue.clear(); touchGesture = undefined; disconnectVNC() } })
 watch([activeID, startPage, newTabPending], () => void nextTick(() => tabStrip.value?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })))
 watch(launch, value => { if (!value) return; const url = browserInput(value.url); if (!url) return; const tab = tabs.value.find(tab => tab.url === url); if (tab) select(tab); else { newTabPending.value = true; openURL(url) } }, { immediate: true })
 watch(() => route.query.url, raw => { const value = Array.isArray(raw) ? raw[0] : raw; if (value) { const url = browserInput(value); if (url) openURL(url) } }, { immediate: true })
@@ -339,7 +346,7 @@ onBeforeUnmount(() => { preferencesController?.abort(); disconnect(true); observ
         <form class="web-browser__search" @submit.prevent="submit"><Search :size="20" /><input v-model="address" :aria-label="t('address')" :placeholder="t('address')" maxlength="4096" /><button class="button button--primary" type="submit">{{ t('go') }}<ArrowRight :size="16" /></button></form>
         <div v-if="links.length" class="web-browser__quick"><h2>{{ t('quick') }}</h2><div><button v-for="link in links.slice(0, 12)" :key="link.id" @click="openURL(link.url)"><img v-if="link.iconURL" :src="link.iconURL" alt="" /><Globe2 v-else :size="24" /><span>{{ link.name }}</span></button></div></div>
       </div>
-      <div v-else class="web-browser__viewport">
+      <div v-show="status === 'connected' && !startPage && tabs.length > 0" class="web-browser__viewport">
         <div v-if="!imageReady" class="web-browser__loading" role="status"><LoaderCircle v-if="!vncFailed" :size="24" class="is-spinning" /><span>{{ t(vncFailed ? 'failed' : 'loading') }}</span><button v-if="vncFailed" class="button button--secondary" @click="connectVNC()">{{ t('retry') }}</button></div>
         <div ref="frame" class="web-browser__frame" :aria-label="t('screen')" @pointerdown.prevent="pointer($event, 'mousePressed')" @pointerup.prevent="pointer($event, 'mouseReleased')" @pointermove.prevent="pointer($event, 'mouseMoved')" @pointercancel="touchGesture = undefined" @wheel.prevent="wheel" @contextmenu.prevent><div ref="vncScreen" class="web-browser__vnc" :class="{ 'is-ready': imageReady }" /></div>
         <textarea ref="typing" class="web-browser__keyboard" :aria-label="t('input')" autocapitalize="off" autocomplete="off" spellcheck="false" @keydown="key($event, 'keyDown')" @keyup="key($event, 'keyUp')" @beforeinput="beforeTextInput" @compositionstart="composing = true" @compositionend="composing = false; textInput($event)" @input="textInput" />

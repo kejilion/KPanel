@@ -252,8 +252,6 @@ func (s *Service) serveVNC(ctx context.Context, w http.ResponseWriter, r *http.R
 func (s *Service) writeEvents(ctx context.Context, ws *websocket.Conn, browser *browserSession) {
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
-	refresh := time.NewTicker(2 * time.Second)
-	defer refresh.Stop()
 	writeEvent := func(event Event) error {
 		data, err := json.Marshal(event)
 		if err != nil || len(data) > MaxEventBytes {
@@ -277,14 +275,6 @@ func (s *Service) writeEvents(ctx context.Context, ws *websocket.Conn, browser *
 			}
 			continue
 		case <-browser.dirty:
-			event = browser.Snapshot()
-		case <-refresh.C:
-			browser.mu.Lock()
-			running := browser.visible && len(browser.tabs) > 0
-			browser.mu.Unlock()
-			if !running {
-				continue
-			}
 			event = browser.Snapshot()
 		case event = <-browser.notices:
 		}
