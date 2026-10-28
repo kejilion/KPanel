@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRoute } from 'vue-router'
 import { phraseCatalogVersion, translatePhrase, usePhraseCatalog } from '@/i18n/phrase'
 
 usePhraseCatalog((locale) => locale === 'en-US'
@@ -58,7 +58,8 @@ const sections: Array<{ id: Section; label: string }> = [
   { id: 'uninstall', label: '卸载' },
 ]
 
-const section = ref<Section>('overview')
+const route = useRoute()
+const section = ref<Section>(route.query.section === 'protection' ? 'protection' : 'overview')
 const summary = ref<WebEnvironmentSummary>()
 const wafMode = computed(() => summary.value?.protection.wafMode || (summary.value?.protection.waf ? 'legacy' : 'off'))
 const wafModeLabels = new Map<string, string>([

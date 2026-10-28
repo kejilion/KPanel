@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   start: vi.fn(),
   toastSuccess: vi.fn(),
   toastDanger: vi.fn(),
+  route: { query: {} as Record<string, unknown> },
 }))
 
 vi.mock('@/lib/api', () => ({
@@ -34,7 +35,13 @@ vi.mock('@/stores/toast', () => ({
   }),
 }))
 
+vi.mock('vue-router', async () => {
+  const actual = await vi.importActual<typeof import('vue-router')>('vue-router')
+  return { ...actual, useRoute: () => mocks.route }
+})
+
 interface EnvironmentBindings {
+  section: Ref<string>
   wafLabel: Readonly<Ref<string>>
   wafBadge: Readonly<Ref<string>>
   fail2banInstalled: Readonly<Ref<boolean>>
@@ -106,6 +113,7 @@ function summary(): WebEnvironmentSummary {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mocks.route.query = {}
   vi.useFakeTimers()
   vi.stubGlobal('window', {
     setTimeout: globalThis.setTimeout,
@@ -119,6 +127,12 @@ afterEach(() => {
 })
 
 describe('EnvironmentView background jobs', () => {
+  it('opens the protection section from a focused environment link', () => {
+    mocks.route.query = { section: 'protection' }
+
+    expect(setupView().section.value).toBe('protection')
+  })
+
   it('distinguishes detection, mixed and unknown WAF state from blocking', () => {
     const view = setupView()
     view.summary.value = summary()
