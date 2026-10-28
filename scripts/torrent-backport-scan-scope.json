@@ -12,7 +12,7 @@
     "Makefile": "f651d8ce2f10adc487118e1ccb476615347661922a8c8ef529f1b8013da5d53e"
   },
   "closureSha256": "bcfac1491f912c9871cbdae330e5bdcf1fedfa84618fa8c8de9e42a97cfa2cd8",
-  "firstPartySourceSha256": "7f84cd7cbcb804bf406b2f8bd4c7000e1a23f10675563a90b9fc3f9b3986acbb",
+  "firstPartySourceSha256": "780335ece85ee6d04abb52fe1685e8788e9c2c1ba3d529ec2a55eadd7fae4fa6",
   "buildTargetHashEncoding": "UTF-8 with LF line endings",
   "closureEncoding": "SHA256 of JSON.stringify of ordered OS/architecture rows; packages sorted by import path; path, module and selected version; stdlib go1.27.3; main-module packages additionally bind relative sourceDirectory and sorted actual GoFiles.",
   "firstPartySourceEncoding": "SHA256 of JSON.stringify of all cmd/internal Go source path and SHA256 pairs sorted by relative path; contents normalized to UTF-8 LF. All actual main-module production GoFiles must be covered. Generated .pb.go and .proto files or symlinks require a new review.",
@@ -133,9 +133,9 @@
     "rc128RC10Summary": "RC10 source qualification observes the candidate Go files and six actual/original production closures; original scanner findings and observation dates are unchanged. This is not a scanner or release result.",
     "rc11SourceEvidenceSha256": "6ac3737796497ddabf41c9931cf7dca802ff7fbfeceb08fb2367e354905339f4",
     "rc11SourceSummary": "RC11 release maintainer independently reviewed the original product candidates and assembled release, and observed six Go 1.27.3 actual/original closures and 1251 tracked first-party Go files. Source and closure identities rebound; selected graph, build files, existing findings, dispositions, observation and expiry unchanged. Same-provider release reviewer also assembled the merge and version metadata; no separate reviewer claim for that assembly. Canonical Linux CI, L3 and scanners remain required.",
-    "rc12SourceEvidenceSha256": "15f6b8b6481f513c6003abc99859c4dd7abceeee09e3847466938bfdd5c80c41",
-    "rc12InventoryEvidenceSha256": "1a8b75c61a7ec8fd24411e66b00279d0c2392b35ec465c240d39171d28509302",
-    "rc12SourceSummary": "RC12 source qualification at code candidate 254c46d7 independently reviewed terminal follow recovery and VNC browser source. Fixed Go 1.27.3 recomputed all six production closures and 1253 first-party Go files; first-party identity is rebound. The selected graph, six production GoFiles closures, build targets, 111 production module entries, including the pinned torrent identity, vendored source, 37 findings/dispositions and original observation/expiry remain unchanged. VNC Go sources belong to the separate optional browser image, outside the KPanel six-target Go production list; its dedicated two-architecture L3 and image scan remain required. Exact RC12 CI/L3 and all scanners must pass; this qualification is not a scanner or release result."
+    "rc12SourceEvidenceSha256": "bba6884d73498de8c6ac634cedc44bae9d3ecc3d4424f9b69c77f8aa50aaa67b",
+    "rc12InventoryEvidenceSha256": "e770f02a86c4a0bddc166f6d90ca97d292b1edbf0e055fb0fc0e645a60e09ddd",
+    "rc12SourceSummary": "RC12 source qualification retains the independent review of the terminal-follow recovery and VNC browser implementation. A final release-maintainer addendum verifies the browser image public multi-architecture index sha256:0660b4608e9219e8d03c4d72dc8ba3e9c64f6310df36c766933373855f918839 and its linux/amd64 and linux/arm64 manifests from successful workflow 40643636034 and public re-pull. All active runtime, Compose, example and hosted-lifecycle pins agree; the source change is a literal artifact identity only. Fixed Go 1.27.3 inventory rebound over 1253 first-party Go files; the six canonical actual/original production closures, selected graph, six production GoFiles closures, build targets, 111 production module entries including the pinned torrent identity, vendored source, 37 existing findings/dispositions and original observation/expiry remain unchanged. The browser component is separate from KPanel production Go targets and has dedicated two-architecture L3/image scanning evidence. Exact RC12 CI/L3 and all source scanners remain required; this qualification is not a scanner or release result."
   },
   "findings": [
     {
