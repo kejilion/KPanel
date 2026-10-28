@@ -246,7 +246,7 @@ onBeforeUnmount(() => { disposed = true; sequence++; protectionSequence++; contr
      <div><h3><ShieldCheck :size="18" aria-hidden="true" />{{ phrase('防护链路状态') }}</h3><p>{{ phrase('从环境管理读取最新状态；此处仅监控，不修改防护配置。') }}</p></div>
      <div class="defense-header-actions">
       <button class="text-button" :disabled="protectionStatusLoading" @click="loadProtectionStatus"><RefreshCw :size="14" :class="{ spinning: protectionStatusLoading }" />{{ phrase('刷新防护状态') }}</button>
-      <RouterLink class="text-button" to="/sites/environment">{{ phrase('打开防护设置') }}<ArrowUpRight :size="14" /></RouterLink>
+      <RouterLink class="text-button" to="/sites/environment?section=protection">{{ phrase('打开防护设置') }}<ArrowUpRight :size="14" /></RouterLink>
      </div>
     </header>
     <LoadingState v-if="protectionStatusLoading && !protectionStatus" :rows="2" />
