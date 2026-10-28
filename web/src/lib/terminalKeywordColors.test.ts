@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { IDecorationOptions, Terminal } from '@xterm/xterm'
-import { TerminalKeywordColorsAddon } from './terminalKeywordColors'
+import { terminalColorTokens, TerminalKeywordColorsAddon } from './terminalKeywordColors'
 
 function fixture(texts = ['ERROR WARNING SUCCESS']) {
   const events: Record<string, () => void> = {}
@@ -39,6 +39,48 @@ beforeEach(() => vi.useFakeTimers())
 afterEach(() => vi.useRealTimers())
 
 describe('terminal keyword colors', () => {
+  it('recognizes IPv4, IPv6 and scoped addresses with separately colored ports', () => {
+    const text = '127.0.0.1:8080 [2001:db8::1]:443 ::1 fe80::1%eth0 0.0.0.0:22'
+    expect(terminalColorTokens(text).map(({ text, color }) => [text, color])).toEqual([
+      ['127.0.0.1', 'cyan'], ['8080', 'magenta'], ['2001:db8::1', 'cyan'], ['443', 'magenta'],
+      ['::1', 'cyan'], ['fe80::1%eth0', 'cyan'], ['0.0.0.0', 'cyan'], ['22', 'magenta'],
+    ])
+  })
+
+  it('recognizes explicit port labels, host endpoints and protocol notation', () => {
+    const text = 'port 22 PORT=8080 端口：443 localhost:3000 example.com:8443 *:53 80/tcp 53/udp'
+    expect(terminalColorTokens(text).map(token => token.text)).toEqual(['22', '8080', '443', '3000', '8443', '53', '80', '53'])
+    expect(terminalColorTokens(text).every(token => token.color === 'magenta')).toBe(true)
+  })
+
+  it('does not treat arbitrary numbers, timestamps, MAC addresses or invalid IP/ports as endpoints', () => {
+    expect(terminalColorTokens('2026 8080 12:34:56 aa:bb:cc:dd:ee:ff 999.1.2.3 1.2.3.400 1.2.3.4.5 port 65536 host:99999')).toEqual([])
+  })
+
+  it('recognizes absolute, relative, home, Windows and quoted paths without nested keyword colors', () => {
+    const text = String.raw`ERROR /var/log/error.log ~/app ./config ../data root@host:/etc/nginx C:\Windows\temp \\server\share\log "C:\Program Files\app.log" '/tmp/my file'`
+    expect(terminalColorTokens(text).map(token => [token.text, token.color])).toEqual([
+      ['ERROR', 'red'], ['/var/log/error.log', 'blue'], ['~/app', 'blue'], ['./config', 'blue'], ['../data', 'blue'],
+      ['/etc/nginx', 'blue'], [String.raw`C:\Windows\temp`, 'blue'], [String.raw`\\server\share\log`, 'blue'],
+      [String.raw`C:\Program Files\app.log`, 'blue'], ['/tmp/my file', 'blue'],
+    ])
+  })
+
+  it('keeps offsets exact and excludes adjacent punctuation and URL path fragments', () => {
+    const text = '失败：(/var/log/app.log), ip=192.168.1.1:80 https://example.com/path'
+    const tokens = terminalColorTokens(text)
+    expect(tokens.map(token => token.text)).toEqual(['失败', '/var/log/app.log', '192.168.1.1', '80'])
+    expect(tokens.every(token => text.slice(token.start, token.start + token.text.length) === token.text)).toBe(true)
+  })
+
+  it('preserves native foreground colors on addresses and paths too', () => {
+    const f = fixture(['127.0.0.1:80 /var/log/app.log'])
+    f.lines[0]!.cells.forEach(cell => { cell.isFgDefault = () => false })
+    vi.advanceTimersByTime(100)
+    expect(f.options()).toHaveLength(0)
+    f.addon.dispose()
+  })
+
   it('colors common English and Chinese words without coloring word fragments', () => {
     const f = fixture(['ERROR fatal Failed failure warning WARN success successful OK 错误 失败 警告 成功 完成', 'terror warnings book token'])
     vi.advanceTimersByTime(100)

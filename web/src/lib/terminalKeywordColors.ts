@@ -4,6 +4,43 @@ const keywords = /\b(ERROR|FATAL|FAIL(?:ED|URE)?|WARN(?:ING)?|SUCCESS(?:FUL)?|OK
 const error = /^(?:ERROR|FATAL|FAIL(?:ED|URE)?|错误|失败)$/i
 const warning = /^(?:WARN(?:ING)?|警告)$/i
 
+type Token = { start: number; text: string; color: 'red' | 'yellow' | 'green' | 'cyan' | 'magenta' | 'blue' }
+const pathStart = String.raw`(?:[a-z]:[\\/]|\\\\[^\\\s]+\\|~/|\.{1,2}/|/(?!/))`
+const quotedPaths = new RegExp(String.raw`(["'])(${pathStart}[^\r\n]*?)\1`, 'gi')
+const paths = new RegExp(String.raw`(?<![\w/\\])${pathStart}[^\s"'<>|;,，；）)\]}]*`, 'gi')
+const ipv4 = /(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])/g
+const ipv6 = /(?<![\w:.])(?:[a-f\d]*:){2,}[a-f\d:.]*(?:%[\w.-]+)?(?![\w:.])/gi
+const ports = /(?:\bport\s*[:=]?\s*|端口\s*[:：=]?\s*|(?:\b(?:[a-z][\w.-]*|(?:\d{1,3}\.){3}\d{1,3})|\[[a-f\d:.%\w-]+\]|\*):)(\d{1,5})(?!\w)|\b(\d{1,5})(?=\/(?:tcp|udp)\b)/gi
+
+/** Prefer complete paths over words/addresses inside them; bare numbers are not ports. */
+export function terminalColorTokens(text: string): Token[] {
+  const tokens: Token[] = []
+  const add = (start: number, value: string, color: Token['color']) => {
+    if (!value || tokens.some(token => start < token.start + token.text.length && start + value.length > token.start)) return
+    tokens.push({ start, text: value, color })
+  }
+  for (const match of text.matchAll(quotedPaths)) add(match.index! + 1, match[2]!, 'blue')
+  for (const match of text.matchAll(paths)) add(match.index!, match[0].replace(/[.:!?]+$/, ''), 'blue')
+  for (const match of text.matchAll(ipv4)) {
+    if (match[0].split('.').every(part => Number(part) <= 255)) add(match.index!, match[0], 'cyan')
+  }
+  for (const match of text.matchAll(ipv6)) {
+    // URL's IPv6 parser rejects timestamps, MAC addresses and malformed groups; no network I/O.
+    try {
+      new URL(`http://[${match[0].split('%')[0]}]/`)
+      add(match.index!, match[0], 'cyan')
+    } catch { /* Not an IPv6 address. */ }
+  }
+  for (const match of text.matchAll(ports)) {
+    const value = match[1] || match[2]!
+    if (Number(value) <= 65535) add(match.index! + match[0].lastIndexOf(value), value, 'magenta')
+  }
+  for (const match of text.matchAll(keywords)) {
+    add(match.index!, match[0], error.test(match[0]) ? 'red' : warning.test(match[0]) ? 'yellow' : 'green')
+  }
+  return tokens.sort((a, b) => a.start - b.start)
+}
+
 /** Display-only, bounded highlighting: never rewrite the PTY byte stream. */
 export class TerminalKeywordColorsAddon implements ITerminalAddon {
   private subscriptions: IDisposable[] = []
@@ -17,7 +54,8 @@ export class TerminalKeywordColorsAddon implements ITerminalAddon {
       this.timer = undefined
       const buffer = terminal.buffer.active
       const theme = terminal.options.theme
-      const colors = [theme?.red || '#d86f74', theme?.yellow || '#d5ae62', theme?.green || '#91b56d']
+      const colors = { red: theme?.red || '#d86f74', yellow: theme?.yellow || '#d5ae62', green: theme?.green || '#91b56d',
+        cyan: theme?.cyan || '#72aaa7', magenta: theme?.magenta || '#ad8bb8', blue: theme?.blue || '#76a4c7' }
       const matches: Array<{ row: number; x: number; width: number; color: string }> = []
       // Alternate-screen TUIs own their presentation. Work never grows with scrollback.
       if (buffer.type === 'normal' && terminal.cols <= 500) {
@@ -38,11 +76,11 @@ export class TerminalKeywordColorsAddon implements ITerminalAddon {
             text += chars
           }
           columns.push(line.length)
-          for (const match of text.matchAll(keywords)) {
-            const start = match.index!, end = start + match[0].length
+          for (const token of terminalColorTokens(text)) {
+            const start = token.start, end = start + token.text.length
             if (!plain.slice(start, end).every(Boolean)) continue
             matches.push({ row, x: columns[start]!, width: columns[end]! - columns[start]!,
-              color: colors[error.test(match[0]) ? 0 : warning.test(match[0]) ? 1 : 2]! })
+              color: colors[token.color] })
             if (matches.length === 128) break
           }
           if (matches.length === 128) break
