@@ -1,15 +1,11 @@
 package webbrowser
 
 import (
-	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
-	"image/jpeg"
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -86,20 +82,8 @@ func TestContainerServiceRoundTrip(t *testing.T) {
 	}
 	send(Command{Type: "new", URL: app.URL})
 	wait(title("Container fixture"))
-	frame := wait(func(e Event) bool { return e.Type == "frame" })
-	data, err := base64.StdEncoding.DecodeString(frame.Image)
-	if err != nil {
-		t.Fatal(err)
-	}
-	image, err := jpeg.DecodeConfig(bytes.NewReader(data))
-	if err != nil || image.Width != 1280 || image.Height != 720 {
-		t.Fatal("invalid initial container frame", image, err)
-	}
-	if evidence := os.Getenv("KPANEL_TEST_EVIDENCE"); evidence != "" {
-		if err := os.WriteFile(filepath.Join(evidence, "container-frame.jpg"), data, 0600); err != nil {
-			t.Fatal(err)
-		}
-	}
+	vnc := openTestVNC(t, ctx, base, strings.Repeat("b", 64), header)
+	testFramebuffer(t, vnc)
 	send(Command{Type: "mouse", Action: "mousePressed", Button: "left", X: 60, Y: 40})
 	send(Command{Type: "mouse", Action: "mouseReleased", Button: "left", X: 60, Y: 40})
 	send(Command{Type: "text", Text: "中文测试"})
@@ -112,7 +96,12 @@ func TestContainerServiceRoundTrip(t *testing.T) {
 	for _, size := range [][2]int64{{1600, 1000}, {640, 480}, {1280, 720}} {
 		t.Logf("waiting for viewport %dx%d", size[0], size[1])
 		send(Command{Type: "resize", Width: size[0], Height: size[1]})
-		wait(func(e Event) bool { return e.Type == "frame" && e.Width == size[0] && e.Height == size[1] })
+		wait(func(e Event) bool { return e.Type == "state" })
+		if err := vnc.Close(); err != nil {
+			t.Fatal(err)
+		}
+		vnc = openTestVNC(t, ctx, base, strings.Repeat("b", 64), header, int(size[0]), int(size[1]))
+		testFramebuffer(t, vnc)
 		t.Logf("received viewport %dx%d", size[0], size[1])
 	}
 	for i := 1; i < MaxTabs; i++ {
@@ -121,5 +110,5 @@ func TestContainerServiceRoundTrip(t *testing.T) {
 	wait(func(e Event) bool { return e.Type == "state" && len(e.Tabs) == MaxTabs })
 	send(Command{Type: "new", URL: app.URL})
 	wait(func(e Event) bool { return e.Type == "error" && e.Code == "tab_limit" })
-	t.Log("container entrypoint, authenticated WS, real frames, Chinese, Enter, wheel, resize and eight-tab limit passed")
+	t.Log("container entrypoint, authenticated WS, VNC negotiation, Chinese, Enter, wheel, resize and eight-tab limit passed")
 }

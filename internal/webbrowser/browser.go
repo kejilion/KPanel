@@ -1,12 +1,9 @@
 package webbrowser
 
 import (
-	"bytes"
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
-	"image/jpeg"
 	"net"
 	"net/http"
 	"net/netip"
@@ -41,14 +38,13 @@ type browserSession struct {
 	rootCancel      context.CancelFunc
 	proxy           *Egress
 	proxyServer     *http.Server
+	display         *visualDisplay
 	tabs            []*browserTab
 	active          string
 	width, height   int64
 	visible         bool
 	nextID          int
 	dirty           chan struct{}
-	frames          chan Event
-	keyframes       chan Event
 	notices         chan Event
 }
 
@@ -76,7 +72,7 @@ func browserCall[P, R any](ctx context.Context, command cdp.Command[P, R], param
 }
 func newBrowserSession(parent context.Context) *browserSession {
 	ctx, cancel := context.WithCancel(parent)
-	return &browserSession{ctx: ctx, cancel: cancel, width: 1280, height: 720, visible: true, dirty: make(chan struct{}, 1), frames: make(chan Event, 1), keyframes: make(chan Event, 1), notices: make(chan Event, 8)}
+	return &browserSession{ctx: ctx, cancel: cancel, width: 1280, height: 720, visible: true, dirty: make(chan struct{}, 1), notices: make(chan Event, 8)}
 }
 func (s *browserSession) signal() {
 	select {
@@ -91,15 +87,6 @@ func (s *browserSession) notice(e Event) {
 	}
 }
 
-// The caller holds mu, so resize producers are serialized. Keep only the latest
-// seed independently of ordinary frames and error/dialog notifications.
-func (s *browserSession) seedFrame(e Event) {
-	select {
-	case <-s.keyframes:
-	default:
-	}
-	s.keyframes <- e
-}
 func (s *browserSession) Close() {
 	s.cancel()
 	s.mu.Lock()
@@ -120,9 +107,13 @@ func (s *browserSession) stopBrowser() {
 	if s.proxy != nil {
 		s.proxy.Close()
 	}
+	if s.display != nil {
+		s.display.Close()
+	}
 	s.root = nil
 	s.rootCancel = nil
 	s.allocatorCancel = nil
+	s.display = nil
 	s.tabs = nil
 	s.active = ""
 }
@@ -130,17 +121,23 @@ func (s *browserSession) start(executable string, private []netip.Prefix) error 
 	if s.root != nil {
 		return nil
 	}
+	display, err := startVisualDisplay(s.ctx, s.width, s.height)
+	if err != nil {
+		return errors.New("browser_start_failed")
+	}
+	s.display = display
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
+		s.stopBrowser()
 		return errors.New("browser_start_failed")
 	}
 	s.proxy = NewEgress(private)
 	s.proxyServer = &http.Server{Handler: s.proxy, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 60 * time.Second, WriteTimeout: 30 * time.Minute, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 64 << 10}
 	go func() { _ = s.proxyServer.Serve(listener) }()
 	options := append([]chromedp.ExecAllocatorOption{}, chromedp.DefaultExecAllocatorOptions[:]...)
-	// Keep the headless compositor larger than every supported emulated viewport.
-	// A smaller native surface can otherwise clip resize frames on Linux runners.
-	options = append(options, chromedp.Flag("window-size", "1920,1200"), chromedp.Flag("force-device-scale-factor", "1"))
+	// A private kiosk window exposes only the page viewport to the framebuffer;
+	// the KPanel toolbar and the structured input channel remain authoritative.
+	options = append(options, chromedp.Flag("headless", false), chromedp.Flag("kiosk", true), chromedp.Flag("app", "about:blank"), chromedp.Flag("window-size", fmt.Sprintf("%d,%d", s.width, s.height)), chromedp.Flag("force-device-scale-factor", "1"), chromedp.Env("DISPLAY="+display.display, "XAUTHORITY="+display.auth))
 	options = append(options, chromedp.ExecPath(executable), chromedp.ProxyServer("http://"+listener.Addr().String()), chromedp.Flag("no-sandbox", false), chromedp.Flag("proxy-bypass-list", "<-loopback>"), chromedp.Flag("disable-quic", true), chromedp.Flag("force-webrtc-ip-handling-policy", "disable_non_proxied_udp"), chromedp.Flag("host-resolver-rules", "MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"), chromedp.Flag("disable-features", "Translate,BlinkGenPropertyTrees,MediaRouter"), chromedp.Flag("disable-popup-blocking", false), chromedp.Flag("disk-cache-size", "33554432"), chromedp.Flag("media-cache-size", "16777216"))
 	allocator, stopAllocator := chromedp.NewExecAllocator(s.ctx, options...)
 	s.allocatorCancel = stopAllocator
@@ -149,8 +146,7 @@ func (s *browserSession) start(executable string, private []netip.Prefix) error 
 	if err := chromedp.Do(root); err != nil {
 		stopRoot()
 		stopAllocator()
-		_ = s.proxyServer.Close()
-		s.proxy.Close()
+		s.stopBrowser()
 		return errors.New("browser_start_failed")
 	}
 	s.root, s.rootCancel = root, stopRoot
@@ -258,43 +254,6 @@ func (s *browserSession) selected(id string) *browserTab {
 	return nil
 }
 func (s *browserSession) listen(tab *browserTab) {
-	frames := chromedp.Events(tab.ctx, page.ScreencastFrame)
-	go func() {
-		var next time.Time
-		for event, err := range frames {
-			if err != nil {
-				return
-			}
-			if !time.Now().Before(next) && len(event.Data) < MaxEventBytes/2 {
-				next = time.Now().Add(100 * time.Millisecond)
-				// Chromium can attach new viewport metadata to a compositor frame
-				// still rendered at the previous size. Never stretch those pixels.
-				size, decodeErr := jpeg.DecodeConfig(bytes.NewReader(event.Data))
-				if decodeErr == nil && size.Width == int(event.Metadata.DeviceWidth) && size.Height == int(event.Metadata.DeviceHeight) {
-					frame := Event{Type: "frame", Tab: tab.ID, Image: base64.StdEncoding.EncodeToString(event.Data), Width: int64(event.Metadata.DeviceWidth), Height: int64(event.Metadata.DeviceHeight)}
-					select {
-					case s.frames <- frame:
-					default:
-					}
-				}
-			}
-			ctx, cancel := context.WithTimeout(tab.ctx, 3*time.Second)
-			// ACK pacing bounds Chromium capture/encoding, not just client delivery.
-			select {
-			case <-ctx.Done():
-				cancel()
-				return
-			case <-time.After(100 * time.Millisecond):
-			}
-			err = send(ctx, page.ScreencastFrameAck, page.ScreencastFrameAckParams{SessionID: event.SessionID})
-			cancel()
-			// Stop/restart may invalidate an in-flight ACK; keep the target's
-			// subscription alive so selecting this tab can deliver frames again.
-			if err != nil && tab.ctx.Err() != nil {
-				return
-			}
-		}
-	}()
 	dialogs := chromedp.Events(tab.ctx, page.JavascriptDialogOpening)
 	go func() {
 		for event, err := range dialogs {
@@ -319,6 +278,15 @@ func (s *browserSession) listen(tab *browserTab) {
 	}()
 }
 func (s *browserSession) stream() error {
+	if s.visible && s.display != nil && (s.display.width != s.width || s.display.height != s.height) {
+		ctx, cancel := context.WithTimeout(s.ctx, 5*time.Second)
+		err := s.display.resize(ctx, s.width, s.height)
+		cancel()
+		if err != nil {
+			s.stopBrowser()
+			return errors.New("browser_disconnected")
+		}
+	}
 	for _, tab := range s.tabs {
 		want := s.visible && tab.ID == s.active
 		if want && (tab.width != s.width || tab.height != s.height) {
@@ -329,59 +297,29 @@ func (s *browserSession) stream() error {
 				return errors.New("browser_disconnected")
 			}
 			tab.width, tab.height = s.width, s.height
-			if tab.streaming && !tab.navigating {
-				s.viewportFrame(tab)
-			}
 		}
 		if tab.streaming == want {
 			continue
 		}
 		ctx, cancel := context.WithTimeout(tab.ctx, 5*time.Second)
-		var err error
 		if want {
-			quality := int64(70)
-			err = send(ctx, page.BringToFront, cdp.Empty{})
-			if err == nil {
-				// Keep the capture ceiling stable across viewport changes. Restarting
-				// during navigation can fail while Chromium swaps its active page.
-				err = send(ctx, page.StartScreencast, page.StartScreencastParams{Format: page.StartScreencastFormatJpeg, Quality: &quality, MaxWidth: 1600, MaxHeight: 1000, MaxFramesInFlight: 2})
+			if err := send(ctx, page.BringToFront, cdp.Empty{}); err != nil {
+				cancel()
+				return errors.New("browser_disconnected")
 			}
-		} else {
-			err = send(ctx, page.StopScreencast, cdp.Empty{})
 		}
 		cancel()
-		if err != nil {
-			return errors.New("browser_disconnected")
-		}
 		tab.streaming = want
-		if want {
-			s.viewportFrame(tab)
-		}
 	}
 	return s.ctx.Err()
-}
-
-// Resizing or resuming a static page may not emit a fresh screencast frame.
-// Seed the active viewport without changing the webpage. Capture and delivery
-// remain bounded, including when selecting an already-loaded background tab.
-func (s *browserSession) viewportFrame(tab *browserTab) {
-	ctx, cancel := context.WithTimeout(tab.ctx, 3*time.Second)
-	defer cancel()
-	quality := int64(70)
-	shot, err := call(ctx, page.CaptureScreenshot, page.CaptureScreenshotParams{Format: page.CaptureScreenshotFormatJpeg, Quality: &quality})
-	if err != nil || len(shot.Data) >= MaxEventBytes/2 {
-		return // A navigation can replace the surface while a resize is pending.
-	}
-	size, err := jpeg.DecodeConfig(bytes.NewReader(shot.Data))
-	if err == nil && size.Width == int(tab.width) && size.Height == int(tab.height) {
-		s.seedFrame(Event{Type: "frame", Tab: tab.ID, Image: base64.StdEncoding.EncodeToString(shot.Data), Width: tab.width, Height: tab.height})
-	}
 }
 
 func (s *browserSession) Execute(c Command, executable string, private []netip.Prefix) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	defer s.signal()
+	if c.Type != "mouse" || (c.Action != "mouseMoved" && c.Action != "mouseWheel") {
+		defer s.signal()
+	}
 	if s.root != nil && s.root.Err() != nil {
 		s.stopBrowser()
 	}
@@ -462,6 +400,13 @@ func (s *browserSession) Execute(c Command, executable string, private []netip.P
 		tab.URL = c.URL
 		go func() {
 			err := chromedp.Do(navigation, chromedp.Navigate(c.URL))
+			if err == nil {
+				// Force the first compositor frame before reporting navigation complete;
+				// headed Chromium can otherwise accept input before hit testing is ready.
+				paint, done := context.WithTimeout(navigation, time.Second)
+				_, _ = chromedp.Run(paint, chromedp.CaptureScreenshot())
+				done()
+			}
 			cancel()
 			s.mu.Lock()
 			if tab.navigationID == generation {

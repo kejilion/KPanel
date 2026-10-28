@@ -8,6 +8,15 @@ import { api } from '@/lib/api'
 import { browserLinksKey, browserLaunchKey } from '@/lib/webBrowser'
 import { desktopWindowTitlebarTargetKey, desktopWindowVisibleKey } from '@/lib/desktopRouteKeys'
 
+const vncClients = vi.hoisted(() => [] as Array<{ canvas: HTMLCanvasElement; dispatchEvent(event: Event): boolean }>)
+vi.mock('@novnc/novnc', () => ({ default: class extends EventTarget {
+  canvas: HTMLCanvasElement
+  viewOnly = false
+  scaleViewport = false
+  resizeSession = false
+  constructor(target: HTMLElement) { super(); this.canvas = document.createElement('canvas'); target.append(this.canvas); vncClients.push(this) }
+  disconnect() { this.canvas.remove() }
+} }))
 vi.mock('@/lib/api', () => ({ api: { browser: { status: vi.fn(), csrf: () => 'test-csrf' }, preferences: { get: vi.fn() } } }))
 class Socket {
   static OPEN = 1
@@ -27,7 +36,7 @@ class Socket {
 describe('desktop remote browser', () => {
   beforeEach(() => {
     vi.mocked(api.preferences.get).mockResolvedValue({ resourceVersion: 'test-version' })
-    Socket.instances = []
+    Socket.instances = []; vncClients.length = 0
     vi.stubGlobal('WebSocket', Socket)
     vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
     vi.mocked(api.browser.status).mockResolvedValue({ ready: true, maxTabs: 8 })
@@ -39,6 +48,17 @@ describe('desktop remote browser', () => {
     const wrapper = mount(WebBrowserView, { global: { plugins: [router], provide: { [desktopWindowTitlebarTargetKey as symbol]: ref(titlebar), [desktopWindowVisibleKey as symbol]: visible, [browserLaunchKey as symbol]: ref(url ? { url, request: 'test' } : undefined), [browserLinksKey as symbol]: ref([{ id: 'app', name: 'App', url: 'https://example.com' }]) } } })
     await flushPromises()
     return wrapper
+  }
+  async function attachVNC(width: number, height: number) {
+    await flushPromises()
+    const channel = Socket.instances.filter(item => String(item.url).includes('/browser/vnc/')).at(-1)!
+    expect(channel).toBeDefined()
+    channel.onmessage?.({ data: JSON.stringify({ ready: true }) })
+    const client = vncClients.at(-1)!
+    client.canvas.width = width; client.canvas.height = height
+    client.dispatchEvent(new Event('connect'))
+    await nextTick()
+    return client.canvas
   }
   it('explains a missing optional component and keeps external opening available', async () => {
     vi.mocked(api.browser.status).mockResolvedValue({ ready: false, reason: 'browser_unconfigured', maxTabs: 8 })
@@ -142,13 +162,12 @@ describe('desktop remote browser', () => {
     socket.state(); await nextTick()
     socket.state([{ id: 'tab-1', url: 'https://example.com/', title: 'Page', loading: false, back: false, forward: false }], 'tab-1')
     await nextTick()
+    await attachVNC(1600, 1000)
     const canvas = wrapper.get('canvas')
     vi.spyOn(canvas.element, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, width: 800, height: 500 } as DOMRect)
     vi.spyOn(wrapper.get('.web-browser__content').element, 'getBoundingClientRect').mockReturnValue({ width: 1920, height: 1080 } as DOMRect)
-    socket.onmessage?.({ data: JSON.stringify({ type: 'frame', tab: 'tab-1', image: 'AA==', width: 1600, height: 1000 }) })
-    await flushPromises()
     for (const [deltaMode, deltaY, expected] of [[0, 120, 240], [1, 3, 96], [2, 1, 1000]]) {
-      canvas.element.dispatchEvent(new WheelEvent('wheel', { clientX: 200, clientY: 100, deltaMode, deltaX: 0, deltaY, cancelable: true }))
+      wrapper.get('.web-browser__frame').element.dispatchEvent(new WheelEvent('wheel', { clientX: 200, clientY: 100, deltaMode, deltaX: 0, deltaY, cancelable: true }))
       await nextTick()
       expect(socket.sent.at(-1)).toMatchObject({ type: 'mouse', action: 'mouseWheel', x: 400, y: 200, deltaX: 0, deltaY: expected })
     }
@@ -160,7 +179,7 @@ describe('desktop remote browser', () => {
   })
   it('uses a mobile tab overview that pauses capture and preserves selection and capacity', async () => {
     vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true, addEventListener() {}, removeEventListener() {} })))
-    const wrapper = await render(ref(true), 'https://example.com/'), socket = Socket.instances[0]!
+    const visible = ref(true), wrapper = await render(visible, 'https://example.com/'), socket = Socket.instances[0]!
     document.body.append(wrapper.element)
     socket.state(); await nextTick()
     const pages = Array.from({ length: 2 }, (_, index) => ({ id: `tab-${index}`, url: `https://example.com/${index}`, title: `Page ${index}`, loading: false, back: false, forward: false }))
@@ -189,13 +208,13 @@ describe('desktop remote browser', () => {
     document.body.append(wrapper.element)
     socket.state(); await nextTick()
     socket.state([{ id: 'tab-1', url: 'https://example.com/', title: 'Page', loading: false, back: false, forward: false }], 'tab-1'); await nextTick()
+    await attachVNC(1600, 1000)
     const canvas = wrapper.get('canvas')
     vi.spyOn(canvas.element, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, width: 800, height: 500 } as DOMRect)
-    socket.onmessage?.({ data: JSON.stringify({ type: 'frame', tab: 'tab-1', image: 'AA==', width: 1600, height: 1000 }) }); await flushPromises()
     const dispatch = (type: string, x: number, y: number) => {
       const event = new Event(type, { cancelable: true })
       for (const [name, value] of Object.entries({ pointerType: 'touch', pointerId: 1, clientX: x, clientY: y })) Object.defineProperty(event, name, { value })
-      canvas.element.dispatchEvent(event)
+      wrapper.get('.web-browser__frame').element.dispatchEvent(event)
     }
     socket.sent.length = 0
     dispatch('pointerdown', 150, 300); dispatch('pointermove', 150, 180); dispatch('pointerup', 150, 180)
@@ -226,31 +245,41 @@ describe('desktop remote browser', () => {
     expect(socket.sent).toHaveLength(0)
     wrapper.unmount()
   })
-  it('waits for the resized frame before mapping pointer input and safely releases a held mouse button', async () => {
+  it('waits for the resized framebuffer before mapping pointer input', async () => {
     vi.useFakeTimers()
-    vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValue({ close() {} }))
-    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ drawImage() {} } as unknown as CanvasRenderingContext2D)
     const visible = ref(true), wrapper = await render(visible, 'https://example.com/'), socket = Socket.instances[0]!
     socket.state(); await nextTick()
     socket.state([{ id: 'tab-1', url: 'https://example.com/', title: 'Page', loading: false, back: false, forward: false }], 'tab-1'); await nextTick()
-    const canvas = wrapper.get('canvas')
+    const canvas = await attachVNC(1600, 900)
     const box = { left: 0, top: 0, width: 800, height: 500 } as DOMRect
-    vi.spyOn(canvas.element, 'getBoundingClientRect').mockReturnValue(box)
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue(box)
     vi.spyOn(wrapper.get('.web-browser__content').element, 'getBoundingClientRect').mockReturnValue(box)
-    const frame = async (width: number, height: number) => { socket.onmessage?.({ data: JSON.stringify({ type: 'frame', tab: 'tab-1', image: 'AA==', width, height }) }); await flushPromises() }
-    await frame(1600, 900)
-    visible.value = false; await nextTick(); visible.value = true; await nextTick(); await nextTick(); await vi.advanceTimersByTimeAsync(140)
-    expect(socket.sent.at(-1)).toEqual({ type: 'resize', width: 800, height: 500 })
-    const pointer = (type: string) => { const event = new Event(type, { cancelable: true }); for (const [key, value] of Object.entries({ pointerType: 'mouse', clientX: 799, clientY: 499, button: 0, altKey: false, ctrlKey: false, metaKey: false, shiftKey: false })) Object.defineProperty(event, key, { value }); canvas.element.dispatchEvent(event) }
+    visible.value = false; await nextTick(); visible.value = true; await nextTick(); await nextTick()
+    await vi.advanceTimersByTimeAsync(140)
+    expect(socket.sent).toContainEqual({ type: 'resize', width: 800, height: 500 })
+    const nextCanvas = await attachVNC(1600, 900)
+    vi.spyOn(nextCanvas, 'getBoundingClientRect').mockReturnValue(box)
     socket.sent.length = 0
+    const pointer = (type: string) => { const event = new Event(type, { cancelable: true }); for (const [key, value] of Object.entries({ pointerType: 'mouse', clientX: 799, clientY: 499, button: 0, altKey: false, ctrlKey: false, metaKey: false, shiftKey: false })) Object.defineProperty(event, key, { value }); wrapper.get('.web-browser__frame').element.dispatchEvent(event) }
     pointer('pointermove')
-    canvas.element.dispatchEvent(new WheelEvent('wheel', { clientX: 799, clientY: 499, deltaY: 120, cancelable: true }))
     expect(socket.sent).toHaveLength(0)
     pointer('pointerup')
-    expect(socket.sent).toEqual([{ type: 'mouse', action: 'mouseReleased', x: 799, y: 499, button: 'left', modifiers: 0 }])
-    await frame(800, 500); await vi.advanceTimersByTimeAsync(40)
+    expect(socket.sent.at(-1)).toMatchObject({ action: 'mouseReleased', x: 799, y: 499 })
+    nextCanvas.width = 800; nextCanvas.height = 500; await nextTick(); await vi.advanceTimersByTimeAsync(40)
     pointer('pointermove')
-    expect(socket.sent.at(-1)).toMatchObject({ type: 'mouse', action: 'mouseMoved', x: 799, y: 499 })
+    expect(socket.sent.at(-1)).toMatchObject({ action: 'mouseMoved', x: 799, y: 499 })
+    wrapper.unmount()
+  })
+  it('reconnects the display after closing the active tab', async () => {
+    const wrapper = await render(ref(true), 'https://example.com/'), socket = Socket.instances[0]!
+    const tabs = [{ id: 'first', url: 'https://example.com/1', title: 'First', loading: false, back: false, forward: false }, { id: 'second', url: 'https://example.com/2', title: 'Second', loading: false, back: false, forward: false }]
+    socket.state(); await nextTick(); socket.state(tabs, 'second'); await nextTick()
+    const oldCanvas = await attachVNC(1280, 720)
+    await wrapper.get('button[aria-label="关闭标签页 · Second"]').trigger('click')
+    expect(oldCanvas.parentElement).toBeNull()
+    socket.state([tabs[0]], 'first'); await nextTick()
+    const newCanvas = await attachVNC(1280, 720)
+    expect(newCanvas).not.toBe(oldCanvas)
     wrapper.unmount()
   })
 })

@@ -5,6 +5,8 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"io"
+	"net"
 	"net/http"
 	"net/netip"
 	"os"
@@ -28,9 +30,10 @@ type Service struct {
 	cancel     context.CancelFunc
 }
 type serviceSession struct {
-	browser  *browserSession
-	attached bool
-	expires  time.Time
+	browser   *browserSession
+	attached  bool
+	expires   time.Time
+	vncCancel context.CancelFunc
 }
 
 func NewService(executable, token string, private []netip.Prefix) (*Service, error) {
@@ -92,10 +95,14 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == "/healthz" {
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"ready": true, "maxTabs": MaxTabs})
+		_ = json.NewEncoder(w).Encode(map[string]any{"ready": true, "maxTabs": MaxTabs, "transport": "vnc"})
 		return
 	}
 	id := strings.TrimPrefix(r.URL.Path, "/v1/sessions/")
+	vnc := strings.HasSuffix(id, "/vnc")
+	if vnc {
+		id = strings.TrimSuffix(id, "/vnc")
+	}
 	if !strings.HasPrefix(r.URL.Path, "/v1/sessions/") || !sessionIDPattern.MatchString(id) {
 		http.NotFound(w, r)
 		return
@@ -107,6 +114,24 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	entry := s.sessions[id]
+	if vnc {
+		if entry == nil || !entry.attached || entry.vncCancel != nil {
+			s.mu.Unlock()
+			http.Error(w, "browser_unavailable", 409)
+			return
+		}
+		vncCtx, cancel := context.WithTimeout(entry.browser.ctx, 30*time.Minute)
+		entry.vncCancel = cancel
+		s.mu.Unlock()
+		defer func() {
+			cancel()
+			s.mu.Lock()
+			entry.vncCancel = nil
+			s.mu.Unlock()
+		}()
+		s.serveVNC(vncCtx, w, r, entry.browser)
+		return
+	}
 	if entry == nil {
 		if len(s.sessions) >= 2 {
 			s.mu.Unlock()
@@ -127,6 +152,9 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
 		entry.attached = false
 		entry.expires = time.Now().Add(90 * time.Second)
+		if entry.vncCancel != nil {
+			entry.vncCancel()
+		}
 		s.mu.Unlock()
 		_ = entry.browser.Execute(Command{Type: "visible", Visible: false}, s.Executable, s.Private)
 	}()
@@ -170,6 +198,13 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err == nil {
 			err = entry.browser.Execute(command, s.Executable, s.Private)
 		}
+		if err == nil && command.Type == "visible" && !command.Visible {
+			s.mu.Lock()
+			if entry.vncCancel != nil {
+				entry.vncCancel()
+			}
+			s.mu.Unlock()
+		}
 		if err != nil {
 			entry.browser.notice(Event{Type: "error", Code: err.Error()})
 		}
@@ -179,12 +214,46 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	<-done
 }
 
+// serveVNC attaches only to a live authenticated control workspace and a
+// private, view-only Unix socket; RFB is never exposed as a TCP endpoint.
+func (s *Service) serveVNC(ctx context.Context, w http.ResponseWriter, r *http.Request, browser *browserSession) {
+	browser.mu.Lock()
+	var path string
+	if browser.visible && browser.display != nil && len(browser.tabs) > 0 {
+		path = browser.display.socket
+	}
+	browser.mu.Unlock()
+	if path == "" {
+		http.Error(w, "browser_unavailable", 409)
+		return
+	}
+	dialer := net.Dialer{Timeout: 3 * time.Second}
+	conn, err := dialer.DialContext(ctx, "unix", path)
+	if err != nil {
+		http.Error(w, "browser_unavailable", 503)
+		return
+	}
+	defer conn.Close()
+	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{CompressionMode: websocket.CompressionDisabled})
+	if err != nil {
+		return
+	}
+	defer ws.CloseNow()
+	ws.SetReadLimit(64 << 10)
+	vncConn := websocket.NetConn(ctx, ws, websocket.MessageBinary)
+	defer vncConn.Close()
+	done := make(chan struct{})
+	go func() { defer close(done); _, _ = io.Copy(vncConn, conn); _ = vncConn.Close() }()
+	_, _ = io.Copy(conn, vncConn)
+	_ = conn.Close()
+	<-done
+}
+
 func (s *Service) writeEvents(ctx context.Context, ws *websocket.Conn, browser *browserSession) {
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 	refresh := time.NewTicker(2 * time.Second)
 	defer refresh.Stop()
-	lastActive := ""
 	writeEvent := func(event Event) error {
 		data, err := json.Marshal(event)
 		if err != nil || len(data) > MaxEventBytes {
@@ -217,32 +286,7 @@ func (s *Service) writeEvents(ctx context.Context, ws *websocket.Conn, browser *
 				continue
 			}
 			event = browser.Snapshot()
-		case event = <-browser.frames:
 		case event = <-browser.notices:
-		case event = <-browser.keyframes:
-		}
-		if event.Type == "frame" {
-			if lastActive != event.Tab {
-				state := browser.Snapshot()
-				if state.Active != event.Tab {
-					continue
-				}
-				if writeEvent(state) != nil {
-					return
-				}
-				lastActive = state.Active
-			}
-			// Sending state can wait on the client. Recheck after that write so
-			// a concurrent hide, resize or selection cannot release a stale frame.
-			browser.mu.Lock()
-			current := browser.visible && event.Tab == browser.active && event.Width == browser.width && event.Height == browser.height
-			browser.mu.Unlock()
-			if !current {
-				continue
-			}
-		}
-		if event.Type == "state" {
-			lastActive = event.Active
 		}
 		if writeEvent(event) != nil {
 			return
