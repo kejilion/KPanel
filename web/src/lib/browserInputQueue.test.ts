@@ -3,6 +3,14 @@ import { browserInputQueue } from './browserInputQueue'
 
 afterEach(() => vi.useRealTimers())
 describe('browser continuous input', () => {
+  it('splits large legal scroll bursts without truncating accumulated distance', () => {
+    vi.useFakeTimers()
+    const send = vi.fn((_command: Record<string, unknown>) => true), queue = browserInputQueue(send)
+    queue.push({ type: 'mouse', action: 'mouseWheel', deltaY: 2000 })
+    queue.push({ type: 'mouse', action: 'mouseWheel', deltaY: 2000 })
+    vi.advanceTimersByTime(50)
+    expect(send.mock.calls.map(([c]) => c.deltaY)).toEqual([3000, 1000])
+  })
   it('coalesces a trackpad burst, preserving distance and the latest pointer', () => {
     vi.useFakeTimers()
     const send = vi.fn((_command: Record<string, unknown>) => true), queue = browserInputQueue(send)

@@ -449,6 +449,7 @@ func (s *browserSession) Execute(c Command, executable string, private []netip.P
 		tab.navigationCancel = cancel
 		tab.navigating = true
 		tab.URL = c.URL
+		tab.Back, tab.Forward = false, false
 		go func() {
 			err := chromedp.Do(navigation, chromedp.Navigate(c.URL))
 			if err == nil {
@@ -587,7 +588,9 @@ func (s *browserSession) RefreshMetadata() {
 			if len(entry.Title) <= 160 {
 				value.Title = entry.Title
 			}
-			value.Back, value.Forward = index > 0, index+1 < int64(len(history.Entries))
+			if !item.navigating {
+				value.Back, value.Forward = index > 0, index+1 < int64(len(history.Entries))
+			}
 		}
 
 		if title, e := chromedp.Run(ctx, chromedp.Title()); e == nil && len(title) <= 160 {

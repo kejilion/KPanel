@@ -35,6 +35,11 @@ class Socket {
 }
 describe('desktop remote browser', () => {
   beforeEach(() => {
+    const contexts = new WeakMap<HTMLCanvasElement, CanvasRenderingContext2D>()
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(function (this: HTMLCanvasElement) {
+      if (!contexts.has(this)) contexts.set(this, { drawImage() {} } as unknown as CanvasRenderingContext2D)
+      return contexts.get(this)!
+    })
     vi.mocked(api.preferences.get).mockResolvedValue({ resourceVersion: 'test-version' })
     Socket.instances = []; vncClients.length = 0
     vi.stubGlobal('WebSocket', Socket)
@@ -57,6 +62,7 @@ describe('desktop remote browser', () => {
     const client = vncClients.at(-1)!
     client.canvas.width = width; client.canvas.height = height
     client.dispatchEvent(new Event('connect'))
+    client.canvas.getContext('2d')!.drawImage(client.canvas, 0, 0)
     await nextTick()
     return client.canvas
   }
@@ -157,13 +163,12 @@ describe('desktop remote browser', () => {
   it('scales wheel units to the remote viewport and resizes when a window returns', async () => {
     vi.useFakeTimers()
     vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValue({ close() {} }))
-    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ drawImage() {} } as unknown as CanvasRenderingContext2D)
     const visible = ref(true), wrapper = await render(visible, 'https://example.com/'), socket = Socket.instances[0]!
     socket.state(); await nextTick()
     socket.state([{ id: 'tab-1', url: 'https://example.com/', title: 'Page', loading: false, back: false, forward: false }], 'tab-1')
     await nextTick()
     await attachVNC(1600, 1000)
-    const canvas = wrapper.get('canvas')
+    const canvas = wrapper.get('.web-browser__vnc canvas')
     vi.spyOn(canvas.element, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, width: 800, height: 500 } as DOMRect)
     vi.spyOn(wrapper.get('.web-browser__content').element, 'getBoundingClientRect').mockReturnValue({ width: 1920, height: 1080 } as DOMRect)
     for (const [deltaMode, deltaY, expected] of [[0, 120, 240], [1, 3, 96], [2, 1, 1000]]) {
@@ -189,7 +194,7 @@ describe('desktop remote browser', () => {
     const canvas = await attachVNC(1280, 720)
     await wrapper.get('.web-browser__tab-switch').trigger('click'); await flushPromises()
     expect(socket.sent).not.toContainEqual({ type: 'visible', visible: false })
-    expect(wrapper.get('canvas').element).toBe(canvas)
+    expect(wrapper.get('.web-browser__vnc canvas').element).toBe(canvas)
     const choices = document.querySelectorAll<HTMLButtonElement>('.web-browser__tab-choice')
     expect(choices).toHaveLength(2)
     choices[1]!.click(); await flushPromises()
@@ -205,13 +210,12 @@ describe('desktop remote browser', () => {
   it('scrolls a touch drag without clicking or focusing the keyboard and turns a tap into one click', async () => {
     vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true, addEventListener() {}, removeEventListener() {} })))
     vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValue({ close() {} }))
-    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ drawImage() {} } as unknown as CanvasRenderingContext2D)
     const wrapper = await render(ref(true), 'https://example.com/'), socket = Socket.instances[0]!
     document.body.append(wrapper.element)
     socket.state(); await nextTick()
     socket.state([{ id: 'tab-1', url: 'https://example.com/', title: 'Page', loading: false, back: false, forward: false }], 'tab-1'); await nextTick()
     await attachVNC(1600, 1000)
-    const canvas = wrapper.get('canvas')
+    const canvas = wrapper.get('.web-browser__vnc canvas')
     vi.spyOn(canvas.element, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, width: 800, height: 500 } as DOMRect)
     const dispatch = (type: string, x: number, y: number) => {
       const event = new Event(type, { cancelable: true })
@@ -235,6 +239,7 @@ describe('desktop remote browser', () => {
     const wrapper = await render(ref(true), 'https://example.com/'), socket = Socket.instances[0]!
     socket.state(); await nextTick()
     socket.state([{ id: 'tab-1', url: 'https://example.com/', title: 'Page', loading: false, back: false, forward: false }], 'tab-1'); await nextTick()
+    await attachVNC(1280, 720)
     const input = wrapper.get('textarea')
     socket.sent.length = 0
     const enter = new InputEvent('beforeinput', { inputType: 'insertLineBreak', cancelable: true })
@@ -273,16 +278,27 @@ describe('desktop remote browser', () => {
     expect(socket.sent.at(-1)).toMatchObject({ action: 'mouseMoved', x: 799, y: 499 })
     wrapper.unmount()
   })
-  it('retains the display after closing the active tab', async () => {
+  it('retains a frozen frame and waits for a fresh paint after closing the active tab', async () => {
     const wrapper = await render(ref(true), 'https://example.com/'), socket = Socket.instances[0]!
     const tabs = [{ id: 'first', url: 'https://example.com/1', title: 'First', loading: false, back: false, forward: false }, { id: 'second', url: 'https://example.com/2', title: 'Second', loading: false, back: false, forward: false }]
     socket.state(); await nextTick(); socket.state(tabs, 'second'); await nextTick()
     const oldCanvas = await attachVNC(1280, 720)
     await wrapper.get('button[aria-label="关闭标签页 · Second"]').trigger('click')
-    expect(oldCanvas.parentElement).not.toBeNull()
+    expect(wrapper.get('.web-browser__previous').isVisible()).toBe(true)
     socket.state([tabs[0]], 'first'); await flushPromises()
-    expect(wrapper.get('canvas').element).toBe(oldCanvas)
-    expect(vncClients).toHaveLength(1)
+    const channel = Socket.instances.filter(item => String(item.url).includes('/browser/vnc/')).at(-1)!
+    channel.onmessage?.({ data: JSON.stringify({ ready: true }) })
+    const client = vncClients.at(-1)!
+    client.dispatchEvent(new Event('connect')); await nextTick()
+    socket.sent.length = 0
+    await wrapper.get('textarea').setValue('must not reach the unseen tab')
+    expect(socket.sent).toHaveLength(0)
+    client.canvas.width = 1280; client.canvas.height = 720
+    client.canvas.getContext('2d')!.drawImage(client.canvas, 0, 0); await nextTick()
+    expect((wrapper.get('.web-browser__previous').element as HTMLCanvasElement).style.display).toBe('none')
+    expect(wrapper.get('.web-browser__vnc canvas').element).not.toBe(oldCanvas)
+    await wrapper.get('textarea').setValue('fresh')
+    expect(socket.sent.at(-1)).toMatchObject({ type: 'text', tab: 'first', text: 'fresh' })
     wrapper.unmount()
   })
   it('restores the display when the control connection resumes the same tab', async () => {
