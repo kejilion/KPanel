@@ -9,8 +9,6 @@ import { useBrowserText } from '@/i18n/webBrowser'
 import { usePhraseCatalog } from '@/i18n/phrase'
 import ModalDialog from '@/components/common/ModalDialog.vue'
 import BrowserSettings from '@/components/browser/BrowserSettings.vue'
-import { observeVNCFrame, suppressVNCCursor } from '@/lib/browserVNC'
-import { browserInputQueue } from '@/lib/browserInputQueue'
 import type RFB from '@novnc/novnc'
 
 const t = useBrowserText()
@@ -31,8 +29,6 @@ const status = ref<'connecting' | 'connected' | 'disconnected' | 'unconfigured' 
 const notice = ref('')
 const frame = ref<HTMLElement>()
 const vncScreen = ref<HTMLElement>()
-let restorePaint: (() => void) | undefined
-let restoreCursor: (() => void) | undefined
 const tabStrip = ref<HTMLElement>()
 const screen = ref<HTMLElement>()
 const addressInput = ref<HTMLInputElement>()
@@ -51,7 +47,7 @@ const width = ref(1280)
 const height = ref(720)
 const activeTab = computed(() => tabs.value.find(tab => tab.id === activeID.value))
 const workspace = Array.from(crypto.getRandomValues(new Uint8Array(16)), value => value.toString(16).padStart(2, '0')).join('')
-const visible = computed(() => windowVisible.value && !startPage.value && documentVisible.value)
+const visible = computed(() => windowVisible.value && !startPage.value && documentVisible.value && !tabsOpen.value && !moreOpen.value && !settingsOpen.value)
 const documentVisible = ref(!document.hidden)
 let socket: WebSocket | undefined
 let epoch = 0
@@ -64,6 +60,7 @@ let controller: AbortController | undefined
 let observer: ResizeObserver | undefined
 let resizeTimer: ReturnType<typeof setTimeout> | undefined
 let connectTimer: ReturnType<typeof setTimeout> | undefined
+let lastPointer = 0
 let requestedViewport: { width: number; height: number } | undefined
 const composing = ref(false)
 let pendingURL: string | undefined
@@ -71,20 +68,10 @@ const closingTabIDs = new Set<string>()
 let mobileQuery: MediaQueryList | undefined
 let touchGesture: { id: number; startX: number; startY: number; x: number; y: number; sentX: number; sentY: number; moved: boolean; sentAt: number } | undefined
 
-function sendRaw(command: Record<string, unknown>): boolean {
+function send(command: Record<string, unknown>): boolean {
   if (socket?.readyState !== WebSocket.OPEN || status.value !== 'connected') return false
   if (socket.bufferedAmount > 128 * 1024) { notice.value = t('failed'); return false }
   socket.send(JSON.stringify(command)); return true
-}
-const inputQueue = browserInputQueue(sendRaw)
-function send(command: Record<string, unknown>): boolean {
-  if (['mouse', 'key', 'text'].includes(String(command.type))) {
-    if (!imageReady.value) return false
-    return inputQueue.push({ ...command, tab: activeID.value })
-  }
-  inputQueue.flush()
-  inputQueue.clear()
-  return sendRaw(command)
 }
 function errorMessage(code = ''): string {
   if (code === 'tab_limit') return t('limit')
@@ -94,7 +81,6 @@ function errorMessage(code = ''): string {
   return t('failed')
 }
 function disconnectVNC(): void {
-  restorePaint?.(); restorePaint = undefined; restoreCursor?.(); restoreCursor = undefined
   vncEpoch++; clearTimeout(vncTimer); vncObserver?.disconnect(); vncObserver = undefined
   vncSocket?.close(); vncSocket = undefined; rfb?.disconnect(); rfb = undefined; imageReady.value = false; vncFailed.value = false
 }
@@ -103,8 +89,7 @@ function updateVNCSize(): void {
   if (canvas && canvas.width >= 320 && canvas.height >= 240) { width.value = canvas.width; height.value = canvas.height }
 }
 async function connectVNC(attempt = 0): Promise<void> {
-  if (rfb || vncSocket) return
-  const current = ++vncEpoch
+  disconnectVNC(); const current = vncEpoch
   if (!visible.value || !activeID.value || status.value !== 'connected') return
   try {
     const { default: Client } = await import('@novnc/novnc')
@@ -127,12 +112,9 @@ async function connectVNC(attempt = 0): Promise<void> {
       try { if (JSON.parse(event.data).ready !== true) throw new Error('invalid handshake') } catch { failed(); return }
       channel.onmessage = null
       rfb = new Client(vncScreen.value, channel); rfb.viewOnly = true; rfb.scaleViewport = true; rfb.resizeSession = false
-      restoreCursor = suppressVNCCursor(rfb)
       vncObserver = new MutationObserver(updateVNCSize)
       vncObserver.observe(vncScreen.value, { childList: true, subtree: true, attributes: true, attributeFilter: ['width', 'height'] })
-      restorePaint = observeVNCFrame(rfb, () => {
-        if (current === vncEpoch) { clearTimeout(vncTimer); updateVNCSize(); imageReady.value = true }
-      })
+      rfb.addEventListener('connect', () => { if (current === vncEpoch) { clearTimeout(vncTimer); updateVNCSize(); imageReady.value = true } })
       rfb.addEventListener('disconnect', failed)
       rfb.addEventListener('securityfailure', failed)
     }
@@ -153,18 +135,13 @@ function receive(raw: unknown): void {
   const changed = activeID.value !== nextActive
   tabs.value = remaining; activeID.value = nextActive
   if (tabs.value.length >= BROWSER_MAX_TABS && newTabPending.value) { newTabPending.value = false; startPage.value = false }
-  if (changed) {
-    inputQueue.clear()
-    if (!nextActive) disconnectVNC()
-    else if (!rfb && !vncSocket) void connectVNC()
-  }
+  if (changed) void connectVNC()
   if (!editingAddress.value) address.value = activeTab.value?.url === 'about:blank' ? '' : activeTab.value?.url || ''
   setTitle?.(activeTab.value?.title || t('title'))
   if (pendingURL) { const target = pendingURL; pendingURL = undefined; openURL(target) }
 }
 function disconnect(end = false): void {
   if (end) send({ type: 'end' })
-  inputQueue.clear()
   epoch++; clearTimeout(connectTimer); controller?.abort(); socket?.close(); socket = undefined; disconnectVNC(); requestedViewport = undefined
 }
 async function connect(): Promise<void> {
@@ -189,8 +166,8 @@ async function connect(): Promise<void> {
       receive(event.data)
       if (resume && visible.value) void connectVNC()
     }
-    channel.onerror = () => { if (current === epoch) { inputQueue.clear(); status.value = 'disconnected' } }
-    channel.onclose = () => { if (current === epoch) { inputQueue.clear(); clearTimeout(connectTimer); status.value = 'disconnected'; disconnectVNC() } }
+    channel.onerror = () => { if (current === epoch) status.value = 'disconnected' }
+    channel.onclose = () => { if (current === epoch) { clearTimeout(connectTimer); status.value = 'disconnected'; disconnectVNC() } }
   } catch { if (current === epoch) status.value = 'unavailable' }
 }
 function openURL(url: string): void {
@@ -203,12 +180,12 @@ function openURL(url: string): void {
   void nextTick(() => { resize(); if (!mobile.value) typing.value?.focus() })
 }
 function submit(): void { const url = browserInput(address.value); if (!url) { notice.value = t('invalid'); return }; openURL(url); if (mobile.value) addressInput.value?.blur() }
-function select(tab: BrowserTab): void { startPage.value = false; newTabPending.value = false; if (tab.id !== activeID.value) inputQueue.clear(); send({ type: 'select', tab: tab.id }) }
+function select(tab: BrowserTab): void { startPage.value = false; newTabPending.value = false; if (tab.id !== activeID.value) disconnectVNC(); send({ type: 'select', tab: tab.id }); void nextTick(resize) }
 function close(tab: BrowserTab): void {
   if (!send({ type: 'close', tab: tab.id })) return
   closingTabIDs.add(tab.id)
   tabs.value = tabs.value.filter(item => item.id !== tab.id)
-  if (activeID.value === tab.id) { inputQueue.clear(); if (!tabs.value.length) disconnectVNC() }
+  if (activeID.value === tab.id) disconnectVNC()
   if (!tabs.value.length) { startPage.value = true; newTabPending.value = true }
 }
 function home(newPage = false): void { startPage.value = true; newTabPending.value = newPage || !activeTab.value; address.value = ''; if (startURL.value) openURL(startURL.value); else void nextTick(() => addressInput.value?.focus()) }
@@ -237,6 +214,8 @@ function pointer(event: PointerEvent, action: string): void {
   // the new viewport; an outstanding mouse press may still be released safely.
   if (!viewportReady() && (event.pointerType === 'touch' || action !== 'mouseReleased')) return
   if (event.pointerType === 'touch') { touch(event, action); return }
+  if (action === 'mouseMoved' && performance.now() - lastPointer < 40) return
+  lastPointer = performance.now()
   const box = canvasBox(); if (!box) return
   if (action === 'mousePressed' && !insideCanvas(event.clientX, event.clientY, box)) return
   const point = browserCoordinates(event.clientX, event.clientY, box, requestedViewport?.width || width.value, requestedViewport?.height || height.value)
@@ -261,7 +240,7 @@ function touch(event: PointerEvent, action: string): void {
   const box = canvasBox(); if (!box) return
   const point = browserCoordinates(gesture.x, gesture.y, box, width.value, height.value)
   if (!point) { touchGesture = undefined; return }
-  if (gesture.moved && (gesture.sentX !== gesture.x || gesture.sentY !== gesture.y)) {
+  if (gesture.moved && (gesture.sentX !== gesture.x || gesture.sentY !== gesture.y) && (action === 'mouseReleased' || performance.now() - gesture.sentAt >= 40)) {
     send({ type: 'mouse', action: 'mouseWheel', ...point, button: 'none', deltaX: Math.max(-3000, Math.min(3000, (gesture.sentX - gesture.x) * width.value / box.width)), deltaY: Math.max(-3000, Math.min(3000, (gesture.sentY - gesture.y) * height.value / box.height)) })
     gesture.sentX = gesture.x; gesture.sentY = gesture.y; gesture.sentAt = performance.now()
   }
@@ -275,7 +254,6 @@ function touch(event: PointerEvent, action: string): void {
     send({ type: 'mouse', action: 'mousePressed', ...point, button: 'left' })
     send({ type: 'mouse', action: 'mouseReleased', ...point, button: 'left' })
   }
-  inputQueue.flush()
   touchGesture = undefined
 }
 function wheel(event: WheelEvent): void {
@@ -312,7 +290,7 @@ async function initialize(): Promise<void> {
 }
 function serviceChanged(action: string): void { if (['install', 'start', 'restart'].includes(action)) void connect(); else { disconnect(); status.value = 'unavailable'; imageReady.value = false } }
 watch(() => [route.query.settings, route.query.request], () => { if (route.query.settings === '1') settingsOpen.value = true }, { immediate: true })
-watch(visible, value => { send({ type: 'visible', visible: value }); if (value) { void nextTick(resize); void connectVNC() } else { inputQueue.clear(); touchGesture = undefined; disconnectVNC() } })
+watch(visible, value => { send({ type: 'visible', visible: value }); if (value) { void nextTick(resize); void connectVNC() } else { touchGesture = undefined; disconnectVNC() } })
 watch([activeID, startPage, newTabPending], () => void nextTick(() => tabStrip.value?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })))
 watch(launch, value => { if (!value) return; const url = browserInput(value.url); if (!url) return; const tab = tabs.value.find(tab => tab.url === url); if (tab) select(tab); else { newTabPending.value = true; openURL(url) } }, { immediate: true })
 watch(() => route.query.url, raw => { const value = Array.isArray(raw) ? raw[0] : raw; if (value) { const url = browserInput(value); if (url) openURL(url) } }, { immediate: true })
@@ -361,7 +339,7 @@ onBeforeUnmount(() => { preferencesController?.abort(); disconnect(true); observ
         <form class="web-browser__search" @submit.prevent="submit"><Search :size="20" /><input v-model="address" :aria-label="t('address')" :placeholder="t('address')" maxlength="4096" /><button class="button button--primary" type="submit">{{ t('go') }}<ArrowRight :size="16" /></button></form>
         <div v-if="links.length" class="web-browser__quick"><h2>{{ t('quick') }}</h2><div><button v-for="link in links.slice(0, 12)" :key="link.id" @click="openURL(link.url)"><img v-if="link.iconURL" :src="link.iconURL" alt="" /><Globe2 v-else :size="24" /><span>{{ link.name }}</span></button></div></div>
       </div>
-      <div v-show="status === 'connected' && !startPage && tabs.length > 0" class="web-browser__viewport">
+      <div v-else class="web-browser__viewport">
         <div v-if="!imageReady" class="web-browser__loading" role="status"><LoaderCircle v-if="!vncFailed" :size="24" class="is-spinning" /><span>{{ t(vncFailed ? 'failed' : 'loading') }}</span><button v-if="vncFailed" class="button button--secondary" @click="connectVNC()">{{ t('retry') }}</button></div>
         <div ref="frame" class="web-browser__frame" :aria-label="t('screen')" @pointerdown.prevent="pointer($event, 'mousePressed')" @pointerup.prevent="pointer($event, 'mouseReleased')" @pointermove.prevent="pointer($event, 'mouseMoved')" @pointercancel="touchGesture = undefined" @wheel.prevent="wheel" @contextmenu.prevent><div ref="vncScreen" class="web-browser__vnc" :class="{ 'is-ready': imageReady }" /></div>
         <textarea ref="typing" class="web-browser__keyboard" :aria-label="t('input')" autocapitalize="off" autocomplete="off" spellcheck="false" @keydown="key($event, 'keyDown')" @keyup="key($event, 'keyUp')" @beforeinput="beforeTextInput" @compositionstart="composing = true" @compositionend="composing = false; textInput($event)" @input="textInput" />
@@ -404,7 +382,7 @@ onBeforeUnmount(() => { preferencesController?.abort(); disconnect(true); observ
 .web-browser__emblem{display:grid;place-items:center;width:5rem;height:5rem;border-radius:var(--radius-lg);background:var(--brand-soft);color:var(--brand);margin-bottom:1rem}.web-browser__start h1{font-size:clamp(1.25rem,2vw,1.65rem);line-height:1.4;font-weight:600;margin:0 0 .6rem}
 .web-browser__search{display:flex;align-items:center;gap:.75rem;width:min(100%,36rem);padding:.55rem .6rem .55rem 1rem;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface-raised);box-shadow:var(--shadow-sm)}.web-browser__search>svg{flex-shrink:0;color:var(--muted)}.web-browser__search input{min-width:0;flex:1;border:0;background:none;color:var(--text);font:inherit;outline:none}.web-browser__search:focus-within{border-color:var(--brand)}.web-browser__search .button{display:flex;align-items:center;gap:.4rem;white-space:nowrap;font-size:.875rem}
 .web-browser__quick{width:min(100%,36rem);margin-top:2rem;text-align:left}.web-browser__quick h2{font-size:.8125rem;font-weight:500;color:var(--muted);margin:0 0 .75rem}.web-browser__quick>div{display:grid;grid-template-columns:repeat(auto-fit,minmax(5rem,1fr));gap:.5rem}.web-browser__quick button{display:flex;flex-direction:column;align-items:center;gap:.6rem;min-width:0;padding:.8rem .4rem;border:0;border-radius:var(--radius-sm);background:none;color:var(--text);font:inherit;cursor:pointer}.web-browser__quick button:hover{background:var(--surface-subtle)}.web-browser__quick img{width:2rem;height:2rem;object-fit:contain}.web-browser__quick span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
-:deep(.web-browser__frame),:deep(.web-browser__frame *),:deep(.web-browser__vnc),:deep(.web-browser__vnc *){cursor:none!important}.web-browser__viewport{position:absolute;inset:0;overflow:hidden;display:flex;align-items:flex-start;justify-content:center;background:var(--surface-subtle)}.web-browser__frame,.web-browser__vnc{width:100%;height:100%;touch-action:none}.web-browser__vnc{visibility:hidden;pointer-events:none}.web-browser__vnc.is-ready{visibility:visible}.web-browser__loading{position:absolute;z-index:1;inset:0;display:flex;gap:.75rem;align-items:center;justify-content:center;color:var(--muted);pointer-events:none}.web-browser__loading button{pointer-events:auto}.web-browser__keyboard{position:absolute;left:0;top:0;width:1px;height:1px;opacity:0;resize:none;padding:0;border:0}
+.web-browser__viewport{position:absolute;inset:0;overflow:hidden;display:flex;align-items:flex-start;justify-content:center;background:var(--surface-subtle)}.web-browser__frame,.web-browser__vnc{width:100%;height:100%;touch-action:none}.web-browser__vnc{visibility:hidden;pointer-events:none}.web-browser__vnc.is-ready{visibility:visible}.web-browser__loading{position:absolute;z-index:1;inset:0;display:flex;gap:.75rem;align-items:center;justify-content:center;color:var(--muted);pointer-events:none}.web-browser__loading button{pointer-events:auto}.web-browser__keyboard{position:absolute;left:0;top:0;width:1px;height:1px;opacity:0;resize:none;padding:0;border:0}
 .web-browser__footer{display:flex;align-items:center;flex-shrink:0;gap:1rem;min-height:1.75rem;box-sizing:border-box;border-top:1px solid var(--border);padding:.25rem .75rem;color:var(--muted);font-size:.8125rem}.web-browser__footer>span:first-child{display:flex;gap:.4rem;align-items:center;white-space:nowrap}.web-browser__dot{width:.4rem;height:.4rem;border-radius:50%;background:var(--muted)}.web-browser__dot.is-connected{background:var(--brand)}.web-browser__notice{display:flex;gap:.75rem;align-items:center;justify-content:space-between;padding:.4rem .85rem;border-bottom:1px solid var(--border);background:var(--brand-soft);font-size:.875rem;line-height:1.5}.web-browser__dialog{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.875rem;line-height:1.6}
 .web-browser__sheet-action{display:flex;align-items:center;gap:.5rem;min-height:2.75rem}.web-browser__tab-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.75rem}.web-browser__tab-card{position:relative;min-width:0;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface-subtle);overflow:hidden}.web-browser__tab-card.is-active{border:2px solid var(--brand);background:var(--brand-soft)}.web-browser__tab-choice{display:flex;flex-direction:column;align-items:flex-start;gap:.75rem;width:100%;min-height:10rem;padding:1rem;border:0;background:none;color:var(--text);text-align:left;cursor:pointer}.web-browser__tab-choice>svg{margin:.25rem 0;color:var(--brand)}.web-browser__tab-choice strong{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;font-size:.875rem;line-height:1.5;font-weight:500}.web-browser__tab-choice span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:.8125rem}.web-browser__card-close{position:absolute;right:0;top:0;display:grid;place-items:center;width:2.75rem;height:2.75rem;border:0;background:none;color:var(--text);cursor:pointer}.web-browser__card-close:hover{background:var(--surface-raised)}
 .web-browser__menu-actions{display:grid;gap:.25rem}.web-browser__menu-actions button{display:flex;align-items:center;gap:.75rem;min-height:2.75rem;padding:.65rem .5rem;border:0;border-radius:var(--radius-sm);background:none;color:var(--text);font-size:.875rem;text-align:left;cursor:pointer}.web-browser__menu-actions button:hover{background:var(--surface-subtle)}.web-browser__menu-actions button:disabled{opacity:.4;cursor:default}.web-browser__menu-info{display:flex;align-items:center;gap:.4rem;margin:1rem 0 .5rem;color:var(--muted);font-size:.8125rem}.web-browser__menu-hint{margin:0;color:var(--muted);font-size:.8125rem;line-height:1.6}
