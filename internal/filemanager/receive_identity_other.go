@@ -20,6 +20,8 @@ func archiveSameFilesystem(a, b os.FileInfo) bool                     { return t
 
 func inheritArchiveDestinationDefaults(stage, target *fileRoot) error { return nil }
 
+func openOrdinaryCopyRoot(stage, _ *fileRoot) (*fileRoot, error) { return stage, nil }
+
 func receiveFileTimes(root *fileRoot, name string, _ *os.File, when time.Time) error {
 	return root.Chtimes(name, when, when)
 }

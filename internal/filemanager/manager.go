@@ -1064,10 +1064,14 @@ func (m *Manager) copyOne(
 		return contract.FileEntry{}, err
 	}
 	defer stage.close()
-	if err := inheritArchiveDestinationDefaults(stage.root, targetParent); err != nil {
+	copyRoot, err := openOrdinaryCopyRoot(stage.root, targetParent)
+	if err != nil {
 		return contract.FileEntry{}, err
 	}
-	if err := m.copyTreeWithAccessRoots(ctx, sourceParent, sourceName, stage.root, "payload", budget, false); err != nil {
+	if copyRoot != stage.root {
+		defer copyRoot.Close()
+	}
+	if err := m.copyTreeWithAccessRoots(ctx, sourceParent, sourceName, copyRoot, "payload", budget, false); err != nil {
 		return contract.FileEntry{}, err
 	}
 	currentSource, err = sourceParent.Lstat(sourceName)
@@ -1085,11 +1089,11 @@ func (m *Manager) copyOne(
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return contract.FileEntry{}, err
 	}
-	staged, err := stage.root.Lstat("payload")
+	staged, err := copyRoot.Lstat("payload")
 	if err != nil {
 		return contract.FileEntry{}, err
 	}
-	if err := publishReceiveObject(stage.root, "payload", targetParent, name, false); err != nil {
+	if err := publishReceiveObject(copyRoot, "payload", targetParent, name, false); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return contract.FileEntry{}, ErrAlreadyExists
 		}

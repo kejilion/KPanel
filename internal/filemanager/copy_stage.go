@@ -1,6 +1,7 @@
 package filemanager
 
 import (
+	"errors"
 	"os"
 )
 
@@ -19,7 +20,21 @@ type fileCopyStage struct {
 func (m *Manager) openCopyStage(targetDirectory string, targetInfo os.FileInfo) (*fileCopyStage, error) {
 	workspace, workspacePath, workspaceInfo, err := m.openArchiveWorkspace(targetDirectory, targetInfo)
 	if err != nil {
-		return nil, err
+		if !errors.Is(err, ErrConflict) {
+			return nil, err
+		}
+		// Ordinary copies do not remove their source. When the managed root has
+		// no protected ancestor, keep the same-filesystem private stage under the
+		// held destination directory; destructive cross-filesystem callers have
+		// already required protected source and destination parents.
+		workspace, workspaceInfo, err = m.openReceiveDirectory(targetDirectory, false)
+		if err != nil || !os.SameFile(targetInfo, workspaceInfo) || !archiveSameFilesystem(targetInfo, workspaceInfo) {
+			if workspace != nil {
+				_ = workspace.Close()
+			}
+			return nil, ErrConflict
+		}
+		workspacePath = targetDirectory
 	}
 	name := ".kpanel-copy-" + randomID()
 	if err := workspace.Mkdir(name, 0700); err != nil {

@@ -93,6 +93,13 @@ func inheritArchiveDestinationDefaults(stage, target *fileRoot) error {
 	return unix.Fsetxattr(int(destination.Fd()), name, value[:count], 0)
 }
 
+func openOrdinaryCopyRoot(stage, target *fileRoot) (*fileRoot, error) {
+	if err := inheritArchiveDestinationDefaults(stage, target); err != nil {
+		return nil, err
+	}
+	return stage, nil
+}
+
 func receiveFileTimes(_ *fileRoot, _ string, file *os.File, when time.Time) error {
 	stamp := unix.Timespec{Sec: when.Unix(), Nsec: int64(when.Nanosecond())}
 	times := []unix.Timespec{stamp, stamp}

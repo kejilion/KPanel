@@ -48,6 +48,46 @@ func publicationParentProtected(info os.FileInfo, roots ...*fileRoot) bool {
 }
 func archiveSameFilesystem(a, b os.FileInfo) bool                     { return true }
 func inheritArchiveDestinationDefaults(stage, target *fileRoot) error { return nil }
+func openOrdinaryCopyRoot(stage, target *fileRoot) (*fileRoot, error) {
+	const name = ".copy-payload"
+	if err := stage.Mkdir(name, 0700); err != nil {
+		return nil, err
+	}
+	content, err := stage.OpenRoot(name)
+	if err != nil {
+		return nil, err
+	}
+	closeOnError := func(err error) (*fileRoot, error) {
+		_ = content.Close()
+		return nil, err
+	}
+	targetDirectory, err := target.Open(".")
+	if err != nil {
+		return closeOnError(err)
+	}
+	defer targetDirectory.Close()
+	security, err := windows.GetSecurityInfo(windows.Handle(targetDirectory.Fd()), windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		return closeOnError(err)
+	}
+	dacl, _, err := security.DACL()
+	if err != nil || dacl == nil {
+		if err == nil {
+			err = errors.New("destination directory has no DACL")
+		}
+		return closeOnError(err)
+	}
+	contentDirectory, err := openAccessTarget(content, ".")
+	if err != nil {
+		return closeOnError(err)
+	}
+	defer contentDirectory.Close()
+	if err := windows.SetSecurityInfo(windows.Handle(contentDirectory.Fd()), windows.SE_FILE_OBJECT,
+		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, nil, nil, dacl, nil); err != nil {
+		return closeOnError(err)
+	}
+	return content, nil
+}
 func receiveFileTimes(_ *fileRoot, _ string, file *os.File, when time.Time) error {
 	stamp := windows.NsecToFiletime(when.UnixNano())
 	return windows.SetFileTime(windows.Handle(file.Fd()), nil, &stamp, &stamp)
