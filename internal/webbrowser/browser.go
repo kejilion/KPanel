@@ -517,33 +517,6 @@ func (s *browserSession) Execute(c Command, executable string, private []netip.P
 		tab.Loading = false
 	case "resize":
 		// stream synchronizes the active target without restarting capture.
-	case "text":
-		err = send(ctx, input.InsertText, input.InsertTextParams{Text: c.Text})
-	case "key":
-		vk := map[string]int64{"Enter": 13, "Tab": 9, "Backspace": 8, "Delete": 46, "Escape": 27, "ArrowLeft": 37, "ArrowUp": 38, "ArrowRight": 39, "ArrowDown": 40, "Home": 36, "End": 35, "PageUp": 33, "PageDown": 34}[c.Key]
-		if len(c.Key) == 1 && c.Key[0] >= 'a' && c.Key[0] <= 'z' {
-			vk = int64(c.Key[0] - 'a' + 'A')
-		}
-		p := input.DispatchKeyEventParams{Type: input.DispatchKeyEventType(c.Action), Key: c.Key, Code: c.Code, Modifiers: c.Modifiers, WindowsVirtualKeyCode: vk}
-		// Enter's character event drives native form submission and newline insertion.
-		if c.Action == "keyDown" && c.Key == "Enter" && c.Modifiers&7 == 0 {
-			p.Text = "\r"
-			p.UnmodifiedText = "\r"
-		}
-		err = send(ctx, input.DispatchKeyEvent, p)
-	case "mouse":
-		if c.X < 0 || c.Y < 0 || c.X > float64(s.width) || c.Y > float64(s.height) {
-			return errors.New("invalid_coordinates")
-		}
-		p := input.DispatchMouseEventParams{Type: input.DispatchMouseEventType(c.Action), X: c.X, Y: c.Y, Modifiers: c.Modifiers, DeltaX: c.DeltaX, DeltaY: c.DeltaY, Button: input.MouseButton(c.Button)}
-		if c.Action == "mousePressed" || c.Action == "mouseReleased" {
-			p.ClickCount = 1
-		}
-		if c.Action == "mouseWheel" {
-			err = send(ctx, cdp.Command[wheelEventParams, cdp.Empty]{Method: input.CommandDispatchMouseEvent}, wheelEventParams{DispatchMouseEventParams: p, DeltaX: c.DeltaX, DeltaY: c.DeltaY})
-		} else {
-			err = send(ctx, input.DispatchMouseEvent, p)
-		}
 	case "dialog":
 		err = send(ctx, page.HandleJavaScriptDialog, page.HandleJavaScriptDialogParams{Accept: c.Accept, PromptText: c.Text})
 	default:
