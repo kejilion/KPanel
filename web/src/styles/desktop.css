@@ -1714,6 +1714,19 @@ body.desktop-mode-open::-webkit-scrollbar {
   transition: none;
 }
 
+.desktop__copy-drag-badge {
+  position: absolute;
+  right: 0;
+  top: 0;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  font-size: 12px;
+  pointer-events: none;
+}
+
 .desktop__icon-slot--native-drag-hidden {
   opacity: 0;
 }
