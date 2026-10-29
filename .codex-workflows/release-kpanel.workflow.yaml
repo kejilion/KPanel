@@ -1,12 +1,12 @@
 ---
 name: release-kpanel
 description: "GitHub-hosted Actions 全链路发布 KPanel，完成 L3、Release、Docker Hub 和公开浏览器验收"
-version: "4.2"
+version: "4.3"
 author: "Codex"
 tags: [release, docker, github, verification]
 params: [project_dir, version, release_channel, release_train, previous_version, image, candidate]
 created: "2026-07-27T13:00:00Z"
-updated: "2026-10-29T15:52:04Z"
+updated: "2026-10-29T16:12:14Z"
 ---
 
 # Release KPanel
@@ -104,7 +104,7 @@ publication-identity.json 的 candidate/version/run/attempt 及 stable-before.js
 
 稳定 tag 的原运行若镜像提升成功、GitHub Release 发布步骤失败，使用 main 的
 `Recover stable release publication`，必须输入原 run ID/attempt 与精确 candidate/version/digest。
-入口逐项验证原 snapshot/publication artifact、冻结15附件、原最终正文SHA-256和当前公开状态，并在每次写入前再次核验。
+入口逐项验证原 snapshot/publication artifact、冻结19附件、原最终正文SHA-256和当前公开状态，并在每次写入前再次核验。
 正文仅调用运行时解析器只读验证，不经过会重新生成正文的发布检查脚本。
 冻结清单按真实上传布局读取根目录许可证，并绑定草稿可见查询取得的 Release ID；恢复按该ID读写同一对象。
 前一预览可以属于更早补丁列车，仍须低于目标正式版并与原快照摘要精确一致。
