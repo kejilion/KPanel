@@ -34,3 +34,33 @@
 - 生产动作：不适用；未连接、备份、部署或升级生产环境。
 - 本记录证明的是该 RC 的 L3 与公开浏览器验收，不追溯声称完成独立 Cloudflare 审计或把后续稳定版内置安全复核提前套用到 RC12。
 - 原始证据目录：`C:\GitHub\_release-evidence\kpanel-v128-rc12\final-20261028-preview-run406502`。发布身份为 `publication\_temp\kpanel-public-40650239905-1\release-assets.json`；阶段报告位于 `public\kpanel-real-40650239905-1\results` 和对应 `kpanel-browser-*` 目录。
+
+## 交付节奏与流程异常补录
+
+<!-- kpanel-release-metrics:start -->
+- 首个纳入提交时间：2026-10-28T11:45:22+08:00
+- 候选冻结时间：2026-10-28T15:17:00+08:00
+- 生产完成时间：不适用
+- 提交到生产用时：不适用
+- 是否回滚、紧急热修复或重复发布：否（无回滚或紧急热修复；未发现创建第二个 RC12 Release）
+- 若发生失败，发现时间、恢复时间和逃逸门禁：不适用
+<!-- kpanel-release-metrics:end -->
+
+<!-- kpanel-release-process-metrics:start -->
+- 已记录发布流程异常或无效证据拦截次数：1
+- 其中生产写操作开始后异常次数：0
+<!-- kpanel-release-process-metrics:end -->
+
+<!-- kpanel-release-process-incidents:start -->
+[
+  {
+    "fingerprint": "preview-release/inputs/automation-not-on-main",
+    "position": "before-production-write",
+    "count": 1,
+    "impact": "Publish preview run 40669866603 在输入预检失败；候选 SHA fbf2f5bd4907540354b19f1f26c07b6a61a14998 的发布自动化与 main 不一致，后续阶段未运行。",
+    "recoveryEvidence": "run 40650239905 已对最终 RC12 候选 9c6f9211c2cb37b085263f967a2b0581b818329b 完成公开发布与验收；后续 run 40671168205 对同一候选全链路成功。GitHub Release 仍为原 ID 426397268，公开时间 2026-10-28T08:08:51Z。",
+    "permanentAction": "发布前确认 `scripts/github-preview-release.mjs` 与相关自动化已集成 main，核对精确候选 SHA；仅在该门禁通过后派发，并保留输入失败原件。",
+    "historicalReleases": []
+  }
+]
+<!-- kpanel-release-process-incidents:end -->
