@@ -36,9 +36,9 @@ function pointer(
   type: string,
   x: number,
   y: number,
-  { id = 1, pointerType = 'mouse', isPrimary = true } = {},
+  { id = 1, pointerType = 'mouse', isPrimary = true, ctrlKey = false } = {},
 ): Event {
-  const event = new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y })
+  const event = new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y, ctrlKey })
   Object.defineProperties(event, {
     pointerId: { value: id },
     pointerType: { value: pointerType },
@@ -99,6 +99,76 @@ describe('DesktopView icon layout interaction', () => {
       widgetPositions: body.widgetPositions,
       labels: body.labels,
     }))
+  })
+
+  it('copies a command shortcut on Ctrl drop without moving the original', async () => {
+    const id = 'a'.repeat(32)
+    const shortcut = { id, name: 'Server', description: 'test', targetType: 'remote-command' as const, hostId: 'b'.repeat(32), command: 'uptime', createdAt: '', updatedAt: '' }
+    loadWorkspace.mockResolvedValue(workspace({ shortcuts: [shortcut] }))
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await flushPromises()
+    const slot = wrapper.get(`[data-icon-key="shortcut:${id}"]`)
+    const originalStyle = slot.attributes('style')
+    slot.element.dispatchEvent(pointer('pointerdown', 30, 30, { ctrlKey: true }))
+    window.dispatchEvent(pointer('pointermove', 145, 30, { ctrlKey: true }))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.desktop__copy-drag-badge').exists()).toBe(true)
+    expect(slot.attributes('style')).toBe(originalStyle)
+    expect(wrapper.get('.desktop__copy-drag-preview').attributes('style')).toContain('translate3d(115px, 0px, 0)')
+    window.dispatchEvent(pointer('pointermove', 200, 60, { ctrlKey: true }))
+    await wrapper.vm.$nextTick()
+    expect(slot.attributes('style')).toBe(originalStyle)
+    expect(wrapper.get('.desktop__copy-drag-preview').attributes('style')).toContain('translate3d(170px, 30px, 0)')
+    window.dispatchEvent(pointer('pointerup', 145, 30, { ctrlKey: true }))
+    await flushPromises()
+    expect(updateWorkspace).toHaveBeenCalledTimes(1)
+    const update = updateWorkspace.mock.calls[0]![0]
+    expect(update.shortcuts).toHaveLength(2)
+    expect(update.shortcuts[0]).toMatchObject({ id, name: 'Server', command: 'uptime' })
+    expect(update.shortcuts[1]).toMatchObject({ name: 'Server - 副本', hostId: 'b'.repeat(32), command: 'uptime' })
+    expect(update.shortcuts[1]!.id).not.toBe(id)
+    expect(update.positions[`shortcut:${id}`]).toBeUndefined()
+    expect(update.positions[`shortcut:${update.shortcuts[1]!.id}`]).toBeDefined()
+    wrapper.unmount()
+  })
+
+  it('moves instead of copying when Ctrl is released before drop', async () => {
+    const id = 'c'.repeat(32)
+    loadWorkspace.mockResolvedValue(workspace({ shortcuts: [{ id, name: 'Link', description: '', targetType: 'url', url: 'https://example.com', createdAt: '', updatedAt: '' }] }))
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await flushPromises()
+    const slot = wrapper.get(`[data-icon-key="shortcut:${id}"]`)
+    const originalStyle = slot.attributes('style')
+    slot.element.dispatchEvent(pointer('pointerdown', 30, 30, { ctrlKey: true }))
+    window.dispatchEvent(pointer('pointermove', 145, 30, { ctrlKey: true }))
+    await wrapper.vm.$nextTick()
+    expect(slot.attributes('style')).toBe(originalStyle)
+    window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Control', ctrlKey: false }))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.desktop__copy-drag-preview').exists()).toBe(false)
+    expect(slot.attributes('style')).not.toBe(originalStyle)
+    window.dispatchEvent(pointer('pointerup', 145, 30))
+    await flushPromises()
+    expect(updateWorkspace).toHaveBeenCalledTimes(1)
+    expect(updateWorkspace.mock.calls[0]![0].shortcuts).toHaveLength(1)
+    expect(updateWorkspace.mock.calls[0]![0].positions[`shortcut:${id}`]).toBeDefined()
+    wrapper.unmount()
+  })
+
+  it('does not create a copy if the original icon cannot be read', async () => {
+    const id = 'd'.repeat(32)
+    loadWorkspace.mockResolvedValue(workspace({ shortcuts: [{ id, name: 'Link', description: '', targetType: 'url', url: 'https://example.com', iconURL: '/icon', createdAt: '', updatedAt: '' }] }))
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response('', { status: 404 }))
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await flushPromises()
+    wrapper.get(`[data-icon-key="shortcut:${id}"]`).element.dispatchEvent(pointer('pointerdown', 30, 30, { ctrlKey: true }))
+    window.dispatchEvent(pointer('pointermove', 145, 30, { ctrlKey: true }))
+    window.dispatchEvent(pointer('pointerup', 145, 30, { ctrlKey: true }))
+    await flushPromises()
+    expect(updateWorkspace).not.toHaveBeenCalled()
+    expect(fetchSpy).toHaveBeenCalledWith('/icon', { credentials: 'same-origin' })
+    wrapper.unmount()
+    fetchSpy.mockRestore()
   })
 
   it.each(['workspace', 'entries'])('keeps restored placement stable with a delayed %s response', async slow => {

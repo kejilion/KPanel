@@ -217,6 +217,20 @@ function firstFreeSlot(
   return candidates.find((candidate) => canPlace(item, candidate, grid, occupied))
 }
 
+/** Find an unoccupied cell near a drop without moving any existing entry. */
+export function freeDesktopIconPosition(
+  placements: readonly DesktopGridPlacement[],
+  items: readonly DesktopGridItem[],
+  destination: DesktopIconPosition,
+  bounds: DesktopIconBounds,
+): DesktopIconPosition | undefined {
+  const grid = desktopIconGrid(bounds)
+  const item = normalizeItem({ key: '__copy__' })
+  const occupied = occupiedRects(placements, itemMap(items), grid)
+  const slot = firstFreeSlot(item, grid, occupied, slotForPosition(destination, item, grid))
+  return slot ? positionForSlot(slot, grid) : undefined
+}
+
 function placementAt(
   item: DesktopGridItem & { columns: number; rows: number },
   slot: DesktopIconGridSlot,

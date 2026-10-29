@@ -97,6 +97,7 @@ import {
   desktopFileDragSourceNodeId,
   desktopFileDragEntries,
   DesktopShortcutLimitError,
+  MAX_DESKTOP_SHORTCUTS,
   hasCrossPanelFileDrag,
   hasDesktopFileDrag,
   nativeArchiveDownloadName,
@@ -148,6 +149,7 @@ import {
   deriveDesktopGridLayout,
   desktopGridPlacementRect,
   dropDesktopGridItem,
+  freeDesktopIconPosition,
   moveDesktopGridItemByKeyboard,
   moveDesktopGridItemGroup,
   type DesktopGridItem,
@@ -1770,7 +1772,7 @@ function iconSlotStyle(key: string): Record<string, string> {
         return { ...sizeStyle, left: '0px', top: '0px', transform: `translate3d(${left}px, ${rect.top}px, 0) scale(.5)`, opacity: '0', visibility: 'hidden', pointerEvents: 'none' }
       }
     }
-    let pixels = dragPreviews.value[key]
+    let pixels = copyDragKey.value === key ? undefined : dragPreviews.value[key]
     const position = renderedPositionByKey.value.get(key)
     if (!pixels && position) pixels = desktopIconPositionToPixels(position, iconBounds.value)
     const id = groupMembership.value.get(key)
@@ -1787,7 +1789,7 @@ function iconSlotStyle(key: string): Record<string, string> {
       zIndex: draggingIcons.value.has(key) || groupPreview ? '24' : '2',
     }
   }
-  const preview = dragPreviews.value[key]
+  const preview = copyDragKey.value === key ? undefined : dragPreviews.value[key]
   if (preview) {
     return { left: '0px', top: '0px', transform: `translate3d(${preview.left}px, ${preview.top}px, 0)` }
   }
@@ -1803,6 +1805,14 @@ function iconSlotStyle(key: string): Record<string, string> {
     left: '0px', top: '0px',
     transform: `translate3d(${(overflowIndex % grid.columns) * grid.stepX}px, ${iconOverflowStartTop.value + Math.floor(overflowIndex / grid.columns) * grid.stepY}px, 0)`,
   }
+}
+
+function copyPreviewStyle(key: string): Record<string, string> {
+  const preview = dragPreviews.value[key]
+  const position = renderedPositionByKey.value.get(key)
+  if (!preview || !position) return { display: 'none' }
+  const origin = desktopIconPositionToPixels(position, iconBounds.value)
+  return { transform: `translate3d(${preview.left - origin.left}px, ${preview.top - origin.top}px, 0)` }
 }
 
 function widgetSlotStyle(key: string): Record<string, string> {
@@ -2152,6 +2162,59 @@ interface IconDragState {
 }
 
 let iconDrag: IconDragState | undefined
+const copyDragKey = ref('')
+
+function copyModifier(event: MouseEvent | PointerEvent | KeyboardEvent): boolean {
+  return /Mac|iPhone|iPad/.test(navigator.platform) ? event.altKey : event.ctrlKey
+}
+
+function copyableShortcut(key: string): DesktopShortcut | undefined {
+  const shortcut = shortcuts.value.find(item => `shortcut:${item.id}` === key)
+  return shortcut && (shortcut.targetType === 'url' || isDesktopCommandShortcut(shortcut)) ? shortcut : undefined
+}
+
+async function copyShortcutAt(key: string, destination: { x: number; y: number }): Promise<void> {
+  const shortcut = copyableShortcut(key)
+  if (!shortcut) return
+  let icon: File | undefined
+  let created = false
+  try {
+    if (shortcut.iconURL) {
+      const response = await fetch(shortcut.iconURL, { credentials: 'same-origin' })
+      if (!response.ok) throw new ApiError(i18n.t('desktop.shortcutCopyIconReadError'), response.status, 'shortcut_icon_read_failed')
+      const blob = await response.blob()
+      icon = new globalThis.File([blob], 'icon', { type: blob.type })
+    }
+    const id = desktopIcons.generateShortcutID()
+    const suffix = i18n.t('desktop.shortcutCopySuffix')
+    const name = Array.from(shortcut.name).slice(0, 48 - Array.from(suffix).length).join('') + suffix
+    await desktopIcons.mutate((draft) => {
+      if (draft.shortcuts.length >= MAX_DESKTOP_SHORTCUTS) throw new DesktopShortcutLimitError(0, 1)
+      const source = draft.shortcuts.find(item => item.id === shortcut.id)
+      if (!source) throw new ApiError(i18n.t('desktop.shortcutCopyMissing'), 0, 'shortcut_missing')
+      const position = freeDesktopIconPosition(renderedDesktopLayout.value.placements, allDesktopLayoutItems.value, destination, iconBounds.value)
+      if (!position) throw new ApiError(i18n.t('desktop.shortcutCopyNoSpace'), 0, 'shortcut_no_space')
+      draft.shortcuts.push({ ...source, id, name })
+      draft.positions[`shortcut:${id}`] = position
+    })
+    created = true
+    if (icon) {
+      await api.desktop.uploadShortcutIcon(id, icon)
+      await desktopIcons.load()
+    }
+    setIconSelection([`shortcut:${id}`])
+    toast.success(i18n.t('desktop.shortcutCreated'), name)
+  } catch (error) {
+    if (created) {
+      await desktopIcons.load().catch(() => undefined)
+      toast.danger(i18n.t('desktop.shortcutCopyPartial'), workspaceErrorMessage(error))
+    } else if (error instanceof DesktopShortcutLimitError) {
+      toast.danger(i18n.t('desktop.shortcutLimitTitle'), i18n.t('desktop.shortcutLimitMessage', { available: 0, requested: 1 }))
+    } else {
+      toast.danger(i18n.t('desktop.workspaceSaveErrorTitle'), workspaceErrorMessage(error))
+    }
+  }
+}
 interface WidgetDragState {
   key: string
   pointerId: number
@@ -2176,6 +2239,8 @@ function removeIconDragListeners(): void {
   window.removeEventListener('pointerup', onIconDragEnd)
   window.removeEventListener('pointercancel', onIconDragCancel)
   window.removeEventListener('blur', cancelIconDrag)
+  window.removeEventListener('keydown', onIconDragModifier)
+  window.removeEventListener('keyup', onIconDragModifier)
   iconsElement.value?.removeEventListener('scroll', onIconDragScroll)
 }
 
@@ -2213,7 +2278,11 @@ function clampedIconDragPreviews(
 }
 
 function updateIconDragPreview(drag: IconDragState): void {
-  updateGroupDropTarget(drag.lastX, drag.lastY, drag.keys)
+  if (copyDragKey.value) {
+    clearAutoGroupPreview()
+    groupDropTarget.value = ''
+    groupDropBefore.value = ''
+  } else updateGroupDropTarget(drag.lastX, drag.lastY, drag.keys)
   const scrollDelta = (iconsElement.value?.scrollTop || 0) - drag.startScrollTop
   dragPreviews.value = clampedIconDragPreviews(
     drag.origins,
@@ -2523,7 +2592,16 @@ function beginIconDrag(event: PointerEvent, key: string): void {
   window.addEventListener('pointerup', onIconDragEnd)
   window.addEventListener('pointercancel', onIconDragCancel)
   window.addEventListener('blur', cancelIconDrag)
+  window.addEventListener('keydown', onIconDragModifier)
+  window.addEventListener('keyup', onIconDragModifier)
   iconsElement.value?.addEventListener('scroll', onIconDragScroll, { passive: true })
+}
+
+function onIconDragModifier(event: KeyboardEvent | PointerEvent): void {
+  const drag = iconDrag
+  if (!drag) return
+  copyDragKey.value = drag.moved && drag.pointerType === 'mouse' && drag.keys.length === 1 && copyableShortcut(drag.key) && copyModifier(event) ? drag.key : ''
+  if (drag.moved && event instanceof KeyboardEvent) updateIconDragPreview(drag)
 }
 
 function onIconDragMove(event: PointerEvent): void {
@@ -2544,6 +2622,7 @@ function onIconDragMove(event: PointerEvent): void {
     closeContextMenu(false)
     document.body.classList.add('desktop-icon-dragging')
   }
+  onIconDragModifier(event)
   event.preventDefault()
   updateIconDragPreview(drag)
   scheduleIconAutoScroll()
@@ -2557,6 +2636,7 @@ function finishIconDrag(): IconDragState | undefined {
   if (drag) releaseIconDragPointer(drag)
   document.body.classList.remove('desktop-icon-dragging')
   draggingIcons.value = new Set()
+  copyDragKey.value = ''
   resetIconDragSurface()
   return drag
 }
@@ -2571,6 +2651,13 @@ function onIconDragEnd(event: PointerEvent): void {
   if (!drag.moved || !anchorPreview) return
   for (const key of drag.keys) suppressActivationAfterDrag.add(key)
   const destination = desktopIconPixelsToPosition(anchorPreview, iconBounds.value)
+  if (drag.pointerType === 'mouse' && drag.keys.length === 1 && copyableShortcut(drag.key) && copyModifier(event)) {
+    clearAutoGroupPreview()
+    groupDropTarget.value = ''
+    groupDropBefore.value = ''
+    void copyShortcutAt(drag.key, destination)
+    return
+  }
   if (handleGroupDrop(drag.keys, event.clientX, event.clientY, destination)) return
   const placements = drag.keys.length > 1
     ? moveDesktopGridItemGroup(
@@ -4746,6 +4833,7 @@ function onViewportResize(): void {
         class="desktop__icon-slot"
         :class="{
           'desktop__icon-slot--dragging': draggingIcons.has(entry.key),
+          'desktop__icon-slot--copying': copyDragKey === entry.key,
           'desktop__icon-slot--native-drag-hidden': nativeDragHiddenIcons.has(entry.key),
           'desktop__icon-slot--group-candidate': autoGroupTarget === entry.key,
           'desktop__icon-slot--group-ready': autoGroupReady && autoGroupTarget === entry.key,
@@ -4774,7 +4862,7 @@ function onViewportResize(): void {
           :fallback-background="entryFallbackBackground(entry)"
           :selected="selectedIcons.has(entry.key)"
           :order="visibleDesktopApps.length + visibleDynamicEntries.length + index"
-          :dragging="draggingIcons.has(entry.key)"
+          :dragging="draggingIcons.has(entry.key) && copyDragKey !== entry.key"
           :transfer-hint="desktopShortcutTransferHint(entry)"
           :transfer-ready="desktopShortcutTransferReady(entry)"
           @select="(event) => selectEntry(entry, event)"
@@ -4782,6 +4870,16 @@ function onViewportResize(): void {
           @context="(event) => onEntryContext(event, entry)"
           @nudge="(x, y) => nudgeIcon(entry.key, x, y)"
         />
+        <div v-if="copyDragKey === entry.key" class="desktop__copy-drag-preview" :style="copyPreviewStyle(entry.key)" aria-hidden="true" inert>
+          <DesktopEntryIcon
+            :label="entry.name"
+            :entry="entry"
+            :gradient="entryGradient(entry)"
+            :fallback-background="entryFallbackBackground(entry)"
+            :dragging="true"
+          />
+          <span class="desktop__copy-drag-badge">{{ i18n.t('desktop.shortcutCopyDrag') }}</span>
+        </div>
       </div>
       <!-- Positioned left of the first icon page, but after the icons in Tab order. -->
       <section
