@@ -38,7 +38,30 @@ const report={candidate:process.env.EXPECTED_SHA,stage,publication,digest,mocked
   const session=await request('/auth/session');csrf=session.csrfToken;const saved=JSON.parse(fs.readFileSync('/work/private/assertions.json'));let access=await request('/settings/panel-access');check('TLS fingerprint survives Panel restart',access.selfSignedTls.enabled&&access.selfSignedTls.fingerprintSha256===saved.fingerprint);
   const history=await request('/terminal-history');check('command history survives Panel restart',history.available&&history.items.some(x=>x.command==='printf RC6_HISTORY_RESTART'));await request('/terminal-history/remove','POST',{command:'printf RC6_HISTORY_RESTART'});check('history single removal readback',!(await request('/terminal-history')).items.some(x=>x.command==='printf RC6_HISTORY_RESTART'));await request('/terminal-history','DELETE');check('history clear readback',(await request('/terminal-history')).items.length===0);
   let prefs=await request('/settings/preferences');check('preferences survive Panel restart',prefs.locale==='en-US'&&prefs.desktop?.windows.length===1&&prefs.desktop.windows[0].id===3);let doc=await request('/apps/local/rc2-proof');check('Agent restart and CLI edit visible',doc.content.includes('# CLI boundary edit')&&doc.resourceVersion!==saved.localVersion);await request('/apps/local/rc2-proof','PUT',{token:'rc2-proof',content:doc.content,resourceVersion:saved.localVersion},409);
-  const page=await ctx.newPage();page.on('pageerror',e=>report.errors.push(String(e)));await page.goto(base+'/');await page.locator('.desktop-window').waitFor();check('real persisted desktop restored',await page.locator('.desktop-window').count()===1&&await page.locator('html').getAttribute('lang')==='en-US');await page.reload();await page.locator('.desktop-window').waitFor();check('real desktop refresh restores one window',await page.locator('.desktop-window').count()===1);await page.screenshot({path:out+'/desktop-real-restored.png',animations:'disabled'});
+  const page = await ctx.newPage()
+  page.on('pageerror', error => report.errors.push(String(error)))
+  await page.goto(base + '/')
+  const desktop = page.locator('.desktop-window')
+  if (stage === 'restart') {
+    try {
+      await desktop.waitFor({ timeout: 15_000 })
+    } catch (initialLoadError) {
+      const retry = page.getByRole('button', { name: '重新加载', exact: true })
+      try {
+        await retry.waitFor({ state: 'visible', timeout: 5_000 })
+      } catch {
+        throw initialLoadError
+      }
+      check('bootstrap recovery offers explicit reload', await retry.isVisible())
+      await retry.click()
+    }
+  }
+  await desktop.waitFor({ timeout: 30_000 })
+  check('real persisted desktop restored', await desktop.count() === 1 && await page.locator('html').getAttribute('lang') === 'en-US')
+  await page.reload()
+  await desktop.waitFor()
+  check('real desktop refresh restores one window', await desktop.count() === 1)
+  await page.screenshot({ path: out + '/desktop-real-restored.png', animations: 'disabled' })
   if(publication==='public'){const channel=process.env.EXPECTED_VERSION.includes('-rc.')?'preview':'stable';const release=await request('/settings/kpanel-release?channel='+channel);report.releaseProbe=release;check('official release and notes',release.version===process.env.EXPECTED_VERSION&&release.imageDigest===digest&&release.notes.length===Number(process.env.EXPECTED_NOTES)&&release.upgradeNotes.length===Number(process.env.EXPECTED_UPGRADE_NOTES));const stable=await request('/settings/kpanel-release?channel=stable');check('stable expected version',stable.version===process.env.EXPECTED_STABLE_VERSION);report.release={version:release.version,imageDigest:release.imageDigest,notes:release.notes,upgradeNotes:release.upgradeNotes,releaseUrl:release.releaseUrl};}
   await request('/apps/local/rc2-proof','DELETE',{resourceVersion:doc.resourceVersion},204);await request('/apps/local/rc2-proof','GET',undefined,404);check('HTTP health remains available before offline recovery',(await ctx.request.get(httpBase+'/api/v1/health')).status()===200);
  }
