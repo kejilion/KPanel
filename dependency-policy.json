@@ -18,8 +18,8 @@
     "eolReviewMaximumDays": 92
   },
   "reviewState": {
-    "lastEolReview": "2026-07-28",
-    "eolReviewEvidence": "docs/security-performance-hardening-2026-07-28.md"
+    "lastEolReview": "2026-10-29",
+    "eolReviewEvidence": "docs/dependency-lifecycle-review-2026-10-29.md"
   },
   "detectorQualification": {
     "candidateLevel": "version-channel-stable",
@@ -347,15 +347,15 @@
       "component": "typescript",
       "currentVersion": "6.0.3",
       "candidateVersion": "7.0.2",
-      "reason": "2026-10-16 re-evaluation: TypeScript 7.0.2 with both pinned vue-tsc 3.3.11 and current patch 3.3.13 fails on package subpath typescript/lib/tsc with ERR_PACKAGE_PATH_NOT_EXPORTED. Retain TypeScript 6.0.3 until a supported Vue compiler path exists.",
-      "securityAndProductImpact": "No confirmed TypeScript security advisory in this update report; adopting 7.0.2 now breaks the required Vue typecheck and build.",
+      "reason": "2026-10-29 re-evaluation: retain TypeScript 6.0.3. The current KPanel compatibility log shows vue-tsc 3.3.11 and 3.3.13 fail before typechecking with ERR_PACKAGE_PATH_NOT_EXPORTED for typescript/lib/tsc; npm latest remains 3.3.13. Re-open only when the full supported Vue toolchain path works.",
+      "securityAndProductImpact": "No emergency-security dependency signal in the complete 2026-10-29 report. TypeScript 7.0.2 currently breaks the required Vue typecheck path, so adopting it would remove a required verification gate.",
       "mitigation": "Keep TypeScript 6.0.3 pinned, run the existing typecheck/build gates, and retain the TypeScript 7 signal in every freshness report.",
       "owner": "KPanel base maintenance",
-      "reviewDate": "2026-10-23",
+      "reviewDate": "2026-11-28",
       "exitCondition": "A supported Vue typecheck path for TypeScript 7 passes KPanel typecheck, tests, scene-pack checks and production build without disabling checks.",
       "rollbackPoint": "9c5be9c293f98ad9bce260a4562e28743951b105",
-      "previousReviewDate": "2026-10-15",
-      "reviewedAt": "2026-10-16T15:11:06.146Z",
+      "previousReviewDate": "2026-10-23",
+      "reviewedAt": "2026-10-29T15:37:35Z",
       "reviewEvidence": {
         "node": "v24.17.0",
         "platform": "win32",
@@ -368,29 +368,33 @@
         "expectedAndObserved": "ERR_PACKAGE_PATH_NOT_EXPORTED before typechecking",
         "currentLogSha256": "f1ee4e9c12fe9314cd20cd438bc14bac10d452636fa2b64e41817cd80b8d840e",
         "patchLogSha256": "f1ee4e9c12fe9314cd20cd438bc14bac10d452636fa2b64e41817cd80b8d840e",
-        "lockSha256": "81cb88fc3b1a61b24cb249afe099d66a8664ffeba953124a5e6e04445ac77935"
+        "lockSha256": "81cb88fc3b1a61b24cb249afe099d66a8664ffeba953124a5e6e04445ac77935",
+        "latestVueTsc": "3.3.13",
+        "upstreamCompatibilityIssue": "https://github.com/vuejs/language-tools/issues/6124"
       }
     },
     {
       "component": "@types/node",
       "currentVersion": "24.19.0",
-      "candidateVersion": "26.6.5",
-      "reason": "2026-10-16 official Node release schedule and distribution index still identify Node 24 as LTS and Node 26 as Current. Keep declarations aligned with the pinned Node 24 LTS line; the newly reported Node 26.6.5 type candidate remains an explicit major-upgrade signal.",
-      "securityAndProductImpact": "Development-time types only; keeping runtime and declarations on the same major avoids unsupported API assumptions.",
-      "mitigation": "Pin @types/node 24.19.0, upgrade the runtime to Node 24.22.1 LTS, and retain the Node 26 signal in freshness reports.",
+      "candidateVersion": "26.6.6",
+      "reason": "2026-10-29 re-evaluation: Node.js 26.13.0 entered LTS on 2026-10-28, while Node.js 24 remains LTS and the KPanel builder is pinned to Node 24. Keep @types/node on the matching runtime major and evaluate runtime/types migration together in a separate L2/L3 candidate.",
+      "securityAndProductImpact": "No emergency-security dependency signal in the complete 2026-10-29 report. This is a development-time declaration major; keeping runtime and declarations aligned avoids unsupported API assumptions.",
+      "mitigation": "Keep @types/node 24.19.0 paired with the Node 24 builder; track Node 24 patch/digest candidates separately and retain Node 26.13.0 / @types/node 26.6.6 as an explicit major-toolchain migration.",
       "owner": "KPanel base maintenance",
-      "reviewDate": "2026-10-23",
-      "exitCondition": "The approved LTS runtime moves to Node 26 and the matching type declarations pass the full toolchain compatibility gates.",
+      "reviewDate": "2026-11-28",
+      "exitCondition": "A separately reviewed Node 26 LTS runtime and matching @types/node candidate pass full Web typecheck, tests, scene-pack checks, production build and Linux amd64/arm64 image gates.",
       "rollbackPoint": "9c5be9c293f98ad9bce260a4562e28743951b105",
-      "previousReviewDate": "2026-10-15",
-      "reviewedAt": "2026-10-16T15:11:06.147Z",
+      "previousReviewDate": "2026-10-23",
+      "reviewedAt": "2026-10-29T15:37:35Z",
       "reviewEvidence": {
         "source": "https://nodejs.org/en/about/previous-releases",
         "index": "https://nodejs.org/dist/index.json",
         "indexSha256": "b52f521b8e24898364b74f03596afef1f97c1448014df7c2b5ebdcd2b69ca4a9",
-        "currentLatestLts": "24.22.0",
-        "node26Latest": "26.12.0",
-        "node26Lts": false
+        "currentLatestLts": "24.22.2",
+        "node26Latest": "26.13.0",
+        "node26Lts": true,
+        "node26LtsSince": "2026-10-28",
+        "candidateTypes": "26.6.6"
       }
     }
   ],
