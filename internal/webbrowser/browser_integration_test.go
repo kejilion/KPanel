@@ -68,6 +68,74 @@ func TestRealBrowserEnterSubmitsAndInsertsNewline(t *testing.T) {
 	}
 }
 
+func TestRealBrowserBusyRendererDoesNotBlockWorkspaceState(t *testing.T) {
+	executable := os.Getenv("KPANEL_TEST_CHROME")
+	if executable == "" {
+		t.Skip("set KPANEL_TEST_CHROME")
+	}
+	s := newBrowserSession(context.Background())
+	defer s.Close()
+	if err := s.Execute(Command{Type: "new"}, executable, nil); err != nil {
+		t.Fatal(err)
+	}
+	s.mu.Lock()
+	target := s.selected(s.active).ctx
+	s.mu.Unlock()
+	// A real renderer task occupies the main thread while metadata and input
+	// await CDP. The state snapshot must remain available to control the session.
+	if _, err := chromedp.Run(target, chromedp.Evaluate[bool](`(setTimeout(()=>{const end=performance.now()+1800;while(performance.now()<end){}},0),true)`)); err != nil {
+		t.Fatal(err)
+	}
+	inputDone := make(chan error, 1)
+	go func() {
+		inputDone <- s.Execute(Command{Type: "key", Action: "keyDown", Key: "a", Code: "KeyA"}, executable, nil)
+	}()
+	time.Sleep(100 * time.Millisecond)
+	started := time.Now()
+	state := s.Snapshot()
+	elapsed := time.Since(started)
+	if elapsed > 100*time.Millisecond || len(state.Tabs) != 1 {
+		t.Fatalf("busy renderer blocked session state: %s %+v", elapsed, state)
+	}
+	select {
+	case <-inputDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("input exceeded its bounded renderer wait")
+	}
+}
+
+func TestRealBrowserBusyRendererMetadataUsesBoundedBudget(t *testing.T) {
+	executable := os.Getenv("KPANEL_TEST_CHROME")
+	if executable == "" {
+		t.Skip("set KPANEL_TEST_CHROME")
+	}
+	s := newBrowserSession(context.Background())
+	defer s.Close()
+	if err := s.Execute(Command{Type: "new"}, executable, nil); err != nil {
+		t.Fatal(err)
+	}
+	s.mu.Lock()
+	target := s.selected(s.active).ctx
+	s.mu.Unlock()
+	if _, err := chromedp.Run(target, chromedp.Evaluate[bool](`(setTimeout(()=>{const end=performance.now()+1800;while(performance.now()<end){}},0),true)`)); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() { s.RefreshMetadata(); close(done) }()
+	time.Sleep(100 * time.Millisecond)
+	started := time.Now()
+	state := s.Snapshot()
+	elapsed := time.Since(started)
+	if elapsed > 100*time.Millisecond || len(state.Tabs) != 1 {
+		t.Fatalf("busy renderer blocked session state: %s %+v", elapsed, state)
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("metadata exceeded bounded budget")
+	}
+}
+
 func TestRealBrowserWindowManagerFailureEndsSession(t *testing.T) {
 	executable := os.Getenv("KPANEL_TEST_CHROME")
 	if executable == "" {

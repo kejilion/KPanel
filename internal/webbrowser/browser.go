@@ -72,7 +72,20 @@ func browserCall[P, R any](ctx context.Context, command cdp.Command[P, R], param
 }
 func newBrowserSession(parent context.Context) *browserSession {
 	ctx, cancel := context.WithCancel(parent)
-	return &browserSession{ctx: ctx, cancel: cancel, width: 1280, height: 720, visible: true, dirty: make(chan struct{}, 1), notices: make(chan Event, 8)}
+	s := &browserSession{ctx: ctx, cancel: cancel, width: 1280, height: 720, visible: true, dirty: make(chan struct{}, 1), notices: make(chan Event, 8)}
+	go func() {
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				s.RefreshMetadata()
+			}
+		}
+	}()
+	return s
 }
 func (s *browserSession) signal() {
 	select {
@@ -350,6 +363,9 @@ func (s *browserSession) stream() (err error) {
 }
 
 func (s *browserSession) Execute(c Command, executable string, private []netip.Prefix) error {
+	if c.Type == "mouse" || c.Type == "key" || c.Type == "text" {
+		return s.executeInput(c)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if c.Type != "mouse" || (c.Action != "mouseMoved" && c.Action != "mouseWheel") {
@@ -433,6 +449,7 @@ func (s *browserSession) Execute(c Command, executable string, private []netip.P
 		tab.navigationCancel = cancel
 		tab.navigating = true
 		tab.URL = c.URL
+		tab.Back, tab.Forward = false, false
 		go func() {
 			err := chromedp.Do(navigation, chromedp.Navigate(c.URL))
 			if err == nil {
@@ -537,39 +554,149 @@ func (s *browserSession) Execute(c Command, executable string, private []netip.P
 	}
 	return s.stream()
 }
+
+// Snapshot is a memory-only operation: state delivery and heartbeat must never
+// wait for JavaScript execution in a busy or unresponsive renderer.
 func (s *browserSession) Snapshot() Event {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	event := Event{Type: "state", Active: s.active, Tabs: make([]Tab, 0, len(s.tabs))}
 	for _, tab := range s.tabs {
-		ctx, cancel := context.WithTimeout(tab.ctx, 2*time.Second)
-		history, err := call(ctx, page.GetNavigationHistory, cdp.Empty{})
-		if err == nil && history.CurrentIndex >= 0 && history.CurrentIndex < int64(len(history.Entries)) {
-			index := history.CurrentIndex
-			entry := history.Entries[index]
-			if !tab.navigating {
-				tab.URL = entry.URL
-			}
-			tab.Title = entry.Title
-			if len(tab.Title) > 160 {
-				tab.Title = tab.Title[:160]
-			}
-			if len(tab.URL) > 4096 {
-				tab.URL = tab.URL[:4096]
-			}
-			tab.Back = index > 0
-			tab.Forward = index+1 < int64(len(history.Entries))
-		}
-		if title, e := chromedp.Run(ctx, chromedp.Title()); e == nil && len(title) <= 160 {
-			tab.Title = title
-		}
-		if !tab.navigating {
-			if loading, e := chromedp.Run(ctx, chromedp.Evaluate[bool](`document.readyState !== 'complete'`)); e == nil {
-				tab.Loading = loading
-			}
-		}
-		cancel()
 		event.Tabs = append(event.Tabs, tab.Tab)
 	}
 	return event
+}
+
+// RefreshMetadata owns no session lock while talking to Chromium. A single
+// polling worker uses a bounded total budget, and stale navigation results are
+// discarded rather than overwriting a newer URL or a closed tab.
+func (s *browserSession) RefreshMetadata() {
+	s.mu.Lock()
+	if !s.visible {
+		s.mu.Unlock()
+		return
+	}
+	type sample struct {
+		tab        *browserTab
+		generation uint64
+		navigating bool
+		value      Tab
+	}
+	samples := make([]sample, 0, len(s.tabs))
+	// Active page first so a busy background renderer cannot starve its toolbar.
+	for _, tab := range s.tabs {
+		if tab.ID == s.active {
+			samples = append(samples, sample{tab, tab.navigationID, tab.navigating, tab.Tab})
+		}
+	}
+	for _, tab := range s.tabs {
+		if tab.ID != s.active {
+			samples = append(samples, sample{tab, tab.navigationID, tab.navigating, tab.Tab})
+		}
+	}
+	s.mu.Unlock()
+
+	budget, stop := context.WithTimeout(s.ctx, 500*time.Millisecond)
+	defer stop()
+	changed := false
+	for _, item := range samples {
+		if budget.Err() != nil {
+			break
+		}
+		deadline, _ := budget.Deadline()
+		ctx, cancel := context.WithDeadline(item.tab.ctx, deadline)
+		history, err := call(ctx, page.GetNavigationHistory, cdp.Empty{})
+		value := item.value
+		if err == nil && history.CurrentIndex >= 0 && history.CurrentIndex < int64(len(history.Entries)) {
+			index := history.CurrentIndex
+			entry := history.Entries[index]
+			if !item.navigating && len(entry.URL) <= 4096 {
+				value.URL = entry.URL
+			}
+			if len(entry.Title) <= 160 {
+				value.Title = entry.Title
+			}
+			if !item.navigating {
+				value.Back, value.Forward = index > 0, index+1 < int64(len(history.Entries))
+			}
+		}
+
+		if title, e := chromedp.Run(ctx, chromedp.Title()); e == nil && len(title) <= 160 {
+			value.Title = title
+		}
+		if !item.navigating {
+			if loading, e := chromedp.Run(ctx, chromedp.Evaluate[bool](`document.readyState !== 'complete'`)); e == nil {
+				value.Loading = loading
+			}
+		}
+		cancel()
+		if err != nil {
+			continue
+		}
+		s.mu.Lock()
+		if s.selected(item.tab.ID) == item.tab && item.tab.navigationID == item.generation && item.tab.navigating == item.navigating {
+			// Loading belongs to the navigation lifecycle, not this delayed sample.
+			if item.navigating {
+				value.Loading = item.tab.Loading
+			}
+			if item.tab.Tab != value {
+				item.tab.Tab = value
+				changed = true
+			}
+		}
+		s.mu.Unlock()
+	}
+	if changed {
+		s.signal()
+	}
+}
+
+// The command stream serializes input, but slow renderer acknowledgments must
+// not hold the workspace mutex needed by state, visibility and VNC attachment.
+func (s *browserSession) executeInput(c Command) error {
+	s.mu.Lock()
+	tab := s.selected(c.Tab)
+	width, height := s.width, s.height
+	if tab == nil || tab.ID != s.active || !s.visible {
+		s.mu.Unlock()
+		return errors.New("tab_unavailable")
+	}
+	target := tab.ctx
+	s.mu.Unlock()
+	ctx, stop := context.WithTimeout(target, time.Second)
+	defer stop()
+	var err error
+	switch c.Type {
+	case "text":
+		err = send(ctx, input.InsertText, input.InsertTextParams{Text: c.Text})
+	case "key":
+		vk := map[string]int64{"Enter": 13, "Tab": 9, "Backspace": 8, "Delete": 46, "Escape": 27, "ArrowLeft": 37, "ArrowUp": 38, "ArrowRight": 39, "ArrowDown": 40, "Home": 36, "End": 35, "PageUp": 33, "PageDown": 34}[c.Key]
+		if len(c.Key) == 1 && c.Key[0] >= 'a' && c.Key[0] <= 'z' {
+			vk = int64(c.Key[0] - 'a' + 'A')
+		}
+		p := input.DispatchKeyEventParams{Type: input.DispatchKeyEventType(c.Action), Key: c.Key, Code: c.Code, Modifiers: c.Modifiers, WindowsVirtualKeyCode: vk}
+		// Enter's character event drives native form submission and newline insertion.
+		if c.Action == "keyDown" && c.Key == "Enter" && c.Modifiers&7 == 0 {
+			p.Text = "\r"
+			p.UnmodifiedText = "\r"
+		}
+		err = send(ctx, input.DispatchKeyEvent, p)
+	case "mouse":
+		if c.X < 0 || c.Y < 0 || c.X > float64(width) || c.Y > float64(height) {
+			return errors.New("invalid_coordinates")
+		}
+		p := input.DispatchMouseEventParams{Type: input.DispatchMouseEventType(c.Action), X: c.X, Y: c.Y, Modifiers: c.Modifiers, DeltaX: c.DeltaX, DeltaY: c.DeltaY, Button: input.MouseButton(c.Button)}
+		if c.Action == "mousePressed" || c.Action == "mouseReleased" {
+			p.ClickCount = 1
+		}
+		if c.Action == "mouseWheel" {
+			err = send(ctx, cdp.Command[wheelEventParams, cdp.Empty]{Method: input.CommandDispatchMouseEvent}, wheelEventParams{DispatchMouseEventParams: p, DeltaX: c.DeltaX, DeltaY: c.DeltaY})
+		} else {
+			err = send(ctx, input.DispatchMouseEvent, p)
+		}
+	}
+	if err != nil {
+		return errors.New("browser_action_failed")
+	}
+	return nil
 }
