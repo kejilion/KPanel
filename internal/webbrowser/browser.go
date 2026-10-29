@@ -368,9 +368,7 @@ func (s *browserSession) Execute(c Command, executable string, private []netip.P
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if c.Type != "mouse" || (c.Action != "mouseMoved" && c.Action != "mouseWheel") {
-		defer s.signal()
-	}
+	defer s.signal()
 	if s.root != nil && s.root.Err() != nil {
 		s.stopBrowser()
 	}
