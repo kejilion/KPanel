@@ -1,12 +1,12 @@
 ---
 name: release-kpanel
 description: "GitHub-hosted Actions 全链路发布 KPanel，完成 L3、Release、Docker Hub 和公开浏览器验收"
-version: "4.1"
+version: "4.2"
 author: "Codex"
 tags: [release, docker, github, verification]
 params: [project_dir, version, release_channel, release_train, previous_version, image, candidate]
 created: "2026-07-27T13:00:00Z"
-updated: "2026-10-16T18:28:49.546Z"
+updated: "2026-10-29T15:52:04Z"
 ---
 
 # Release KPanel
@@ -80,7 +80,7 @@ Release 复核 tag/源码/主线身份、版本与实际发布说明解析器；
 先冻结稳定通道及上一预览快照，创建 draft 与二进制/元数据附件，
 推送 amd64/arm64 OCI 镜像并生成 SBOM/provenance。
 元数据附件命名为 `kejilion-panel-meta-${{version}}.tar.gz`，不是可构建源码包。
-modified-component provenance 上传并验证、最终说明门禁通过后，冻结全部15附件的名称/大小/SHA-256，
+modified-component provenance 上传并验证、最终说明门禁通过后，冻结全部19附件的名称/大小/SHA-256，
 将清单摘要与原最终正文SHA-256绑定到发布身份，并成功上传独立 snapshot-<run ID>-<attempt> artifact，才提升通道并公开 Release。
 预览版提升 preview/公开 prerelease；稳定版提升 latest/公开非 prerelease 并成为 GitHub Latest。
 stable tag 的 Release 先调用同一 L3；stable 分支收尾继续使用唯一 archive-release-candidate.mjs。
@@ -89,7 +89,7 @@ Release 公开失败或公开后验收失败分别报告，不得把已公开产
 ### 5. 公开产物与真实浏览器
 
 发布 job 使用 `scripts/verify-github-public-release.mjs` 核对公开版本、annotated tag/source、两架构 OCI、
-15 附件下载/API digest/磁盘回读、11 项 SHA256SUMS 和 Release 正文；预览版验证稳定通道不变，
+19 附件下载/API digest/磁盘回读、11 项 SHA256SUMS 和 Release 正文；预览版验证稳定通道不变，
 稳定版验证 Latest/latest 指向目标且 preview 保持原RC。
 `packaging/tests/release-browser/run.sh` 在 GitHub runner 上构建固定测试 Runner，记录实际 ID；
 Playwright 包/lock 与浏览器 image 固定版本/digest。真实 Panel/Agent 容器覆盖本地应用、首选项/桌面恢复、
