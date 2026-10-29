@@ -39,6 +39,20 @@ beforeEach(() => vi.useFakeTimers())
 afterEach(() => vi.useRealTimers())
 
 describe('terminal keyword colors', () => {
+  it.each(['申请/更新域名证书', '启动/停止', '文件/目录', 'café/menu', 'cafe\u0301/menu', '菜单./配置', '菜单../配置', '菜单~/配置'])(
+    'does not interpret a prose separator as a path: %s', text => {
+      expect(terminalColorTokens(text)).toEqual([])
+    },
+  )
+
+  it('still colors real Unicode paths after clear delimiters and inside quotes', () => {
+    const text = '数据 /home/web 证书 /home/web/certs 路径：/home/用户 配置=./配置 "~/我的 文件"'
+    expect(terminalColorTokens(text).map(token => token.text)).toEqual([
+      '/home/web', '/home/web/certs', '/home/用户', './配置', '~/我的 文件',
+    ])
+    expect(terminalColorTokens(text).every(token => token.color === 'blue')).toBe(true)
+  })
+
   it('recognizes IPv4, IPv6 and scoped addresses with separately colored ports', () => {
     const text = '127.0.0.1:8080 [2001:db8::1]:443 ::1 fe80::1%eth0 0.0.0.0:22'
     expect(terminalColorTokens(text).map(({ text, color }) => [text, color])).toEqual([

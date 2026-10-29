@@ -7,7 +7,8 @@ const warning = /^(?:WARN(?:ING)?|警告)$/i
 type Token = { start: number; text: string; color: 'red' | 'yellow' | 'green' | 'cyan' | 'magenta' | 'blue' }
 const pathStart = String.raw`(?:[a-z]:[\\/]|\\\\[^\\\s]+\\|~/|\.{1,2}/|/(?!/))`
 const quotedPaths = new RegExp(String.raw`(["'])(${pathStart}[^\r\n]*?)\1`, 'gi')
-const paths = new RegExp(String.raw`(?<![\w/\\])${pathStart}[^\s"'<>|;,，；）)\]}]*`, 'gi')
+// Unicode prose around a slash is a menu separator, not a path; also reject relative-path tails.
+const paths = new RegExp(String.raw`(?<![\p{L}\p{N}\p{M}_.~/\\])${pathStart}[^\s"'<>|;,，；）)\]}]*`, 'giu')
 const ipv4 = /(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])/g
 const ipv6 = /(?<![\w:.])(?:[a-f\d]*:){2,}[a-f\d:.]*(?:%[\w.-]+)?(?![\w:.])/gi
 const ports = /(?:\bport\s*[:=]?\s*|端口\s*[:：=]?\s*|(?:(?<![\w:])(?:[a-z][\w.-]*|(?:\d{1,3}\.){3}\d{1,3})|\[[a-f\d:.%\w-]+\]|\*):)(\d{1,5})(?![\w:])|\b(\d{1,5})(?=\/(?:tcp|udp)\b)/gi
