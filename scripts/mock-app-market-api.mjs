@@ -1571,21 +1571,7 @@ const environmentSummary = {
       updateReason: '',
     },
   ],
-  protection: {
-    fail2ban: true,
-    fail2banInstalled: true,
-    waf: true,
-    wafMode: 'on',
-    cloudflare: false,
-    ddos: true,
-    cloudflareStatus: { mode: 'local', configured: true, running: true, healthy: true, pending: false, cleanupPending: false, activeBans: 0 },
-    banMigration: { state: 'legacy-imported', importedRecords: 466, apiJailEnabled: true, legacyCFDetected: true, cfReentryRequired: true, legacyReconcilerStopped: true },
-    siteJails: [
-      { name: 'waf-attack', available: true, currentlyBanned: 0, totalBanned: 466 },
-      { name: 'waf-api-invalid', available: true, currentlyBanned: 0, totalBanned: 128 },
-    ],
-    fail2banLogs: { available: true, entries: ['[waf-api-invalid] Ban 192.0.2.50', '[waf-attack] Ban 192.0.2.51'] },
-  },
+  protection: { fail2ban: true, waf: true, cloudflare: false, ddos: true },
   optimization: { mode: 'standard', gzip: true, brotli: true, zstd: false },
   observedAt: new Date().toISOString(),
 }
@@ -1605,9 +1591,7 @@ const environmentCatalog = {
     'ddos-on',
     'ddos-off',
     'cloudflare-fail2ban',
-    'cloudflare-off',
     'cloudflare-shield',
-    'cloudflare-shield-off',
   ],
   optimizationActions: ['standard', 'high', 'gzip-on', 'gzip-off', 'brotli-on', 'brotli-off', 'zstd-on', 'zstd-off'],
   updateComponents: [
