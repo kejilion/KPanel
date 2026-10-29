@@ -764,6 +764,17 @@ func (m *Manager) rename(
 	if err != nil {
 		return contract.FileEntry{}, err
 	}
+	sourceParentVirtual := path.Dir(normalizedSource)
+	sourceParent, _, err := m.openReceiveDirectory(sourceParentVirtual, false)
+	if err != nil {
+		return contract.FileEntry{}, err
+	}
+	defer sourceParent.Close()
+	sourceName := path.Base(normalizedSource)
+	currentSource, err := sourceParent.Lstat(sourceName)
+	if err != nil || !os.SameFile(sourceInfo, currentSource) {
+		return contract.FileEntry{}, ErrConflict
+	}
 	if expectedVersion != "" &&
 		m.entry(normalizedSource, sourceInfo).ResourceVersion != expectedVersion {
 		return contract.FileEntry{}, ErrConflict
@@ -784,29 +795,45 @@ func (m *Manager) rename(
 	if err := m.mutationError(targetNormalized); err != nil {
 		return contract.FileEntry{}, err
 	}
-	if targetInfo, err := m.rootFS.Lstat(rootName(targetNormalized)); err == nil {
+	targetInfo, err := m.rootFS.Lstat(rootName(normalizedParent))
+	if err != nil {
+		return contract.FileEntry{}, err
+	}
+	targetParent, openedTargetInfo, err := m.openReceiveDirectory(normalizedParent, false)
+	if err != nil {
+		return contract.FileEntry{}, err
+	}
+	defer targetParent.Close()
+	if !os.SameFile(targetInfo, openedTargetInfo) {
+		return contract.FileEntry{}, ErrConflict
+	}
+	if targetInfo, err := targetParent.Lstat(name); err == nil {
 		if normalizedSource == targetNormalized || platformPathKey(normalizedSource) != platformPathKey(targetNormalized) || !os.SameFile(sourceInfo, targetInfo) {
 			return contract.FileEntry{}, ErrAlreadyExists
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return contract.FileEntry{}, err
 	}
-	if err := renameNoReplaceRoot(m.rootFS, normalizedSource, targetNormalized); err != nil {
+	if err := publishReceiveObject(sourceParent, sourceName, targetParent, name, false); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return contract.FileEntry{}, ErrAlreadyExists
 		}
 		return contract.FileEntry{}, err
 	}
-	sourceParent := path.Dir(normalizedSource)
-	if err := syncRootDirectory(m.rootFS, rootName(sourceParent)); err != nil {
+	if err := syncRootDirectory(sourceParent, "."); err != nil {
 		return contract.FileEntry{}, err
 	}
-	if sourceParent != normalizedParent {
-		if err := syncRootDirectory(m.rootFS, rootName(normalizedParent)); err != nil {
-			return contract.FileEntry{}, err
-		}
+	if err := syncRootDirectory(targetParent, "."); err != nil {
+		return contract.FileEntry{}, err
 	}
-	return m.Stat(targetNormalized)
+	if err := m.verifyDirectoryIdentity(normalizedParent, openedTargetInfo); err != nil {
+		return contract.FileEntry{}, err
+	}
+	published, err := targetParent.Lstat(name)
+	if err != nil || !os.SameFile(sourceInfo, published) {
+		return contract.FileEntry{}, ErrConflict
+	}
+	return m.entry(targetNormalized, published), nil
 }
 
 func (m *Manager) moveOne(
@@ -828,6 +855,17 @@ func (m *Manager) moveOne(
 	if err != nil {
 		return contract.FileEntry{}, err
 	}
+	sourceParentVirtual := path.Dir(normalizedSource)
+	sourceParent, sourceParentInfo, err := m.openReceiveDirectory(sourceParentVirtual, false)
+	if err != nil {
+		return contract.FileEntry{}, err
+	}
+	defer sourceParent.Close()
+	sourceName := path.Base(normalizedSource)
+	currentSource, err := sourceParent.Lstat(sourceName)
+	if err != nil || !os.SameFile(sourceInfo, currentSource) {
+		return contract.FileEntry{}, ErrConflict
+	}
 	sourceVersion := resourceVersion(normalizedSource, sourceInfo)
 	_, normalizedTarget, err := m.resolveExisting(targetDirectoryVirtual)
 	if err != nil {
@@ -837,10 +875,18 @@ func (m *Manager) moveOne(
 	if err != nil {
 		return contract.FileEntry{}, err
 	}
-	if !info.IsDir() {
+	targetParent, targetInfo, err := m.openReceiveDirectory(normalizedTarget, false)
+	if err != nil {
+		return contract.FileEntry{}, err
+	}
+	defer targetParent.Close()
+	if !os.SameFile(info, targetInfo) {
+		return contract.FileEntry{}, ErrConflict
+	}
+	if !targetInfo.IsDir() {
 		return contract.FileEntry{}, ErrNotDirectory
 	}
-	name := path.Base(normalizedSource)
+	name := sourceName
 	targetVirtual := joinVirtual(normalizedTarget, name)
 	if err := m.mutationError(targetVirtual); err != nil {
 		return contract.FileEntry{}, err
@@ -848,46 +894,107 @@ func (m *Manager) moveOne(
 	if targetVirtual == normalizedSource || isWithin(targetVirtual, normalizedSource) {
 		return contract.FileEntry{}, ErrInvalidPath
 	}
-	if _, err := m.rootFS.Lstat(rootName(targetVirtual)); err == nil {
+	if _, err := targetParent.Lstat(name); err == nil {
 		return contract.FileEntry{}, ErrAlreadyExists
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return contract.FileEntry{}, err
 	}
-	if err := renameNoReplaceRoot(m.rootFS, normalizedSource, targetVirtual); err != nil {
+	if err := publishReceiveObject(sourceParent, sourceName, targetParent, name, false); err == nil {
+		if err := syncRootDirectory(sourceParent, "."); err != nil {
+			return contract.FileEntry{}, err
+		}
+		if err := syncRootDirectory(targetParent, "."); err != nil {
+			return contract.FileEntry{}, err
+		}
+		if err := m.verifyDirectoryIdentity(sourceParentVirtual, sourceParentInfo); err != nil {
+			return contract.FileEntry{}, err
+		}
+		if err := m.verifyDirectoryIdentity(normalizedTarget, targetInfo); err != nil {
+			return contract.FileEntry{}, err
+		}
+		published, err := targetParent.Lstat(name)
+		if err != nil || !os.SameFile(sourceInfo, published) {
+			return contract.FileEntry{}, ErrConflict
+		}
+		return m.entry(targetVirtual, published), nil
+	} else {
 		if !isCrossDeviceError(err) {
 			if errors.Is(err, os.ErrExist) {
 				return contract.FileEntry{}, ErrAlreadyExists
 			}
 			return contract.FileEntry{}, err
 		}
-		tempVirtual := joinVirtual(normalizedTarget, ".kpanel-copy-"+randomID())
-		if err := m.copyTreeWithAccess(ctx, normalizedSource, tempVirtual, budget, true); err != nil {
-			_ = m.rootFS.RemoveAll(rootName(tempVirtual))
-			return contract.FileEntry{}, err
-		}
-		currentSourceInfo, statErr := m.rootFS.Lstat(rootName(normalizedSource))
-		if statErr != nil || resourceVersion(normalizedSource, currentSourceInfo) != sourceVersion {
-			_ = m.rootFS.RemoveAll(rootName(tempVirtual))
-			return contract.FileEntry{}, ErrConflict
-		}
-		if err := renameNoReplaceRoot(m.rootFS, tempVirtual, targetVirtual); err != nil {
-			_ = m.rootFS.RemoveAll(rootName(tempVirtual))
-			return contract.FileEntry{}, err
-		}
-		if err := m.rootFS.RemoveAll(rootName(normalizedSource)); err != nil {
-			return contract.FileEntry{}, fmt.Errorf("目标已复制但源文件清理失败: %w", err)
-		}
 	}
-	sourceParent := path.Dir(normalizedSource)
-	if err := syncRootDirectory(m.rootFS, rootName(sourceParent)); err != nil {
+	if !publicationParentProtected(sourceParentInfo, sourceParent) {
+		return contract.FileEntry{}, fmt.Errorf("%w: 跨设备移动要求源目录不能被其他本机用户替换目录项", ErrConflict)
+	}
+	if err := m.verifyDirectoryIdentity(sourceParentVirtual, sourceParentInfo); err != nil {
 		return contract.FileEntry{}, err
 	}
-	if sourceParent != normalizedTarget {
-		if err := syncRootDirectory(m.rootFS, rootName(normalizedTarget)); err != nil {
-			return contract.FileEntry{}, err
-		}
+	currentSource, err = sourceParent.Lstat(sourceName)
+	if err != nil || !os.SameFile(sourceInfo, currentSource) {
+		return contract.FileEntry{}, ErrConflict
 	}
-	return m.Stat(targetVirtual)
+	if !publicationParentProtected(targetInfo, targetParent) {
+		return contract.FileEntry{}, fmt.Errorf("%w: 跨设备移动要求目标目录不能被其他本机用户替换目录项", ErrConflict)
+	}
+	stage, err := m.openCopyStage(normalizedTarget, targetInfo)
+	if err != nil {
+		return contract.FileEntry{}, err
+	}
+	defer stage.close()
+	if err := m.copyTreeWithAccessRoots(ctx, sourceParent, sourceName, stage.root, "payload", budget, true); err != nil {
+		return contract.FileEntry{}, err
+	}
+	currentSource, err = sourceParent.Lstat(sourceName)
+	if err != nil || !os.SameFile(sourceInfo, currentSource) || resourceVersion(normalizedSource, currentSource) != sourceVersion {
+		return contract.FileEntry{}, ErrConflict
+	}
+	if err := stage.validate(m); err != nil {
+		return contract.FileEntry{}, err
+	}
+	if err := m.verifyDirectoryIdentity(normalizedTarget, targetInfo); err != nil {
+		return contract.FileEntry{}, err
+	}
+	if _, err := targetParent.Lstat(name); err == nil {
+		return contract.FileEntry{}, ErrAlreadyExists
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return contract.FileEntry{}, err
+	}
+	staged, err := stage.root.Lstat("payload")
+	if err != nil {
+		return contract.FileEntry{}, err
+	}
+	if err := publishReceiveObject(stage.root, "payload", targetParent, name, false); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return contract.FileEntry{}, ErrAlreadyExists
+		}
+		return contract.FileEntry{}, err
+	}
+	if err := syncRootDirectory(targetParent, "."); err != nil {
+		return contract.FileEntry{}, err
+	}
+	published, err := targetParent.Lstat(name)
+	if err != nil || !os.SameFile(staged, published) {
+		return contract.FileEntry{}, ErrConflict
+	}
+	if err := m.verifyDirectoryIdentity(normalizedTarget, targetInfo); err != nil {
+		return contract.FileEntry{}, err
+	}
+	currentSource, err = sourceParent.Lstat(sourceName)
+	if err != nil || !os.SameFile(sourceInfo, currentSource) || resourceVersion(normalizedSource, currentSource) != sourceVersion {
+		return contract.FileEntry{}, ErrConflict
+	}
+	if err := m.verifyDirectoryIdentity(sourceParentVirtual, sourceParentInfo); err != nil {
+		return contract.FileEntry{}, err
+	}
+	if err := sourceParent.RemoveAll(sourceName); err != nil {
+		return contract.FileEntry{}, fmt.Errorf("目标已复制但源文件清理失败: %w", err)
+	}
+	if err := syncRootDirectory(sourceParent, "."); err != nil {
+		return contract.FileEntry{}, err
+	}
+	return m.entry(targetVirtual, published), nil
 }
 
 func (m *Manager) copyOne(
@@ -905,18 +1012,41 @@ func (m *Manager) copyOne(
 	if m.isMutationProtected(normalizedSource) {
 		return contract.FileEntry{}, ErrProtected
 	}
+	sourceInfo, err := m.rootFS.Lstat(rootName(normalizedSource))
+	if err != nil {
+		return contract.FileEntry{}, err
+	}
+	sourceParent, _, err := m.openReceiveDirectory(path.Dir(normalizedSource), false)
+	if err != nil {
+		return contract.FileEntry{}, err
+	}
+	defer sourceParent.Close()
+	sourceName := path.Base(normalizedSource)
+	currentSource, err := sourceParent.Lstat(sourceName)
+	if err != nil || !os.SameFile(sourceInfo, currentSource) {
+		return contract.FileEntry{}, ErrConflict
+	}
+	sourceVersion := resourceVersion(normalizedSource, sourceInfo)
 	_, normalizedTarget, err := m.resolveExisting(targetDirectoryVirtual)
 	if err != nil {
 		return contract.FileEntry{}, err
 	}
-	targetInfo, err := m.rootFS.Lstat(rootName(normalizedTarget))
+	targetPathInfo, err := m.rootFS.Lstat(rootName(normalizedTarget))
 	if err != nil {
 		return contract.FileEntry{}, err
+	}
+	targetParent, targetInfo, err := m.openReceiveDirectory(normalizedTarget, false)
+	if err != nil {
+		return contract.FileEntry{}, err
+	}
+	defer targetParent.Close()
+	if !os.SameFile(targetPathInfo, targetInfo) {
+		return contract.FileEntry{}, ErrConflict
 	}
 	if !targetInfo.IsDir() {
 		return contract.FileEntry{}, ErrNotDirectory
 	}
-	name := path.Base(normalizedSource)
+	name := sourceName
 	targetVirtual := joinVirtual(normalizedTarget, name)
 	if err := m.mutationError(targetVirtual); err != nil {
 		return contract.FileEntry{}, err
@@ -924,34 +1054,58 @@ func (m *Manager) copyOne(
 	if targetVirtual == normalizedSource || isWithin(targetVirtual, normalizedSource) {
 		return contract.FileEntry{}, ErrInvalidPath
 	}
-	if _, err := m.rootFS.Lstat(rootName(targetVirtual)); err == nil {
+	if _, err := targetParent.Lstat(name); err == nil {
 		return contract.FileEntry{}, ErrAlreadyExists
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return contract.FileEntry{}, err
 	}
-	tempVirtual := joinVirtual(normalizedTarget, ".kpanel-copy-"+randomID())
-	sourceInfo, err := m.rootFS.Lstat(rootName(normalizedSource))
+	stage, err := m.openCopyStage(normalizedTarget, targetInfo)
 	if err != nil {
 		return contract.FileEntry{}, err
 	}
-	sourceVersion := resourceVersion(normalizedSource, sourceInfo)
-	if err := m.copyTree(ctx, normalizedSource, tempVirtual, budget); err != nil {
-		_ = m.rootFS.RemoveAll(rootName(tempVirtual))
+	defer stage.close()
+	if err := inheritArchiveDestinationDefaults(stage.root, targetParent); err != nil {
 		return contract.FileEntry{}, err
 	}
-	currentSourceInfo, err := m.rootFS.Lstat(rootName(normalizedSource))
-	if err != nil || resourceVersion(normalizedSource, currentSourceInfo) != sourceVersion {
-		_ = m.rootFS.RemoveAll(rootName(tempVirtual))
+	if err := m.copyTreeWithAccessRoots(ctx, sourceParent, sourceName, stage.root, "payload", budget, false); err != nil {
+		return contract.FileEntry{}, err
+	}
+	currentSource, err = sourceParent.Lstat(sourceName)
+	if err != nil || !os.SameFile(sourceInfo, currentSource) || resourceVersion(normalizedSource, currentSource) != sourceVersion {
 		return contract.FileEntry{}, ErrConflict
 	}
-	if err := renameNoReplaceRoot(m.rootFS, tempVirtual, targetVirtual); err != nil {
-		_ = m.rootFS.RemoveAll(rootName(tempVirtual))
+	if err := stage.validate(m); err != nil {
 		return contract.FileEntry{}, err
 	}
-	if err := syncRootDirectory(m.rootFS, rootName(normalizedTarget)); err != nil {
+	if err := m.verifyDirectoryIdentity(normalizedTarget, targetInfo); err != nil {
 		return contract.FileEntry{}, err
 	}
-	return m.Stat(targetVirtual)
+	if _, err := targetParent.Lstat(name); err == nil {
+		return contract.FileEntry{}, ErrAlreadyExists
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return contract.FileEntry{}, err
+	}
+	staged, err := stage.root.Lstat("payload")
+	if err != nil {
+		return contract.FileEntry{}, err
+	}
+	if err := publishReceiveObject(stage.root, "payload", targetParent, name, false); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return contract.FileEntry{}, ErrAlreadyExists
+		}
+		return contract.FileEntry{}, err
+	}
+	if err := syncRootDirectory(targetParent, "."); err != nil {
+		return contract.FileEntry{}, err
+	}
+	if err := m.verifyDirectoryIdentity(normalizedTarget, targetInfo); err != nil {
+		return contract.FileEntry{}, err
+	}
+	published, err := targetParent.Lstat(name)
+	if err != nil || !os.SameFile(staged, published) {
+		return contract.FileEntry{}, ErrConflict
+	}
+	return m.entry(targetVirtual, published), nil
 }
 
 func (m *Manager) trashOne(
@@ -972,6 +1126,16 @@ func (m *Manager) trashOne(
 	sourceInfo, err := m.rootFS.Lstat(rootName(normalized))
 	if err != nil {
 		return "", err
+	}
+	sourceParent, sourceParentInfo, err := m.openReceiveDirectory(path.Dir(normalized), false)
+	if err != nil {
+		return "", err
+	}
+	defer sourceParent.Close()
+	sourceName := path.Base(normalized)
+	currentSource, err := sourceParent.Lstat(sourceName)
+	if err != nil || !os.SameFile(sourceInfo, currentSource) {
+		return "", ErrConflict
 	}
 	sourceVersion := resourceVersion(normalized, sourceInfo)
 	if err := m.ensureTrashDirectories(); err != nil {
@@ -996,33 +1160,101 @@ func (m *Manager) trashOne(
 		}
 	}()
 	targetVirtual := joinVirtual(m.trashRoot, id)
-	if err := renameNoReplaceRoot(m.rootFS, normalized, targetVirtual); err != nil {
-		if !isCrossDeviceError(err) {
-			return "", err
-		}
-		tempVirtual := joinVirtual(m.trashRoot, ".kpanel-copy-"+randomID())
-		if err := m.copyTreeWithAccess(ctx, normalized, tempVirtual, budget, true); err != nil {
-			_ = m.rootFS.RemoveAll(rootName(tempVirtual))
-			return "", err
-		}
-		currentSourceInfo, statErr := m.rootFS.Lstat(rootName(normalized))
-		if statErr != nil || resourceVersion(normalized, currentSourceInfo) != sourceVersion {
-			_ = m.rootFS.RemoveAll(rootName(tempVirtual))
-			return "", ErrConflict
-		}
-		if err := renameNoReplaceRoot(m.rootFS, tempVirtual, targetVirtual); err != nil {
-			_ = m.rootFS.RemoveAll(rootName(tempVirtual))
-			return "", err
-		}
-		if err := m.rootFS.RemoveAll(rootName(normalized)); err != nil {
-			return "", fmt.Errorf("文件已进入回收区但原文件清理失败: %w", err)
-		}
-	}
-	metadataWritten = false
-	if err := syncRootDirectory(m.rootFS, rootName(path.Dir(normalized))); err != nil {
+	targetParent, targetInfo, err := m.openReceiveDirectory(m.trashRoot, false)
+	if err != nil {
 		return "", err
 	}
-	if err := syncRootDirectory(m.rootFS, rootName(m.trashRoot)); err != nil {
+	defer targetParent.Close()
+	if !publicationParentProtected(targetInfo, targetParent) {
+		return "", fmt.Errorf("%w: 回收区目录不能被其他本机用户替换目录项", ErrConflict)
+	}
+	targetName := path.Base(targetVirtual)
+	if _, err := targetParent.Lstat(targetName); err == nil {
+		return "", ErrAlreadyExists
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+	if err := publishReceiveObject(sourceParent, sourceName, targetParent, targetName, false); err == nil {
+		metadataWritten = false
+		published, statErr := targetParent.Lstat(targetName)
+		if statErr != nil || !os.SameFile(sourceInfo, published) {
+			return "", ErrConflict
+		}
+		if err := m.verifyDirectoryIdentity(m.trashRoot, targetInfo); err != nil {
+			return "", err
+		}
+	} else if isCrossDeviceError(err) {
+		if !publicationParentProtected(sourceParentInfo, sourceParent) {
+			return "", fmt.Errorf("%w: 跨设备回收要求源目录不能被其他本机用户替换目录项", ErrConflict)
+		}
+		if err := m.verifyDirectoryIdentity(path.Dir(normalized), sourceParentInfo); err != nil {
+			return "", err
+		}
+		currentSource, err = sourceParent.Lstat(sourceName)
+		if err != nil || !os.SameFile(sourceInfo, currentSource) {
+			return "", ErrConflict
+		}
+		stage, err := m.openCopyStage(m.trashRoot, targetInfo)
+		if err != nil {
+			return "", err
+		}
+		defer stage.close()
+		if err := m.copyTreeWithAccessRoots(ctx, sourceParent, sourceName, stage.root, "payload", budget, true); err != nil {
+			return "", err
+		}
+		currentSource, err = sourceParent.Lstat(sourceName)
+		if err != nil || !os.SameFile(sourceInfo, currentSource) || resourceVersion(normalized, currentSource) != sourceVersion {
+			return "", ErrConflict
+		}
+		if err := stage.validate(m); err != nil {
+			return "", err
+		}
+		if err := m.verifyDirectoryIdentity(m.trashRoot, targetInfo); err != nil {
+			return "", err
+		}
+		if _, err := targetParent.Lstat(targetName); err == nil {
+			return "", ErrAlreadyExists
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+		staged, err := stage.root.Lstat("payload")
+		if err != nil {
+			return "", err
+		}
+		if err := publishReceiveObject(stage.root, "payload", targetParent, targetName, false); err != nil {
+			if errors.Is(err, os.ErrExist) {
+				return "", ErrAlreadyExists
+			}
+			return "", err
+		}
+		metadataWritten = false
+		if err := syncRootDirectory(targetParent, "."); err != nil {
+			return "", err
+		}
+		published, err := targetParent.Lstat(targetName)
+		if err != nil || !os.SameFile(staged, published) {
+			return "", ErrConflict
+		}
+		if err := m.verifyDirectoryIdentity(m.trashRoot, targetInfo); err != nil {
+			return "", err
+		}
+		currentSource, err = sourceParent.Lstat(sourceName)
+		if err != nil || !os.SameFile(sourceInfo, currentSource) || resourceVersion(normalized, currentSource) != sourceVersion {
+			return "", ErrConflict
+		}
+		if err := sourceParent.RemoveAll(sourceName); err != nil {
+			return "", fmt.Errorf("文件已进入回收区但原文件清理失败: %w", err)
+		}
+	} else {
+		if errors.Is(err, os.ErrExist) {
+			return "", ErrAlreadyExists
+		}
+		return "", err
+	}
+	if err := syncRootDirectory(sourceParent, "."); err != nil {
+		return "", err
+	}
+	if err := syncRootDirectory(targetParent, "."); err != nil {
 		return "", err
 	}
 	return targetVirtual, nil
@@ -1178,6 +1410,16 @@ func (m *Manager) restoreTrash(
 	if expected != "" && resourceVersion(sourceVirtual, sourceInfo) != expected {
 		return contract.FileEntry{}, ErrConflict
 	}
+	sourceParent, _, err := m.openReceiveDirectory(m.trashRoot, false)
+	if err != nil {
+		return contract.FileEntry{}, err
+	}
+	defer sourceParent.Close()
+	currentSource, err := sourceParent.Lstat(id)
+	if err != nil || !os.SameFile(sourceInfo, currentSource) {
+		return contract.FileEntry{}, ErrConflict
+	}
+	sourceVersion := resourceVersion(sourceVirtual, sourceInfo)
 	targetVirtual := metadata.OriginalPath
 	if err := m.mutationError(targetVirtual); err != nil {
 		return contract.FileEntry{}, err
@@ -1186,41 +1428,107 @@ func (m *Manager) restoreTrash(
 	if err != nil {
 		return contract.FileEntry{}, err
 	}
-	if _, err := m.rootFS.Lstat(rootName(targetVirtual)); err == nil {
+	targetPathInfo, err := m.rootFS.Lstat(rootName(parentVirtual))
+	if err != nil {
+		return contract.FileEntry{}, err
+	}
+	targetParent, targetInfo, err := m.openReceiveDirectory(parentVirtual, false)
+	if err != nil {
+		return contract.FileEntry{}, err
+	}
+	defer targetParent.Close()
+	if !os.SameFile(targetPathInfo, targetInfo) {
+		return contract.FileEntry{}, ErrConflict
+	}
+	targetName := path.Base(targetVirtual)
+	if _, err := targetParent.Lstat(targetName); err == nil {
 		return contract.FileEntry{}, ErrAlreadyExists
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return contract.FileEntry{}, err
 	}
-	if err := renameNoReplaceRoot(m.rootFS, sourceVirtual, targetVirtual); err != nil {
-		if !isCrossDeviceError(err) {
+	if err := publishReceiveObject(sourceParent, id, targetParent, targetName, false); err == nil {
+		if err := m.verifyDirectoryIdentity(parentVirtual, targetInfo); err != nil {
 			return contract.FileEntry{}, err
 		}
-		tempVirtual := joinVirtual(parentVirtual, ".kpanel-copy-"+randomID())
-		if err := m.copyTreeWithAccess(ctx, sourceVirtual, tempVirtual, budget, true); err != nil {
-			_ = m.rootFS.RemoveAll(rootName(tempVirtual))
-			return contract.FileEntry{}, err
-		}
-		currentInfo, statErr := m.rootFS.Lstat(rootName(sourceVirtual))
-		if statErr != nil || resourceVersion(sourceVirtual, currentInfo) != resourceVersion(sourceVirtual, sourceInfo) {
-			_ = m.rootFS.RemoveAll(rootName(tempVirtual))
+		published, statErr := targetParent.Lstat(targetName)
+		if statErr != nil || !os.SameFile(sourceInfo, published) {
 			return contract.FileEntry{}, ErrConflict
 		}
-		if err := renameNoReplaceRoot(m.rootFS, tempVirtual, targetVirtual); err != nil {
-			_ = m.rootFS.RemoveAll(rootName(tempVirtual))
+		_ = m.rootFS.Remove(rootName(m.trashMetadataPath(id)))
+		if err := syncRootDirectory(targetParent, "."); err != nil {
 			return contract.FileEntry{}, err
 		}
-		if err := m.rootFS.RemoveAll(rootName(sourceVirtual)); err != nil {
+		if err := syncRootDirectory(sourceParent, "."); err != nil {
 			return contract.FileEntry{}, err
 		}
+		return m.entry(targetVirtual, published), nil
+	} else if !isCrossDeviceError(err) {
+		if errors.Is(err, os.ErrExist) {
+			return contract.FileEntry{}, ErrAlreadyExists
+		}
+		return contract.FileEntry{}, err
+	}
+	if !publicationParentProtected(targetInfo, targetParent) {
+		return contract.FileEntry{}, fmt.Errorf("%w: 跨设备恢复要求目标目录不能被其他本机用户替换目录项", ErrConflict)
+	}
+	stage, err := m.openCopyStage(parentVirtual, targetInfo)
+	if err != nil {
+		return contract.FileEntry{}, err
+	}
+	defer stage.close()
+	if err := m.copyTreeWithAccessRoots(ctx, sourceParent, id, stage.root, "payload", budget, true); err != nil {
+		return contract.FileEntry{}, err
+	}
+	currentSource, err = sourceParent.Lstat(id)
+	if err != nil || !os.SameFile(sourceInfo, currentSource) || resourceVersion(sourceVirtual, currentSource) != sourceVersion {
+		return contract.FileEntry{}, ErrConflict
+	}
+	if err := stage.validate(m); err != nil {
+		return contract.FileEntry{}, err
+	}
+	if err := m.verifyDirectoryIdentity(parentVirtual, targetInfo); err != nil {
+		return contract.FileEntry{}, err
+	}
+	if _, err := targetParent.Lstat(targetName); err == nil {
+		return contract.FileEntry{}, ErrAlreadyExists
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return contract.FileEntry{}, err
+	}
+	staged, err := stage.root.Lstat("payload")
+	if err != nil {
+		return contract.FileEntry{}, err
+	}
+	if err := publishReceiveObject(stage.root, "payload", targetParent, targetName, false); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return contract.FileEntry{}, ErrAlreadyExists
+		}
+		return contract.FileEntry{}, err
+	}
+	if err := syncRootDirectory(targetParent, "."); err != nil {
+		return contract.FileEntry{}, err
+	}
+	published, err := targetParent.Lstat(targetName)
+	if err != nil || !os.SameFile(staged, published) {
+		return contract.FileEntry{}, ErrConflict
+	}
+	if err := m.verifyDirectoryIdentity(parentVirtual, targetInfo); err != nil {
+		return contract.FileEntry{}, err
+	}
+	currentSource, err = sourceParent.Lstat(id)
+	if err != nil || !os.SameFile(sourceInfo, currentSource) || resourceVersion(sourceVirtual, currentSource) != sourceVersion {
+		return contract.FileEntry{}, ErrConflict
+	}
+	if err := sourceParent.RemoveAll(id); err != nil {
+		return contract.FileEntry{}, err
 	}
 	_ = m.rootFS.Remove(rootName(m.trashMetadataPath(id)))
-	if err := syncRootDirectory(m.rootFS, rootName(parentVirtual)); err != nil {
+	if err := syncRootDirectory(targetParent, "."); err != nil {
 		return contract.FileEntry{}, err
 	}
-	if err := syncRootDirectory(m.rootFS, rootName(m.trashRoot)); err != nil {
+	if err := syncRootDirectory(sourceParent, "."); err != nil {
 		return contract.FileEntry{}, err
 	}
-	return m.Stat(targetVirtual)
+	return m.entry(targetVirtual, published), nil
 }
 
 func (m *Manager) emptyTrash(ctx context.Context, result contract.FileActionResult) (contract.FileActionResult, error) {
@@ -1745,10 +2053,20 @@ func (m *Manager) copyTreeWithAccess(
 	budget *copyBudget,
 	preserveAccess bool,
 ) error {
+	return m.copyTreeWithAccessRoots(ctx, m.rootFS, sourceVirtual, m.rootFS, targetVirtual, budget, preserveAccess)
+}
+
+func (m *Manager) copyTreeWithAccessRoots(
+	ctx context.Context,
+	sourceRoot *fileRoot, sourceVirtual string,
+	targetRoot *fileRoot, targetVirtual string,
+	budget *copyBudget,
+	preserveAccess bool,
+) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	info, err := m.rootFS.Lstat(rootName(sourceVirtual))
+	info, err := sourceRoot.Lstat(rootName(sourceVirtual))
 	if err != nil {
 		return err
 	}
@@ -1761,7 +2079,7 @@ func (m *Manager) copyTreeWithAccess(
 		return ErrTooLarge
 	}
 	if info.IsDir() {
-		directory, err := m.rootFS.Open(rootName(sourceVirtual))
+		directory, err := sourceRoot.Open(rootName(sourceVirtual))
 		if err != nil {
 			return err
 		}
@@ -1774,10 +2092,10 @@ func (m *Manager) copyTreeWithAccess(
 		if preserveAccess {
 			accessSource = directory
 		}
-		if err := mkdirWithSourceAccess(m.rootFS, rootName(targetVirtual), info.Mode().Perm(), accessSource); err != nil {
+		if err := mkdirWithSourceAccess(targetRoot, rootName(targetVirtual), info.Mode().Perm(), accessSource); err != nil {
 			return err
 		}
-		targetDirectory, err := openAccessTarget(m.rootFS, rootName(targetVirtual))
+		targetDirectory, err := openAccessTarget(targetRoot, rootName(targetVirtual))
 		if err != nil {
 			return err
 		}
@@ -1791,9 +2109,11 @@ func (m *Manager) copyTreeWithAccess(
 		for {
 			values, readErr := directory.ReadDir(256)
 			for _, value := range values {
-				if err := m.copyTreeWithAccess(
+				if err := m.copyTreeWithAccessRoots(
 					ctx,
+					sourceRoot,
 					joinVirtual(sourceVirtual, value.Name()),
+					targetRoot,
 					joinVirtual(targetVirtual, value.Name()),
 					budget,
 					preserveAccess,
@@ -1816,12 +2136,12 @@ func (m *Manager) copyTreeWithAccess(
 				return err
 			}
 		}
-		return m.rootFS.Chtimes(rootName(targetVirtual), info.ModTime(), info.ModTime())
+		return targetRoot.Chtimes(rootName(targetVirtual), info.ModTime(), info.ModTime())
 	}
 	if !info.Mode().IsRegular() {
 		return ErrNotRegular
 	}
-	input, err := m.rootFS.Open(rootName(sourceVirtual))
+	input, err := sourceRoot.Open(rootName(sourceVirtual))
 	if err != nil {
 		return err
 	}
@@ -1834,14 +2154,14 @@ func (m *Manager) copyTreeWithAccess(
 	if preserveAccess {
 		accessSource = input
 	}
-	output, err := createFileWithSourceAccess(m.rootFS, rootName(targetVirtual), os.O_WRONLY|os.O_CREATE|os.O_EXCL, info.Mode().Perm(), accessSource)
+	output, err := createFileWithSourceAccess(targetRoot, rootName(targetVirtual), os.O_WRONLY|os.O_CREATE|os.O_EXCL, info.Mode().Perm(), accessSource)
 	if err != nil {
 		return err
 	}
 	if !preserveAccess {
 		if err := preserveFileOwnership(output, info); err != nil {
 			output.Close()
-			_ = m.rootFS.Remove(rootName(targetVirtual))
+			_ = targetRoot.Remove(rootName(targetVirtual))
 			return err
 		}
 	}
@@ -1849,7 +2169,7 @@ func (m *Manager) copyTreeWithAccess(
 	defer func() {
 		output.Close()
 		if !success {
-			_ = m.rootFS.Remove(rootName(targetVirtual))
+			_ = targetRoot.Remove(rootName(targetVirtual))
 		}
 	}()
 	// The source can grow after Stat. Charge actual bytes across the whole
@@ -1878,7 +2198,7 @@ func (m *Manager) copyTreeWithAccess(
 	if err := output.Close(); err != nil {
 		return err
 	}
-	if err := m.rootFS.Chtimes(rootName(targetVirtual), info.ModTime(), info.ModTime()); err != nil {
+	if err := targetRoot.Chtimes(rootName(targetVirtual), info.ModTime(), info.ModTime()); err != nil {
 		return err
 	}
 	success = true

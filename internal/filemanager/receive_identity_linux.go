@@ -31,6 +31,25 @@ func archiveWorkspaceProtected(info os.FileInfo, _ ...*fileRoot) bool {
 	return ok && stat.Uid == uint32(os.Geteuid()) && info.IsDir() && info.Mode().Perm()&0022 == 0
 }
 
+// A destructive cross-filesystem operation may remove its source only when
+// other local users cannot replace the published directory entry. Sticky
+// directories are not sufficient because the copied object may retain another
+// user's ownership and remain replaceable by that user.
+func publicationParentProtected(info os.FileInfo, roots ...*fileRoot) bool {
+	if !info.IsDir() || len(roots) != 1 {
+		return false
+	}
+	opened, err := roots[0].Stat(".")
+	if err != nil || !os.SameFile(info, opened) {
+		return false
+	}
+	stat, ok := opened.Sys().(*syscall.Stat_t)
+	if !ok || stat.Uid != uint32(os.Geteuid()) {
+		return false
+	}
+	return opened.Mode().Perm()&0022 == 0
+}
+
 func archiveSameFilesystem(a, b os.FileInfo) bool {
 	x, xok := a.Sys().(*syscall.Stat_t)
 	y, yok := b.Sys().(*syscall.Stat_t)

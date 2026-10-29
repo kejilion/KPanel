@@ -289,3 +289,147 @@ func TestCrossFilesystemMoveTrashRestoreRetainsAccess(t *testing.T) {
 	check(restored.Path)
 	probeNamedUserRead(t, restored.Path, false)
 }
+
+func TestCrossFilesystemMoveRejectsReplaceableDestination(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		mode os.FileMode
+	}{{"world-writable", 0777}, {"sticky-world-writable", 01777}} {
+		t.Run(test.name, func(t *testing.T) {
+			sourceRoot := t.TempDir()
+			targetRoot, err := os.MkdirTemp("/dev/shm", "kpanel-untrusted-target-")
+			if err != nil {
+				t.Skipf("second filesystem unavailable: %v", err)
+			}
+			t.Cleanup(func() { _ = os.RemoveAll(targetRoot) })
+			if err := os.Chmod(targetRoot, test.mode); err != nil {
+				t.Fatal(err)
+			}
+			var sourceDevice, targetDevice unix.Stat_t
+			if err := unix.Stat(sourceRoot, &sourceDevice); err != nil {
+				t.Fatal(err)
+			}
+			if err := unix.Stat(targetRoot, &targetDevice); err != nil {
+				t.Fatal(err)
+			}
+			if sourceDevice.Dev == targetDevice.Dev {
+				t.Skip("distinct local filesystems required")
+			}
+
+			m, err := New(Config{Root: "/"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer m.Close()
+			source := filepath.Join(sourceRoot, "keep-me")
+			if err := os.WriteFile(source, []byte("source remains intact"), 0600); err != nil {
+				t.Fatal(err)
+			}
+
+			_, err = m.moveOne(context.Background(), source, targetRoot, &copyBudget{maxEntries: 10, maxBytes: 1 << 20})
+			if !errors.Is(err, ErrConflict) {
+				t.Fatalf("move into replaceable destination: got %v, want ErrConflict", err)
+			}
+			content, err := os.ReadFile(source)
+			if err != nil || string(content) != "source remains intact" {
+				t.Fatalf("source was not retained: content=%q err=%v", content, err)
+			}
+			entries, err := os.ReadDir(targetRoot)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(entries) != 0 {
+				t.Fatalf("rejected move left target entries: %v", entries)
+			}
+		})
+	}
+}
+
+func TestCrossFilesystemMoveRejectsReplaceableSource(t *testing.T) {
+	sourceRoot, err := os.MkdirTemp("/dev/shm", "kpanel-untrusted-source-")
+	if err != nil {
+		t.Skipf("second filesystem unavailable: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(sourceRoot) })
+	if err := os.Chmod(sourceRoot, 0777); err != nil {
+		t.Fatal(err)
+	}
+	targetRoot := t.TempDir()
+	var sourceDevice, targetDevice unix.Stat_t
+	if err := unix.Stat(sourceRoot, &sourceDevice); err != nil {
+		t.Fatal(err)
+	}
+	if err := unix.Stat(targetRoot, &targetDevice); err != nil {
+		t.Fatal(err)
+	}
+	if sourceDevice.Dev == targetDevice.Dev {
+		t.Skip("distinct local filesystems required")
+	}
+
+	m, err := New(Config{Root: "/"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	source := filepath.Join(sourceRoot, "keep-me")
+	if err := os.WriteFile(source, []byte("source remains intact"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = m.moveOne(context.Background(), source, targetRoot, &copyBudget{maxEntries: 10, maxBytes: 1 << 20})
+	if !errors.Is(err, ErrConflict) {
+		t.Fatalf("move from replaceable source directory: got %v, want ErrConflict", err)
+	}
+	content, err := os.ReadFile(source)
+	if err != nil || string(content) != "source remains intact" {
+		t.Fatalf("source was not retained: content=%q err=%v", content, err)
+	}
+	entries, err := os.ReadDir(targetRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("rejected move left target entries: %v", entries)
+	}
+}
+
+func TestCrossFilesystemTrashRejectsReplaceableSource(t *testing.T) {
+	sourceRoot, err := os.MkdirTemp("/dev/shm", "kpanel-untrusted-trash-source-")
+	if err != nil {
+		t.Skipf("second filesystem unavailable: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(sourceRoot) })
+	if err := os.Chmod(sourceRoot, 0777); err != nil {
+		t.Fatal(err)
+	}
+	var sourceDevice, trashDevice unix.Stat_t
+	if err := unix.Stat(sourceRoot, &sourceDevice); err != nil {
+		t.Fatal(err)
+	}
+	if err := unix.Stat("/", &trashDevice); err != nil {
+		t.Fatal(err)
+	}
+	if sourceDevice.Dev == trashDevice.Dev {
+		t.Skip("distinct local filesystems required")
+	}
+
+	trashVirtual := filepath.ToSlash(t.TempDir())
+	m, err := New(Config{Root: "/", TrashVirtual: trashVirtual})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	source := filepath.Join(sourceRoot, "keep-me")
+	if err := os.WriteFile(source, []byte("source remains intact"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = m.trashOne(context.Background(), source, &copyBudget{maxEntries: 10, maxBytes: 1 << 20})
+	if !errors.Is(err, ErrConflict) {
+		t.Fatalf("trash from replaceable source directory: got %v, want ErrConflict", err)
+	}
+	content, err := os.ReadFile(source)
+	if err != nil || string(content) != "source remains intact" {
+		t.Fatalf("source was not retained: content=%q err=%v", content, err)
+	}
+}
