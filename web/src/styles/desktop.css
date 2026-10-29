@@ -1714,6 +1714,14 @@ body.desktop-mode-open::-webkit-scrollbar {
   transition: none;
 }
 
+.desktop__copy-drag-preview {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: start center;
+  pointer-events: none;
+}
+
 .desktop__copy-drag-badge {
   position: absolute;
   right: 0;

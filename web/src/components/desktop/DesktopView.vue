@@ -1772,7 +1772,7 @@ function iconSlotStyle(key: string): Record<string, string> {
         return { ...sizeStyle, left: '0px', top: '0px', transform: `translate3d(${left}px, ${rect.top}px, 0) scale(.5)`, opacity: '0', visibility: 'hidden', pointerEvents: 'none' }
       }
     }
-    let pixels = dragPreviews.value[key]
+    let pixels = copyDragKey.value === key ? undefined : dragPreviews.value[key]
     const position = renderedPositionByKey.value.get(key)
     if (!pixels && position) pixels = desktopIconPositionToPixels(position, iconBounds.value)
     const id = groupMembership.value.get(key)
@@ -1789,7 +1789,7 @@ function iconSlotStyle(key: string): Record<string, string> {
       zIndex: draggingIcons.value.has(key) || groupPreview ? '24' : '2',
     }
   }
-  const preview = dragPreviews.value[key]
+  const preview = copyDragKey.value === key ? undefined : dragPreviews.value[key]
   if (preview) {
     return { left: '0px', top: '0px', transform: `translate3d(${preview.left}px, ${preview.top}px, 0)` }
   }
@@ -1805,6 +1805,14 @@ function iconSlotStyle(key: string): Record<string, string> {
     left: '0px', top: '0px',
     transform: `translate3d(${(overflowIndex % grid.columns) * grid.stepX}px, ${iconOverflowStartTop.value + Math.floor(overflowIndex / grid.columns) * grid.stepY}px, 0)`,
   }
+}
+
+function copyPreviewStyle(key: string): Record<string, string> {
+  const preview = dragPreviews.value[key]
+  const position = renderedPositionByKey.value.get(key)
+  if (!preview || !position) return { display: 'none' }
+  const origin = desktopIconPositionToPixels(position, iconBounds.value)
+  return { transform: `translate3d(${preview.left - origin.left}px, ${preview.top - origin.top}px, 0)` }
 }
 
 function widgetSlotStyle(key: string): Record<string, string> {
@@ -4854,7 +4862,7 @@ function onViewportResize(): void {
           :fallback-background="entryFallbackBackground(entry)"
           :selected="selectedIcons.has(entry.key)"
           :order="visibleDesktopApps.length + visibleDynamicEntries.length + index"
-          :dragging="draggingIcons.has(entry.key)"
+          :dragging="draggingIcons.has(entry.key) && copyDragKey !== entry.key"
           :transfer-hint="desktopShortcutTransferHint(entry)"
           :transfer-ready="desktopShortcutTransferReady(entry)"
           @select="(event) => selectEntry(entry, event)"
@@ -4862,7 +4870,16 @@ function onViewportResize(): void {
           @context="(event) => onEntryContext(event, entry)"
           @nudge="(x, y) => nudgeIcon(entry.key, x, y)"
         />
-        <span v-if="copyDragKey === entry.key" class="desktop__copy-drag-badge" aria-hidden="true">{{ i18n.t('desktop.shortcutCopyDrag') }}</span>
+        <div v-if="copyDragKey === entry.key" class="desktop__copy-drag-preview" :style="copyPreviewStyle(entry.key)" aria-hidden="true" inert>
+          <DesktopEntryIcon
+            :label="entry.name"
+            :entry="entry"
+            :gradient="entryGradient(entry)"
+            :fallback-background="entryFallbackBackground(entry)"
+            :dragging="true"
+          />
+          <span class="desktop__copy-drag-badge">{{ i18n.t('desktop.shortcutCopyDrag') }}</span>
+        </div>
       </div>
       <!-- Positioned left of the first icon page, but after the icons in Tab order. -->
       <section
