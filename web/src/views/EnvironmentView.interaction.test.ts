@@ -32,7 +32,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   vi.useFakeTimers()
   vi.mocked(api.webEnvironment.summary).mockResolvedValue(structuredClone(state))
-  vi.mocked(api.webEnvironment.jobs).mockResolvedValue({ items: [] })
+  vi.mocked(api.webEnvironment.jobs).mockResolvedValue({ items: [], total: 0 })
 })
 afterEach(() => { wrapper?.unmount(); wrapper = undefined; vi.useRealTimers() })
 async function open() {
@@ -57,7 +57,7 @@ describe('environment protection actions and background banner', () => {
     expect(view.findAll('button').some(button => button.text() === '安装防护')).toBe(true)
   })
   it('dismisses only the current banner while polling continues and shows a different job', async () => {
-    vi.mocked(api.webEnvironment.jobs).mockResolvedValue({ items: [job] })
+    vi.mocked(api.webEnvironment.jobs).mockResolvedValue({ items: [job], total: 1 })
     vi.mocked(api.webEnvironment.job).mockResolvedValue({ ...job, progress: 50 })
     const view = await open()
     expect(view.find('.environment-job-banner').exists()).toBe(true)
@@ -67,7 +67,7 @@ describe('environment protection actions and background banner', () => {
     await flushPromises()
     expect(api.webEnvironment.job).toHaveBeenCalledWith(job.id, expect.any(AbortSignal))
     expect(view.find('.environment-job-banner').exists()).toBe(false)
-    vi.mocked(api.webEnvironment.jobs).mockResolvedValue({ items: [{ ...job, id: 'b'.repeat(32) }] })
+    vi.mocked(api.webEnvironment.jobs).mockResolvedValue({ items: [{ ...job, id: 'b'.repeat(32) }], total: 1 })
     await view.findAll('button').find(button => button.text().includes('刷新状态'))!.trigger('click')
     await flushPromises()
     expect(view.find('.environment-job-banner').exists()).toBe(true)
