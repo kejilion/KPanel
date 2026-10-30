@@ -115,7 +115,10 @@ func durableMove(from, to string) error {
 		if err == nil {
 			return nil
 		}
-		if !errors.Is(err, windows.ERROR_SHARING_VIOLATION) && !errors.Is(err, windows.ERROR_LOCK_VIOLATION) {
+		// A stopped service can still have its executable image mapped briefly.
+		// Replacing that image returns ACCESS_DENIED, not SHARING_VIOLATION.
+		// Keep the same bounded budget; persistent ACL failures still fail closed.
+		if !errors.Is(err, windows.ERROR_SHARING_VIOLATION) && !errors.Is(err, windows.ERROR_LOCK_VIOLATION) && !errors.Is(err, windows.ERROR_ACCESS_DENIED) {
 			return err
 		}
 		time.Sleep(time.Duration(i+1) * 100 * time.Millisecond)
