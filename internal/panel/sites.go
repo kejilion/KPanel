@@ -676,7 +676,7 @@ func validPanelSiteType(value string) bool {
 
 func validPanelSiteRecipe(value string) bool {
 	switch value {
-	case "discuz", "kodbox", "maccms", "dujiaoka", "flarum", "typecho", "linkstack", "ai-prompt", "bitwarden", "halo":
+	case "discuz", "kodbox", "maccms", "dujiaoka", "flarum", "typecho", "linkstack", "fastadmin", "ai-prompt", "bitwarden", "halo":
 		return true
 	default:
 		return false

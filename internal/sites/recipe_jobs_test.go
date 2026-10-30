@@ -44,7 +44,7 @@ func (runner *fakeRecipeJobRunner) Run(
 
 func TestNormalizeRecipeInputUsesFixedKejilionSelectors(t *testing.T) {
 	for recipe, expected := range map[string]string{
-		"discuz": "3", "bitwarden": "25", "halo": "26",
+		"discuz": "3", "fastadmin": "10", "bitwarden": "25", "halo": "26",
 	} {
 		domain, selector, err := normalizeRecipeInput(SiteInput{
 			PrimaryDomain: recipe + ".example.com",
@@ -262,6 +262,10 @@ func TestInvocationForRecipeJobRestoresValidatedCommands(t *testing.T) {
 		{
 			job:  RecipeJob{Domain: "forum.example.com", Recipe: "discuz"},
 			want: []string{"discuz", "forum.example.com"},
+		},
+		{
+			job:  RecipeJob{Domain: "admin.example.com", Recipe: "fastadmin"},
+			want: []string{"fastadmin", "admin.example.com"},
 		},
 		{
 			job:  RecipeJob{Domain: "static.example.com", Recipe: "static-site"},

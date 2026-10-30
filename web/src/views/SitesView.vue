@@ -298,6 +298,7 @@ const recipeOptions = [
   { recipe: 'flarum', title: 'Flarum', summary: '现代轻量论坛', detail: 'k flarum <域名>', icon: Globe2 },
   { recipe: 'typecho', title: 'Typecho', summary: '轻量博客系统', detail: 'k typecho <域名>', icon: Braces },
   { recipe: 'linkstack', title: 'LinkStack', summary: '共享链接主页', detail: 'k linkstack <域名>', icon: Waypoints },
+  { recipe: 'fastadmin', title: 'FastAdmin', summary: 'PHP 7.4 后台开发框架，建站后打开安装页初始化', detail: 'k fastadmin <域名>', icon: Braces },
   { recipe: 'ai-prompt', title: 'AI 提示词生成器', summary: '脚本原生静态成品站', detail: 'k ai-prompt <域名>', icon: FileCode2 },
   { recipe: 'bitwarden', title: 'Bitwarden', summary: '自托管密码管理平台', detail: 'k bitwarden-site <域名>', icon: ShieldCheck },
   { recipe: 'halo', title: 'Halo 博客', summary: '现代化开源博客系统', detail: 'k halo-site <域名>', icon: Globe2 },

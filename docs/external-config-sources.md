@@ -52,6 +52,18 @@
 
 ## KPanel 与 kejilion.sh 发布关系
 
+本地实验变更集 `fastadmin-php74` 为 `scriptLinkageState=coupled`：FastAdmin 作为网站模板，
+使用 `k fastadmin <domain>`（菜单 10）及既有 HTTP/custom-certificate 协议，共用脚本的 PHP74
+容器、MySQL 与 `/home/web` 布局。脚本固定官方完整包 `1.6.8.20261019`，SHA-256 为
+`457bbe56d5a37d69a2e1371bea09bef8ce88e2dd11516da930ea442d70ae906f`；同源 Nginx 模板为
+`kejilion/nginx` 的 `fastadmin.com.conf`，运行目录为 `public`，绑定 PHP74 socket。
+安装器将此固定包中两个 ThinkPHP INI 读取点改为 `file_get_contents` + `parse_ini_string`，
+兼容共享 PHP74 默认禁用 `parse_ini_file` 的配置，不修改共享 PHP 设置。
+站点就绪后仍需在 `/install.php` 完成管理员及数据库初始化；任务成功表示建站产物就绪。
+候选未发布，当前镜像内置脚本不含此入口，旧脚本因缺少固定命令而被拒绝。
+正式接入必须先发布同源模板与配套脚本，再固定脚本提交及摘要、构建并完成双端验收；
+本地候选不改写既有 Dockerfile 的已发布来源，不可单独发布面板候选。
+
 RC4 组合候选变更集 `rc4-light-node-integration-20261005` 为 `scriptLinkageState=coupled`。
 配套脚本候选 `c3a8bd895f8878d9e4ced7592c91a20c974472a5` 在 `39a19cd7c1a2ef1193d07a1c40d7d897cc8f5547`
 基础上整合接入依赖补齐与下载镜像回退，内置更新器由该同源脚本生成，运行时代数为 6。

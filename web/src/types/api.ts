@@ -1627,7 +1627,7 @@ export interface SiteInput {
   certificate?: string
   /** Unencrypted PEM key; replacement sends identity/version and no settings edits. */
   privateKey?: string
-  recipe?: 'discuz' | 'kodbox' | 'maccms' | 'dujiaoka' | 'flarum' | 'typecho' | 'linkstack' | 'ai-prompt' | 'bitwarden' | 'halo'
+  recipe?: 'discuz' | 'kodbox' | 'maccms' | 'dujiaoka' | 'flarum' | 'typecho' | 'linkstack' | 'fastadmin' | 'ai-prompt' | 'bitwarden' | 'halo'
   upstream?: string
   upstreams?: string[]
   redirectTarget?: string
