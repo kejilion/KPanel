@@ -12,7 +12,7 @@
     "Makefile": "f651d8ce2f10adc487118e1ccb476615347661922a8c8ef529f1b8013da5d53e"
   },
   "closureSha256": "b29862491f453298c34eef29ab773700a3afd9bdb96115afdb3d6876977bb6b7",
-  "firstPartySourceSha256": "f90b5b04a0e14bdb2a070fc17e70309c484ca283fea61a7c95d8508c61f50430",
+  "firstPartySourceSha256": "ffac3999fa0be71b4349a25d3ca3d357352693a9336442907ae7237ccab27ad8",
   "buildTargetHashEncoding": "UTF-8 with LF line endings",
   "closureEncoding": "SHA256 of JSON.stringify of ordered OS/architecture rows; packages sorted by import path; path, module and selected version; stdlib go1.27.3; main-module packages additionally bind relative sourceDirectory and sorted actual GoFiles.",
   "firstPartySourceEncoding": "SHA256 of JSON.stringify of all cmd/internal Go source path and SHA256 pairs sorted by relative path; contents normalized to UTF-8 LF. All actual main-module production GoFiles must be covered. Generated .pb.go and .proto files or symlinks require a new review.",
@@ -145,8 +145,8 @@
     "v128BlindReviewEvidenceSha256": "7a7ef63607e8dd36970bbb34bd0a78678e017c12269229aa9f8daf7882108cea",
     "v128IdentityQualificationEvidenceSha256": "39630b65cf12bf7c94e1abcb0b5e6bc34dd2ff6bf03e8bfc78a6667555e83dc9",
     "v128IdentityQualificationSummary": "Final v1.28.0 candidate source-scope requalification at 7a4bf88c4ca893fc92a1785aaba76c01275ad92a: canonical Go 1.27.3 inventory recomputed 1,255 first-party Go files and all six actual/original production closures; each pair is equivalent. The only six Go paths changed from main are within internal/filemanager. Five runtime files match the independent built-in blind-review package snapshot at e6240307; the single test-only change was covered by the candidate diff review. Source and closure identities are rebound to f90b5b04a0e14bdb2a070fc17e70309c484ca283fea61a7c95d8508c61f50430 and b29862491f453298c34eef29ab773700a3afd9bdb96115afdb3d6876977bb6b7. Existing 37 findings/dispositions and the 2026-10-25/2026-11-08 observation window remain unchanged. This identity qualification is not a scanner, CI, L2/L3 or publication result; candidate CI run 40910122349 correctly retains the stale-source-identity failure and a fresh exact-candidate run is required.",
-    "wafPinReviewEvidenceSha256": "d9e0ecffee0c1007b0e2fb60385ace1658c610d2a0903c59e2a40a55834b6aba",
-    "wafPinReviewSummary": "Only published managed-script pin and checksum changed. Go sources, selected graph, production closure and scanner findings unchanged. Root/CN bytes independently re-read from GitHub contents API; original source candidate authored in a separate task. No expiry, finding or disposition changes."
+    "wafPinReviewEvidenceSha256": "7b01ccb27747ebd8ac1cb379a0d2c7cfc73910dc1fc9d72ce71eb5eee9e7abac",
+    "wafPinReviewSummary": "Only published managed-script Docker pin/checksum and Go default version literal changed. Actual production GoFiles, selected graph, closures, findings and original expiry unchanged. Root/CN bytes independently re-read from GitHub git blobs API; baseline source inventory reproduced by replacing only the version literal hash."
   },
   "findings": [
     {
