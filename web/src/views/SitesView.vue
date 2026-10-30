@@ -1629,7 +1629,7 @@ onBeforeUnmount(() => {
               v-for="option in recipeOptions"
               :key="option.recipe"
               class="site-service-card"
-              :class="{ 'is-active': form.type === 'recipe' && form.recipe === option.recipe }"
+              :class="{ 'is-active': form.type === 'recipe' && form.recipe === option.recipe, 'site-service-card--fastadmin': option.recipe === 'fastadmin' }"
               type="button"
               :disabled="!canInstallRecipes"
               :aria-pressed="form.type === 'recipe' && form.recipe === option.recipe"
@@ -1894,6 +1894,14 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.site-service-card--fastadmin .site-service-card__content strong {
+  font-size: 0.875rem;
+}
+
+.site-service-card--fastadmin .site-service-card__content :is(small, em) {
+  font-size: 0.8125rem;
+}
+
 .site-install-progress > p,
 .site-install-progress__heading > span,
 .site-install-progress__heading > strong {

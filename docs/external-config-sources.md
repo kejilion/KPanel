@@ -52,17 +52,15 @@
 
 ## KPanel 与 kejilion.sh 发布关系
 
-本地实验变更集 `fastadmin-php74` 为 `scriptLinkageState=coupled`：FastAdmin 作为网站模板，
-使用 `k fastadmin <domain>`（菜单 10）及既有 HTTP/custom-certificate 协议，共用脚本的 PHP74
-容器、MySQL 与 `/home/web` 布局。脚本固定官方完整包 `1.6.8.20261019`，SHA-256 为
-`457bbe56d5a37d69a2e1371bea09bef8ce88e2dd11516da930ea442d70ae906f`；同源 Nginx 模板为
-`kejilion/nginx` 的 `fastadmin.com.conf`，运行目录为 `public`，绑定 PHP74 socket。
-安装器将此固定包中两个 ThinkPHP INI 读取点改为 `file_get_contents` + `parse_ini_string`，
-兼容共享 PHP74 默认禁用 `parse_ini_file` 的配置，不修改共享 PHP 设置。
-站点就绪后仍需在 `/install.php` 完成管理员及数据库初始化；任务成功表示建站产物就绪。
-候选未发布，当前镜像内置脚本不含此入口，旧脚本因缺少固定命令而被拒绝。
-正式接入必须先发布同源模板与配套脚本，再固定脚本提交及摘要、构建并完成双端验收；
-本地候选不改写既有 Dockerfile 的已发布来源，不可单独发布面板候选。
+配套变更集 `fastadmin-php74-20261031` 为 `scriptLinkageState=coupled`。FastAdmin 使用固定命令 `k fastadmin <domain>`（菜单10）及既有 HTTP/custom-certificate 协议，复用 PHP74、MySQL 与 `/home/web` 布局。
+
+镜像内置兼容脚本 `kejilion/sh@5b8327fa9cfed52cfb3a96b92d15280f25499bd4`，通过公开主线合入 `046614235e5ef96cd4a80d39218b68fee75501f7` 可达；根脚本 SHA-256 `2ba489e89be5320537135a1ca0bdd3c1b69f5ff927c548593ec6ee9ae1ed51e4`，CN `e7806a617c2a4fe9247754ee465d0c8a0ab8a6f709fa7b154172177b831711e3`（仅区域入口不同）。该兼容提交在此前镜像脚本基线上增加 FastAdmin，避免夹带其后公开脚本主线的无关更新；公开脚本主线保留这些既有更新。
+
+官方完整包固定 `1.6.8.20261019`、SHA-256 `457bbe56d5a37d69a2e1371bea09bef8ce88e2dd11516da930ea442d70ae906f`；模板 `kejilion/nginx@c830bf34ae6da8e183b4892860fbce30ea6dc651/fastadmin.com.conf`、SHA-256 `986b57db53211332331c1c0022e7894546c8e8d3a1e4baeef5f2c95f01c23f46`，均在写入站点前校验。运行目录 `public`，绑定 PHP74 socket；PATH_INFO 后台路由可用，上传目录 PHP 与隐藏路径拒绝执行/读取。
+
+安装器仅修正固定包两个 ThinkPHP INI 读取点为 `file_get_contents` + `parse_ini_string`，不改变共享 PHP 配置。任务成功表示文件及配置就绪，仍需访问 `/install.php` 完成数据库/管理员初始化并保存随机后台入口。
+
+Linux 隔离验证实际覆盖 PHP74/MySQL 初始化、后台 PATH_INFO 登录、拒绝敏感路径及重启恢复；下载使用摘要一致缓存，证书和建库外层流程由夹具替换，不等同完整原生 TLS/环境安装或生产验证。发布及公开字节回读以本版验收记录为准，原测试环境已停止并清除其临时资源。
 
 RC4 组合候选变更集 `rc4-light-node-integration-20261005` 为 `scriptLinkageState=coupled`。
 配套脚本候选 `c3a8bd895f8878d9e4ced7592c91a20c974472a5` 在 `39a19cd7c1a2ef1193d07a1c40d7d897cc8f5547`
