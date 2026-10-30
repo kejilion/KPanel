@@ -3,14 +3,130 @@
 package windowsnode
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"net/url"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"golang.org/x/sys/windows"
 )
+
+func TestDurableMoveRetriesRunningImage(t *testing.T) {
+	if os.Getenv("KPANEL_TEST_MOVE_IMAGE_CHILD") == "1" {
+		fmtReady := []byte("image-ready\n")
+		if _, err := os.Stdout.Write(fmtReady); err != nil {
+			t.Fatal(err)
+		}
+		var release [1]byte
+		_, _ = os.Stdin.Read(release[:])
+		return
+	}
+	root := t.TempDir()
+	live, old := filepath.Join(root, "live.exe"), filepath.Join(root, "old.exe")
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	image, err := os.ReadFile(executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(live, image, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(old, []byte("verified previous binary"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	child := exec.CommandContext(ctx, live, "-test.run=^TestDurableMoveRetriesRunningImage$")
+	child.Env = append(os.Environ(), "KPANEL_TEST_MOVE_IMAGE_CHILD=1")
+	release, err := child.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, err := child.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := child.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = release.Close()
+		if child.ProcessState == nil {
+			_ = child.Process.Kill()
+			_ = child.Wait()
+		}
+	}()
+	ready, err := bufio.NewReader(output).ReadString('\n')
+	if err != nil || ready != "image-ready\n" {
+		t.Fatalf("child did not map its image: %q, %v", ready, err)
+	}
+	source, _ := windows.UTF16PtrFromString(old)
+	target, _ := windows.UTF16PtrFromString(live)
+	if err := windows.MoveFileEx(source, target, windows.MOVEFILE_REPLACE_EXISTING|windows.MOVEFILE_WRITE_THROUGH); !errors.Is(err, windows.ERROR_ACCESS_DENIED) {
+		t.Fatalf("expected mapped-image access denial, got %v", err)
+	}
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		_ = release.Close()
+	}()
+	if err := durableMove(old, live); err != nil {
+		t.Fatalf("rollback did not wait for mapped image release: %v", err)
+	}
+	if err := child.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(live)
+	if err != nil || string(got) != "verified previous binary" {
+		t.Fatalf("previous binary not restored: %q, %v", got, err)
+	}
+	if _, err := os.Stat(old); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("move left source behind: %v", err)
+	}
+}
+
+func TestDurableMovePermanentFailurePreservesSource(t *testing.T) {
+	root := t.TempDir()
+	source, target := filepath.Join(root, "old.exe"), filepath.Join(root, "live.exe")
+	if err := os.WriteFile(source, []byte("verified previous binary"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("read-only destination"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	name, _ := windows.UTF16PtrFromString(target)
+	if err := windows.SetFileAttributes(name, windows.FILE_ATTRIBUTE_READONLY); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = windows.SetFileAttributes(name, windows.FILE_ATTRIBUTE_NORMAL) })
+	started := time.Now()
+	if err := durableMove(source, target); !errors.Is(err, windows.ERROR_ACCESS_DENIED) {
+		t.Fatalf("permanent access denial was not preserved: %v", err)
+	}
+	if time.Since(started) > 5*time.Second {
+		t.Fatal("permanent failure exceeded bounded retry budget")
+	}
+	got, err := os.ReadFile(source)
+	if err != nil || string(got) != "verified previous binary" {
+		t.Fatalf("failed move discarded source: %q, %v", got, err)
+	}
+	got, err = os.ReadFile(target)
+	if err != nil || string(got) != "read-only destination" {
+		t.Fatalf("failed move changed destination: %q, %v", got, err)
+	}
+	if attributes, err := windows.GetFileAttributes(name); err != nil || attributes&windows.FILE_ATTRIBUTE_READONLY == 0 {
+		t.Fatalf("failed move changed destination attributes: %v", err)
+	}
+}
 
 type memoryUpdateStore struct {
 	files    map[string]string
