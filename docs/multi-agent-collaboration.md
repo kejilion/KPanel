@@ -37,22 +37,16 @@ Windows 没有 Make 时使用 `node scripts/run-repo-bash.mjs <script>` 调用�
 
 ## 标准协作流程
 
-1. 协调中心执行 `git fetch origin --prune`，盘点远端任务分支、worktree 和活跃任务，并运行
-   `node scripts/check-collaboration-state.mjs --role management --base-ref origin/main`。检查失败时只隔离
-   管理树并保留现场，仍从精确 `origin/main` 创建专用 worktree，不在管理树修复或清理未知内容。
-2. 按项目管理规范填写统一任务契约；达到 Definition of Ready 后才分配写任务。
-3. 协调中心从最新批准基线创建专用 branch/worktree，并把绝对路径交给唯一写入者；写入前以精确
-   基线运行 `scripts/check-collaboration-state.mjs --role writer --require-clean`。
-4. Codex 或 Claude 只在自己的 worktree 写入，阶段结果以聚焦提交保存。
-   本地 `verify-change` 会用 `--role auto` 再次核对当前工作树，防止遗漏启动检查后把主工作树当作 writer；
-   传入精确任务基线时同时复核祖先关系，未传基线时只做结构检查。
-5. 智能体完成修改与验证后形成非空、聚焦的本地任务候选提交，保持 worktree clean，并以精确基线运行
-   `check-collaboration-state.mjs --role writer --require-candidate`。获得推送授权后通过 SSH 推送同名任务
-   分支；涉及本地可安全复现的用户可见旅程时，在候选提交后提供绑定当前提交的 acceptance 预览，
-   再回传标准交付包。未获推送授权时如实标记本地候选，不进入跨工具交接或集成。
-6. 另一智能体或独立验证任务从远端提交重建环境并复核，不接管原会话的未提交状态。
-7. 协调中心批准后进入集成队列；永久规范、CI 或发布工具变更必须先取得同一精确 SHA 的候选 Linux
-   CI 成功证据，集成/发布任务才可通过 SSH 更新 `main`。候选分支保留到主线 CI 成功；随后按 `project-management.md` 10.2 区分治理归档、稳定版收尾和 RC 保留。
+执行顺序和退出条件统一引用 [`project-management.md` 1.1](project-management.md#11-最短执行路径)：
+准备 → 实施 → 交付 → 集成与收尾。本手册只补跨工具交接，不重复展开门禁和审批清单。
+
+- 准备使用第 6 节唯一任务契约；启动入口已核实的 Git/工具结果直接引用，身份变化才更新。
+  工作树角色沿用 `scripts/check-collaboration-state.mjs`，交付使用 `--require-candidate`。
+- 实施使用第 7 节唯一分级入口；适用评审、acceptance 预览与独立性按原规则完成。
+- 交付以 clean 非空候选、标准交付包和原件重建上下文，不接收共享脏工作树。
+  未授权推送时独立复核可读取本地精确提交，但不得宣称远端交付或已集成。
+- 集成按第 9/10 节；永久治理必须有同 SHA 候选 Linux CI 和主线 CI，候选分支保留到主线 CI 成功。
+  接手者一次核对交付包并自行闭环，归档按第 10.2 节；不另设监工，不召回已交付 writer。
 
 ## 路径声明与冲突判断
 

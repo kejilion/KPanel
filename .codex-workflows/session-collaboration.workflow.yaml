@@ -1,12 +1,12 @@
 ---
 name: session-collaboration
 description: "Route KPanel work through isolated worktrees and SSH-backed remote branches."
-version: "4.12"
+version: "4.13"
 author: "Codex"
 tags: [kpanel, collaboration, multi-agent, worktree, review]
 params: [role, scope, agent_provider, base_ref, verification_level]
 created: "2026-07-27T08:45:12Z"
-updated: "2026-10-16T10:15:51Z"
+updated: "2026-10-30T08:44:38Z"
 ---
 
 # KPanel Session Collaboration
@@ -25,7 +25,8 @@ isolate every writer in its own worktree, and keep cross-tool state in SSH remot
   The canonical governance gate runs its fixed offline prerequisite check automatically. Role handoff alone does not
   invalidate evidence; independent review still reads the raw evidence and makes its own decision.
 
-- Read `AGENTS.md`, `PROJECT_RULES.md`, `docs/project-management.md`, and `docs/multi-agent-collaboration.md`.
+- Load shared rules by risk through `AGENTS.md` or `CLAUDE.md`; only L3 or governance architecture changes need
+  the complete rules, management and collaboration documents. Do not forward the full pack for every small task.
 - The user request defines a concrete goal. A KPanel modification request authorizes a focused local candidate commit,
   but does not implicitly authorize SSH push, main, release, or deployment.
 - `${{base_ref}}` resolves to an approved KPanel baseline; default to `origin/main`.
@@ -33,6 +34,10 @@ isolate every writer in its own worktree, and keep cross-tool state in SSH remot
 - GitHub Issue, PR, API, plugin, and `gh` authentication are optional and must not block Git work.
 
 ## Steps
+
+Follow `docs/project-management.md` 1.1: preparation, implementation, delivery, integration/closeout.
+The numbered steps below are tool adaptations, not extra approvals. Reuse a completed startup check when its
+identity is unchanged; keep required independent review and evidence layers distinct.
 
 ### 1. Discover current work
 

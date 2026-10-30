@@ -11,6 +11,9 @@
 4. L3 或规范架构变更：完整读取 `PROJECT_RULES.md`、`docs/project-management.md`、
    `docs/multi-agent-collaboration.md` 和相关工作流。
 
+执行路线统一见 `docs/project-management.md` 1.1；本入口的检查已完成且身份未变化时直接引用结果，
+不因进入工作流或更换角色再次执行。
+
 ## 启动与所有权
 
 - 先核对 `origin/main`、目标远端分支、`git status --short --branch`、`git worktree list` 和精确基线；
