@@ -593,7 +593,7 @@ onBeforeUnmount(() => {
             <p v-if="banMigrationLabel" class="environment-inline-status">{{ banMigrationLabel }}</p>
             <p v-if="banMigration?.cfReentryRequired" class="environment-inline-status environment-inline-status--warning">{{ phrase('旧 CF 凭据未自动迁移，请重新输入后重新开启 CF 封禁模式。') }}</p>
             <div>
-              <button class="button button--secondary" :disabled="jobActive" @click="protection('fail2ban-install')">
+              <button v-if="!fail2banInstalled" class="button button--secondary" :disabled="jobActive" @click="protection('fail2ban-install')">
                 {{ fail2banActionLabel }}
               </button>
               <button v-if="summary.protection.fail2ban" class="button button--secondary" :disabled="jobActive" @click="protection('fail2ban-uninstall')">{{ phrase('卸载') }}</button>
