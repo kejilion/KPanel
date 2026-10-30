@@ -256,4 +256,6 @@ export default [
   ["连接已中断，申请仍在后台进行；正在等待 Nginx 恢复并核对证书状态…", "The connection dropped but the request continues in the background. Waiting for Nginx to recover and checking the certificate…"],
   ["暂时无法确认申请结果，请稍后刷新网站状态核对证书。", "The result cannot be confirmed yet. Refresh the site status later to check the certificate."],
   ["证书申请失败，请刷新网站状态后重试。", "Certificate request failed. Refresh the site status and try again."],
+  ["PHP 7.4 后台开发框架，建站后打开安装页初始化", "PHP 7.4 backend framework; open the installer after deployment"],
+  ["k fastadmin <域名>", "k fastadmin <域名>"],
 ] as const satisfies PhraseCatalog

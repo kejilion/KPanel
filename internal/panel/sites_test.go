@@ -359,6 +359,7 @@ func TestSiteWriteCatalogValidationAndForwarding(t *testing.T) {
 	}{
 		{name: "wordpress", body: `{"primaryDomain":"blog.example.com","type":"wordpress"}`},
 		{name: "recipe", body: `{"primaryDomain":"forum.example.com","type":"recipe","recipe":"discuz"}`},
+		{name: "fastadmin", body: `{"primaryDomain":"admin.example.com","type":"recipe","recipe":"fastadmin"}`},
 		{name: "static", body: `{"primaryDomain":"static.example.com","type":"static"}`},
 		{name: "php", body: `{"primaryDomain":"php.example.com","type":"php"}`},
 		{name: "private proxy", body: `{"primaryDomain":"proxy.example.com","type":"proxy","upstream":"http://127.0.0.1:3000"}`},

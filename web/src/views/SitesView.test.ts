@@ -2,7 +2,7 @@ import { createSSRApp, nextTick, ssrContextKey, type ComputedRef, type Ref } fro
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import SitesView from './SitesView.vue'
 import { ApiError, api } from '@/lib/api'
-import type { Site, SiteInstallationProgress } from '@/types/api'
+import type { Site, SiteInput, SiteInstallationProgress } from '@/types/api'
 
 vi.mock('@/lib/api', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/lib/api')>(),
@@ -69,7 +69,8 @@ interface SitesBindings {
   installProgress: Ref<SiteInstallationProgress | undefined>
   form: {
     primaryDomain: string
-    type: 'redirect'
+    type: SiteInput['type']
+    recipe: NonNullable<SiteInput['recipe']>
     redirectTarget: string
     certificateMode: 'automatic' | 'custom'
     certificate: string
@@ -152,6 +153,22 @@ afterEach(() => {
 
 describe('SitesView creation experience', () => {
   const runningJob: SiteInstallationProgress = { id: 'recovery-job', status: 'running', stage: 'installing', progress: 88, message: 'installing' }
+
+  it('submits FastAdmin as a shared script recipe without overriding its PHP version', async () => {
+    const view = setupView()
+    view.capabilities.value = [{ id: 'sites.recipes.install', enabled: true }]
+    view.form.type = 'recipe'
+    view.form.recipe = 'fastadmin'
+    view.form.primaryDomain = 'admin.example.com'
+    vi.mocked(api.sites.create).mockImplementationOnce(async () => {
+      throw new ApiError('script unavailable', 422)
+    })
+    await view.submitSite()
+    expect(api.sites.create).toHaveBeenCalledWith(expect.objectContaining({
+      primaryDomain: 'admin.example.com', type: 'recipe', recipe: 'fastadmin', phpVersion: undefined,
+    }), expect.any(Function))
+    expect(view.installProgress.value?.status).toBe('failed')
+  })
 
   it.each(['wordpress', 'php', 'static', 'discuz'])('restores the original %s task after refresh and keeps it running when hidden', async recipe => {
     const job = { ...runningJob, recipe, interactive: true, inputOpen: true }
@@ -535,7 +552,8 @@ describe('SitesView creation experience', () => {
       'load_balance',
       'redirect',
     ])
-    expect(view.recipeOptions).toHaveLength(10)
+    expect(view.recipeOptions).toHaveLength(11)
+    expect(view.recipeOptions).toContainEqual(expect.objectContaining({ recipe: 'fastadmin' }))
   })
 
   it('requires confirmation and then submits only the site identity for k web del', async () => {
