@@ -6,7 +6,7 @@
   "sourceManifestSha256": "3165b3c3e3fcdefe8dc52fba19a0a872eb26238692d6fedff4db2fc48ecf2580",
   "selectedGraphSha256": "b28b6ce7c6d851577e77a9abf33319be3a0e3ae727fb3ef3640d72663813d75b",
   "buildTargetFilesSha256": {
-    "Dockerfile": "9a44552fadad1d43b3a6e37a8346021c3049943a8e9e9724d19c248fc3da3b23",
+    "Dockerfile": "6e56611f3f5a93d38efffa78f91313891bb766c4602bfff5067b8baecaf09c87",
     ".github/workflows/release.yml": "f2179cdc8358290e826f92c27316b265dade18275d1e9b89f83b0917f9d73bdc",
     "scripts/build-mcp-clients.sh": "29b0e82668f585aa46d10432912e1050954430cfac6a0550dd408d728979e113",
     "Makefile": "f651d8ce2f10adc487118e1ccb476615347661922a8c8ef529f1b8013da5d53e"
@@ -144,7 +144,9 @@
     "stable128IdentitySummary": "Stable version source identity rebind: 1254 Go files; only internal/version/version.go changes from e779e9a for version 1.28.0. Prior source hash independently reproduced by restoring base version bytes. Findings, observation window, graph and build targets are unchanged; exact candidate scanner and six-target closure remain required. This source observation is not an independent review or scanner pass.",
     "v128BlindReviewEvidenceSha256": "7a7ef63607e8dd36970bbb34bd0a78678e017c12269229aa9f8daf7882108cea",
     "v128IdentityQualificationEvidenceSha256": "39630b65cf12bf7c94e1abcb0b5e6bc34dd2ff6bf03e8bfc78a6667555e83dc9",
-    "v128IdentityQualificationSummary": "Final v1.28.0 candidate source-scope requalification at 7a4bf88c4ca893fc92a1785aaba76c01275ad92a: canonical Go 1.27.3 inventory recomputed 1,255 first-party Go files and all six actual/original production closures; each pair is equivalent. The only six Go paths changed from main are within internal/filemanager. Five runtime files match the independent built-in blind-review package snapshot at e6240307; the single test-only change was covered by the candidate diff review. Source and closure identities are rebound to f90b5b04a0e14bdb2a070fc17e70309c484ca283fea61a7c95d8508c61f50430 and b29862491f453298c34eef29ab773700a3afd9bdb96115afdb3d6876977bb6b7. Existing 37 findings/dispositions and the 2026-10-25/2026-11-08 observation window remain unchanged. This identity qualification is not a scanner, CI, L2/L3 or publication result; candidate CI run 40910122349 correctly retains the stale-source-identity failure and a fresh exact-candidate run is required."
+    "v128IdentityQualificationSummary": "Final v1.28.0 candidate source-scope requalification at 7a4bf88c4ca893fc92a1785aaba76c01275ad92a: canonical Go 1.27.3 inventory recomputed 1,255 first-party Go files and all six actual/original production closures; each pair is equivalent. The only six Go paths changed from main are within internal/filemanager. Five runtime files match the independent built-in blind-review package snapshot at e6240307; the single test-only change was covered by the candidate diff review. Source and closure identities are rebound to f90b5b04a0e14bdb2a070fc17e70309c484ca283fea61a7c95d8508c61f50430 and b29862491f453298c34eef29ab773700a3afd9bdb96115afdb3d6876977bb6b7. Existing 37 findings/dispositions and the 2026-10-25/2026-11-08 observation window remain unchanged. This identity qualification is not a scanner, CI, L2/L3 or publication result; candidate CI run 40910122349 correctly retains the stale-source-identity failure and a fresh exact-candidate run is required.",
+    "wafPinReviewEvidenceSha256": "d9e0ecffee0c1007b0e2fb60385ace1658c610d2a0903c59e2a40a55834b6aba",
+    "wafPinReviewSummary": "Only published managed-script pin and checksum changed. Go sources, selected graph, production closure and scanner findings unchanged. Root/CN bytes independently re-read from GitHub contents API; original source candidate authored in a separate task. No expiry, finding or disposition changes."
   },
   "findings": [
     {

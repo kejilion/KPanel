@@ -153,4 +153,4 @@ Agent 将固定回执 `renewal_adapter_unavailable` 映射为 `site_certificate_
 
 ### 2026-10-31 WAF 固定来源修正
 
-配套变更集 `waf-pin-correction-20261031`（`scriptLinkageState=coupled`）：受管脚本更新至已公开的 `kejilion/sh@6f6d8445b3e0884dc96035879b8d76ff97a175b3`，根/CN 脚本 SHA-256 均为 `fe9625222ac3ffa300de131d4f8a9da212a3ca125054ae4a0d658f69c70508b5`。相对此前 `b408d60d7ed1c9a935bb1ff0d6e41b73469898ff`，两份脚本仅将错误的 WAF 提交号 `4269829b5be389aa08c22a0c19915a5a451a7e2f` 改为 `42698292499f6e6ba4ebe4f833e164805e6b5641`，修复首次启用下载 `configure.py` 返回 HTTP 404；七文件摘要、机器协议、脚本选择优先级和 WAF 策略不变。旧版本与以上历史记录保留供回滚追溯。本地候选未发布、未部署；公共文件下载与摘要验证不代表真实宿主启用/迁移成功。
+配套变更集 `waf-pin-correction-20261031`（`scriptLinkageState=coupled`）：受管脚本更新至已公开的 `kejilion/sh@6f6d8445b3e0884dc96035879b8d76ff97a175b3`，根/CN 脚本 SHA-256 均为 `fe9625222ac3ffa300de131d4f8a9da212a3ca125054ae4a0d658f69c70508b5`。相对此前 `b408d60d7ed1c9a935bb1ff0d6e41b73469898ff`，两份脚本仅将错误的 WAF 提交号 `4269829b5be389aa08c22a0c19915a5a451a7e2f` 改为 `42698292499f6e6ba4ebe4f833e164805e6b5641`，修复首次启用下载 `configure.py` 返回 HTTP 404；七文件摘要、机器协议、脚本选择优先级和 WAF 策略不变。旧版本与以上历史记录保留供回滚追溯。本次镜像固定此已公开修订；公共文件下载与摘要验证不代表真实宿主启用/迁移成功，公开版本及验证范围以对应发布验收记录为准。
