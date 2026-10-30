@@ -33,11 +33,25 @@ function parseOptions(argv) {
   return options;
 }
 
-function atomicWrite(path, value) {
+export function atomicWrite(path, value, {
+  platform = process.platform,
+  replace = renameSync,
+  pause = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms),
+} = {}) {
   mkdirSync(dirname(path), { recursive: true });
   const temporary = `${path}.${process.pid}.tmp`;
   writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
-  renameSync(temporary, path);
+  // Windows readers can briefly prevent replacement. Keep the old complete state until
+  // rename succeeds; never unlink it or fall back to an in-place write. At most 200 ms.
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      replace(temporary, path);
+      return;
+    } catch (error) {
+      if (platform !== 'win32' || !['EPERM', 'EACCES', 'EBUSY'].includes(error.code) || attempt >= 4) throw error;
+      pause(20 * (attempt + 1));
+    }
+  }
 }
 
 function readJson(path) {

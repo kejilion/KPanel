@@ -1,12 +1,62 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
+import { atomicWrite } from '../background-browser-test.mjs';
 
 const repoRoot = resolve(import.meta.dirname, '..', '..');
 const runner = resolve(repoRoot, 'scripts', 'background-browser-test.mjs');
+
+test('atomic state replacement retries transient Windows locks without exposing partial JSON', () => {
+  for (const code of ['EPERM', 'EACCES', 'EBUSY']) {
+    const path = join(mkdtempSync(join(tmpdir(), 'kpanel-state-lock-')), 'state.json');
+    writeFileSync(path, JSON.stringify({ status: 'running' }));
+    let attempts = 0;
+    const delays = [];
+    atomicWrite(path, { status: 'timed_out', exitCode: 1 }, {
+      platform: 'win32',
+      replace: (source, target) => {
+        assert.deepEqual(JSON.parse(readFileSync(target, 'utf8')), { status: 'running' });
+        if (++attempts < 3) throw Object.assign(new Error('reader holds destination'), { code });
+        renameSync(source, target);
+      },
+      pause: (ms) => delays.push(ms),
+    });
+    assert.equal(attempts, 3);
+    assert.deepEqual(delays, [20, 40]);
+    assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), { status: 'timed_out', exitCode: 1 });
+  }
+});
+
+test('atomic state replacement fails closed when a Windows lock persists', () => {
+  const path = join(mkdtempSync(join(tmpdir(), 'kpanel-state-lock-')), 'state.json');
+  writeFileSync(path, JSON.stringify({ status: 'running' }));
+  const failure = Object.assign(new Error('persistent lock'), { code: 'EPERM' });
+  let attempts = 0;
+  const delays = [];
+  assert.throws(() => atomicWrite(path, { status: 'timed_out' }, {
+    platform: 'win32', replace: () => { attempts += 1; throw failure; }, pause: (ms) => delays.push(ms),
+  }), (error) => error === failure);
+  assert.equal(attempts, 5);
+  assert.deepEqual(delays, [20, 40, 60, 80]);
+  assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), { status: 'running' });
+  assert.deepEqual(JSON.parse(readFileSync(`${path}.${process.pid}.tmp`, 'utf8')), { status: 'timed_out' });
+});
+
+test('atomic state replacement does not retry unrelated errors or non-Windows platforms', () => {
+  for (const [platform, code] of [['linux', 'EPERM'], ['win32', 'ENOSPC'], ['win32', 'EXDEV']]) {
+    const path = join(mkdtempSync(join(tmpdir(), 'kpanel-state-lock-')), 'state.json');
+    const failure = Object.assign(new Error('permanent failure'), { code });
+    let attempts = 0;
+    assert.throws(() => atomicWrite(path, { status: 'failed' }, {
+      platform, replace: () => { attempts += 1; throw failure; },
+      pause: () => assert.fail('unexpected retry'),
+    }), (error) => error === failure);
+    assert.equal(attempts, 1);
+  }
+});
 
 function waitForTerminalState(statePath) {
   const deadline = Date.now() + 10000;
