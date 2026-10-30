@@ -5,11 +5,13 @@
 > 不再作为当前门槛。run-41 已按用户要求封存 incomplete，没有 confirmed 新发现；不宣称完整覆盖或风险关闭。
 > 产品验证与已证实漏洞处置要求继续有效。
 
-- 复核日期：`2026-10-29`
-- 基线提交：`ac65c30d1f773a7da325265d7d1c8f25174b648b`
-- 基线版本：`v1.27.2`
+- 复核日期：`2026-10-31`
+- 基线提交：`5e6b5b49edc4f879e424a24762764ab7d9d2fcec`
+- 基线版本：`v1.28.0`
 
-### 2026-10-31 v1.28.1-rc.1 防护修复候选
+### 2026-10-31 v1.28.1-rc.1 防护修复预览已公开
+
+[v1.28.1-rc.1](https://github.com/kejilion/KPanel/releases/tag/v1.28.1-rc.1) 已公开，产品`5e6b5b49`、版本/preview digest `sha256:dfb162a28988165a2a7854e01705a95b39723fb1ec0cfc9d3939447524fee54b`。候选CI、GitHub-hosted L3、主线CI和产物发布通过；原公开验收因Agent版本信息502失败，未重发镜像，只读恢复41106673910对同一产品通过initial48/restart26及published45/upgrade31项。根因仍未完全定位，详见[本版验收](release-v1.28.1-rc.1-acceptance.md)。稳定默认仍`v1.28.0`，生产未部署；以下保留冻结时的范围与边界。
 
 本轮以已批准主线 `dae2d25f` 为基线，纳入 WAF 固定来源修正 `92fefd39` 和环境管理交互 `4ef4baf8`。`scriptLinkageState=coupled`，变更集 `waf-pin-correction-20261031`：脚本 `6f6d8445b3e0884dc96035879b8d76ff97a175b3` 已先在公开主线可用，根/CN SHA-256 均为 `fe9625222ac3ffa300de131d4f8a9da212a3ca125054ae4a0d658f69c70508b5`。仅修正 WAF 提交号，七文件摘要、机器协议、脚本优先级和宿主机业务真源不变。
 
