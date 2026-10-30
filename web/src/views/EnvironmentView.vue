@@ -27,6 +27,7 @@ import {
   ShieldCheck,
   Trash2,
   TriangleAlert,
+  X,
   Zap,
 } from '@lucide/vue'
 import AppInteractiveTerminal from '@/components/apps/AppInteractiveTerminal.vue'
@@ -146,6 +147,7 @@ const backupsLoading = ref(false)
 const error = ref('')
 const auxiliaryErrors = reactive({ catalog: '', backups: '', jobs: '' })
 const submitting = ref(false)
+const dismissedJobId = ref<string>()
 const terminalOpen = ref(false)
 const terminalJob = ref<WebEnvironmentJob>()
 const backupBeforeUninstall = ref(true)
@@ -482,7 +484,7 @@ onBeforeUnmount(() => {
         <span>{{ auxiliaryWarning }}</span><span>，环境状态与可用管理功能不受影响。</span>
       </div>
       <section
-        v-if="visibleJob"
+        v-if="visibleJob && visibleJob.id !== dismissedJobId"
         class="environment-job-banner"
         :class="`is-${visibleJob.status}`"
         aria-live="polite"
@@ -500,9 +502,14 @@ onBeforeUnmount(() => {
           :label="jobStatusLabel(visibleJob)"
         />
         <strong>{{ visibleJob.progress }}%</strong>
-        <button class="button button--secondary" type="button" @click="openTerminal(visibleJob)">
-          查看终端
-        </button>
+        <div class="environment-job-actions">
+          <button class="button button--secondary" type="button" @click="openTerminal(visibleJob)">
+            查看终端
+          </button>
+          <button class="icon-button" type="button" :aria-label="phrase('关闭')" :title="phrase('关闭')" @click="dismissedJobId = visibleJob.id">
+            <X :size="18" />
+          </button>
+        </div>
       </section>
 
       <nav class="environment-tabs" aria-label="环境管理功能">
@@ -739,6 +746,7 @@ onBeforeUnmount(() => {
 .environment-tabs button.is-active { color: var(--text); background: var(--surface-raised); box-shadow: var(--shadow-sm); }
 .environment-job-banner { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto; align-items: center; gap: 14px; padding: 15px 17px; border: 1px solid var(--border); border-radius: 15px; background: var(--surface); }
 .environment-job-banner > div { display: grid; gap: 5px; min-width: 0; }
+.environment-job-banner > .environment-job-actions { display: flex; align-items: center; gap: 8px; }
 .environment-job-banner small { overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
 .environment-job-banner i { height: 4px; overflow: hidden; border-radius: 99px; background: var(--surface-muted); }
 .environment-job-banner i b { display: block; height: 100%; border-radius: inherit; background: var(--primary); transition: width .25s ease; }
@@ -809,7 +817,7 @@ onBeforeUnmount(() => {
 }
 @media (max-width: 720px) {
   .environment-job-banner { grid-template-columns: auto minmax(0, 1fr) auto; }
-  .environment-job-banner > strong, .environment-job-banner .button { grid-column: 2 / -1; }
+  .environment-job-banner > strong, .environment-job-banner > .environment-job-actions { grid-column: 2 / -1; }
   .environment-hero, .environment-checks, .environment-components, .environment-action-grid, .environment-mode-actions, .environment-switches { grid-template-columns: 1fr; }
   .environment-hero { gap: 14px; padding: 16px; border-radius: 14px; }
   .environment-hero h2 { font-size: 23px; }
