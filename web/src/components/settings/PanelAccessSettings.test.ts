@@ -6,6 +6,7 @@ import { panelDomainQuery, panelDomainSwitchPath, panelReachedWithoutTrustedDoma
 
 const mocks = vi.hoisted(() => ({
   get: vi.fn(), updateSelfSignedTLS: vi.fn(), checkDomain: vi.fn(),
+  publicNetwork: vi.fn(),
   inventory: vi.fn(), action: vi.fn(), listSites: vi.fn(), createSite: vi.fn(),
   navigate: vi.fn(), calls: [] as string[],
   location: { protocol: 'http:', host: '203.0.113.5:8080', origin: 'http://203.0.113.5:8080' },
@@ -14,6 +15,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/lib/api', () => ({
   ApiError: class ApiError extends Error {},
   api: {
+    system: { publicNetwork: mocks.publicNetwork },
     settings: { panelAccess: { get: mocks.get, updateSelfSignedTLS: mocks.updateSelfSignedTLS, checkDomain: mocks.checkDomain, certificateURL: () => '/api/v1/settings/panel-access/self-signed-tls/certificate' } },
     apps: { inventory: mocks.inventory, action: mocks.action },
     sites: { list: mocks.listSites, create: mocks.createSite },
@@ -49,6 +51,7 @@ beforeEach(() => {
   mocks.location = { protocol: 'http:', host: '203.0.113.5:8080', origin: 'http://203.0.113.5:8080' }
   mocks.route.query = {}
   mocks.get.mockResolvedValue(plainStatus)
+  mocks.publicNetwork.mockResolvedValue({ ipv4: '203.0.113.5', ipv6: '2001:db8::5' })
   mocks.inventory.mockResolvedValue({ items: [kpanelItem] })
   mocks.listSites.mockResolvedValue({ items: [] })
   mocks.createSite.mockResolvedValue({ id: 'site-1', primaryDomain: 'panel.example.com', type: 'proxy', upstream: 'http://127.0.0.1:8080', enabled: true })
@@ -59,6 +62,18 @@ beforeEach(() => {
 afterEach(() => wrapper?.unmount())
 
 describe('Panel access settings', () => {
+  it('shows DNS records at the HTTPS domain input and tolerates a network lookup failure', async () => {
+    await render()
+    expect(wrapper.get('.dns-guide').text()).toContain('203.0.113.5')
+    expect(wrapper.get('.dns-guide').text()).toContain('2001:db8::5')
+    wrapper.unmount()
+    mocks.publicNetwork.mockRejectedValueOnce(new Error('offline'))
+    await render()
+    expect(wrapper.get('.dns-guide').text()).toContain('暂未识别本机公网 IP')
+    expect(wrapper.find('input[placeholder="panel.example.com"]').exists()).toBe(true)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+  })
+
   it('explains plain HTTP limits and binds, verifies, then jumps before the IP block can bite', async () => {
     await render()
     expect(wrapper.text()).toContain('HTTP 明文访问')

@@ -8,8 +8,9 @@ import { formatHostDateTime } from '@/lib/format'
 import { kpanelAppID } from '@/lib/kpanelUpdate'
 import { currentPanelLocation, navigatePanel, panelAccessSection, panelDomainQuery } from '@/lib/panelAccess'
 import { useI18n } from '@/i18n'
+import DnsResolutionGuide from '@/components/common/DnsResolutionGuide.vue'
 import type { MessageKey } from '@/i18n/messages/zh-CN'
-import type { AppMarketItem, PanelAccessStatus, PanelDomainCheck, Site } from '@/types/api'
+import type { AppMarketItem, PanelAccessStatus, PanelDomainCheck, PublicNetworkSummary, Site } from '@/types/api'
 
 const i18n = useI18n()
 const route = useRoute()
@@ -18,6 +19,7 @@ const root = ref<HTMLElement>()
 const status = ref<PanelAccessStatus>()
 const kpanelItem = ref<AppMarketItem>()
 const boundSites = ref<Site[]>([])
+const publicNetwork = ref<PublicNetworkSummary>()
 const loading = ref(true)
 const error = ref('')
 const domainInput = ref('')
@@ -71,12 +73,14 @@ async function load(): Promise<void> {
   loading.value = true
   error.value = ''
   try {
-    const [access, inventory, sites] = await Promise.all([
+    const [access, inventory, sites, network] = await Promise.all([
       api.settings.panelAccess.get(controller.signal),
       api.apps.inventory(controller.signal).catch(() => undefined),
       api.sites.list(undefined, controller.signal).catch(() => undefined),
+      api.system.publicNetwork(controller.signal).catch(() => undefined),
     ])
     status.value = access
+    publicNetwork.value = network
     kpanelItem.value = inventory?.items.find((item) => item.id === kpanelAppID && item.runtime.installed)
     boundSites.value = kpanelItem.value && sites ? matchingAppProxySites(kpanelItem.value, sites.items) : []
   } catch (reason) {
@@ -261,6 +265,7 @@ onBeforeUnmount(() => controller.abort())
             </button>
           </form>
           <p class="panel-access__note">{{ i18n.t('panelAccess.domainDnsHint') }}</p>
+          <DnsResolutionGuide :ipv4="publicNetwork?.ipv4" :ipv6="publicNetwork?.ipv6" />
           <p v-if="domainError" class="inline-alert inline-alert--danger" role="alert">{{ domainError }}</p>
         </template>
         <p v-else class="inline-alert inline-alert--info">{{ i18n.t('panelAccess.domainManual') }}</p>
@@ -386,6 +391,10 @@ onBeforeUnmount(() => controller.abort())
 .panel-access__domains li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
 .panel-access__form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin-top: 12px; }
 .panel-access__form .field { flex: 1 1 260px; min-width: 0; }
+.panel-access :deep(.dns-guide) { margin-top: 12px; font-size: 14px; }
+.panel-access :deep(.dns-guide header small), .panel-access :deep(.dns-guide p), .panel-access :deep(.dns-guide nav > span) { font-size: 13px; }
+.panel-access :deep(.dns-guide nav a), .panel-access :deep(.dns-guide__records code) { font-size: 14px; }
+.panel-access :deep(.dns-guide__records b), .panel-access :deep(.dns-guide nav i) { font-size: 12px; }
 .panel-access__switch { display: grid; gap: 8px; justify-items: start; margin-top: 12px; }
 .panel-access__check { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
 .panel-access__check input { margin-top: 5px; }
