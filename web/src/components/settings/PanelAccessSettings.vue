@@ -393,6 +393,7 @@ onBeforeUnmount(() => controller.abort())
 .panel-access__form .field { flex: 1 1 260px; min-width: 0; }
 .panel-access :deep(.dns-guide) { margin-top: 12px; font-size: 14px; }
 .panel-access :deep(.dns-guide header small), .panel-access :deep(.dns-guide p), .panel-access :deep(.dns-guide nav > span) { font-size: 13px; }
+.panel-access :deep(.dns-guide header code) { font-size: 12px; }
 .panel-access :deep(.dns-guide nav a), .panel-access :deep(.dns-guide__records code) { font-size: 14px; }
 .panel-access :deep(.dns-guide__records b), .panel-access :deep(.dns-guide nav i) { font-size: 12px; }
 .panel-access__switch { display: grid; gap: 8px; justify-items: start; margin-top: 12px; }
