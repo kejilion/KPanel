@@ -1063,6 +1063,12 @@ func (s *Store) CreateRun(ctx context.Context, run Run) (Run, error) {
 		return Run{}, err
 	}
 	defer tx.Rollback()
+	// Reserve the SQLite writer before reading retry/admission state. Upgrading
+	// a WAL read snapshot after another writer commits fails with BUSY_SNAPSHOT,
+	// which the busy timeout cannot resolve. This statement changes no rows.
+	if _, err := tx.ExecContext(ctx, `UPDATE runs SET id=id WHERE 0`); err != nil {
+		return Run{}, err
+	}
 	retryOf := ""
 	if run.RetryOf != nil {
 		retryOf = *run.RetryOf
