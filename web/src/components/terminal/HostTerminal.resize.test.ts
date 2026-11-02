@@ -41,7 +41,7 @@ describe('HostTerminal resize sync', () => {
     const wrapper = mount(HostTerminal, { props })
     await vi.advanceTimersByTimeAsync(100)
     expect(mocks.resize).toHaveBeenCalledTimes(1)
-    expect(mocks.writes.some((line) => line.includes('[KPanel]'))).toBe(true)
+    expect(mocks.writes.some((line) => line.includes('[KPanel]'))).toBe(false)
     await vi.advanceTimersByTimeAsync(500)
     expect(mocks.resize).toHaveBeenCalledTimes(2)
     expect(mocks.resize).toHaveBeenLastCalledWith('resize-id', 24, 80)
@@ -58,7 +58,7 @@ describe('HostTerminal resize sync', () => {
     const wrapper = mount(HostTerminal, { props })
     await vi.advanceTimersByTimeAsync(100 + 500 + 1000 + 2000 + 10000)
     expect(mocks.resize).toHaveBeenCalledTimes(4)
-    expect(mocks.writes.filter((line) => line.includes('[KPanel]'))).toHaveLength(1)
+    expect(mocks.writes.filter((line) => line.includes('[KPanel]'))).toHaveLength(0)
     wrapper.unmount()
   })
 

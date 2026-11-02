@@ -378,7 +378,6 @@ export function useTerminalController(options: Options) {
     } catch {
       if (disposed || generation !== resizeGeneration || target.key !== adapter.key) return
       resizeFailures++
-      if (resizeFailures === 1) writeTerminalOutput(`\r\n\x1b[33m[KPanel] ${t('terminal.resizeFailed')}\x1b[0m\r\n`)
       retry = resizeFailures <= 3
     } finally {
       resizeSending = false

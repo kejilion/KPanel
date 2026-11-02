@@ -77,7 +77,7 @@ describe('application script terminal geometry', () => {
     const wrapper = mount(AppInteractiveTerminal, { props })
     await vi.advanceTimersByTimeAsync(100 + 500 + 1000 + 2000 + 10000)
     expect(mocks.resize).toHaveBeenCalledTimes(4)
-    expect(mocks.writes.filter((text) => text.includes('[KPanel]'))).toHaveLength(1)
+    expect(mocks.writes.filter((text) => text.includes('[KPanel]'))).toHaveLength(0)
     mocks.resize.mockResolvedValue({ accepted: true })
     mocks.observer?.()
     await vi.advanceTimersByTimeAsync(100)
