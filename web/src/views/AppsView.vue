@@ -1730,7 +1730,7 @@ watch(windowActive, syncJobPollingForWindow)
               </button>
             </form>
             <p v-if="sitesWarning" class="field-warning">{{ sitesWarning }}</p>
-            <SiteBindingProgress v-if="domainProgress" :progress="domainProgress" />
+            <SiteBindingProgress v-if="domainProgress" class="domain-binding-progress" :progress="domainProgress" compact-success />
             <p v-if="domainError" class="field-error" role="alert">{{ domainError }}</p>
             <p v-if="domainWarning" class="field-warning">{{ domainWarning }}</p>
             <p v-if="!capability(selected, 'add_domain')" class="muted-note">
@@ -2619,6 +2619,7 @@ watch(windowActive, syncJobPollingForWindow)
   margin-bottom: 0;
 }
 
+.app-detail-section--domain > .domain-binding-progress,
 .app-detail-section--domain > :deep(.dns-guide),
 .app-detail-section--domain > .field-warning,
 .app-detail-section--domain > .field-error,
