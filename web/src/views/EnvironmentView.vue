@@ -39,6 +39,7 @@ import StatusBadge from '@/components/feedback/StatusBadge.vue'
 import SitesSectionTabs from '@/components/sites/SitesSectionTabs.vue'
 import { ApiError, api } from '@/lib/api'
 import { formatBytes, formatDateTime } from '@/lib/format'
+import { dismissEnvironmentResult, environmentJobNoticeKey, readDismissedEnvironmentResults } from '@/lib/environmentJobDismissal'
 import { useToast } from '@/stores/toast'
 import type {
   WebEnvironmentActionInput,
@@ -147,7 +148,9 @@ const backupsLoading = ref(false)
 const error = ref('')
 const auxiliaryErrors = reactive({ catalog: '', backups: '', jobs: '' })
 const submitting = ref(false)
-const dismissedJobId = ref<string>()
+const dismissedJobNotice = ref<string>()
+const dismissedResults = ref(readDismissedEnvironmentResults())
+const refreshButton = ref<HTMLButtonElement>()
 const terminalOpen = ref(false)
 const terminalJob = ref<WebEnvironmentJob>()
 const backupBeforeUninstall = ref(true)
@@ -173,6 +176,21 @@ const activeJob = computed(() =>
   jobs.value.find((job) => ['queued', 'running', 'waiting_input'].includes(job.status)),
 )
 const visibleJob = computed(() => activeJob.value || jobs.value[0])
+const showJobNotice = computed(() => {
+  const job = visibleJob.value
+  if (!job) return false
+  const key = environmentJobNoticeKey(job)
+  return key !== dismissedJobNotice.value && !dismissedResults.value.includes(key)
+})
+const dismissJobLabel = computed(() => phrase(activeJob.value ? '隐藏进度，任务继续运行' : '隐藏结果，可在活动记录中查看'))
+
+function dismissJobNotice(): void {
+  const job = visibleJob.value
+  if (!job) return
+  dismissedJobNotice.value = environmentJobNoticeKey(job)
+  if (!activeJob.value) dismissedResults.value = dismissEnvironmentResult(job, dismissedResults.value)
+  refreshButton.value?.focus()
+}
 const environmentInstalled = computed(() => summary.value?.state !== 'absent')
 const environmentLabel = computed(() => {
   if (!summary.value) return '未知'
@@ -472,7 +490,7 @@ onBeforeUnmount(() => {
 
     <div class="page-command-bar">
       <SitesSectionTabs />
-      <button class="button button--secondary" type="button" :disabled="refreshing" @click="load(true)">
+      <button ref="refreshButton" class="button button--secondary" type="button" :disabled="refreshing" @click="load(true)">
         <RefreshCw :class="{ spin: refreshing }" :size="16" /> 刷新状态
       </button>
     </div>
@@ -484,7 +502,7 @@ onBeforeUnmount(() => {
         <span>{{ auxiliaryWarning }}</span><span>，环境状态与可用管理功能不受影响。</span>
       </div>
       <section
-        v-if="visibleJob && visibleJob.id !== dismissedJobId"
+        v-if="visibleJob && showJobNotice"
         class="environment-job-banner"
         :class="`is-${visibleJob.status}`"
         aria-live="polite"
@@ -506,7 +524,7 @@ onBeforeUnmount(() => {
           <button class="button button--secondary" type="button" @click="openTerminal(visibleJob)">
             查看终端
           </button>
-          <button class="icon-button" type="button" :aria-label="phrase('关闭')" :title="phrase('关闭')" @click="dismissedJobId = visibleJob.id">
+          <button class="icon-button" type="button" :aria-label="dismissJobLabel" :title="dismissJobLabel" @click="dismissJobNotice">
             <X :size="18" />
           </button>
         </div>

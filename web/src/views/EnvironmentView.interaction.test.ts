@@ -29,12 +29,13 @@ const job: WebEnvironmentJob = {
 }
 let wrapper: VueWrapper | undefined
 beforeEach(() => {
+  window.localStorage.clear()
   vi.clearAllMocks()
   vi.useFakeTimers()
   vi.mocked(api.webEnvironment.summary).mockResolvedValue(structuredClone(state))
   vi.mocked(api.webEnvironment.jobs).mockResolvedValue({ items: [], total: 0 })
 })
-afterEach(() => { wrapper?.unmount(); wrapper = undefined; vi.useRealTimers() })
+afterEach(() => { wrapper?.unmount(); wrapper = undefined; vi.useRealTimers(); vi.restoreAllMocks() })
 async function open() {
   wrapper = mount(EnvironmentView, { global: { stubs: {
     SitesSectionTabs: true, AppInteractiveTerminal: true, ModalDialog: true, RouterLink: true,
@@ -61,7 +62,7 @@ describe('environment protection actions and background banner', () => {
     vi.mocked(api.webEnvironment.job).mockResolvedValue({ ...job, progress: 50 })
     const view = await open()
     expect(view.find('.environment-job-banner').exists()).toBe(true)
-    await view.get('.environment-job-banner button[aria-label="关闭"]').trigger('click')
+    await view.get('.environment-job-banner button[aria-label="隐藏进度，任务继续运行"]').trigger('click')
     expect(view.find('.environment-job-banner').exists()).toBe(false)
     await vi.advanceTimersByTimeAsync(3000)
     await flushPromises()
@@ -72,5 +73,58 @@ describe('environment protection actions and background banner', () => {
     await flushPromises()
     expect(view.find('.environment-job-banner').exists()).toBe(true)
     expect(api.webEnvironment.start).not.toHaveBeenCalled()
+  })
+
+  it.each(['succeeded', 'failed', 'needs_attention'] as const)('remembers a dismissed %s result after reopening without hiding a new task', async (status) => {
+    vi.mocked(api.webEnvironment.jobs).mockResolvedValue({ items: [{ ...job, status, progress: 100 }], total: 1 })
+    const view = await open()
+    await view.get('.environment-job-banner .icon-button').trigger('click')
+    view.unmount()
+    const reopened = await open()
+    expect(reopened.find('.environment-job-banner').exists()).toBe(false)
+    vi.mocked(api.webEnvironment.jobs).mockResolvedValue({ items: [{ ...job, id: 'b'.repeat(32), status }], total: 1 })
+    await reopened.findAll('button').find(button => button.text().includes('刷新状态'))!.trigger('click')
+    await flushPromises()
+    expect(reopened.find('.environment-job-banner').exists()).toBe(true)
+    expect(api.webEnvironment.start).not.toHaveBeenCalled()
+  })
+
+  it('restores hidden running progress on reopen and reveals its failure after polling', async () => {
+    vi.mocked(api.webEnvironment.jobs).mockResolvedValue({ items: [job], total: 1 })
+    const view = await open()
+    await view.get('.environment-job-banner .icon-button').trigger('click')
+    view.unmount()
+    const reopened = await open()
+    expect(reopened.find('.environment-job-banner').exists()).toBe(true)
+    await reopened.get('.environment-job-banner .icon-button').trigger('click')
+    const failed = { ...job, status: 'failed' as const, progress: 100, message: '任务执行失败' }
+    vi.mocked(api.webEnvironment.job).mockResolvedValue(failed)
+    vi.mocked(api.webEnvironment.jobs).mockResolvedValue({ items: [failed], total: 1 })
+    await vi.advanceTimersByTimeAsync(1200)
+    await flushPromises()
+    expect(reopened.get('.environment-job-banner').text()).toContain('任务执行失败')
+    expect(reopened.get('.environment-job-banner .icon-button').attributes('title')).toContain('活动记录')
+  })
+
+  it('reveals a request for input after running progress was hidden', async () => {
+    vi.mocked(api.webEnvironment.jobs).mockResolvedValue({ items: [job], total: 1 })
+    vi.mocked(api.webEnvironment.job).mockResolvedValue({ ...job, status: 'waiting_input' })
+    const view = await open()
+    await view.get('.environment-job-banner .icon-button').trigger('click')
+    await vi.advanceTimersByTimeAsync(1200)
+    await flushPromises()
+    expect(view.get('.environment-job-banner').text()).toContain('等待输入')
+  })
+
+  it('still hides a result when local storage is blocked', async () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('blocked') })
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota') })
+    vi.mocked(api.webEnvironment.jobs).mockResolvedValue({ items: [{ ...job, status: 'failed' }], total: 1 })
+    const view = await open()
+    await view.get('.environment-job-banner .icon-button').trigger('click')
+    expect(view.find('.environment-job-banner').exists()).toBe(false)
+    await view.findAll('button').find(button => button.text().includes('刷新状态'))!.trigger('click')
+    await flushPromises()
+    expect(view.find('.environment-job-banner').exists()).toBe(false)
   })
 })
