@@ -64,6 +64,26 @@ function createDiagnostics(context, base, { captureTimeoutMs = 2000 } = {}) {
   data,
   stage(value) { data.stage = value; },
   api(path, method, status) { add('api-response', { route: route('/api/v1' + path), method, status }); },
+  async apiRequest(path, method, send) {
+   const key = {}, requestStarted = Date.now();
+   const detail = { route: route('/api/v1' + path),
+    method: /^(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)$/.test(method) ? method : '[other]' };
+   add('api-request', detail);
+   if (pending.size < 32) pending.set(key, { ...detail, stage: data.stage, startedMs: requestStarted - started });
+   else data.untrackedRequests++;
+   try {
+    const response = await send();
+    add('api-response', { ...detail, status: response.status(), durationMs: Math.max(0, Date.now() - requestStarted) });
+    return response;
+   } catch (error) {
+    // Inspect locally for a fixed error class; never copy exception text or request options into diagnostics.
+    const message = typeof error?.message === 'string' ? error.message : '';
+    const code = error?.name === 'TimeoutError' || /\b[Tt]imeout\b.*\bexceeded\b/.test(message) ? 'timeout'
+     : /\b(?:ECONNRESET|ECONNREFUSED|ECONNABORTED|ENOTFOUND|EAI_AGAIN|EPIPE)\b/.exec(message)?.[0] || 'transport-error';
+    add('api-requestfailed', { ...detail, code, durationMs: Math.max(0, Date.now() - requestStarted) });
+    throw error;
+   } finally { pending.delete(key); }
+  },
   async capture() {
    try {
     const pages = context.pages();
@@ -85,9 +105,9 @@ const report={mode,candidate:process.env.EXPECTED_SHA,startedAt:new Date().toISO
 const check=(n,v)=>{assert(v,n);report.checks.push(n)};const unwrap=x=>x&&typeof x.data==='object'&&x.data!==null&&!Array.isArray(x.data)?x.data:x;
 (async()=>{const browser=await chromium.launch({headless:true,args:['--no-sandbox']});let diagnostics;try{
  const ctx=await browser.newContext({viewport:{width:1280,height:900}});diagnostics=createDiagnostics(ctx,base);report.diagnostics=diagnostics.data;await ctx.addInitScript(()=>localStorage.setItem('kejilion-panel-locale','zh-CN'));
- const boot=await ctx.request.post(base+'/api/v1/auth/bootstrap',{headers:{Origin:base},data:{token:fs.readFileSync('/work/bootstrap.token','utf8').trim(),username:'rc127acceptance',password:'Accept!'+crypto.randomBytes(32).toString('hex')}});diagnostics.api('/auth/bootstrap','POST',boot.status());check('real isolated bootstrap',boot.status()===201);
+ const boot=await diagnostics.apiRequest('/auth/bootstrap','POST',()=>ctx.request.post(base+'/api/v1/auth/bootstrap',{headers:{Origin:base},data:{token:fs.readFileSync('/work/bootstrap.token','utf8').trim(),username:'rc127acceptance',password:'Accept!'+crypto.randomBytes(32).toString('hex')}}));check('real isolated bootstrap',boot.status()===201);
  const session=unwrap(await boot.json()),headers={Origin:base,'X-CSRF-Token':session.csrfToken};
- async function api(path,method='GET',data){const r=await ctx.request.fetch(base+'/api/v1'+path,{method,headers,data,timeout:90000});diagnostics.api(path,method,r.status());check('real API '+method+' '+path,r.ok());return unwrap(await r.json())}
+ async function api(path,method='GET',data){const r=await diagnostics.apiRequest(path,method,()=>ctx.request.fetch(base+'/api/v1'+path,{method,headers,data,timeout:90000}));check('real API '+method+' '+path,r.ok());return unwrap(await r.json())}
  if(mode==='published'){
   const opened=await api('/terminal-sessions','POST',{hostId:'local',rows:24,columns:80,retained:true});
   check('real isolated PTY retained acknowledgement',opened.retained===true&&typeof opened.sessionId==='string');report.terminalOpened=opened;
@@ -118,7 +138,7 @@ const check=(n,v)=>{assert(v,n);report.checks.push(n)};const unwrap=x=>x&&typeof
   const closeReply=terminalPage.waitForResponse(r=>r.url()===base+'/api/v1/terminal-sessions/'+id+'/close'&&r.request().method()==='POST');
   await terminalPage.getByRole('button',{name:'关闭终端',exact:true}).click();const closedResponse=await closeReply;const closed=unwrap(await closedResponse.json());check('real PTY termination confirmed through UI',closedResponse.status()===200&&closed.closed===true);
   check('closed real session removed',(await api('/terminal-sessions')).items.every(x=>x.sessionId!==id));
-  const rejected=await ctx.request.post(base+'/api/v1/terminal-sessions/'+id+'/input',{headers,data:{data:'eA'}});check('input to closed terminal refused',rejected.status()===404);await terminalPage.close();
+  const rejected=await diagnostics.apiRequest('/terminal-sessions/'+id+'/input','POST',()=>ctx.request.post(base+'/api/v1/terminal-sessions/'+id+'/input',{headers,data:{data:'eA'}}));check('input to closed terminal refused',rejected.status()===404);await terminalPage.close();
   report.terminalEvidence='Exact published Agent binary in an isolated bash runner; no host filesystem/Docker/systemd socket. Does not establish real mixed-version node compatibility or host systemd behavior.';
  }
  diagnostics.stage('release-info');const release=await api('/settings/kpanel-release?channel='+(isPreview?'preview':'stable'));report.release=release;check('official release version',release.version===process.env.EXPECTED_VERSION);check('official immutable digest',release.imageDigest===digest);check('nonempty real notes',release.notes?.length===Number(process.env.EXPECTED_NOTES));check('real upgrade notes',release.upgradeNotes?.length===Number(process.env.EXPECTED_UPGRADE_NOTES));check('official release URL',release.releaseUrl==='https://github.com/kejilion/KPanel/releases/tag/v'+process.env.EXPECTED_VERSION);

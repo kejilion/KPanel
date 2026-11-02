@@ -67,6 +67,66 @@ test('completed and failed requests leave the pending set; capture failures have
   assert.equal(diagnostics.data.events[0].route, '/assets/*');
 });
 
+test('API request is registered while pending and returns the exact response without interpreting its status', async () => {
+  const { context } = fixture(0);
+  const diagnostics = createDiagnostics(context, base);
+  diagnostics.stage('release-info');
+  let complete, calls = 0;
+  const response = { status: () => 404 };
+  const result = diagnostics.apiRequest('/terminal-sessions/PRIVATE/input?token=PRIVATE', 'POST', () => {
+    calls++;
+    return new Promise(resolve => { complete = resolve; });
+  });
+  const pending = (await diagnostics.capture()).pending;
+  assert.equal(pending.length, 1);
+  assert.equal(pending[0].route, '/api/v1/terminal-sessions/:id/input');
+  assert.equal(pending[0].stage, 'release-info');
+  assert.equal(diagnostics.data.events[0].kind, 'api-request');
+  complete(response);
+  assert.equal(await result, response);
+  assert.equal(calls, 1);
+  assert.equal((await diagnostics.capture()).pending.length, 0);
+  assert.equal(diagnostics.data.events.at(-1).status, 404);
+  assert.ok(diagnostics.data.events.at(-1).durationMs >= 0);
+  assert.doesNotMatch(JSON.stringify(diagnostics.data), /PRIVATE/);
+});
+
+test('API transport exceptions record fixed failure classes, clean pending and rethrow the same error without retries', async () => {
+  const { context } = fixture(0);
+  const diagnostics = createDiagnostics(context, base);
+  for (const [message, expected] of [
+    ['apiRequestContext.fetch: Timeout 90000ms exceeded PRIVATE', 'timeout'],
+    ['connect ECONNRESET PRIVATE', 'ECONNRESET'], ['arbitrary PRIVATE credentials', 'transport-error'],
+  ]) {
+    const original = new Error(message);
+    let calls = 0;
+    await assert.rejects(diagnostics.apiRequest('/settings/kpanel-release?token=PRIVATE', 'GET', () => {
+      calls++;
+      throw original;
+    }), error => error === original);
+    const failure = diagnostics.data.events.at(-1);
+    assert.equal(failure.kind, 'api-requestfailed');
+    assert.equal(failure.route, '/api/v1/settings/kpanel-release');
+    assert.equal(failure.code, expected);
+    assert.ok(failure.durationMs >= 0);
+    assert.equal(calls, 1);
+    assert.equal((await diagnostics.capture()).pending.length, 0);
+  }
+  assert.doesNotMatch(JSON.stringify(diagnostics.data), /PRIVATE/);
+});
+
+test('API requests share the existing pending cap and all complete without leaked entries', async () => {
+  const { context } = fixture(0);
+  const diagnostics = createDiagnostics(context, base), complete = [];
+  const requests = Array.from({ length: 33 }, () => diagnostics.apiRequest('/auth/session', 'GET',
+    () => new Promise(resolve => complete.push(resolve))));
+  assert.equal((await diagnostics.capture()).pending.length, 32);
+  assert.equal(diagnostics.data.untrackedRequests, 1);
+  complete.forEach(resolve => resolve({ status: () => 200 }));
+  await Promise.all(requests);
+  assert.equal((await diagnostics.capture()).pending.length, 0);
+});
+
 test('DOM sampling exports only bounded marker counts even when page text contains secrets', async () => {
   const { context, pages } = fixture();
   pages[0].evaluate = callback => runInNewContext('(' + callback.toString() + ')()', { document: {
@@ -169,3 +229,48 @@ test('diagnostic and browser-close failures cannot replace the original navigati
   assert.equal(report.diagnostics.failure.pages[0].status, 'unavailable');
   assert.equal(report.browserCloseFailed, true);
 });
+
+for (const target of ['bootstrap', 'release-timeout', 'release-http-502']) {
+  test('real runner records ' + target + ' failure without losing the original failure exit', async () => {
+    const { context } = fixture(0);
+    let written, calls = 0;
+    const original = new Error('apiRequestContext: Timeout 90000ms exceeded PRIVATE');
+    const response = (status, body) => ({ status: () => status, ok: () => status < 400, json: async () => body });
+    context.addInitScript = async () => {};
+    context.request = {
+      async post() { if (target === 'bootstrap') { calls++; throw original; } return response(201, { csrfToken: 'PRIVATE' }); },
+      async fetch() { calls++; if (target === 'release-timeout') throw original; return response(502, {}); },
+    };
+    const module = { exports: {} };
+    const fakeRequire = name => {
+      if (name === '/work/runtime/node_modules/playwright') return { chromium: { launch: async () => ({
+        newContext: async () => context, close: async () => {},
+      }) } };
+      if (name === 'node:fs') return { readFileSync: () => 'PRIVATE', writeFileSync(path, text) { written = JSON.parse(text); } };
+      return require(name);
+    };
+    fakeRequire.main = module;
+    const process = { argv: ['node', 'runner', '8080', 'upgrade', 'sha256:fixture'], env: {
+      EXPECTED_VERSION: '1.29.0-rc.5', EXPECTED_SHA: 'a'.repeat(40),
+    } };
+    await runInNewContext(readFileSync(runner, 'utf8'), {
+      require: fakeRequire, module, process, Buffer, URL, setTimeout, clearTimeout, console: { log() {} },
+    });
+    assert.equal(process.exitCode, 1);
+    assert.equal(written.status, 'failed');
+    assert.equal(calls, 1);
+    const failure = written.diagnostics.events.at(-1);
+    assert.equal(failure.route, target === 'bootstrap' ? '/api/v1/auth/bootstrap' : '/api/v1/settings/kpanel-release');
+    assert.equal(failure.method, target === 'bootstrap' ? 'POST' : 'GET');
+    assert.ok(failure.durationMs >= 0);
+    assert.equal(written.diagnostics.failure.pending.length, 0);
+    if (target === 'release-http-502') {
+      assert.equal(failure.kind, 'api-response'); assert.equal(failure.status, 502);
+      assert.match(written.error, /real API GET/);
+    } else {
+      assert.equal(failure.kind, 'api-requestfailed'); assert.equal(failure.code, 'timeout');
+      assert.equal(written.error, original.stack);
+    }
+    assert.doesNotMatch(JSON.stringify(written.diagnostics), /PRIVATE/);
+  });
+}
