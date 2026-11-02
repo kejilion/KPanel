@@ -39,7 +39,7 @@ import StatusBadge from '@/components/feedback/StatusBadge.vue'
 import SitesSectionTabs from '@/components/sites/SitesSectionTabs.vue'
 import { ApiError, api } from '@/lib/api'
 import { formatBytes, formatDateTime } from '@/lib/format'
-import { dismissEnvironmentResult, environmentJobNoticeKey, readDismissedEnvironmentResults } from '@/lib/environmentJobDismissal'
+import { readTrackedEnvironmentJob, saveTrackedEnvironmentJob } from '@/lib/environmentJobTracking'
 import { useToast } from '@/stores/toast'
 import type {
   WebEnvironmentActionInput,
@@ -148,8 +148,7 @@ const backupsLoading = ref(false)
 const error = ref('')
 const auxiliaryErrors = reactive({ catalog: '', backups: '', jobs: '' })
 const submitting = ref(false)
-const dismissedJobNotice = ref<string>()
-const dismissedResults = ref(readDismissedEnvironmentResults())
+const trackedJobID = ref(readTrackedEnvironmentJob())
 const refreshButton = ref<HTMLButtonElement>()
 const terminalOpen = ref(false)
 const terminalJob = ref<WebEnvironmentJob>()
@@ -175,20 +174,20 @@ const auxiliaryWarning = computed(() =>
 const activeJob = computed(() =>
   jobs.value.find((job) => ['queued', 'running', 'waiting_input'].includes(job.status)),
 )
-const visibleJob = computed(() => activeJob.value || jobs.value[0])
-const showJobNotice = computed(() => {
-  const job = visibleJob.value
-  if (!job) return false
-  const key = environmentJobNoticeKey(job)
-  return key !== dismissedJobNotice.value && !dismissedResults.value.includes(key)
-})
-const dismissJobLabel = computed(() => phrase(activeJob.value ? '隐藏进度，任务继续运行' : '隐藏结果，可在活动记录中查看'))
+const visibleJob = computed(() => activeJob.value || jobs.value.find((job) => job.id === trackedJobID.value))
+
+function syncTrackedJob(): void {
+  if (activeJob.value) trackedJobID.value = activeJob.value.id
+  else if (!visibleJob.value) trackedJobID.value = undefined
+  // Like the app market, persist only the task still running, not dismissed history.
+  saveTrackedEnvironmentJob(activeJob.value?.id)
+}
 
 function dismissJobNotice(): void {
-  const job = visibleJob.value
-  if (!job) return
-  dismissedJobNotice.value = environmentJobNoticeKey(job)
-  if (!activeJob.value) dismissedResults.value = dismissEnvironmentResult(job, dismissedResults.value)
+  if (activeJob.value) return
+  trackedJobID.value = undefined
+  terminalOpen.value = false
+  saveTrackedEnvironmentJob()
   refreshButton.value?.focus()
 }
 const environmentInstalled = computed(() => summary.value?.state !== 'absent')
@@ -250,6 +249,7 @@ async function loadJobs(): Promise<void> {
     const result = await api.webEnvironment.jobs(requestController.signal)
     if (jobsController !== requestController) return
     jobs.value = result.items
+    syncTrackedJob()
     auxiliaryErrors.jobs = ''
     schedulePoll()
   } catch (reason) {
@@ -362,6 +362,7 @@ async function pollActiveJob(generation: number): Promise<void> {
     const updated = await api.webEnvironment.job(current.id, requestController.signal)
     if (disposed || generation !== pollGeneration || requestController.signal.aborted) return
     jobs.value = jobs.value.map((item) => (item.id === updated.id ? updated : item))
+    syncTrackedJob()
     if (['queued', 'running', 'waiting_input'].includes(updated.status)) schedulePoll()
     else await load(true)
   } catch (reason) {
@@ -381,6 +382,8 @@ async function start(input: Omit<WebEnvironmentActionInput, 'expectedResourceVer
       expectedResourceVersion: summary.value.resourceVersion,
     } as WebEnvironmentActionInput)
     jobs.value = [job, ...jobs.value.filter((item) => item.id !== job.id)]
+    trackedJobID.value = job.id
+    syncTrackedJob()
     terminalJob.value = job
     terminalOpen.value = true
     toast.success('任务已转入后台', '关闭终端或刷新页面都不会中断执行。')
@@ -502,7 +505,7 @@ onBeforeUnmount(() => {
         <span>{{ auxiliaryWarning }}</span><span>，环境状态与可用管理功能不受影响。</span>
       </div>
       <section
-        v-if="visibleJob && showJobNotice"
+        v-if="visibleJob"
         class="environment-job-banner"
         :class="`is-${visibleJob.status}`"
         aria-live="polite"
@@ -524,7 +527,7 @@ onBeforeUnmount(() => {
           <button class="button button--secondary" type="button" @click="openTerminal(visibleJob)">
             查看终端
           </button>
-          <button class="icon-button" type="button" :aria-label="dismissJobLabel" :title="dismissJobLabel" @click="dismissJobNotice">
+          <button v-if="!activeJob" class="icon-button" type="button" :aria-label="phrase('关闭')" :title="phrase('关闭')" @click="dismissJobNotice">
             <X :size="18" />
           </button>
         </div>

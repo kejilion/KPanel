@@ -1,8 +1,6 @@
 import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
-  ["隐藏进度，任务继续运行", "Hide progress; the task keeps running"],
-  ["隐藏结果，可在活动记录中查看", "Hide result; view it in Activity"],
   ["拦截模式", "Blocking mode"],
   ["检测模式", "Detection mode"],
   ["按站点配置", "Per-site policy"],
