@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { cleanShellEnvironment, resolveBash } from './run-repo-bash.mjs';
+import { repoShellEnvironment, resolveBash } from './run-repo-bash.mjs';
 import { validateBackport } from './torrent-backport-baseline.mjs';
 
 const SHA = /^[a-f0-9]{40}$/;
@@ -20,7 +20,7 @@ const inside = (root, path) => { const diff = relative(root, path); return !isAb
 const covered = (path, rules) => rules.some((rule) => rule.endsWith('/') ? path.startsWith(rule) : path === rule);
 
 // Fixed, offline prerequisite checks for the canonical governance gate. Never consume contract argv.
-export function qualifyGovernance({ repo, probe = spawnSync, checkSources = validateBackport }) {
+export function qualifyGovernance({ repo, probe = spawnSync, checkSources = validateBackport, environment: inheritedEnvironment = process.env }) {
   const started = performance.now();
   const root = realpathSync.native(resolve(repo));
   const failures = [];
@@ -29,13 +29,14 @@ export function qualifyGovernance({ repo, probe = spawnSync, checkSources = vali
     try { action(); checks.push({ id, status: 'passed' }); }
     catch (error) { checks.push({ id, status: 'failed' }); failures.push(id + ': ' + error.message); }
   };
-  const environment = { ...cleanShellEnvironment(), GOTOOLCHAIN: 'local' };
+  const environment = { ...repoShellEnvironment(inheritedEnvironment), GOTOOLCHAIN: 'local' };
   const runnable = (command, args) => {
     const result = probe(command, args, { cwd: root, env: environment, encoding: 'utf8',
       shell: false, timeout: 5000, maxBuffer: 64 * 1024, windowsHide: true });
     if (result.error || result.signal || result.status !== 0) {
       // Tool output may contain local configuration; report only bounded process status.
-      throw new Error('unavailable or failed version probe (exit=' + result.status + ')');
+      throw new Error('unavailable or failed version probe (exit=' + result.status + ')'
+        + (command === 'go' || args.includes('go version') ? '; select an installed Go via absolute GOROOT or PATH' : ''));
     }
   };
   check('node', () => runnable(process.execPath, ['--version']));
@@ -61,7 +62,7 @@ export function qualifyGovernance({ repo, probe = spawnSync, checkSources = vali
 
 export function qualify({ repo, contract, phase, contractDir = process.cwd(), now = Date.now() }) {
   const failures = [];
-  const environment = cleanShellEnvironment();
+  const environment = repoShellEnvironment();
   const root = realpathSync.native(resolve(repo));
   const git = (...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', env: environment, timeout: 20_000, maxBuffer: 2 * 1024 * 1024 }).trim();
   const require = (condition, message) => { if (!condition) failures.push(message); };

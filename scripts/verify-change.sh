@@ -109,6 +109,7 @@ for path in "${changed_files[@]}"; do
     scripts/tests/check-environment-policy.test.mjs|scripts/tests/governance-candidate-ci.test.mjs|scripts/tests/background-browser-test.test.mjs|\
     scripts/tests/collaboration-state.test.mjs|\
     scripts/tests/run-repo-bash.test.mjs|\
+    packaging/tests/release-browser/public-browser-complete.cjs|scripts/tests/public-browser-diagnostics.test.mjs|\
     scripts/tests/release-gate-runner.test.mjs|scripts/tests/release-l3-orchestrator.test.mjs|\
     scripts/tests/production-evidence-orchestrator.test.mjs|\
     scripts/tests/local-feature-preview.test.mjs|\
@@ -204,7 +205,7 @@ for path in "${changed_files[@]}"; do
     .github/workflows/*)
       docs_only=false
       ;;
-    *.sh|Makefile|scripts/*)
+    *.sh|Makefile|scripts/*|packaging/tests/release-browser/public-browser-complete.cjs)
       docs_only=false
       needs_shell_syntax=true
       ;;

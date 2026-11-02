@@ -1,11 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 
 import {
   cleanShellEnvironment,
   gitBashCandidates,
   parseRunArguments,
   resolveBash,
+  repoShellEnvironment,
 } from '../run-repo-bash.mjs';
 
 test('Windows resolves Git for Windows Bash instead of an ambiguous WSL bash', () => {
@@ -18,6 +23,39 @@ test('Windows resolves Git for Windows Bash instead of an ambiguous WSL bash', (
     gitExecutable,
     pathExists: (path) => path === 'C:\\Program Files\\Git\\bin\\bash.exe',
   }), 'C:\\Program Files\\Git\\bin\\bash.exe');
+});
+
+test('explicit Go selection reaches native and Bash children without cache discovery or global mutation', () => {
+  const original = { GOROOT: 'C:\\selected Go', Path: 'C:\\tools', GIT_DIR: 'foreign', KEEP: 'yes' };
+  const environment = repoShellEnvironment(original, { platform: 'win32', pathExists: path => path === 'C:\\selected Go\\bin\\go.exe' });
+  assert.equal(environment.PATH, 'C:\\selected Go\\bin;C:\\tools');
+  assert.equal(environment.Path, undefined);
+  assert.equal(environment.GIT_DIR, undefined);
+  assert.equal(environment.KEEP, 'yes');
+  assert.equal(original.Path, 'C:\\tools');
+  assert.equal(repoShellEnvironment({ GOROOT: '/selected/go', PATH: '/usr/bin' }, {
+    platform: 'linux', pathExists: path => path === '/selected/go/bin/go',
+  }).PATH, '/selected/go/bin:/usr/bin');
+  assert.deepEqual(repoShellEnvironment({ PATH: '/usr/bin' }, { platform: 'linux' }), { PATH: '/usr/bin' });
+  assert.throws(() => repoShellEnvironment({ GOROOT: 'relative' }), /absolute/);
+  assert.throws(() => repoShellEnvironment({ GOROOT: '/absent' }, { platform: 'linux', pathExists: () => false }), /Go executable/);
+});
+
+test('launcher runs from its owning repository even when invoked in web and preserves arguments and failure exit', () => {
+  const root = mkdtempSync(join(tmpdir(), 'kpanel launcher '));
+  try {
+    mkdirSync(join(root, 'scripts')); mkdirSync(join(root, 'web'));
+    cpSync(new URL('../run-repo-bash.mjs', import.meta.url), join(root, 'scripts/run-repo-bash.mjs'));
+    writeFileSync(join(root, 'scripts/fixture.sh'), 'printf "%s\\n" "$PWD" "$1"\nexit 19\n');
+    const argument = 'literal $() `text` with spaces';
+    const result = spawnSync(process.execPath, [join(root, 'scripts/run-repo-bash.mjs'), 'scripts/fixture.sh', argument], {
+      cwd: join(root, 'web'), env: process.env, encoding: 'utf8', timeout: 10000,
+    });
+    assert.equal(result.status, 19, result.stderr);
+    assert.equal(result.stdout.trim().split(/\r?\n/).at(-1), argument);
+    assert.doesNotMatch(result.stderr, /does not exist/);
+    assert.notEqual(result.stdout.trim().split(/\r?\n/)[0].split('/').at(-1), 'web');
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test('non-Windows keeps the platform Bash and Windows fails closed when Git Bash is absent', () => {

@@ -19,6 +19,20 @@ function governanceFixture() {
   return root;
 }
 
+test('governance native and repo Bash probes share the explicitly selected Go environment', () => {
+  const root = governanceFixture();
+  try {
+    const goRoot = join(root, 'selected-go'); mkdirSync(join(goRoot, 'bin'), { recursive: true });
+    writeFileSync(join(goRoot, 'bin', process.platform === 'win32' ? 'go.exe' : 'go'), 'probe fixture only');
+    const probes = [];
+    const report = qualifyGovernance({ repo: root, environment: { ...process.env, GOROOT: goRoot },
+      probe(command, args, options) { probes.push(options.env); return { status: 0 }; }, checkSources() {} });
+    assert.equal(report.status, 'passed');
+    assert.equal(probes.length, 4);
+    assert.ok(probes.every(env => env.PATH.startsWith(join(goRoot, 'bin')) && env.GOTOOLCHAIN === 'local'));
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test('governance preflight groups tool and input failures before the unchanged suite', () => {
   const root = governanceFixture();
   try {

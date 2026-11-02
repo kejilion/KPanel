@@ -2,10 +2,11 @@
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { resolve, win32 } from 'node:path';
+import { dirname, posix, resolve, win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const VERIFY_LEVELS = new Set(['auto', '0', 'l0', '1', 'l1', '2', 'l2', '3', 'l3', 'release']);
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 function detectedGitExecutable(environment = process.env) {
   if (environment.KPANEL_GIT_EXECUTABLE) return environment.KPANEL_GIT_EXECUTABLE;
@@ -63,6 +64,25 @@ export function cleanShellEnvironment(environment = process.env) {
   return result;
 }
 
+// Use the caller's explicitly selected toolchain, never scan caches or download one.
+export function repoShellEnvironment(environment = process.env, {
+  platform = process.platform, pathExists = existsSync,
+} = {}) {
+  const result = cleanShellEnvironment(environment);
+  if (!environment.GOROOT) return result;
+  const paths = platform === 'win32' ? win32 : posix;
+  if (!paths.isAbsolute(environment.GOROOT)) throw new Error('GOROOT must be an absolute toolchain directory');
+  const bin = paths.join(environment.GOROOT, 'bin');
+  if (!pathExists(paths.join(bin, platform === 'win32' ? 'go.exe' : 'go'))) {
+    throw new Error('GOROOT does not contain a Go executable in bin');
+  }
+  const key = Object.keys(result).find((name) => platform === 'win32' ? name.toUpperCase() === 'PATH' : name === 'PATH');
+  const previous = key ? result[key] : '';
+  if (key) delete result[key];
+  result.PATH = bin + (previous ? (platform === 'win32' ? ';' : ':') + previous : '');
+  return result;
+}
+
 export function parseRunArguments(argv) {
   const environment = {};
   let index = 0;
@@ -85,12 +105,12 @@ export function parseRunArguments(argv) {
 
 export function run(argv = process.argv.slice(2)) {
   const parsed = parseRunArguments(argv);
-  const scriptPath = resolve(process.cwd(), parsed.script);
+  const scriptPath = resolve(repoRoot, parsed.script);
   if (!existsSync(scriptPath)) throw new Error('Bash script does not exist: ' + parsed.script);
   const bash = resolveBash();
-  const result = spawnSync(bash, [parsed.script, ...parsed.arguments], {
-    cwd: process.cwd(),
-    env: { ...cleanShellEnvironment(), ...parsed.environment },
+  const result = spawnSync(bash, [scriptPath.replaceAll('\\', '/'), ...parsed.arguments], {
+    cwd: repoRoot,
+    env: { ...repoShellEnvironment(), ...parsed.environment },
     stdio: 'inherit',
     shell: false,
   });

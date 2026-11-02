@@ -26,6 +26,7 @@ node --test \
   scripts/tests/release-l3-orchestrator.test.mjs \
   scripts/tests/production-evidence-orchestrator.test.mjs \
   scripts/tests/run-repo-bash.test.mjs \
+  scripts/tests/public-browser-diagnostics.test.mjs \
   scripts/tests/verify-change-forced-level.test.mjs \
   scripts/tests/business-context-freshness.test.mjs \
   scripts/tests/report-release-metrics.test.mjs \
