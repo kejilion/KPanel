@@ -8,7 +8,7 @@ import (
 )
 
 func TestBackupNotificationsDedupePersistAndRecover(t *testing.T) {
-	service, _, dir := newPanelLoginTestService(t, &notificationTestRobot{}, panelLoginTestHost())
+	service, clock, dir := newPanelLoginTestService(t, &notificationTestRobot{}, panelLoginTestHost())
 	rules := DefaultRules()
 	rules.CPUEnabled, rules.MemoryEnabled, rules.DiskEnabled, rules.SSHLoginEnabled, rules.HostOfflineEnabled = false, false, false, false, false
 	rules.BackupEnabled = true
@@ -28,7 +28,7 @@ func TestBackupNotificationsDedupePersistAndRecover(t *testing.T) {
 	}
 	// Reload the same persisted alert cursor, without sending through a real
 	// channel or relying on an in-memory dedupe set.
-	reopened, err := NewService(Config{DataDir: dir, Hosts: service.hosts, Telegram: &notificationTestTelegram{}, Robots: &notificationTestRobot{}})
+	reopened, err := NewService(Config{DataDir: dir, Hosts: service.hosts, Telegram: &notificationTestTelegram{}, Robots: &notificationTestRobot{}, Now: clock.Now})
 	if err != nil {
 		t.Fatal(err)
 	}
