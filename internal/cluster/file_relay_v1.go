@@ -276,7 +276,9 @@ func (s *Service) AuthorizeFileRelayV1(
 		return LightFileRequest{}, ErrAuthentication
 	}
 	authorizedAt := s.now().UTC()
-	verifiedID, verifiedNonce, err := VerifyRequest(request, s.store.NodeID(), currentPublicKey, authorizedAt)
+	// Freshness was checked on arrival. Recheck the signature against the
+	// current key without making a legitimate slow body expire in transit.
+	verifiedID, verifiedNonce, err := VerifyRequest(request, s.store.NodeID(), currentPublicKey, now)
 	if err != nil || verifiedID != controllerID || verifiedNonce != nonce {
 		return LightFileRequest{}, ErrAuthentication
 	}
@@ -392,6 +394,7 @@ func (c *RemoteClient) openFileRelayV1(
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	spoolStarted := time.Now()
 	spool, bodyDigest, bodyLength, err := spoolFileRelayV1Body(c.spoolDir, c.spoolSlots, input.Body, input.BodyLength)
 	if err != nil {
 		return nil, err
@@ -419,7 +422,9 @@ func (c *RemoteClient) openFileRelayV1(
 	if err != nil {
 		return nil, err
 	}
-	if err := SignRequest(request, controllerID, targetID, privateKey, now, nonce); err != nil {
+	// Preserve the caller's clock while excluding local body staging from the
+	// signature's network freshness window.
+	if err := SignRequest(request, controllerID, targetID, privateKey, now.Add(time.Since(spoolStarted)), nonce); err != nil {
 		return nil, err
 	}
 	if err := signFileRelayV1(request, privateKey, input, bodyDigest); err != nil {

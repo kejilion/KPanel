@@ -178,6 +178,48 @@ entry`)
 	if _, err := os.Lstat(backup); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("restore left an incomplete snapshot: %v", err)
 	}
+	for _, item := range []struct {
+		name, target string
+		valid        bool
+	}{
+		{"3", "/usr/local/bin/k", true},
+		{"3", "/root/kejilion.sh", false},
+		{"1", "/usr/local/bin/k", false},
+		{"2", "/usr/local/bin/k", false},
+	} {
+		if err := os.Mkdir(backup, 0700); err != nil {
+			t.Fatal(err)
+		}
+		write(backup+"/.building", "", 0600)
+		if err := os.Symlink(item.target, backup+"/"+item.name); err != nil {
+			t.Fatal(err)
+		}
+		err := migrateSharedScript(ctx)
+		if item.valid {
+			if !errors.Is(err, errSharedScriptMigrationBusy) {
+				t.Fatalf("legitimate interrupted link snapshot must retry: %v", err)
+			}
+			if _, err := os.Lstat(backup); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("legitimate snapshot was not discarded: %v", err)
+			}
+		} else {
+			if err == nil || errors.Is(err, errSharedScriptMigrationBusy) {
+				t.Fatalf("unsafe snapshot link %s -> %s admitted: %v", item.name, item.target, err)
+			}
+			if _, err := os.Lstat(backup + "/" + item.name); err != nil {
+				t.Fatalf("unsafe snapshot evidence removed: %v", err)
+			}
+			if err := os.RemoveAll(backup); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for _, path := range []string{"/root/kejilion.sh", "/usr/local/bin/k"} {
+			got, _ := os.ReadFile(path)
+			if string(got) != old {
+				t.Fatalf("discard changed host bytes at %s", path)
+			}
+		}
+	}
 	if err := os.Chmod(app+"/bin/kejilion.sh", 0777); err != nil {
 		t.Fatal(err)
 	}

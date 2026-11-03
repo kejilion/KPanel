@@ -33,6 +33,32 @@ func TestAIHistoryBudgetTracksUpsertsAndCascadingDeletes(t *testing.T) {
 	assertHistoryUsage(t, store, 0, 0)
 }
 
+func TestAIHistoryMigrationDoesNotMarkPrivateStateScrubComplete(t *testing.T) {
+	store, err := OpenStore(t.TempDir() + "/ai.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	// An interrupted private-state scrub leaves version 11 absent. A later
+	// ordinary schema migration must not claim that the scrub completed.
+	if _, err := store.db.ExecContext(ctx, `DELETE FROM schema_migrations WHERE version=11`); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for version, expected := range map[int]int{11: 0, 12: 1} {
+		var count int
+		if err := store.db.QueryRowContext(ctx, `SELECT count(*) FROM schema_migrations WHERE version=?`, version).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != expected {
+			t.Fatalf("migration %d count=%d, want %d", version, count, expected)
+		}
+	}
+}
+
 func TestAIHistoryAggregateByteLimitRejectsSessionAndMessageWrites(t *testing.T) {
 	store, err := OpenStore(t.TempDir() + "/ai.db")
 	if err != nil {

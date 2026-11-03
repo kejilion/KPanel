@@ -483,3 +483,39 @@ func TestFileRelayV1GrantIsBoundToTheControllerKey(t *testing.T) {
 		t.Fatalf("Delete() error = %v", err)
 	}
 }
+
+func TestAuthorizeFileRelayV1SlowBodyKeepsArrivalFreshness(t *testing.T) {
+	now := time.Date(2026, 9, 4, 14, 0, 0, 0, time.UTC)
+	service, controllerID, privateKey := newGrantedV1FileRelayController(t, now)
+	clock := &serviceTestClock{now: now}
+	service.now = clock.Now
+	body := []byte("slow signed upload body")
+	request := signedV1FileUploadRequest(t, service, controllerID, privateKey, now, fmt.Sprintf("%032x", 3), body)
+	gate := &fileRelayGateReader{reader: bytes.NewReader(body), started: make(chan struct{}), release: make(chan struct{})}
+	request.Body = io.NopCloser(gate)
+	done := make(chan error, 1)
+	go func() {
+		input, err := service.AuthorizeFileRelayV1("198.51.100.11", request)
+		if closer, ok := input.Body.(io.Closer); ok {
+			_ = closer.Close()
+		}
+		done <- err
+	}()
+	select {
+	case <-gate.started:
+	case <-time.After(time.Second):
+		t.Fatal("body spooling did not start")
+	}
+	clock.now = now.Add(2 * time.Minute)
+	close(gate.release)
+	if err := <-done; err != nil {
+		t.Fatalf("fresh-on-arrival slow body rejected: %v", err)
+	}
+	// A newly arriving old request must still fail before consuming its body.
+	request = signedV1FileUploadRequest(t, service, controllerID, privateKey, now, fmt.Sprintf("%032x", 4), body)
+	reader := &fileRelayCountingReader{reader: bytes.NewReader(body)}
+	request.Body = io.NopCloser(reader)
+	if _, err := service.AuthorizeFileRelayV1("198.51.100.11", request); !errors.Is(err, ErrAuthentication) || reader.reads != 0 {
+		t.Fatalf("stale arrival error=%v body reads=%d", err, reader.reads)
+	}
+}
