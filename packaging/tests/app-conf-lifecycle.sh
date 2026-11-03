@@ -432,8 +432,22 @@ KJ_WEB_NONINTERACTIVE=1
 KJ_WEB_INTERACTIVE=1
 KJ_TEST_NONINTERACTIVE=1
 # latest-download-fixture
+k_info() {
+    :
+}
+if [ "$#" -eq 0 ]; then
+    :
+else
+    k_info
+fi
 SCRIPT
-if [ "${KPANEL_MOCK_DOWNLOAD:-}" = syntax ]; then printf '\nif\n' >>"$destination"; fi
+case "${KPANEL_MOCK_DOWNLOAD:-}" in
+    syntax) printf '\nif\n' >>"$destination" ;;
+    truncated) sed -i '/^k_info() {/,$d' "$destination" ;;
+    missing_license) sed -i '/^permission_granted=/d' "$destination" ;;
+    missing_stats) sed -i '/^ENABLE_STATS=/d' "$destination" ;;
+    missing_region) sed -i '/^canshu=/d' "$destination" ;;
+esac
 EOF
 
 cat >"$FAKE_BIN/sha256sum" <<'EOF'
@@ -826,7 +840,7 @@ EOF
 	docker cp fixture:/release/kejilion.sh "$TEST_DIR/refresh-image-script"
 	kpanel_inherit_script_preferences "$TEST_DIR/refresh-image-script"
 	local refresh_failure
-	for refresh_failure in fail html; do
+	for refresh_failure in fail html truncated missing_license; do
 		KPANEL_MOCK_DOWNLOAD="$refresh_failure" docker_app_update >"$TEST_DIR/refresh-fallback-output.txt"
 		grep -Fx 'KPanel 更新完成 / Update Complete' "$TEST_DIR/refresh-fallback-output.txt" >/dev/null
 		cmp "$TEST_DIR/refresh-image-script" /usr/local/bin/k
@@ -1352,7 +1366,7 @@ run_latest_script_download() {
             test "$(wc -l <"$TEST_DIR/latest-download.log")" = 2
         else test "$(wc -l <"$TEST_DIR/latest-download.log")" = 1; fi
     done
-    for mode in fail empty html syntax; do
+    for mode in fail empty html syntax truncated missing_license missing_stats missing_region; do
         KPANEL_MOCK_DOWNLOAD="$mode" kpanel_extract_release mock-image "$candidate_agent" "$candidate_script"
         test -x "$candidate_agent"
         test -f "$candidate_script"
@@ -1371,6 +1385,22 @@ run_latest_script_download() {
         cmp "$current" /root/kejilion.sh
         test "$(stat -c %a /usr/local/bin/k)" = 700
     done
+    # A download can pass structural checks but fail during preference writes.
+    # Do not replace the image staging until that last preparation succeeds.
+    (
+        sed() {
+            if [ "${1:-}" = -i ]; then
+                case "${*: -1}" in *.latest.*) return 1 ;; esac
+            fi
+            command sed "$@"
+        }
+        KPANEL_MOCK_DOWNLOAD=ok kpanel_extract_release mock-image "$candidate_agent" "$candidate_script"
+        ! grep -F '# latest-download-fixture' "$candidate_script"
+        grep -Fx 'permission_granted="true"' "$candidate_script"
+        grep -Fx 'canshu="V6"' "$candidate_script"
+        grep -Fx 'ENABLE_STATS="false"' "$candidate_script"
+        test -z "$(find "$TEST_DIR" -name 'latest-script.latest.*' -print)"
+    )
     # Without an installed k, a failed refresh uses the verified image and
     # the existing accepted license rather than blocking a fresh installation.
     rm /usr/local/bin/k
