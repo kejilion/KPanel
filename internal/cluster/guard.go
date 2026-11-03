@@ -9,13 +9,10 @@ import (
 )
 
 const (
-	// One light-node principal can pass at most 4,680 replay-protected requests
-	// per minute across the current independent route limiters. This budget
-	// covers five minutes of that configured maximum, with a small margin.
-	replayGuardEntriesPerPrincipal = 24_576
-	// Keep the cache bounded while allowing more than one principal to reach its
-	// own budget without denying every other authenticated principal.
 	replayGuardTotalEntries = 65_536
+	// At least eight principals must reach their individual limits to occupy the
+	// shared cache, preserving capacity when only a few nodes are compromised.
+	replayGuardEntriesPerPrincipal = replayGuardTotalEntries / 8
 )
 
 type replayKey [sha256.Size]byte

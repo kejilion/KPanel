@@ -65,18 +65,19 @@ func TestReplayGuardCheckDoesNotConsumeNonce(t *testing.T) {
 func TestReplayGuardProductionPrincipalLimitLeavesOtherNodesAvailable(t *testing.T) {
 	now := time.Date(2026, 10, 23, 11, 0, 0, 0, time.UTC)
 	guard := newReplayGuard(replayGuardTotalEntries, replayGuardEntriesPerPrincipal, 5*time.Minute)
-	principal := lightNodePrincipal("node-a")
-
-	for i := 0; i < replayGuardEntriesPerPrincipal; i++ {
-		if err := guard.Accept(principal, strconv.Itoa(i), now); err != nil {
-			t.Fatalf("Accept(node-a, entry %d) error before configured principal limit: %v", i, err)
+	for node := 0; node < 3; node++ {
+		principal := lightNodePrincipal("node-" + strconv.Itoa(node))
+		for i := 0; i < replayGuardEntriesPerPrincipal; i++ {
+			if err := guard.Accept(principal, strconv.Itoa(i), now); err != nil {
+				t.Fatalf("Accept(node-%d, entry %d) error before configured principal limit: %v", node, i, err)
+			}
+		}
+		if err := guard.Accept(principal, "over-limit", now); !errors.Is(err, ErrRateLimited) {
+			t.Fatalf("over-limit light principal %d error = %v, want ErrRateLimited", node, err)
 		}
 	}
-	if err := guard.Accept(principal, "over-limit", now); !errors.Is(err, ErrRateLimited) {
-		t.Fatalf("over-limit light principal error = %v, want ErrRateLimited", err)
-	}
-	if err := guard.Accept(lightNodePrincipal("node-b"), "first", now); err != nil {
-		t.Fatalf("a full light principal must leave another node available: %v", err)
+	if err := guard.Accept(lightNodePrincipal("node-four"), "first", now); err != nil {
+		t.Fatalf("three full light principals must leave another node available: %v", err)
 	}
 }
 
