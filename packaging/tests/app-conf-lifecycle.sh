@@ -1343,6 +1343,7 @@ run_partial_uninstall() (
 run_latest_script_download() {
     local candidate_agent="$TEST_DIR/latest-agent"
     local candidate_script="$TEST_DIR/latest-script"
+    local image_script="$TEST_DIR/latest-image-script"
     local current="$TEST_DIR/current-script"
     local mode
     docker_app_plus() { :; }
@@ -1366,11 +1367,13 @@ run_latest_script_download() {
             test "$(wc -l <"$TEST_DIR/latest-download.log")" = 2
         else test "$(wc -l <"$TEST_DIR/latest-download.log")" = 1; fi
     done
+    docker cp fixture:/release/kejilion.sh "$image_script"
+    kpanel_inherit_script_preferences "$image_script"
     for mode in fail empty html syntax truncated missing_license missing_stats missing_region; do
         KPANEL_MOCK_DOWNLOAD="$mode" kpanel_extract_release mock-image "$candidate_agent" "$candidate_script"
         test -x "$candidate_agent"
         test -f "$candidate_script"
-        ! grep -F '# latest-download-fixture' "$candidate_script"
+        cmp "$image_script" "$candidate_script"
         grep -Fx 'permission_granted="true"' "$candidate_script"
         grep -Fx 'canshu="V6"' "$candidate_script"
         grep -Fx 'ENABLE_STATS="false"' "$candidate_script"
@@ -1395,7 +1398,7 @@ run_latest_script_download() {
             command sed "$@"
         }
         KPANEL_MOCK_DOWNLOAD=ok kpanel_extract_release mock-image "$candidate_agent" "$candidate_script"
-        ! grep -F '# latest-download-fixture' "$candidate_script"
+        cmp "$image_script" "$candidate_script"
         grep -Fx 'permission_granted="true"' "$candidate_script"
         grep -Fx 'canshu="V6"' "$candidate_script"
         grep -Fx 'ENABLE_STATS="false"' "$candidate_script"
@@ -1406,7 +1409,7 @@ run_latest_script_download() {
     rm /usr/local/bin/k
     KPANEL_MOCK_DOWNLOAD=fail kpanel_extract_release mock-image "$candidate_agent" "$candidate_script"
     grep -Fx 'permission_granted="true"' "$candidate_script"
-    ! grep -F '# latest-download-fixture' "$candidate_script"
+    cmp "$image_script" "$candidate_script"
     mkdir -p /home/docker/kpanel/bin
     kpanel_prepare_shared_script "$candidate_script"
     cmp "$candidate_script" /usr/local/bin/k
@@ -1416,6 +1419,30 @@ run_latest_script_download() {
     kpanel_clear_update_files
     rmdir /home/docker/kpanel/bin
     rm /root/kejilion.sh
+    # A first installation asks for the existing license once. Reusing the
+    # accepted image preferences must neither prompt again nor override refusal.
+    interactive_refresh() (
+        [() {
+            if [[ "$*" == '-t 0 ]' ]]; then return 0; fi
+            if [[ "$*" == '! -t 0 ]' ]]; then return 1; fi
+            builtin [ "$@"
+        }
+        kpanel_extract_release mock-image "$candidate_agent" "$candidate_script"
+    )
+    for mode in ok fail; do
+        printf 'y\n' | KPANEL_MOCK_DOWNLOAD="$mode" interactive_refresh >"$TEST_DIR/refresh-license-output"
+        test "$(grep -o '是否同意以上条款' "$TEST_DIR/refresh-license-output" | wc -l)" = 1
+        grep -Fx 'permission_granted="true"' "$candidate_script"
+        if [ "$mode" = ok ]; then grep -Fx '# latest-download-fixture' "$candidate_script"; fi
+        if printf 'n\ny\n' | KPANEL_MOCK_DOWNLOAD="$mode" interactive_refresh >"$TEST_DIR/refresh-license-output"; then
+            echo 'script refresh ignored license refusal' >&2
+            return 1
+        fi
+        test "$(grep -o '是否同意以上条款' "$TEST_DIR/refresh-license-output" | wc -l)" = 1
+        test ! -f "$candidate_script"
+        if KPANEL_MOCK_DOWNLOAD="$mode" interactive_refresh </dev/null >"$TEST_DIR/refresh-license-output"; then return 1; fi
+        test "$(grep -o '是否同意以上条款' "$TEST_DIR/refresh-license-output" | wc -l)" = 1
+    done
     printf '%s\n' 'app_conf_latest_script_download=pass'
 }
 
