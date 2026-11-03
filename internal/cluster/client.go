@@ -47,6 +47,7 @@ func (r netResolver) LookupNetIP(ctx context.Context, network, host string) ([]n
 
 type RemoteClientConfig struct {
 	PrivateCIDRs []string
+	SpoolDir     string
 	RootCAs      *x509.CertPool
 	Resolver     resolver
 	Dialer       func(context.Context, string, string) (net.Conn, error)
@@ -55,6 +56,8 @@ type RemoteClientConfig struct {
 
 type RemoteClient struct {
 	allowedPrivate []netip.Prefix
+	spoolDir       string
+	spoolSlots     chan struct{}
 	resolver       resolver
 	dialer         func(context.Context, string, string) (net.Conn, error)
 	client         *http.Client
@@ -105,6 +108,8 @@ func NewRemoteClient(config RemoteClientConfig) (*RemoteClient, error) {
 	}
 	remote := &RemoteClient{
 		allowedPrivate: allowed,
+		spoolDir:       config.SpoolDir,
+		spoolSlots:     make(chan struct{}, maxConcurrentFileRelayV1Spools),
 		resolver:       config.Resolver,
 		dialer:         config.Dialer,
 	}

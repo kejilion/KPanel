@@ -20,6 +20,9 @@ const (
 	MaxRecoverableToolFailures = 6
 	MaxSameToolFailures        = 2
 	MaxAssistantBytes          = 1 << 20
+	MaxAISessions              = 10_000
+	MaxAIMessages              = 100_000
+	MaxAIHistoryBytes          = 512 << 20
 )
 
 type Decision struct {

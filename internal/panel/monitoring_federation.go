@@ -1,12 +1,16 @@
 package panel
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"time"
 
 	"github.com/kejilion/kejilion-panel/internal/cluster"
+	"github.com/kejilion/kejilion-panel/internal/contract"
 	"github.com/kejilion/kejilion-panel/internal/httpstream"
 	"github.com/kejilion/kejilion-panel/internal/monitoring"
 )
@@ -38,6 +42,15 @@ func (s *Server) handleFederationHistoryV2(w http.ResponseWriter, r *http.Reques
 	defer response.Body.Close()
 	stop := context.AfterFunc(ctx, func() { _ = response.Body.Close() })
 	defer stop()
+	payload := io.Reader(response.Body)
+	if response.StatusCode == http.StatusOK {
+		data, err := projectFederatedHistoryPayload(response.Body)
+		if err != nil {
+			s.writeHistoryError(w, r, err)
+			return
+		}
+		payload = bytes.NewReader(data)
+	}
 	compress := query.Gzip && response.StatusCode == http.StatusOK
 	contentType := "application/json"
 	if compress {
@@ -56,7 +69,7 @@ func (s *Server) handleFederationHistoryV2(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	stream := cluster.NewFederationFileWriter(writer, cipher)
-	copyErr := monitoring.CopyHistoryPayload(stream, response.Body, compress)
+	copyErr := monitoring.CopyHistoryPayload(stream, payload, compress)
 	_ = stream.Finish(copyErr)
 }
 
@@ -78,6 +91,15 @@ func (s *Server) handleFederationHistoryV1(w http.ResponseWriter, r *http.Reques
 	defer response.Body.Close()
 	stop := context.AfterFunc(ctx, func() { _ = response.Body.Close() })
 	defer stop()
+	payload := io.Reader(response.Body)
+	if response.StatusCode == http.StatusOK {
+		data, err := projectFederatedHistoryPayload(response.Body)
+		if err != nil {
+			s.writeHistoryError(w, r, err)
+			return
+		}
+		payload = bytes.NewReader(data)
+	}
 	writer := httpstream.NewIdleResponseWriter(ctx, w, 30*time.Second)
 	writer.Header().Set("Content-Type", "application/json")
 	compress := query.Gzip && response.StatusCode == http.StatusOK
@@ -86,9 +108,26 @@ func (s *Server) handleFederationHistoryV1(w http.ResponseWriter, r *http.Reques
 	}
 	writer.Header().Set("Cache-Control", "no-store")
 	writer.WriteHeader(response.StatusCode)
-	if err := monitoring.CopyHistoryPayload(writer, response.Body, compress); err != nil {
+	if err := monitoring.CopyHistoryPayload(writer, payload, compress); err != nil {
 		panic(http.ErrAbortHandler)
 	}
+}
+
+func projectFederatedHistoryPayload(reader io.Reader) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(reader, monitoring.MaxHistoryResponseBytes+1))
+	if err != nil || int64(len(data)) > monitoring.MaxHistoryResponseBytes {
+		return nil, cluster.ErrHistoryUnavailable
+	}
+	var value contract.MonitoringHistory
+	if err := json.Unmarshal(data, &value); err != nil {
+		return nil, cluster.ErrHistoryUnavailable
+	}
+	monitoring.ProjectFederatedHistory(&value)
+	projected, err := json.Marshal(value)
+	if err != nil || int64(len(projected)) > monitoring.MaxHistoryResponseBytes {
+		return nil, cluster.ErrHistoryUnavailable
+	}
+	return projected, nil
 }
 
 func (s *Server) writeHistoryError(w http.ResponseWriter, r *http.Request, err error) {

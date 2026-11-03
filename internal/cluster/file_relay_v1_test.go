@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -63,6 +65,40 @@ func TestFileRelayV1RequestFromHTTPKeepsTheEnvelopeFixed(t *testing.T) {
 	}
 }
 
+func TestFileRelayV1SpoolBoundsConcurrentBodiesAndCleansUp(t *testing.T) {
+	directory := t.TempDir()
+	slots := make(chan struct{}, 1)
+	body := "signed body"
+	spool, digest, length, err := spoolFileRelayV1Body(directory, slots, strings.NewReader(body), int64(len(body)))
+	if err != nil {
+		t.Fatalf("spoolFileRelayV1Body() error = %v", err)
+	}
+	if length != int64(len(body)) || digest != sha256.Sum256([]byte(body)) {
+		t.Fatalf("spooled body metadata = length %d, digest %x", length, digest)
+	}
+	if entries, err := os.ReadDir(directory); err != nil || len(entries) != 1 {
+		t.Fatalf("spool files while open = %d, %v", len(entries), err)
+	}
+	if _, _, _, err := spoolFileRelayV1Body(directory, slots, strings.NewReader(body), int64(len(body))); !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("second concurrent spool error = %v, want ErrRateLimited", err)
+	}
+	if err := spool.Close(); err != nil {
+		t.Fatalf("close spool: %v", err)
+	}
+	if entries, err := os.ReadDir(directory); err != nil || len(entries) != 0 {
+		t.Fatalf("spool files after close = %d, %v", len(entries), err)
+	}
+	if _, _, _, err := spoolFileRelayV1Body(directory, slots, strings.NewReader("long"), 2); err == nil {
+		t.Fatal("spool accepted a body that differs from Content-Length")
+	}
+	if len(slots) != 0 {
+		t.Fatal("failed spool did not release its concurrency slot")
+	}
+	if _, _, _, err := spoolFileRelayV1Body(directory, slots, http.NoBody, maxFileRelayV1BodyBytes+1); err == nil {
+		t.Fatal("spool accepted a declared body above the size limit")
+	}
+}
+
 func TestLegacyFileRelayRequiresVerifiedTLSAndExplicitGrant(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	service := newLightServiceForTest(t, &serviceTestClock{now: now})
@@ -90,6 +126,7 @@ func TestLegacyFileRelayRequiresVerifiedTLSAndExplicitGrant(t *testing.T) {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
+		defer input.Body.(io.Closer).Close()
 		body, err := io.ReadAll(io.LimitReader(input.Body, 1024))
 		if err != nil || string(body) != original || input.RawQuery != "path=%2Ftmp%2Fapproved.txt" {
 			t.Errorf("authenticated TLS request changed: %q %v", body, err)
@@ -183,9 +220,9 @@ func TestAuthorizeFileRelayV1RequiresTargetGrantAndBoundSignature(t *testing.T) 
 		request := httptest.NewRequest(
 			http.MethodPost,
 			"https://target.example"+FileRelayV1Path,
-			bytes.NewReader([]byte(`{"path":"/"}`)),
+			http.NoBody,
 		)
-		input := LightFileRequest{Method: method, Path: path, RawQuery: query}
+		input := LightFileRequest{Method: method, Path: path, RawQuery: query, Body: http.NoBody}
 		request.Header.Set(FileRelayV1MethodHeader, method)
 		request.Header.Set(FileRelayV1PathHeader, path)
 		request.Header.Set(FileRelayV1QueryHeader, query)
@@ -194,7 +231,7 @@ func TestAuthorizeFileRelayV1RequiresTargetGrantAndBoundSignature(t *testing.T) 
 			t.Fatal(err)
 		}
 		if signed {
-			if err := signFileRelayV1(request, controllerPrivate, input); err != nil {
+			if err := signFileRelayV1(request, controllerPrivate, input, sha256.Sum256(nil)); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -244,8 +281,24 @@ func TestAuthorizeFileRelayV1RequiresTargetGrantAndBoundSignature(t *testing.T) 
 	if input.Method != http.MethodGet || input.Path != "/v1/files" {
 		t.Fatalf("authorized file request = %#v", input)
 	}
+	defer input.Body.(io.Closer).Close()
 	if _, err := service.AuthorizeFileRelayV1("198.51.100.10", request); !errors.Is(err, ErrReplay) {
 		t.Fatalf("replayed file relay error = %v, want ErrReplay", err)
+	}
+	bodyRequest := httptest.NewRequest(http.MethodPost, "https://target.example"+FileRelayV1Path, strings.NewReader("original"))
+	bodyInput := LightFileRequest{Method: http.MethodPut, Path: "/v1/files/content", RawQuery: "path=%2Ftmp%2Fapproved", Body: strings.NewReader("original"), BodyLength: int64(len("original"))}
+	bodyRequest.Header.Set(FileRelayV1MethodHeader, bodyInput.Method)
+	bodyRequest.Header.Set(FileRelayV1PathHeader, bodyInput.Path)
+	bodyRequest.Header.Set(FileRelayV1QueryHeader, bodyInput.RawQuery)
+	if err := SignRequest(bodyRequest, controllerID, service.NodeID(), controllerPrivate, now, fmt.Sprintf("%032x", nonceIndex+1)); err != nil {
+		t.Fatal(err)
+	}
+	if err := signFileRelayV1(bodyRequest, controllerPrivate, bodyInput, sha256.Sum256([]byte("original"))); err != nil {
+		t.Fatal(err)
+	}
+	bodyRequest.Body = io.NopCloser(strings.NewReader("tampered"))
+	if _, err := service.AuthorizeFileRelayV1("198.51.100.10", bodyRequest); !errors.Is(err, ErrAuthentication) {
+		t.Fatalf("body-tampered relay error = %v, want ErrAuthentication", err)
 	}
 
 	withdrawn, err := service.SetControllerFileRelay(controllerID, false)

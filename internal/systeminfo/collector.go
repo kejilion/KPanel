@@ -608,10 +608,17 @@ func unescapeMount(value string) string {
 }
 
 func meaningfulMount(path, fs string) bool {
+	// Statfs has no cancellation API. A stalled userspace or network filesystem
+	// can therefore block collection indefinitely, so never probe these mount
+	// types from the periodic host summary path.
+	if strings.HasPrefix(fs, "fuse") {
+		return false
+	}
 	switch fs {
 	case "proc", "sysfs", "devtmpfs", "devpts", "tmpfs", "cgroup", "cgroup2",
 		"overlay", "squashfs", "nsfs", "mqueue", "securityfs", "pstore", "tracefs",
-		"debugfs", "configfs", "fusectl", "hugetlbfs", "rpc_pipefs", "autofs":
+		"debugfs", "configfs", "fusectl", "hugetlbfs", "rpc_pipefs", "autofs",
+		"nfs", "nfs4", "cifs", "smb3", "9p", "ceph", "glusterfs", "davfs", "vboxsf":
 		return false
 	}
 	return path == "/" || path == "/home" || strings.HasPrefix(path, "/mnt/") || strings.HasPrefix(path, "/data")

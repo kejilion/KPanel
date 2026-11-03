@@ -142,6 +142,42 @@ func TestSharedScriptMigrationLegacyRootfs(t *testing.T) {
 	if err := os.Remove(app + "/update-state/transaction"); err != nil {
 		t.Fatal(err)
 	}
+	backup := app + "/bin/shared-script.rollback"
+	if err := os.Mkdir(backup, 0700); err != nil {
+		t.Fatal(err)
+	}
+	write(backup+"/1", old, 0700)
+	write(backup+"/.building", "", 0600)
+	if err := migrateSharedScript(ctx); !errors.Is(err, errSharedScriptMigrationBusy) {
+		t.Fatalf("incomplete snapshot recovery was not scheduled for retry: %v", err)
+	}
+	if _, err := os.Lstat(backup); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("incomplete snapshot was not safely retired: %v", err)
+	}
+	for _, path := range []string{"/root/kejilion.sh", "/usr/local/bin/k"} {
+		got, _ := os.ReadFile(path)
+		if string(got) != old {
+			t.Fatalf("recovering an incomplete snapshot changed %s", path)
+		}
+	}
+	if err := os.Mkdir(backup, 0700); err != nil {
+		t.Fatal(err)
+	}
+	write(backup+"/2.absent", "", 0600)
+	write(backup+"/.building", "", 0600)
+	restoreIncomplete := exec.CommandContext(ctx, "/bin/bash", "-ec", `docker_app_plus() { :; }
+entry() {
+. /home/docker/kpanel/bin/kpanel.conf
+kpanel_restore_shared_script
+}
+entry`)
+	restoreIncomplete.Env = []string{"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"}
+	if output, err := restoreIncomplete.CombinedOutput(); err != nil {
+		t.Fatalf("restoring an incomplete snapshot: %v %s", err, output)
+	}
+	if _, err := os.Lstat(backup); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("restore left an incomplete snapshot: %v", err)
+	}
 	if err := os.Chmod(app+"/bin/kejilion.sh", 0777); err != nil {
 		t.Fatal(err)
 	}

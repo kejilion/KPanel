@@ -649,7 +649,7 @@ func validFileRelayRequest(input LightFileRequest) bool {
 	if !v2FileRelayRequestPath(input.Path) || len(input.RawQuery) > lightFileMaxQueryBytes || strings.ContainsAny(input.RawQuery, "\r\n\x00") || !validFileRelayHeaders(input.Headers) {
 		return false
 	}
-	return input.BodyLength >= -1 && input.BodyLength <= 512<<20
+	return input.BodyLength >= -1 && input.BodyLength <= maxFileRelayV1BodyBytes
 }
 
 func cloneFileRelayHeaders(headers map[string]string) map[string]string {

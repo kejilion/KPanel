@@ -8,6 +8,7 @@ import http.client
 import json
 import math
 import queue
+import re
 import ssl
 import sys
 import threading
@@ -72,28 +73,91 @@ def validate_target(base_url: str, path: str) -> tuple[str, str, int, bool]:
         or parsed.fragment
     ):
         raise ValueError("--base-url must be an HTTP(S) origin without credentials or a path")
-    if not path.startswith("/") or path.startswith("//") or "://" in path:
+    request_path = urlsplit(path)
+    if (
+        not path.startswith("/")
+        or path.startswith("//")
+        or "\\" in path
+        or any(ord(char) < 0x21 or ord(char) > 0x7E for char in path)
+        or request_path.scheme
+        or request_path.netloc
+        or request_path.fragment
+    ):
         raise ValueError("--path must be an absolute local path")
     use_tls = parsed.scheme == "https"
     port = parsed.port or (443 if use_tls else 80)
     return parsed.scheme, parsed.hostname, port, use_tls
 
 
-def read_cookie_header(path: Path | None) -> str:
+def cookie_path_matches(request_path: str, cookie_path: str) -> bool:
+    cookie_path = cookie_path or "/"
+    if not request_path.startswith(cookie_path):
+        return False
+    return cookie_path.endswith("/") or len(request_path) == len(cookie_path) or request_path[len(cookie_path)] == "/"
+
+
+def read_cookie_header(path: Path | None, scheme: str, host: str, request_path: str) -> str:
     if path is None:
         return ""
+    if scheme != "https":
+        raise ValueError("--cookie-file requires an HTTPS target")
     cookies: list[str] = []
+    normalized_host = host.rstrip(".").lower()
+    now = int(time.time())
     for line in path.read_text(encoding="utf-8").splitlines():
         if line.startswith("#HttpOnly_"):
             line = line.removeprefix("#HttpOnly_")
         elif not line or line.startswith("#"):
             continue
         fields = line.split("\t")
-        if len(fields) >= 7:
-            cookies.append(f"{fields[5]}={fields[6]}")
+        if len(fields) != 7:
+            continue
+        domain = fields[0].lower()
+        if domain.startswith("."):
+            domain = domain[1:]
+        include_subdomains = fields[1].upper() == "TRUE"
+        secure_only = fields[3].upper() == "TRUE"
+        try:
+            expires = int(fields[4])
+        except ValueError:
+            continue
+        name, value = fields[5], fields[6]
+        if (
+            not domain
+            or domain.startswith(".")
+            or domain.endswith(".")
+            or not (normalized_host == domain or (include_subdomains and normalized_host.endswith("." + domain)))
+        ):
+            continue
+        if not cookie_path_matches(request_path, fields[2]):
+            continue
+        if secure_only and scheme != "https":
+            continue
+        if expires > 0 and expires <= now:
+            continue
+        if (
+            not re.fullmatch(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+", name)
+            or any(ord(char) < 0x21 or ord(char) > 0x7E or char in '\\";, ' for char in value)
+        ):
+            continue
+        cookies.append(f"{name}={value}")
     if not cookies:
         raise ValueError("cookie file did not contain any cookies")
     return "; ".join(cookies)
+
+
+def safe_target_label(base_url: str, path: str) -> str:
+    base = urlsplit(base_url)
+    host = base.hostname or ""
+    if ":" in host:
+        host = f"[{host}]"
+    port = base.port or (443 if base.scheme == "https" else 80)
+    target_path = urlsplit(path).path or "/"
+    return f"{base.scheme}://{host}:{port}{target_path}"
+
+
+def requests_per_second(completed: int, duration: float) -> float:
+    return round(completed / duration, 2) if duration > 0 else 0.0
 
 
 def percentile(values: list[float], fraction: float) -> float:
@@ -132,7 +196,8 @@ def main() -> int:
     args = parse_args()
     try:
         scheme, host, port, use_tls = validate_target(args.base_url, args.path)
-        cookie_header = read_cookie_header(args.cookie_file)
+        request_path = urlsplit(args.path).path or "/"
+        cookie_header = read_cookie_header(args.cookie_file, scheme, host, request_path)
     except (OSError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -150,7 +215,7 @@ def main() -> int:
         for _ in range(args.warmup):
             single_request(warmup_conn, args.path, headers)
     except (OSError, http.client.HTTPException) as exc:
-        print(f"warmup failed: {exc}", file=sys.stderr)
+        print(f"warmup failed: {type(exc).__name__}", file=sys.stderr)
         return 1
     finally:
         warmup_conn.close()
@@ -205,12 +270,12 @@ def main() -> int:
     unexpected = sum(count for status, count in statuses.items() if status != args.expect_status)
     result = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "target": f"{scheme}://{host}:{port}{args.path}",
+        "target": safe_target_label(args.base_url, args.path),
         "requests": args.requests,
         "concurrency": args.concurrency,
         "warmup": args.warmup,
         "durationSeconds": round(duration, 6),
-        "requestsPerSecond": round(args.requests / duration, 2) if duration else 0.0,
+        "requestsPerSecond": requests_per_second(completed, duration),
         "completed": completed,
         "responseBytes": total_bytes,
         "statusCodes": dict(sorted(statuses.items())),

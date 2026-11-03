@@ -48,6 +48,7 @@ type Client struct {
 	hostCommand           func(context.Context, string, ...string) ([]byte, error)
 	composeCommand        func(context.Context, ...string) ([]byte, error)
 	iptablesRulesPath     string
+	ip6tablesRulesPath    string
 	now                   func() time.Time
 	lifecycle             sync.Mutex
 	jobStart              sync.Mutex
@@ -110,17 +111,18 @@ type ActionResult struct {
 func New(socketPath, webRoot, stateRoot string) *Client {
 	dialer := &net.Dialer{Timeout: 3 * time.Second, KeepAlive: 30 * time.Second}
 	client := &Client{
-		baseURL:           "http://docker",
-		webRoot:           cleanLinuxPath(webRoot, "/home/web"),
-		appRoot:           "/home/docker",
-		stateRoot:         cleanLinuxPath(stateRoot, "/var/lib/kejilion-panel"),
-		daemonConfigPath:  "/etc/docker/daemon.json",
-		restartDocker:     restartDockerDaemon,
-		hostCommand:       runFixedDockerHostCommand,
-		composeCommand:    runFixedDockerComposeCommand,
-		iptablesRulesPath: "/etc/iptables/rules.v4",
-		now:               time.Now,
-		pidFile:           "/run/docker.pid",
+		baseURL:            "http://docker",
+		webRoot:            cleanLinuxPath(webRoot, "/home/web"),
+		appRoot:            "/home/docker",
+		stateRoot:          cleanLinuxPath(stateRoot, "/var/lib/kejilion-panel"),
+		daemonConfigPath:   "/etc/docker/daemon.json",
+		restartDocker:      restartDockerDaemon,
+		hostCommand:        runFixedDockerHostCommand,
+		composeCommand:     runFixedDockerComposeCommand,
+		iptablesRulesPath:  "/etc/iptables/rules.v4",
+		ip6tablesRulesPath: "/etc/iptables/rules.v6",
+		now:                time.Now,
+		pidFile:            "/run/docker.pid",
 	}
 	transport := &http.Transport{
 		DisableCompression: true,
