@@ -43,7 +43,8 @@ done
 [[ ! -e "$work" ]] || exit 2
 mkdir -m 711 "$work"; mkdir -m 755 "$work/evidence"
 self="$(realpath "$0")"
-checks=0; update_pid=''; owned=false; parent_mode_before=''
+checks=0; update_pid=''; owned=false
+qualified_parents=(); original_parent_modes=()
 finish() {
   local result=$? cleanup=passed
   trap - EXIT TERM INT
@@ -51,6 +52,7 @@ finish() {
   systemctl status kejilion-agent --no-pager >"$work/evidence/service-final.log" 2>&1 || true
   stat -c '%n %u:%g %a %h %F' / /home /home/docker "$app" "$app/bin" \
     "$app/.managed-by-kejilion-app" "$app/bin/kpanel.conf" "$app/bin/kejilion.sh" \
+    /root /usr /usr/bin /usr/local /usr/local/bin \
     /run /run/lock /run/lock/kejilion-kpanel-lifecycle.lock \
     >"$work/evidence/migration-path-metadata.log" 2>&1 || true
   journalctl -u kejilion-agent -n 100 --no-pager >"$work/evidence/agent-journal.log" 2>&1 || true
@@ -58,9 +60,9 @@ finish() {
     bash "$self" --invoke uninstall "$work/preview.conf" >"$work/evidence/cleanup.log" 2>&1 || cleanup=failed
     [[ ! -e "$app" && -z "$(docker ps -aq --filter name='^/kejilion-panel$')" ]] || cleanup=failed
   fi
-  if [[ -n "$parent_mode_before" ]]; then
-    chmod "$parent_mode_before" /home/docker || cleanup=failed
-  fi
+  for ((index=0;index<${#qualified_parents[@]};index++)); do
+    chmod "${original_parent_modes[index]}" "${qualified_parents[index]}" || cleanup=failed
+  done
   [[ "$cleanup" = passed ]] || result=1
   printf '{"candidate":"%s","runId":"%s","attempt":"%s","exitCode":%s,"checks":%s,"cleanup":"%s","mocked":false,"productVersion":"1.29.0-rc.6","stableDigest":"%s","productDigest":"%s"}\n' \
     "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$result" "$checks" "$cleanup" "${stable##*@}" "${preview##*@}" >"$work/evidence/result.json"
@@ -75,18 +77,18 @@ docker version >"$work/evidence/docker-version.log"
 systemd --version >"$work/evidence/systemd-version.log"
 umask >"$work/evidence/caller-umask.log"
 uname -a >"$work/evidence/kernel.log"
-# Hosted images may already provide /home/docker as root:root 0775. Migration
-# deliberately rejects writable ancestors. Establish its documented trusted
-# root as a fixture prerequisite; do not relax the production path checks.
-if [[ -e /home/docker || -L /home/docker ]]; then
-  [[ -d /home/docker && ! -L /home/docker && "$(stat -c '%u:%g' /home/docker)" = 0:0 ]]
-  parent_mode_before="$(stat -c '%a' /home/docker)"
-  stat -c '%n %u:%g %a %F' /home/docker >"$work/evidence/parent-before.log"
-else
-  mkdir -m 755 /home/docker
-fi
-chmod go-w /home/docker
-stat -c '%n %u:%g %a %F' /home/docker >"$work/evidence/parent-qualified.log"
+# Hosted images can provide group-writable installation/tool directories.
+# Qualify every fixed ancestor required by the unchanged migration contract;
+# never change ownership, traverse a link or broaden the production guard.
+[[ -e /home/docker || -L /home/docker ]] || mkdir -m 755 /home/docker
+for parent in / /root /usr /usr/bin /usr/local /usr/local/bin /home /home/docker; do
+  [[ -d "$parent" && ! -L "$parent" && "$(stat -c '%u' "$parent")" = 0 ]]
+  stat -c '%n %u:%g %a %F' "$parent" >>"$work/evidence/parent-before.log"
+  qualified_parents+=("$parent")
+  original_parent_modes+=("$(stat -c '%a' "$parent")")
+  chmod go-w "$parent"
+  stat -c '%n %u:%g %a %F' "$parent" >>"$work/evidence/parent-qualified.log"
+done
 for channel in stable preview; do
   image="$stable"; [[ "$channel" = stable ]] || image="$preview"
   docker pull "$image" >"$work/evidence/pull-$channel.log" 2>&1
