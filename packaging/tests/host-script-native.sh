@@ -49,6 +49,10 @@ finish() {
   trap - EXIT TERM INT
   if [[ -n "$update_pid" ]]; then kill -KILL -- "-$update_pid" 2>/dev/null || true; wait "$update_pid" 2>/dev/null || true; fi
   systemctl status kejilion-agent --no-pager >"$work/evidence/service-final.log" 2>&1 || true
+  stat -c '%n %u:%g %a %h %F' / /home /home/docker "$app" "$app/bin" \
+    "$app/.managed-by-kejilion-app" "$app/bin/kpanel.conf" "$app/bin/kejilion.sh" \
+    /run /run/lock /run/lock/kejilion-kpanel-lifecycle.lock \
+    >"$work/evidence/migration-path-metadata.log" 2>&1 || true
   journalctl -u kejilion-agent -n 100 --no-pager >"$work/evidence/agent-journal.log" 2>&1 || true
   if [[ "$owned" = true && -d "$app" ]]; then
     bash "$self" --invoke uninstall "$work/preview.conf" >"$work/evidence/cleanup.log" 2>&1 || cleanup=failed
@@ -66,6 +70,7 @@ pass() { checks=$((checks + 1)); printf '%s\n' "$1=pass" >>"$work/evidence/check
 
 docker version >"$work/evidence/docker-version.log"
 systemd --version >"$work/evidence/systemd-version.log"
+umask >"$work/evidence/caller-umask.log"
 uname -a >"$work/evidence/kernel.log"
 for channel in stable preview; do
   image="$stable"; [[ "$channel" = stable ]] || image="$preview"
