@@ -62,5 +62,9 @@
     "vite": "8.3.5",
     "vitest": "5.0.5",
     "vue-tsc": "3.3.11"
+  },
+  "overrides": {
+    "glob": "14.0.2",
+    "minimatch": "11.0.1"
   }
 }

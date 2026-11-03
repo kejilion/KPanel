@@ -692,11 +692,14 @@ func (s *Server) handleFederationFileRelayV1(w http.ResponseWriter, r *http.Requ
 		s.writeClusterError(w, r, err)
 		return
 	}
+	if closer, ok := input.Body.(io.Closer); ok {
+		defer closer.Close()
+	}
 	target := r.Clone(r.Context())
 	target.Method = input.Method
 	target.URL = &url.URL{Path: input.Path, RawQuery: input.RawQuery}
 	target.RequestURI = ""
-	target.Body = r.Body
+	target.Body = io.NopCloser(input.Body)
 	if target.Body == nil {
 		target.Body = http.NoBody
 	}

@@ -236,6 +236,7 @@ func (s *Store) migrate(ctx context.Context) error {
 		`INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(8, 0)`,
 		`INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(9, 0)`,
 		`INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(10, 0)`,
+		`INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(11, 0)`,
 	}
 	for _, statement := range statements {
 		if _, err := tx.ExecContext(ctx, statement); err != nil {
@@ -265,6 +266,9 @@ func (s *Store) migrate(ctx context.Context) error {
 		if err := ensureAIColumn(ctx, tx, column.table, column.name, column.definition); err != nil {
 			return err
 		}
+	}
+	if err := ensureAIHistoryBudget(ctx, tx); err != nil {
+		return err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE schema_migrations SET applied_at = ? WHERE version = 1 AND applied_at = 0`, millis(s.now())); err != nil {
 		return fmt.Errorf("record AI migration: %w", err)
@@ -307,10 +311,73 @@ func (s *Store) migrate(ctx context.Context) error {
 	if _, err := tx.ExecContext(ctx, `UPDATE schema_migrations SET applied_at = ? WHERE version = 10 AND applied_at = 0`, millis(s.now())); err != nil {
 		return fmt.Errorf("record AI migration: %w", err)
 	}
+	if _, err := tx.ExecContext(ctx, `UPDATE schema_migrations SET applied_at = ? WHERE version = 11 AND applied_at = 0`, millis(s.now())); err != nil {
+		return fmt.Errorf("record AI migration: %w", err)
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit AI migration: %w", err)
 	}
 	return nil
+}
+
+func ensureAIHistoryBudget(ctx context.Context, tx *sql.Tx) error {
+	sessionBytes := aiHistoryRowBytes("id", "user_id", "title", "provider_id", "model_id", "provider_name", "model_name", "summary", "summary_cursor", "approval_mode", "thinking_level")
+	messageBytes := aiHistoryRowBytes("id", "session_id", "run_id", "role", "content", "provider_id", "provider_name", "model_id", "model_name", "tool_call_id", "attachments_json")
+	statements := []string{
+		`CREATE TABLE IF NOT EXISTS ai_history_usage (
+			id INTEGER PRIMARY KEY CHECK(id=1),
+			session_count INTEGER NOT NULL CHECK(session_count >= 0),
+			message_count INTEGER NOT NULL CHECK(message_count >= 0),
+			payload_bytes INTEGER NOT NULL CHECK(payload_bytes >= 0))`,
+		fmt.Sprintf(`INSERT OR IGNORE INTO ai_history_usage(id,session_count,message_count,payload_bytes)
+			VALUES(1,(SELECT COUNT(*) FROM sessions),(SELECT COUNT(*) FROM messages),
+			COALESCE((SELECT SUM(%s) FROM sessions),0)+COALESCE((SELECT SUM(%s) FROM messages),0))`, sessionBytes, messageBytes),
+		fmt.Sprintf(`CREATE TRIGGER IF NOT EXISTS ai_sessions_budget_insert BEFORE INSERT ON sessions
+			BEGIN SELECT CASE WHEN
+				(SELECT session_count FROM ai_history_usage WHERE id=1) >= %d OR
+				(SELECT payload_bytes FROM ai_history_usage WHERE id=1) + (%s) > %d
+			THEN RAISE(ABORT,'AI history storage limit reached') END; END`, MaxAISessions, aiHistoryRowBytes("NEW.id", "NEW.user_id", "NEW.title", "NEW.provider_id", "NEW.model_id", "NEW.provider_name", "NEW.model_name", "NEW.summary", "NEW.summary_cursor", "NEW.approval_mode", "NEW.thinking_level"), MaxAIHistoryBytes),
+		fmt.Sprintf(`CREATE TRIGGER IF NOT EXISTS ai_sessions_budget_update BEFORE UPDATE ON sessions
+			BEGIN SELECT CASE WHEN
+				(SELECT payload_bytes FROM ai_history_usage WHERE id=1) - (%s) + (%s) > %d
+			THEN RAISE(ABORT,'AI history storage limit reached') END; END`, aiHistoryRowBytes("OLD.id", "OLD.user_id", "OLD.title", "OLD.provider_id", "OLD.model_id", "OLD.provider_name", "OLD.model_name", "OLD.summary", "OLD.summary_cursor", "OLD.approval_mode", "OLD.thinking_level"), aiHistoryRowBytes("NEW.id", "NEW.user_id", "NEW.title", "NEW.provider_id", "NEW.model_id", "NEW.provider_name", "NEW.model_name", "NEW.summary", "NEW.summary_cursor", "NEW.approval_mode", "NEW.thinking_level"), MaxAIHistoryBytes),
+		fmt.Sprintf(`CREATE TRIGGER IF NOT EXISTS ai_sessions_budget_after_insert AFTER INSERT ON sessions
+			BEGIN UPDATE ai_history_usage SET session_count=session_count+1,payload_bytes=payload_bytes+(%s) WHERE id=1; END`, aiHistoryRowBytes("NEW.id", "NEW.user_id", "NEW.title", "NEW.provider_id", "NEW.model_id", "NEW.provider_name", "NEW.model_name", "NEW.summary", "NEW.summary_cursor", "NEW.approval_mode", "NEW.thinking_level")),
+		fmt.Sprintf(`CREATE TRIGGER IF NOT EXISTS ai_sessions_budget_after_update AFTER UPDATE ON sessions
+			BEGIN UPDATE ai_history_usage SET payload_bytes=payload_bytes-(%s)+(%s) WHERE id=1; END`, aiHistoryRowBytes("OLD.id", "OLD.user_id", "OLD.title", "OLD.provider_id", "OLD.model_id", "OLD.provider_name", "OLD.model_name", "OLD.summary", "OLD.summary_cursor", "OLD.approval_mode", "OLD.thinking_level"), aiHistoryRowBytes("NEW.id", "NEW.user_id", "NEW.title", "NEW.provider_id", "NEW.model_id", "NEW.provider_name", "NEW.model_name", "NEW.summary", "NEW.summary_cursor", "NEW.approval_mode", "NEW.thinking_level")),
+		fmt.Sprintf(`CREATE TRIGGER IF NOT EXISTS ai_sessions_budget_after_delete AFTER DELETE ON sessions
+			BEGIN UPDATE ai_history_usage SET session_count=session_count-1,payload_bytes=payload_bytes-(%s) WHERE id=1; END`, aiHistoryRowBytes("OLD.id", "OLD.user_id", "OLD.title", "OLD.provider_id", "OLD.model_id", "OLD.provider_name", "OLD.model_name", "OLD.summary", "OLD.summary_cursor", "OLD.approval_mode", "OLD.thinking_level")),
+		fmt.Sprintf(`CREATE TRIGGER IF NOT EXISTS ai_messages_budget_insert BEFORE INSERT ON messages
+			WHEN NOT EXISTS(SELECT 1 FROM messages WHERE id=NEW.id)
+			BEGIN SELECT CASE WHEN
+				(SELECT message_count FROM ai_history_usage WHERE id=1) >= %d OR
+				(SELECT payload_bytes FROM ai_history_usage WHERE id=1) + (%s) > %d
+			THEN RAISE(ABORT,'AI history storage limit reached') END; END`, MaxAIMessages, aiHistoryRowBytes("NEW.id", "NEW.session_id", "NEW.run_id", "NEW.role", "NEW.content", "NEW.provider_id", "NEW.provider_name", "NEW.model_id", "NEW.model_name", "NEW.tool_call_id", "NEW.attachments_json"), MaxAIHistoryBytes),
+		fmt.Sprintf(`CREATE TRIGGER IF NOT EXISTS ai_messages_budget_update BEFORE UPDATE ON messages
+			BEGIN SELECT CASE WHEN
+				(SELECT payload_bytes FROM ai_history_usage WHERE id=1) - (%s) + (%s) > %d
+			THEN RAISE(ABORT,'AI history storage limit reached') END; END`, aiHistoryRowBytes("OLD.id", "OLD.session_id", "OLD.run_id", "OLD.role", "OLD.content", "OLD.provider_id", "OLD.provider_name", "OLD.model_id", "OLD.model_name", "OLD.tool_call_id", "OLD.attachments_json"), aiHistoryRowBytes("NEW.id", "NEW.session_id", "NEW.run_id", "NEW.role", "NEW.content", "NEW.provider_id", "NEW.provider_name", "NEW.model_id", "NEW.model_name", "NEW.tool_call_id", "NEW.attachments_json"), MaxAIHistoryBytes),
+		fmt.Sprintf(`CREATE TRIGGER IF NOT EXISTS ai_messages_budget_after_insert AFTER INSERT ON messages
+			BEGIN UPDATE ai_history_usage SET message_count=message_count+1,payload_bytes=payload_bytes+(%s) WHERE id=1; END`, aiHistoryRowBytes("NEW.id", "NEW.session_id", "NEW.run_id", "NEW.role", "NEW.content", "NEW.provider_id", "NEW.provider_name", "NEW.model_id", "NEW.model_name", "NEW.tool_call_id", "NEW.attachments_json")),
+		fmt.Sprintf(`CREATE TRIGGER IF NOT EXISTS ai_messages_budget_after_update AFTER UPDATE ON messages
+			BEGIN UPDATE ai_history_usage SET payload_bytes=payload_bytes-(%s)+(%s) WHERE id=1; END`, aiHistoryRowBytes("OLD.id", "OLD.session_id", "OLD.run_id", "OLD.role", "OLD.content", "OLD.provider_id", "OLD.provider_name", "OLD.model_id", "OLD.model_name", "OLD.tool_call_id", "OLD.attachments_json"), aiHistoryRowBytes("NEW.id", "NEW.session_id", "NEW.run_id", "NEW.role", "NEW.content", "NEW.provider_id", "NEW.provider_name", "NEW.model_id", "NEW.model_name", "NEW.tool_call_id", "NEW.attachments_json")),
+		fmt.Sprintf(`CREATE TRIGGER IF NOT EXISTS ai_messages_budget_after_delete AFTER DELETE ON messages
+			BEGIN UPDATE ai_history_usage SET message_count=message_count-1,payload_bytes=payload_bytes-(%s) WHERE id=1; END`, aiHistoryRowBytes("OLD.id", "OLD.session_id", "OLD.run_id", "OLD.role", "OLD.content", "OLD.provider_id", "OLD.provider_name", "OLD.model_id", "OLD.model_name", "OLD.tool_call_id", "OLD.attachments_json")),
+	}
+	for _, statement := range statements {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("install AI history budget: %w", err)
+		}
+	}
+	return nil
+}
+
+func aiHistoryRowBytes(columns ...string) string {
+	parts := make([]string, 0, len(columns))
+	for _, column := range columns {
+		parts = append(parts, "length(CAST("+column+" AS BLOB))")
+	}
+	return strings.Join(parts, "+")
 }
 
 func ensureAIColumn(ctx context.Context, tx *sql.Tx, table, name, definition string) error {

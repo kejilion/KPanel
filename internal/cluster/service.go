@@ -91,39 +91,41 @@ type runtimeState struct {
 }
 
 type Service struct {
-	remoteAccess         *remoteAccessControl
-	managed              *managedControl
-	store                *Store
-	secrets              *secretStore
-	storeV2              *storeV2
-	filePeersV2          *filePeerStoreV2
-	fileRelayV1Grants    *fileRelayV1GrantStore
-	secretsV2            *secretStoreV2
-	remote               remoteAPI
-	remoteV2             remoteV2API
-	telemetry            TelemetrySource
-	terminal             TerminalBackend
-	lightTerminal        *lightTerminalRelay
-	lightFile            *lightFileRelay
-	panelFileRelay       *panelFileRelay
-	fileStreamHub        *fileStreamHub
-	streams              *panelStreams
-	nodeIdentityV2       nodeIdentityV2
-	panelVersion         string
-	publicURL            string
-	light                *lightStore
-	lightBatches         *lightBatchStore
-	lightHistory         *lightFileRelay
-	historyQueries       chan struct{}
-	historyStreams       *fileStreamLimiter
-	historyRelayRequests *fixedWindowLimiter
-	hostname             string
-	now                  func() time.Time
-	pollInterval         time.Duration
-	schedulerTick        time.Duration
-	checkpointEvery      time.Duration
-	jitter               func(time.Duration) time.Duration
-	sem                  chan struct{}
+	remoteAccess          *remoteAccessControl
+	managed               *managedControl
+	store                 *Store
+	secrets               *secretStore
+	storeV2               *storeV2
+	filePeersV2           *filePeerStoreV2
+	fileRelayV1Grants     *fileRelayV1GrantStore
+	fileRelaySpoolDir     string
+	fileRelayV1SpoolSlots chan struct{}
+	secretsV2             *secretStoreV2
+	remote                remoteAPI
+	remoteV2              remoteV2API
+	telemetry             TelemetrySource
+	terminal              TerminalBackend
+	lightTerminal         *lightTerminalRelay
+	lightFile             *lightFileRelay
+	panelFileRelay        *panelFileRelay
+	fileStreamHub         *fileStreamHub
+	streams               *panelStreams
+	nodeIdentityV2        nodeIdentityV2
+	panelVersion          string
+	publicURL             string
+	light                 *lightStore
+	lightBatches          *lightBatchStore
+	lightHistory          *lightFileRelay
+	historyQueries        chan struct{}
+	historyStreams        *fileStreamLimiter
+	historyRelayRequests  *fixedWindowLimiter
+	hostname              string
+	now                   func() time.Time
+	pollInterval          time.Duration
+	schedulerTick         time.Duration
+	checkpointEvery       time.Duration
+	jitter                func(time.Duration) time.Duration
+	sem                   chan struct{}
 
 	securityEntrancePath func() string
 
@@ -204,12 +206,21 @@ func NewService(config ServiceConfig) (*Service, error) {
 	if config.Jitter == nil {
 		config.Jitter = jitterDuration
 	}
+	fileRelaySpoolDir, err := prepareFileRelayV1SpoolDirectory(config.DataDir)
+	if err != nil {
+		return nil, err
+	}
+	fileRelayV1SpoolSlots := make(chan struct{}, maxConcurrentFileRelayV1Spools)
 	if config.Remote == nil {
-		remote, err := NewRemoteClient(RemoteClientConfig{PrivateCIDRs: config.PrivateCIDRs})
+		remote, err := NewRemoteClient(RemoteClientConfig{PrivateCIDRs: config.PrivateCIDRs, SpoolDir: fileRelaySpoolDir})
 		if err != nil {
 			return nil, err
 		}
 		config.Remote = remote
+	}
+	if remote, ok := config.Remote.(*RemoteClient); ok {
+		remote.spoolDir = fileRelaySpoolDir
+		remote.spoolSlots = fileRelayV1SpoolSlots
 	}
 	if config.Hostname == "" {
 		config.Hostname, _ = os.Hostname()
@@ -291,8 +302,8 @@ func NewService(config ServiceConfig) (*Service, error) {
 		managed:      openManagedControl(config.DataDir),
 		store:        store, secrets: secrets,
 		storeV2: storeV2, filePeersV2: filePeersV2, secretsV2: secretsV2,
-		fileRelayV1Grants: fileRelayV1Grants,
-		remote:            config.Remote, remoteV2: remoteV2, telemetry: config.Telemetry, terminal: config.Terminal,
+		fileRelayV1Grants: fileRelayV1Grants, fileRelaySpoolDir: fileRelaySpoolDir, fileRelayV1SpoolSlots: fileRelayV1SpoolSlots,
+		remote: config.Remote, remoteV2: remoteV2, telemetry: config.Telemetry, terminal: config.Terminal,
 		light: light, lightBatches: lightBatches,
 		lightTerminal: newLightTerminalRelay(config.Now), lightFile: newLightFileRelay(config.Now),
 		panelFileRelay:       newPanelFileRelay(),
@@ -1149,12 +1160,10 @@ func (s *Service) poll(ctx context.Context, id string) {
 	current.lastErrorCode = ""
 	current.lastError = ""
 	current.panelVersion = summary.PanelVersion
-	// A current target advertises the signed relay only after its administrator
-	// grants this controller file access. An older target still advertises the
-	// unsigned hint for every v1 controller and keeps its earlier behavior.
+	// A target is usable for v1 file access only when it advertises the
+	// body-signed relay after an explicit administrator grant.
 	current.fileRelayV1Signed = hasFederationCapability(capabilities, FileRelayV1SignedCapability)
-	current.fileManagementAvailable = current.fileRelayV1Signed ||
-		hasFederationCapability(capabilities, FileRelayV1Capability)
+	current.fileManagementAvailable = current.fileRelayV1Signed
 	current.securityEntrancePath = summary.SecurityEntrancePath
 	current.nextPollAt = finishedAt.Add(s.jitter(s.pollInterval))
 	s.runtime[id] = current

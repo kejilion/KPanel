@@ -560,14 +560,14 @@ func TestLegacyPanelFileCapabilityComesFromTheSummaryHandshake(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddHost() error = %v", err)
 	}
-	if !host.FileManagementAvailable || host.Kind != HostKindPanel || host.FederationProtocol != FederationProtocol {
+	if host.FileManagementAvailable || host.Kind != HostKindPanel || host.FederationProtocol != FederationProtocol {
 		t.Fatalf("legacy Panel capability = %#v", host)
 	}
 	service.mu.RLock()
 	signed := service.runtime[host.ID].fileRelayV1Signed
 	service.mu.RUnlock()
 	if signed {
-		t.Fatal("an older target's unsigned relay hint selected the signed relay")
+		t.Fatal("an older target's unsigned relay hint selected the body-signed relay")
 	}
 }
 

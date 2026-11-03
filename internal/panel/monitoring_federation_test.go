@@ -57,7 +57,8 @@ func TestClusterHistoryPanelHTTPV1V2ParitySlowSourceAndSignedQuery(t *testing.T)
 		t.Fatal(err)
 	}
 	now := time.Now().UTC().Truncate(time.Second)
-	value := contract.MonitoringHistory{Range: "6h", StartedAt: now.Add(-6 * time.Hour), EndedAt: now, BucketSeconds: 60, Host: []contract.MonitoringHostPoint{{CollectedAt: now, CPUPercent: 31.5, DiskIOAvailable: true, DiskReadRate: 12345}}, Containers: []contract.MonitoringContainerSeries{}, OperatorLatency: []contract.MonitoringOperatorLatencySeries{}, Storage: contract.MonitoringStorageStatus{Enabled: true, RetentionDays: 30, RollupRetentionDays: 365, HostIntervalSeconds: 60}}
+	secretTarget := "https://checks.example/health?token=PRIVATE_MONITORING_QUERY"
+	value := contract.MonitoringHistory{Range: "6h", StartedAt: now.Add(-6 * time.Hour), EndedAt: now, BucketSeconds: 60, Host: []contract.MonitoringHostPoint{{CollectedAt: now, CPUPercent: 31.5, DiskIOAvailable: true, DiskReadRate: 12345}}, Containers: []contract.MonitoringContainerSeries{}, OperatorLatency: []contract.MonitoringOperatorLatencySeries{{ID: "check-id", Name: "Remote check", Address: secretTarget, Target: secretTarget, Points: []contract.MonitoringOperatorLatencyPoint{}}}, Storage: contract.MonitoringStorageStatus{Enabled: true, RetentionDays: 30, RollupRetentionDays: 365, HostIntervalSeconds: 60}}
 	for i := 1; i < 60; i++ {
 		point := value.Host[0]
 		point.CollectedAt = now.Add(-time.Duration(i) * time.Minute)
@@ -120,6 +121,10 @@ func TestClusterHistoryPanelHTTPV1V2ParitySlowSourceAndSignedQuery(t *testing.T)
 		if result.Host[0].CPUPercent != 31.5 || !result.Host[0].DiskIOAvailable || result.Storage.RollupRetentionDays != 365 {
 			t.Fatalf("%s history not forwarded intact", protocol)
 		}
+		if len(result.OperatorLatency) != 1 || result.OperatorLatency[0].Address != "checks.example" ||
+			result.OperatorLatency[0].Target != "checks.example" {
+			t.Fatalf("%s history exposed or lost the projected monitoring target: %#v", protocol, result.OperatorLatency)
+		}
 		agent.delay = 0
 		for _, encoding := range []string{"gzip", "gzip;q=0"} {
 			response := authenticatedRequest(browserCenter, http.MethodGet, "/api/v1/monitoring/cluster-history?hostId="+host.ID+"&range=6h", nil, session, csrf, map[string]string{"Accept-Encoding": encoding})
@@ -131,6 +136,10 @@ func TestClusterHistoryPanelHTTPV1V2ParitySlowSourceAndSignedQuery(t *testing.T)
 			var browserValue contract.MonitoringHistory
 			if err != nil || json.Unmarshal(decoded, &browserValue) != nil || len(browserValue.Host) != len(value.Host) || browserValue.Host[0].CPUPercent != 31.5 {
 				t.Fatalf("browser history corrupted: %v", err)
+			}
+			if len(browserValue.OperatorLatency) != 1 || browserValue.OperatorLatency[0].Address != "checks.example" ||
+				browserValue.OperatorLatency[0].Target != "checks.example" {
+				t.Fatalf("browser history exposed the monitoring query: %#v", browserValue.OperatorLatency)
 			}
 		}
 		if protocol == "v1" {

@@ -9,13 +9,10 @@ import (
 )
 
 const (
-	// One light-node principal can pass at most 4,680 replay-protected requests
-	// per minute across the current independent route limiters. This budget
-	// covers five minutes of that configured maximum, with a small margin.
-	replayGuardEntriesPerPrincipal = 24_576
-	// Keep the cache bounded while allowing more than one principal to reach its
-	// own budget without denying every other authenticated principal.
 	replayGuardTotalEntries = 65_536
+	// At least eight principals must reach their individual limits to occupy the
+	// shared cache, preserving capacity when only a few nodes are compromised.
+	replayGuardEntriesPerPrincipal = replayGuardTotalEntries / 8
 )
 
 type replayKey [sha256.Size]byte
@@ -104,6 +101,25 @@ func replayCacheKey(principal, nonce string) replayKey {
 	binary.BigEndian.PutUint64(input[offset:offset+8], uint64(len(nonce)))
 	copy(input[offset+8:], nonce)
 	return sha256.Sum256(input)
+}
+
+// Check rejects a nonce that has already been accepted, or a request that
+// cannot be admitted to the replay cache, without consuming the nonce. It is
+// useful before expensive request-body work; Accept remains the authoritative
+// atomic insertion after the complete request has been verified.
+func (g *replayGuard) Check(principal, nonce string, now time.Time) error {
+	key := replayCacheKey(principal, nonce)
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.pruneLocked(now)
+	if _, exists := g.entries[key]; exists {
+		return ErrReplay
+	}
+	principalCount := g.principalEntries[principal]
+	if len(g.entries) >= g.capacity || principalCount.count >= g.perPrincipalCapacity {
+		return ErrRateLimited
+	}
+	return nil
 }
 
 func (g *replayGuard) Accept(principal, nonce string, now time.Time) error {

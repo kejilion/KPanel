@@ -43,25 +43,25 @@ func TestIsLightFileRelayRequestUsesTheSharedRouteAllowlist(t *testing.T) {
 	}
 }
 
-type lightFileLegacyTestRemote struct {
+type lightFileSignedTestRemote struct {
 	body   func() io.ReadCloser
 	header http.Header
 }
 
-func (*lightFileLegacyTestRemote) Pair(context.Context, string, cluster.PairRequest) (cluster.PairResponse, error) {
+func (*lightFileSignedTestRemote) Pair(context.Context, string, cluster.PairRequest) (cluster.PairResponse, error) {
 	return cluster.PairResponse{NodeID: strings.Repeat("b", 32), Hostname: "relay-test", PanelVersion: "1.5.0", FederationProtocol: cluster.FederationProtocol}, nil
 }
-func (*lightFileLegacyTestRemote) Summary(context.Context, string, string, string, ed25519.PrivateKey, time.Time) (cluster.FederationSummary, error) {
+func (*lightFileSignedTestRemote) Summary(context.Context, string, string, string, ed25519.PrivateKey, time.Time) (cluster.FederationSummary, error) {
 	return cluster.FederationSummary{NodeID: strings.Repeat("b", 32), PanelVersion: "1.5.0", FederationProtocol: cluster.FederationProtocol, Telemetry: contract.HostTelemetry{Hostname: "relay-test", CollectedAt: time.Now()}}, nil
 }
-func (remote *lightFileLegacyTestRemote) SummaryWithCapabilities(ctx context.Context, origin, controller, target string, key ed25519.PrivateKey, now time.Time) (cluster.FederationSummary, string, error) {
+func (remote *lightFileSignedTestRemote) SummaryWithCapabilities(ctx context.Context, origin, controller, target string, key ed25519.PrivateKey, now time.Time) (cluster.FederationSummary, string, error) {
 	summary, err := remote.Summary(ctx, origin, controller, target, key, now)
-	return summary, cluster.FileRelayV1Capability, err
+	return summary, cluster.FileRelayV1SignedCapability, err
 }
-func (*lightFileLegacyTestRemote) Revoke(context.Context, string, string, string, ed25519.PrivateKey, time.Time) error {
+func (*lightFileSignedTestRemote) Revoke(context.Context, string, string, string, ed25519.PrivateKey, time.Time) error {
 	return nil
 }
-func (remote *lightFileLegacyTestRemote) OpenFileRelayV1(context.Context, string, string, string, ed25519.PrivateKey, time.Time, cluster.LightFileRequest) (*http.Response, error) {
+func (remote *lightFileSignedTestRemote) OpenSignedFileRelayV1(context.Context, string, string, string, ed25519.PrivateKey, time.Time, cluster.LightFileRequest) (*http.Response, error) {
 	header := http.Header{"Content-Type": {"application/octet-stream"}}
 	if remote.header != nil {
 		header = remote.header.Clone()
@@ -130,7 +130,7 @@ func TestLightFileRelayAppliesPanelContentPolicyToRemoteResponses(t *testing.T) 
 		t.Run(test.name, func(t *testing.T) {
 			server, tokenPath := newTestServer(t)
 			session, csrf := bootstrapCookies(t, server, tokenPath)
-			remote := &lightFileLegacyTestRemote{
+			remote := &lightFileSignedTestRemote{
 				header: test.header,
 				body:   func() io.ReadCloser { return io.NopCloser(strings.NewReader("<script>parent.x=1</script>")) },
 			}
@@ -211,7 +211,7 @@ func TestLightFileRelayTruncationAbortsHTTPAndAuditsFailure(t *testing.T) {
 			server, tokenPath := newTestServer(t)
 			session, csrf := bootstrapCookies(t, server, tokenPath)
 			closed := make(chan struct{})
-			remote := &lightFileLegacyTestRemote{body: func() io.ReadCloser {
+			remote := &lightFileSignedTestRemote{body: func() io.ReadCloser {
 				if outcome == "panic" {
 					panic("ordinary handler failure")
 				}

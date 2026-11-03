@@ -4,6 +4,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -179,6 +181,28 @@ func TestDiskSummariesSkipsAutofsMountWithoutUsageProbe(t *testing.T) {
 		t.Fatalf("disk summaries = %#v, want only the ext4 data mount", disks)
 	}
 	if len(probed) != 1 || probed[0] != "/mnt/data" {
+		t.Fatalf("usage probes = %#v, want only /mnt/data", probed)
+	}
+}
+
+func TestDiskSummariesSkipsFuseAndNetworkFilesystemsWithoutUsageProbe(t *testing.T) {
+	mounts := strings.Join([]string{
+		"sshfs#user@example:/ /mnt/remote fuse.sshfs rw 0 0",
+		"rclone /mnt/cloud fuse.rclone rw 0 0",
+		"server:/share /mnt/nfs nfs4 rw 0 0",
+		"//server/share /mnt/cifs cifs rw 0 0",
+		"/dev/sda1 /mnt/data ext4 rw 0 0",
+		"rootfs / fuse.sshfs rw 0 0",
+	}, "\n")
+	var probed []string
+	disks := diskSummaries(mounts, func(mountPoint string) (uint64, uint64, float64, bool) {
+		probed = append(probed, mountPoint)
+		return 100, 10, 10, true
+	})
+	if len(disks) != 1 || disks[0].MountPoint != "/mnt/data" || disks[0].FileSystem != "ext4" {
+		t.Fatalf("disk summaries = %#v, want only the ext4 data mount", disks)
+	}
+	if !slices.Equal(probed, []string{"/mnt/data"}) {
 		t.Fatalf("usage probes = %#v, want only /mnt/data", probed)
 	}
 }

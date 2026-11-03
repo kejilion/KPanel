@@ -212,19 +212,19 @@ async function navigationFailure({ captureFails = false, closeFails = false } = 
   });
   assert.equal(process.exitCode, 1);
   assert.equal(written.status, 'failed');
-  assert.match(written.error, /intentional first-navigation failure/);
+  assert.equal(written.error, 'browser workflow failed');
   assert.equal(written.diagnostics.failure.stage, 'terminal-first-navigation');
   assert.equal(written.diagnostics.events.at(-1).status, 503);
   assert.equal(written.candidate, 'a'.repeat(40));
   assert.deepEqual(order, ['capture', 'close']);
-  assert.doesNotMatch(JSON.stringify(written.diagnostics), /PRIVATE/);
+  assert.doesNotMatch(JSON.stringify(written), /PRIVATE/);
   assert.ok(written.checks.includes('real PTY execution output marker'));
   return written;
 }
 
 test('runner navigation failure captures before close and preserves the original failure exit', () => navigationFailure());
 
-test('diagnostic and browser-close failures cannot replace the original navigation failure', async () => {
+test('diagnostic and browser-close failures preserve sanitized failure reporting', async () => {
   const report = await navigationFailure({ captureFails: true, closeFails: true });
   assert.equal(report.diagnostics.failure.pages[0].status, 'unavailable');
   assert.equal(report.browserCloseFailed, true);
@@ -266,11 +266,11 @@ for (const target of ['bootstrap', 'release-timeout', 'release-http-502']) {
     assert.equal(written.diagnostics.failure.pending.length, 0);
     if (target === 'release-http-502') {
       assert.equal(failure.kind, 'api-response'); assert.equal(failure.status, 502);
-      assert.match(written.error, /real API GET/);
+      assert.equal(written.error, 'browser workflow failed');
     } else {
       assert.equal(failure.kind, 'api-requestfailed'); assert.equal(failure.code, 'timeout');
-      assert.equal(written.error, original.stack);
+      assert.equal(written.error, 'browser workflow failed');
     }
-    assert.doesNotMatch(JSON.stringify(written.diagnostics), /PRIVATE/);
+    assert.doesNotMatch(JSON.stringify(written), /PRIVATE/);
   });
 }
