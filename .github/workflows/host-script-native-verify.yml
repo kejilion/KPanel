@@ -1,0 +1,41 @@
+name: Verify native host script upgrade
+
+on:
+  push:
+    branches: ["fix/v129-native-upgrade-validation"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-host-script-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24.22.1"
+      - name: Qualify isolated hosted target
+        run: node scripts/check-environment-policy.mjs --environment github-hosted --purpose failure-injection
+      - name: Real systemd install, interrupted update recovery and upgrade
+        shell: bash
+        run: |
+          sudo --preserve-env=GITHUB_ACTIONS,RUNNER_ENVIRONMENT,GITHUB_REPOSITORY,GITHUB_SHA,GITHUB_RUN_ID,GITHUB_RUN_ATTEMPT,RUNNER_TEMP \
+            timeout --signal=TERM --kill-after=30s 24m bash packaging/tests/host-script-native.sh
+      - name: Preserve native evidence including failures
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-host-script-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/kpanel-native-host-${{ github.run_id }}-${{ github.run_attempt }}/evidence/
+          if-no-files-found: error
+          retention-days: 90
