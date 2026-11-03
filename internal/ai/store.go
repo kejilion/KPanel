@@ -236,7 +236,7 @@ func (s *Store) migrate(ctx context.Context) error {
 		`INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(8, 0)`,
 		`INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(9, 0)`,
 		`INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(10, 0)`,
-		`INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(12, 0)`,
+		`INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(13, 0)`,
 	}
 	for _, statement := range statements {
 		if _, err := tx.ExecContext(ctx, statement); err != nil {
@@ -311,7 +311,7 @@ func (s *Store) migrate(ctx context.Context) error {
 	if _, err := tx.ExecContext(ctx, `UPDATE schema_migrations SET applied_at = ? WHERE version = 10 AND applied_at = 0`, millis(s.now())); err != nil {
 		return fmt.Errorf("record AI migration: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE schema_migrations SET applied_at = ? WHERE version = 12 AND applied_at = 0`, millis(s.now())); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE schema_migrations SET applied_at = ? WHERE version = 13 AND applied_at = 0`, millis(s.now())); err != nil {
 		return fmt.Errorf("record AI migration: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
