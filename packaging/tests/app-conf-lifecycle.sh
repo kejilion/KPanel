@@ -395,6 +395,47 @@ cat >"$FAKE_BIN/journalctl" <<'EOF'
 exit 0
 EOF
 
+cat >"$FAKE_BIN/curl" <<'EOF'
+#!/bin/sh
+destination=
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        -o) destination=$2; shift ;;
+        https://*) url=$1 ;;
+    esac
+    shift
+done
+[ -n "$destination" ] || exit 2
+case "$url" in
+    https://raw.githubusercontent.com/kejilion/sh/main/kejilion.sh|https://gh.kejilion.pro/raw.githubusercontent.com/kejilion/sh/main/kejilion.sh) ;;
+    *) exit 2 ;;
+esac
+[ -z "${KPANEL_MOCK_DOWNLOAD_LOG:-}" ] || printf '%s\n' "$url" >>"$KPANEL_MOCK_DOWNLOAD_LOG"
+case "${KPANEL_MOCK_DOWNLOAD:-ok}" in
+    fail) printf 'partial' >"$destination"; exit 22 ;;
+    empty) : >"$destination"; exit 0 ;;
+    html) printf '<html>error</html>' >"$destination"; exit 0 ;;
+    fallback) [ "$url" != https://raw.githubusercontent.com/kejilion/sh/main/kejilion.sh ] || exit 28 ;;
+esac
+cat >"$destination" <<'SCRIPT'
+#!/usr/bin/env bash
+sh_v="4.5.99"
+canshu="default"
+permission_granted="false"
+ENABLE_STATS="true"
+kpanel_protocol_active() {
+    :
+}
+KJ_DNS_NONINTERACTIVE=1
+KJ_APP_NONINTERACTIVE=1
+KJ_WEB_NONINTERACTIVE=1
+KJ_WEB_INTERACTIVE=1
+KJ_TEST_NONINTERACTIVE=1
+# latest-download-fixture
+SCRIPT
+if [ "${KPANEL_MOCK_DOWNLOAD:-}" = syntax ]; then printf '\nif\n' >>"$destination"; fi
+EOF
+
 cat >"$FAKE_BIN/sha256sum" <<'EOF'
 #!/bin/sh
 case "$*" in
@@ -1272,6 +1313,47 @@ run_partial_uninstall() (
 	test ! -e /home/docker/kpanel
 )
 
+run_latest_script_download() {
+    local candidate_agent="$TEST_DIR/latest-agent"
+    local candidate_script="$TEST_DIR/latest-script"
+    local current="$TEST_DIR/current-script"
+    local mode
+    docker_app_plus() { :; }
+    . "$PROJECT_DIR/packaging/kejilion-app/kpanel.conf"
+    printf '#!/bin/bash\ncanshu="V6"\npermission_granted="true"\nENABLE_STATS="false"\n# existing host\n' >"$current"
+    cp "$current" /usr/local/bin/k
+    cp "$current" /root/kejilion.sh
+    chmod 700 /usr/local/bin/k /root/kejilion.sh
+    for mode in ok fallback; do
+        : >"$TEST_DIR/latest-download.log"
+        KPANEL_MOCK_DOWNLOAD="$mode" KPANEL_MOCK_DOWNLOAD_LOG="$TEST_DIR/latest-download.log" \
+            kpanel_extract_release mock-image "$candidate_agent" "$candidate_script"
+        grep -Fx '# latest-download-fixture' "$candidate_script"
+        grep -Fx 'canshu="V6"' "$candidate_script"
+        grep -Fx 'permission_granted="true"' "$candidate_script"
+        grep -Fx 'ENABLE_STATS="false"' "$candidate_script"
+        test "$(stat -c %a "$candidate_script")" = 700
+        cmp "$current" /usr/local/bin/k
+        cmp "$current" /root/kejilion.sh
+        if [ "$mode" = fallback ]; then
+            test "$(wc -l <"$TEST_DIR/latest-download.log")" = 2
+        else test "$(wc -l <"$TEST_DIR/latest-download.log")" = 1; fi
+    done
+    for mode in fail empty html syntax; do
+        if KPANEL_MOCK_DOWNLOAD="$mode" kpanel_extract_release mock-image "$candidate_agent" "$candidate_script"; then
+            echo "invalid latest script accepted: $mode" >&2
+            return 1
+        fi
+        test ! -e "$candidate_agent"
+        test ! -e "$candidate_script"
+        test -z "$(find "$TEST_DIR" -name 'latest-script.latest.*' -print)"
+        cmp "$current" /usr/local/bin/k
+        cmp "$current" /root/kejilion.sh
+    done
+    rm /usr/local/bin/k /root/kejilion.sh
+    printf '%s\n' 'app_conf_latest_script_download=pass'
+}
+
 run_release_contract_guards() {
 	local candidate_agent="$TEST_DIR/release-contract-agent"
 	local candidate_script="$TEST_DIR/release-contract-script"
@@ -1338,6 +1420,7 @@ mkdir -p /home/docker/kpanel
 bash "$PROJECT_DIR/packaging/tests/app-conf-lock-compat.sh" "$PROJECT_DIR"
 run_license_inheritance
 run_shared_script_bootstrap
+run_latest_script_download
 # Exercise the successful interrupted-update branch with a legacy private copy.
 # Dependencies are stubbed in a subshell; cleanup remains the real lifecycle code.
 run_shared_script_interrupted_success() (
