@@ -395,6 +395,61 @@ cat >"$FAKE_BIN/journalctl" <<'EOF'
 exit 0
 EOF
 
+cat >"$FAKE_BIN/curl" <<'EOF'
+#!/bin/sh
+destination=
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        -o) destination=$2; shift ;;
+        https://*) url=$1 ;;
+    esac
+    shift
+done
+[ -n "$destination" ] || exit 2
+case "$url" in
+    https://raw.githubusercontent.com/kejilion/sh/main/kejilion.sh|https://gh.kejilion.pro/raw.githubusercontent.com/kejilion/sh/main/kejilion.sh) ;;
+    *) exit 2 ;;
+esac
+[ -z "${KPANEL_MOCK_DOWNLOAD_LOG:-}" ] || printf '%s\n' "$url" >>"$KPANEL_MOCK_DOWNLOAD_LOG"
+case "${KPANEL_MOCK_DOWNLOAD:-ok}" in
+    fail) printf 'partial' >"$destination"; exit 22 ;;
+    empty) : >"$destination"; exit 0 ;;
+    html) printf '<html>error</html>' >"$destination"; exit 0 ;;
+    fallback) [ "$url" != https://raw.githubusercontent.com/kejilion/sh/main/kejilion.sh ] || exit 28 ;;
+esac
+cat >"$destination" <<'SCRIPT'
+#!/usr/bin/env bash
+sh_v="4.5.99"
+canshu="default"
+permission_granted="false"
+ENABLE_STATS="true"
+kpanel_protocol_active() {
+    :
+}
+KJ_DNS_NONINTERACTIVE=1
+KJ_APP_NONINTERACTIVE=1
+KJ_WEB_NONINTERACTIVE=1
+KJ_WEB_INTERACTIVE=1
+KJ_TEST_NONINTERACTIVE=1
+# latest-download-fixture
+k_info() {
+    :
+}
+if [ "$#" -eq 0 ]; then
+    :
+else
+    k_info
+fi
+SCRIPT
+case "${KPANEL_MOCK_DOWNLOAD:-}" in
+    syntax) printf '\nif\n' >>"$destination" ;;
+    truncated) sed -i '/^k_info() {/,$d' "$destination" ;;
+    missing_license) sed -i '/^permission_granted=/d' "$destination" ;;
+    missing_stats) sed -i '/^ENABLE_STATS=/d' "$destination" ;;
+    missing_region) sed -i '/^canshu=/d' "$destination" ;;
+esac
+EOF
+
 cat >"$FAKE_BIN/sha256sum" <<'EOF'
 #!/bin/sh
 case "$*" in
@@ -581,7 +636,7 @@ EOF
 	# shellcheck source=/dev/null
 	. "$PROJECT_DIR/packaging/kejilion-app/kpanel.conf"
 	docker_port="18080"
-	docker_app_install >"$TEST_DIR/install-output.txt"
+	KPANEL_MOCK_DOWNLOAD="${KPANEL_TEST_INITIAL_DOWNLOAD:-ok}" docker_app_install >"$TEST_DIR/install-output.txt"
 	grep -Fx '首次初始化 Token： test-bootstrap-token' \
 		"$TEST_DIR/install-output.txt" >/dev/null
 	grep -Fx '请复制此 Token 完成管理员账户初始化；初始化成功后 Token 自动失效。' \
@@ -780,6 +835,18 @@ EOF
 	docker_app_update >"$TEST_DIR/after-retarget-update-output.txt"
 	grep -Fx '    image: docker.io/kjlion/kejilion-panel@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' \
 		/home/docker/kpanel/docker-compose.yml >/dev/null
+	# Failed optional refresh must still complete the update, publishing the
+	# verified image payload and preserving the user's existing preferences.
+	docker cp fixture:/release/kejilion.sh "$TEST_DIR/refresh-image-script"
+	kpanel_inherit_script_preferences "$TEST_DIR/refresh-image-script"
+	local refresh_failure
+	for refresh_failure in fail html truncated missing_license; do
+		KPANEL_MOCK_DOWNLOAD="$refresh_failure" docker_app_update >"$TEST_DIR/refresh-fallback-output.txt"
+		grep -Fx 'KPanel 更新完成 / Update Complete' "$TEST_DIR/refresh-fallback-output.txt" >/dev/null
+		cmp "$TEST_DIR/refresh-image-script" /usr/local/bin/k
+		cmp "$TEST_DIR/refresh-image-script" /root/kejilion.sh
+		test "$(stat -c %a /usr/local/bin/k)" = 755
+	done
 
 	rm -rf /home/docker/kpanel/update-state
 	rm -f "$MOCK_STATE/image-rm"
@@ -1097,6 +1164,7 @@ systemd_link_snapshot() {
 
 run_symlinked_docker_root_lifecycle() {
 	local physical_docker_root="$TEST_DIR/physical docker root"
+	local KPANEL_TEST_INITIAL_DOWNLOAD=fail
 
 	MOCK_STATE="$TEST_DIR/symlinked-root-state"
 	mkdir -p "$MOCK_STATE"
@@ -1272,6 +1340,112 @@ run_partial_uninstall() (
 	test ! -e /home/docker/kpanel
 )
 
+run_latest_script_download() {
+    local candidate_agent="$TEST_DIR/latest-agent"
+    local candidate_script="$TEST_DIR/latest-script"
+    local image_script="$TEST_DIR/latest-image-script"
+    local current="$TEST_DIR/current-script"
+    local mode
+    docker_app_plus() { :; }
+    . "$PROJECT_DIR/packaging/kejilion-app/kpanel.conf"
+    printf '#!/bin/bash\ncanshu="V6"\npermission_granted="true"\nENABLE_STATS="false"\n# existing host\n' >"$current"
+    cp "$current" /usr/local/bin/k
+    cp "$current" /root/kejilion.sh
+    chmod 700 /usr/local/bin/k /root/kejilion.sh
+    for mode in ok fallback; do
+        : >"$TEST_DIR/latest-download.log"
+        KPANEL_MOCK_DOWNLOAD="$mode" KPANEL_MOCK_DOWNLOAD_LOG="$TEST_DIR/latest-download.log" \
+            kpanel_extract_release mock-image "$candidate_agent" "$candidate_script"
+        grep -Fx '# latest-download-fixture' "$candidate_script"
+        grep -Fx 'canshu="V6"' "$candidate_script"
+        grep -Fx 'permission_granted="true"' "$candidate_script"
+        grep -Fx 'ENABLE_STATS="false"' "$candidate_script"
+        test "$(stat -c %a "$candidate_script")" = 700
+        cmp "$current" /usr/local/bin/k
+        cmp "$current" /root/kejilion.sh
+        if [ "$mode" = fallback ]; then
+            test "$(wc -l <"$TEST_DIR/latest-download.log")" = 2
+        else test "$(wc -l <"$TEST_DIR/latest-download.log")" = 1; fi
+    done
+    docker cp fixture:/release/kejilion.sh "$image_script"
+    kpanel_inherit_script_preferences "$image_script"
+    for mode in fail empty html syntax truncated missing_license missing_stats missing_region; do
+        KPANEL_MOCK_DOWNLOAD="$mode" kpanel_extract_release mock-image "$candidate_agent" "$candidate_script"
+        test -x "$candidate_agent"
+        test -f "$candidate_script"
+        cmp "$image_script" "$candidate_script"
+        grep -Fx 'permission_granted="true"' "$candidate_script"
+        grep -Fx 'canshu="V6"' "$candidate_script"
+        grep -Fx 'ENABLE_STATS="false"' "$candidate_script"
+        mkdir -p /home/docker/kpanel/bin
+        kpanel_prepare_shared_script "$candidate_script"
+        cmp "$candidate_script" /usr/local/bin/k
+        cmp "$candidate_script" /root/kejilion.sh
+        kpanel_restore_shared_script
+        kpanel_clear_update_files
+        test -z "$(find "$TEST_DIR" -name 'latest-script.latest.*' -print)"
+        cmp "$current" /usr/local/bin/k
+        cmp "$current" /root/kejilion.sh
+        test "$(stat -c %a /usr/local/bin/k)" = 700
+    done
+    # A download can pass structural checks but fail during preference writes.
+    # Do not replace the image staging until that last preparation succeeds.
+    (
+        sed() {
+            if [ "${1:-}" = -i ]; then
+                case "${*: -1}" in *.latest.*) return 1 ;; esac
+            fi
+            command sed "$@"
+        }
+        KPANEL_MOCK_DOWNLOAD=ok kpanel_extract_release mock-image "$candidate_agent" "$candidate_script"
+        cmp "$image_script" "$candidate_script"
+        grep -Fx 'permission_granted="true"' "$candidate_script"
+        grep -Fx 'canshu="V6"' "$candidate_script"
+        grep -Fx 'ENABLE_STATS="false"' "$candidate_script"
+        test -z "$(find "$TEST_DIR" -name 'latest-script.latest.*' -print)"
+    )
+    # Without an installed k, a failed refresh uses the verified image and
+    # the existing accepted license rather than blocking a fresh installation.
+    rm /usr/local/bin/k
+    KPANEL_MOCK_DOWNLOAD=fail kpanel_extract_release mock-image "$candidate_agent" "$candidate_script"
+    grep -Fx 'permission_granted="true"' "$candidate_script"
+    cmp "$image_script" "$candidate_script"
+    mkdir -p /home/docker/kpanel/bin
+    kpanel_prepare_shared_script "$candidate_script"
+    cmp "$candidate_script" /usr/local/bin/k
+    kpanel_restore_shared_script
+    test ! -e /usr/local/bin/k
+    cmp "$current" /root/kejilion.sh
+    kpanel_clear_update_files
+    rmdir /home/docker/kpanel/bin
+    rm /root/kejilion.sh
+    # A first installation asks for the existing license once. Reusing the
+    # accepted image preferences must neither prompt again nor override refusal.
+    interactive_refresh() (
+        [() {
+            if [[ "$*" == '-t 0 ]' ]]; then return 0; fi
+            if [[ "$*" == '! -t 0 ]' ]]; then return 1; fi
+            builtin [ "$@"
+        }
+        kpanel_extract_release mock-image "$candidate_agent" "$candidate_script"
+    )
+    for mode in ok fail; do
+        printf 'y\n' | KPANEL_MOCK_DOWNLOAD="$mode" interactive_refresh >"$TEST_DIR/refresh-license-output"
+        test "$(grep -o '是否同意以上条款' "$TEST_DIR/refresh-license-output" | wc -l)" = 1
+        grep -Fx 'permission_granted="true"' "$candidate_script"
+        if [ "$mode" = ok ]; then grep -Fx '# latest-download-fixture' "$candidate_script"; fi
+        if printf 'n\ny\n' | KPANEL_MOCK_DOWNLOAD="$mode" interactive_refresh >"$TEST_DIR/refresh-license-output"; then
+            echo 'script refresh ignored license refusal' >&2
+            return 1
+        fi
+        test "$(grep -o '是否同意以上条款' "$TEST_DIR/refresh-license-output" | wc -l)" = 1
+        test ! -f "$candidate_script"
+        if KPANEL_MOCK_DOWNLOAD="$mode" interactive_refresh </dev/null >"$TEST_DIR/refresh-license-output"; then return 1; fi
+        test "$(grep -o '是否同意以上条款' "$TEST_DIR/refresh-license-output" | wc -l)" = 1
+    done
+    printf '%s\n' 'app_conf_latest_script_download=pass'
+}
+
 run_release_contract_guards() {
 	local candidate_agent="$TEST_DIR/release-contract-agent"
 	local candidate_script="$TEST_DIR/release-contract-script"
@@ -1338,6 +1512,7 @@ mkdir -p /home/docker/kpanel
 bash "$PROJECT_DIR/packaging/tests/app-conf-lock-compat.sh" "$PROJECT_DIR"
 run_license_inheritance
 run_shared_script_bootstrap
+run_latest_script_download
 # Exercise the successful interrupted-update branch with a legacy private copy.
 # Dependencies are stubbed in a subshell; cleanup remains the real lifecycle code.
 run_shared_script_interrupted_success() (
