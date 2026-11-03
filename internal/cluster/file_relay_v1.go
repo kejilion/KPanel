@@ -244,6 +244,10 @@ func (s *Service) AuthorizeFileRelayV1(
 	if !s.fileRequests.Allow(controllerV1Principal(controllerID), now) {
 		return LightFileRequest{}, ErrRateLimited
 	}
+	principal := controllerV1Principal(controllerID)
+	if err := s.replays.Check(principal, nonce, now); err != nil {
+		return LightFileRequest{}, err
+	}
 	spool, bodyDigest, bodyLength, err := spoolFileRelayV1Body(s.fileRelaySpoolDir, s.fileRelayV1SpoolSlots, input.Body, input.BodyLength)
 	if err != nil {
 		if errors.Is(err, ErrRateLimited) {
@@ -251,17 +255,39 @@ func (s *Service) AuthorizeFileRelayV1(
 		}
 		return LightFileRequest{}, ErrAuthentication
 	}
+	keepSpool := false
+	defer func() {
+		if !keepSpool {
+			_ = spool.Close()
+		}
+	}()
 	input.Body = spool
 	input.BodyLength = bodyLength
-	if err := verifyFileRelayV1Binding(request, publicKey, input, bodyDigest); err != nil {
-		_ = spool.Close()
+
+	// Body spooling can take a long time. Re-read the controller and its grant
+	// afterwards so a key replacement or administrator revocation during the
+	// upload cannot authorize a request under stale state.
+	current, err := s.store.Controller(controllerID)
+	if err != nil || current.Scope != SummaryScope {
+		return LightFileRequest{}, ErrAuthentication
+	}
+	currentPublicKey, err := decodePublicKey(current.PublicKey)
+	if err != nil || !s.fileRelayV1Grants.Granted(controllerID, current.Fingerprint) {
+		return LightFileRequest{}, ErrAuthentication
+	}
+	authorizedAt := s.now().UTC()
+	verifiedID, verifiedNonce, err := VerifyRequest(request, s.store.NodeID(), currentPublicKey, authorizedAt)
+	if err != nil || verifiedID != controllerID || verifiedNonce != nonce {
+		return LightFileRequest{}, ErrAuthentication
+	}
+	if err := verifyFileRelayV1Binding(request, currentPublicKey, input, bodyDigest); err != nil {
 		return LightFileRequest{}, err
 	}
-	if err := s.replays.Accept(controllerV1Principal(controllerID), nonce, now); err != nil {
-		_ = spool.Close()
+	if err := s.replays.Accept(principal, verifiedNonce, authorizedAt); err != nil {
 		return LightFileRequest{}, err
 	}
-	s.store.TouchController(controllerID, now)
+	s.store.TouchController(controllerID, authorizedAt)
+	keepSpool = true
 	return input, nil
 }
 

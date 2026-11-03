@@ -106,6 +106,25 @@ func replayCacheKey(principal, nonce string) replayKey {
 	return sha256.Sum256(input)
 }
 
+// Check rejects a nonce that has already been accepted, or a request that
+// cannot be admitted to the replay cache, without consuming the nonce. It is
+// useful before expensive request-body work; Accept remains the authoritative
+// atomic insertion after the complete request has been verified.
+func (g *replayGuard) Check(principal, nonce string, now time.Time) error {
+	key := replayCacheKey(principal, nonce)
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.pruneLocked(now)
+	if _, exists := g.entries[key]; exists {
+		return ErrReplay
+	}
+	principalCount := g.principalEntries[principal]
+	if len(g.entries) >= g.capacity || principalCount.count >= g.perPrincipalCapacity {
+		return ErrRateLimited
+	}
+	return nil
+}
+
 func (g *replayGuard) Accept(principal, nonce string, now time.Time) error {
 	key := replayCacheKey(principal, nonce)
 	g.mu.Lock()

@@ -325,6 +325,141 @@ func TestAuthorizeFileRelayV1RequiresTargetGrantAndBoundSignature(t *testing.T) 
 	}
 }
 
+func newGrantedV1FileRelayController(t *testing.T, now time.Time) (*Service, string, ed25519.PrivateKey) {
+	t.Helper()
+	clock := &serviceTestClock{now: now}
+	service := newLightServiceForTest(t, clock)
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	controllerID := strings.Repeat("b", 32)
+	code, err := service.CreatePairingCode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.AcceptPair("198.51.100.11", PairRequest{
+		PairingCode: code.Code, ControllerID: controllerID, ControllerName: "controller",
+		PublicKey: encodePublicKey(publicKey), FederationProtocol: FederationProtocol,
+	}); err != nil {
+		t.Fatalf("AcceptPair() error = %v", err)
+	}
+	if _, err := service.SetControllerFileRelay(controllerID, true); err != nil {
+		t.Fatalf("SetControllerFileRelay(true) error = %v", err)
+	}
+	return service, controllerID, privateKey
+}
+
+func signedV1FileUploadRequest(t *testing.T, service *Service, controllerID string, privateKey ed25519.PrivateKey, now time.Time, nonce string, body []byte) *http.Request {
+	t.Helper()
+	request := httptest.NewRequest(http.MethodPost, "https://target.example"+FileRelayV1Path, bytes.NewReader(body))
+	input := LightFileRequest{
+		Method: http.MethodPut, Path: "/v1/files/content", RawQuery: "path=%2Ftmp%2Fapproved",
+		Headers: map[string]string{"Content-Type": "text/plain"}, Body: bytes.NewReader(body), BodyLength: int64(len(body)),
+	}
+	request.Header.Set(FileRelayV1MethodHeader, input.Method)
+	request.Header.Set(FileRelayV1PathHeader, input.Path)
+	request.Header.Set(FileRelayV1QueryHeader, input.RawQuery)
+	if err := SignRequest(request, controllerID, service.NodeID(), privateKey, now, nonce); err != nil {
+		t.Fatal(err)
+	}
+	if err := signFileRelayV1(request, privateKey, input, sha256.Sum256(body)); err != nil {
+		t.Fatal(err)
+	}
+	return request
+}
+
+type fileRelayCountingReader struct {
+	reader io.Reader
+	reads  int
+}
+
+func (r *fileRelayCountingReader) Read(buffer []byte) (int, error) {
+	r.reads++
+	return r.reader.Read(buffer)
+}
+
+type fileRelayGateReader struct {
+	reader  *bytes.Reader
+	started chan struct{}
+	release chan struct{}
+	blocked bool
+}
+
+func (r *fileRelayGateReader) Read(buffer []byte) (int, error) {
+	if !r.blocked {
+		r.blocked = true
+		close(r.started)
+		<-r.release
+	}
+	return r.reader.Read(buffer)
+}
+
+func TestAuthorizeFileRelayV1RejectsReplayBeforeReadingBody(t *testing.T) {
+	now := time.Date(2026, 9, 4, 13, 0, 0, 0, time.UTC)
+	service, controllerID, privateKey := newGrantedV1FileRelayController(t, now)
+	body := []byte("signed upload body")
+	request := signedV1FileUploadRequest(t, service, controllerID, privateKey, now, fmt.Sprintf("%032x", 1), body)
+	authorized, err := service.AuthorizeFileRelayV1("198.51.100.11", request)
+	if err != nil {
+		t.Fatalf("AuthorizeFileRelayV1() error = %v", err)
+	}
+	if closer, ok := authorized.Body.(io.Closer); ok {
+		defer closer.Close()
+	}
+
+	reader := &fileRelayCountingReader{reader: bytes.NewReader(body)}
+	replay := request.Clone(context.Background())
+	replay.Body = io.NopCloser(reader)
+	if _, err := service.AuthorizeFileRelayV1("198.51.100.11", replay); !errors.Is(err, ErrReplay) {
+		t.Fatalf("replayed upload error = %v, want ErrReplay", err)
+	}
+	if reader.reads != 0 {
+		t.Fatalf("replayed request body was read %d times before rejection", reader.reads)
+	}
+}
+
+func TestAuthorizeFileRelayV1RechecksGrantAfterSpoolingBody(t *testing.T) {
+	now := time.Date(2026, 9, 4, 14, 0, 0, 0, time.UTC)
+	service, controllerID, privateKey := newGrantedV1FileRelayController(t, now)
+	body := []byte("slow signed upload body")
+	request := signedV1FileUploadRequest(t, service, controllerID, privateKey, now, fmt.Sprintf("%032x", 2), body)
+	gate := &fileRelayGateReader{reader: bytes.NewReader(body), started: make(chan struct{}), release: make(chan struct{})}
+	request.Body = io.NopCloser(gate)
+	type authorizationResult struct {
+		input LightFileRequest
+		err   error
+	}
+	done := make(chan authorizationResult, 1)
+	go func() {
+		input, err := service.AuthorizeFileRelayV1("198.51.100.11", request)
+		done <- authorizationResult{input: input, err: err}
+	}()
+	select {
+	case <-gate.started:
+	case <-time.After(time.Second):
+		t.Fatal("authorization did not begin spooling the request body")
+	}
+	if _, err := service.SetControllerFileRelay(controllerID, false); err != nil {
+		t.Fatalf("revoke file relay grant during body upload: %v", err)
+	}
+	close(gate.release)
+	result := <-done
+	if !errors.Is(result.err, ErrAuthentication) {
+		if closer, ok := result.input.Body.(io.Closer); ok {
+			_ = closer.Close()
+		}
+		t.Fatalf("authorization after revocation error = %v, want ErrAuthentication", result.err)
+	}
+	entries, err := os.ReadDir(service.fileRelaySpoolDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("revoked request left %d spool files", len(entries))
+	}
+}
+
 func TestFileRelayV1GrantIsBoundToTheControllerKey(t *testing.T) {
 	store, err := openFileRelayV1GrantStore(filepath.Join(t.TempDir(), fileRelayV1GrantFileName))
 	if err != nil {

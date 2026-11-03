@@ -37,6 +37,31 @@ func TestReplayGuardIsolatesPrincipalCapacityAndBoundsGlobalEntries(t *testing.T
 	}
 }
 
+func TestReplayGuardCheckDoesNotConsumeNonce(t *testing.T) {
+	now := time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC)
+	guard := newReplayGuard(2, 1, 5*time.Minute)
+	for range 2 {
+		if err := guard.Check("controller:a", "nonce-1", now); err != nil {
+			t.Fatalf("Check() before Accept error = %v", err)
+		}
+	}
+	if err := guard.Accept("controller:a", "nonce-1", now); err != nil {
+		t.Fatalf("Accept() after read-only checks error = %v", err)
+	}
+	if err := guard.Check("controller:a", "nonce-1", now); !errors.Is(err, ErrReplay) {
+		t.Fatalf("Check() accepted an existing nonce: %v", err)
+	}
+	if err := guard.Check("controller:b", "nonce-2", now); err != nil {
+		t.Fatalf("Check() rejected available global capacity: %v", err)
+	}
+	if err := guard.Accept("controller:b", "nonce-2", now); err != nil {
+		t.Fatalf("Accept() after Check() error = %v", err)
+	}
+	if err := guard.Check("controller:c", "nonce-3", now); !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("Check() did not report full global capacity: %v", err)
+	}
+}
+
 func TestReplayGuardProductionPrincipalLimitLeavesOtherNodesAvailable(t *testing.T) {
 	now := time.Date(2026, 10, 23, 11, 0, 0, 0, time.UTC)
 	guard := newReplayGuard(replayGuardTotalEntries, replayGuardEntriesPerPrincipal, 5*time.Minute)
