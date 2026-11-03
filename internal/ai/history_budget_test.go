@@ -40,15 +40,15 @@ func TestAIHistoryMigrationDoesNotMarkPrivateStateScrubComplete(t *testing.T) {
 	}
 	defer store.Close()
 	ctx := context.Background()
-	// An interrupted private-state scrub leaves version 11 absent. A later
+	// Interrupted tool and learning scrubs leave versions 11 and 12 absent. A later
 	// ordinary schema migration must not claim that the scrub completed.
-	if _, err := store.db.ExecContext(ctx, `DELETE FROM schema_migrations WHERE version=11`); err != nil {
+	if _, err := store.db.ExecContext(ctx, `DELETE FROM schema_migrations WHERE version IN (11,12)`); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.migrate(ctx); err != nil {
 		t.Fatal(err)
 	}
-	for version, expected := range map[int]int{11: 0, 12: 1} {
+	for version, expected := range map[int]int{11: 0, 12: 0, 13: 1} {
 		var count int
 		if err := store.db.QueryRowContext(ctx, `SELECT count(*) FROM schema_migrations WHERE version=?`, version).Scan(&count); err != nil {
 			t.Fatal(err)
