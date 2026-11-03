@@ -41,7 +41,7 @@ for path in "$app" /root/kejilion.sh /usr/local/bin/k /usr/bin/k /etc/systemd/sy
 done
 [[ -z "$(docker ps -aq --filter name='^/kejilion-panel$')" ]] || exit 2
 [[ ! -e "$work" ]] || exit 2
-mkdir -m 700 "$work"; mkdir -m 755 "$work/evidence"
+mkdir -m 711 "$work"; mkdir -m 755 "$work/evidence"
 self="$(realpath "$0")"
 checks=0; update_pid=''; owned=false
 finish() {
@@ -111,6 +111,12 @@ for ((attempt=0;attempt<2400;attempt++)); do
 done
 [[ "$caught" = true ]]
 pass interrupted_real_update_before_commit
+# Alter only test-owned marker files while both real writers are stopped. A
+# checksum match after recovery must come from the cold backup, not retention.
+systemctl stop kejilion-agent
+docker stop kejilion-panel >"$work/evidence/stop-interrupted-panel.log"
+printf 'damaged-after-interruption\n' >"$app/data/panel/native-test-marker"
+printf 'damaged-after-interruption\n' >"$app/data/agent/native-test-marker"
 bash "$self" --invoke recover "$work/stable.conf" >"$work/evidence/recovery.log" 2>&1
 [[ ! -e "$app/update-state/transaction" ]]
 sha256sum -c "$work/before.sha256" >"$work/evidence/restored-data-and-script.log"
