@@ -9,6 +9,14 @@
 - 基线提交：`d52cd0b073b53000a1a682d1addf69ba937c58be`
 - 基线版本：`v1.28.0`
 
+### 2026-11-03 v1.29.0-rc.7 宿主脚本维护预览准备
+
+候选来源 fix/shared-host-script-maintenance / 67518fd45e2b699f8cbb5d239c56c3977f759188，基线 33b13119d6bc3ac23e66c63aec6e2159813bdc8f。安装更新可选刷新官方脚本，校验结构和语法后继承许可/地区/统计；失败保留镜像已验证脚本，沿用既有宿主同步与回滚。没有 API/schema、权限、依赖或 Web 交互变更，原资源和时间上限保留。原候选完整 L2、临时 rootfs 生命周期、实际官方源暂存和异常回归已有成功原件；ACL 子项缺工具跳过，不冒充生产或新组合 L3 成功。
+
+scriptLinkageState=not-required：不要求新的脚本能力或脚本仓库发布，复用当前公开机器协议。内置脚本仍为 kejilion/sh@d2156444add457973d4a84634653aa10cece712f，SHA-256 f60a7023ca0d6dd9ee5f3557669675b84ca7e2c0f3de9fe4b8da22e740478235；安装阶段可选官方当前脚本与镜像固定脚本分开记录，实际来源下载/暂存/偏好/回滚已由原候选测试。运行时来源刷新不改变镜像内固定来源。
+
+旧版首次自动升级沿用旧入口限制、真实宿主全生命周期和物理 ARM64 风险保留。本轮只发布 preview，生产部署不适用；候选 CI、GitHub-hosted L3、公开产物和浏览器验收尚待完成。审计整改 931ad9f0 的验证未全绿，备份工作树未提交，本轮排除。源码 firstPartySourceSha256 仅随版本文件派生更新，既有扫描发现和期限未改写。
+
 ### 2026-11-02 v1.29.0-rc.5 域名反馈与共享脚本升级预览已公开
 
 [v1.29.0-rc.5](https://github.com/kejilion/KPanel/releases/tag/v1.29.0-rc.5) 已公开，产品 `d52cd0b073b53000a1a682d1addf69ba937c58be`，版本/preview digest `sha256:14e6020e825169d1ce479ce6b155b8252dc5621f29e689643559ecad9e8facd9`，Release ID 430712455。发布run41322833168/attempt1的候选CI、完整GitHub-hosted L3、main/tag、最终主线CI、19附件、双架构与公开浏览器150项全部成功；稳定默认仍v1.28.0，生产未部署。详见[本版验收](release-v1.29.0-rc.5-acceptance.md)。
