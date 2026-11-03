@@ -7,7 +7,7 @@ import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { repoShellEnvironment, resolveBash } from './run-repo-bash.mjs';
-import { validateBackport } from './torrent-backport-baseline.mjs';
+import { firstPartySources, validateBackport } from './torrent-backport-baseline.mjs';
 
 const SHA = /^[a-f0-9]{40}$/;
 const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/;
@@ -18,6 +18,18 @@ const paths = (value) => Array.isArray(value) && value.length > 0 && value.lengt
   && !path.split('/').some((part) => ['.', '..'].includes(part)));
 const inside = (root, path) => { const diff = relative(root, path); return !isAbsolute(diff) && diff !== '..' && !diff.startsWith('..' + (process.platform === 'win32' ? '\\' : '/')); };
 const covered = (path, rules) => rules.some((rule) => rule.endsWith('/') ? path.startsWith(rule) : path === rule);
+
+// Reuse the scanner's source boundary; do not silently refresh a reviewed observation.
+export function qualifySourceIdentity(repo) {
+  const root = realpathSync.native(resolve(repo));
+  const policy = JSON.parse(readFileSync(resolve(root, 'scripts/torrent-backport-scan-scope.json'), 'utf8'));
+  const observed = firstPartySources(root);
+  const failures = /^[a-f0-9]{64}$/.test(policy.firstPartySourceSha256 ?? '')
+    && policy.firstPartySourceSha256 === observed.sha256 ? [] : ['first-party source observation changed; review and rebind before committing a release candidate'];
+  return { schemaVersion: 1, phase: 'source-identity', status: failures.length ? 'failed' : 'passed',
+    firstPartySourceSha256: observed.sha256, sourceFiles: observed.files.length, failures,
+    qualificationOnly: true, permissionsGranted: false };
+}
 
 // Fixed, offline prerequisite checks for the canonical governance gate. Never consume contract argv.
 export function qualifyGovernance({ repo, probe = spawnSync, checkSources = validateBackport, environment: inheritedEnvironment = process.env }) {
@@ -88,6 +100,10 @@ export function qualify({ repo, contract, phase, contractDir = process.cwd(), no
   }
   // Stop before consuming malformed fields. argv is descriptive, even when it looks like shell code.
   if (failures.length) return { schemaVersion: 1, phase, status: 'failed', failures };
+  if (contract.riskLevel === 'L3') {
+    try { failures.push(...qualifySourceIdentity(root).failures); }
+    catch (error) { failures.push('source-identity: ' + error.message); }
+  }
   const gitRoot = realpathSync.native(git('rev-parse', '--show-toplevel'));
   require(process.platform === 'win32' ? gitRoot.toLowerCase() === root.toLowerCase() : gitRoot === root, 'repo must be the worktree root');
   require(git('rev-parse', '--verify', contract.baseCommit + '^{commit}') === contract.baseCommit, 'baseCommit does not resolve exactly');
@@ -138,7 +154,7 @@ export function qualify({ repo, contract, phase, contractDir = process.cwd(), no
 }
 
 export function main(argv) {
-  if (argv.includes('--help')) { process.stdout.write('usage: task-preflight.mjs ready|handoff --contract JSON [--repo PATH]\n       task-preflight.mjs governance [--repo PATH]\n'); return 0; }
+  if (argv.includes('--help')) { process.stdout.write('usage: task-preflight.mjs ready|handoff --contract JSON [--repo PATH]\n       task-preflight.mjs governance|source-identity [--repo PATH]\n'); return 0; }
   const phase = argv.shift();
   const options = { repo: process.cwd() };
   const seen = new Set();
@@ -147,9 +163,9 @@ export function main(argv) {
     if (!key || seen.has(key) || !argv[i + 1]) throw new Error('invalid option: ' + argv[i]);
     seen.add(key); options[key] = argv[i + 1];
   }
-  if (phase === 'governance') {
-    if (options.contract) throw new Error('governance uses fixed probes, not a contract');
-    const report = qualifyGovernance({ repo: options.repo });
+  if (phase === 'governance' || phase === 'source-identity') {
+    if (options.contract) throw new Error(phase + ' uses fixed probes, not a contract');
+    const report = phase === 'governance' ? qualifyGovernance({ repo: options.repo }) : qualifySourceIdentity(options.repo);
     process.stdout.write(JSON.stringify(report, null, 2) + '\n');
     return report.status === 'passed' ? 0 : 1;
   }

@@ -5,7 +5,8 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, write
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
-import { qualify, qualifyGovernance } from '../task-preflight.mjs';
+import { qualify, qualifyGovernance, qualifySourceIdentity } from '../task-preflight.mjs';
+import { firstPartySources } from '../torrent-backport-baseline.mjs';
 
 const repoRoot = resolve(import.meta.dirname, '../..');
 
@@ -150,6 +151,57 @@ test('ready and exact committed handoff pass while remaining read-only qualifica
     assert.equal(f.git(f.writer, 'status', '--porcelain'), '');
     assert.equal(qualify({ repo: f.management, contract: f.contract, phase: 'ready' }).status, 'failed');
   } finally { f.cleanup(); }
+});
+
+test('L3 ready and handoff reject stale first-party observations before release validation', () => {
+  const f = fixture();
+  try {
+    mkdirSync(join(f.writer, 'cmd'));
+    mkdirSync(join(f.writer, 'internal/version'), { recursive: true });
+    const versionFile = join(f.writer, 'internal/version/version.go');
+    writeFileSync(versionFile, 'package version\nvar Version = "1.29.0-rc.6-dev"\n');
+    const scope = join(f.writer, 'scripts/torrent-backport-scan-scope.json');
+    const policy = { firstPartySourceSha256: firstPartySources(f.writer).sha256 };
+    writeFileSync(scope, JSON.stringify(policy));
+    f.git(f.writer, 'add', '.'); f.git(f.writer, 'commit', '-m', 'test: observed source');
+    f.contract.riskLevel = 'L3';
+    assert.equal(f.run('ready').status, 'passed');
+    const before = readFileSync(scope, 'utf8');
+    writeFileSync(versionFile, 'package version\nvar Version = "1.29.0-dev"\n');
+    f.git(f.writer, 'add', '.'); f.git(f.writer, 'commit', '-m', 'test: stable version');
+    for (const phase of ['ready', 'handoff']) {
+      const result = f.run(phase);
+      assert.equal(result.status, 'failed');
+      assert.ok(result.failures.some(message => message.includes('first-party source observation changed')));
+    }
+    assert.equal(readFileSync(scope, 'utf8'), before, 'qualification never refreshes reviewed policy');
+    policy.firstPartySourceSha256 = firstPartySources(f.writer).sha256;
+    writeFileSync(scope, JSON.stringify(policy));
+    f.git(f.writer, 'add', '.'); f.git(f.writer, 'commit', '-m', 'test: reviewed rebind');
+    assert.equal(f.run('ready').status, 'passed');
+    rmSync(scope); f.git(f.writer, 'add', '.'); f.git(f.writer, 'commit', '-m', 'test: missing observation');
+    assert.ok(f.run('ready').failures.some(message => message.startsWith('source-identity:')));
+    f.contract.riskLevel = 'L2';
+    assert.equal(f.run('ready').status, 'passed', 'ordinary tasks do not gain a release-only prerequisite');
+  } finally { f.cleanup(); }
+});
+
+test('source-identity CLI is read-only and fails closed on malformed or stale observations', () => {
+  const root = governanceFixture();
+  try {
+    mkdirSync(join(root, 'cmd')); mkdirSync(join(root, 'internal'));
+    writeFileSync(join(root, 'cmd/main.go'), 'package main\n');
+    const policy = join(root, 'scripts/torrent-backport-scan-scope.json');
+    writeFileSync(policy, JSON.stringify({ firstPartySourceSha256: firstPartySources(root).sha256 }));
+    assert.equal(qualifySourceIdentity(root).status, 'passed');
+    for (const body of ['{bad', '{}', JSON.stringify({ firstPartySourceSha256: '0'.repeat(64) })]) {
+      writeFileSync(policy, body);
+      const result = spawnSync(process.execPath, [join(repoRoot, 'scripts/task-preflight.mjs'), 'source-identity', '--repo', root], { encoding: 'utf8' });
+      assert.equal(result.status, 1);
+      assert.equal(JSON.parse(result.stdout).status, 'failed');
+      assert.equal(readFileSync(policy, 'utf8'), body);
+    }
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test('preflight groups malformed and missing inputs without executing supplied argv', () => {

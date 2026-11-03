@@ -244,6 +244,9 @@ worktree / branch / base / rollback：
 替换占位内容后运行 `node scripts/task-preflight.mjs ready --contract <仓库外JSON> --repo <task-worktree>`。
 ready 核对专用 writer、clean、精确基线祖先、输入文件、工具和必填字段，成组报告缺项；
 它不替代业务 Definition of Ready。允许路径只支持仓库相对文件名或以 `/` 结尾的目录前缀，禁止通配符和 `..`。
+L3 的 ready/handoff 还复用扫描器的 `firstPartySources` 核对已审查的源码摘要；缺失、损坏或过期摘要失败关闭，
+不自动更新观察值。版本等源码改动后、提交候选前可单独运行
+`node scripts/task-preflight.mjs source-identity`；通过只表示这一源码边界相符，不替代生产闭包、安全审查或 L3。
 
 交接前在同一契约填入 `candidateCommit`（当前完整 HEAD）及 `evidence`。每个验证恰有一条凭据：
 复用对应 validation 的 `id/environment/tools/parameters/argv`，另填 `candidateCommit`、`status=passed`、
