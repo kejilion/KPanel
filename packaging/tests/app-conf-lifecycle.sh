@@ -622,7 +622,7 @@ EOF
 	# shellcheck source=/dev/null
 	. "$PROJECT_DIR/packaging/kejilion-app/kpanel.conf"
 	docker_port="18080"
-	docker_app_install >"$TEST_DIR/install-output.txt"
+	KPANEL_MOCK_DOWNLOAD="${KPANEL_TEST_INITIAL_DOWNLOAD:-ok}" docker_app_install >"$TEST_DIR/install-output.txt"
 	grep -Fx '首次初始化 Token： test-bootstrap-token' \
 		"$TEST_DIR/install-output.txt" >/dev/null
 	grep -Fx '请复制此 Token 完成管理员账户初始化；初始化成功后 Token 自动失效。' \
@@ -821,6 +821,20 @@ EOF
 	docker_app_update >"$TEST_DIR/after-retarget-update-output.txt"
 	grep -Fx '    image: docker.io/kjlion/kejilion-panel@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' \
 		/home/docker/kpanel/docker-compose.yml >/dev/null
+	# Failed optional refresh must still complete the update without replacing
+	# either host entry (including local bytes and its original permissions).
+	printf '\n# preserve host on failed refresh\n' >>/usr/local/bin/k
+	chmod 700 /usr/local/bin/k
+	cp -p /usr/local/bin/k "$TEST_DIR/refresh-old-k"
+	cp -p /root/kejilion.sh "$TEST_DIR/refresh-old-root"
+	local refresh_failure
+	for refresh_failure in fail html; do
+		KPANEL_MOCK_DOWNLOAD="$refresh_failure" docker_app_update >"$TEST_DIR/refresh-fallback-output.txt"
+		grep -Fx 'KPanel 更新完成 / Update Complete' "$TEST_DIR/refresh-fallback-output.txt" >/dev/null
+		cmp "$TEST_DIR/refresh-old-k" /usr/local/bin/k
+		cmp "$TEST_DIR/refresh-old-root" /root/kejilion.sh
+		test "$(stat -c %a /usr/local/bin/k)" = 700
+	done
 
 	rm -rf /home/docker/kpanel/update-state
 	rm -f "$MOCK_STATE/image-rm"
@@ -1138,6 +1152,7 @@ systemd_link_snapshot() {
 
 run_symlinked_docker_root_lifecycle() {
 	local physical_docker_root="$TEST_DIR/physical docker root"
+	local KPANEL_TEST_INITIAL_DOWNLOAD=fail
 
 	MOCK_STATE="$TEST_DIR/symlinked-root-state"
 	mkdir -p "$MOCK_STATE"
@@ -1314,6 +1329,7 @@ run_partial_uninstall() (
 )
 
 run_latest_script_download() {
+    local KPANEL_KEEP_HOST_SCRIPT=false
     local candidate_agent="$TEST_DIR/latest-agent"
     local candidate_script="$TEST_DIR/latest-script"
     local current="$TEST_DIR/current-script"
@@ -1340,17 +1356,32 @@ run_latest_script_download() {
         else test "$(wc -l <"$TEST_DIR/latest-download.log")" = 1; fi
     done
     for mode in fail empty html syntax; do
-        if KPANEL_MOCK_DOWNLOAD="$mode" kpanel_extract_release mock-image "$candidate_agent" "$candidate_script"; then
-            echo "invalid latest script accepted: $mode" >&2
-            return 1
-        fi
-        test ! -e "$candidate_agent"
-        test ! -e "$candidate_script"
+        KPANEL_MOCK_DOWNLOAD="$mode" kpanel_extract_release mock-image "$candidate_agent" "$candidate_script"
+        test -x "$candidate_agent"
+        test -f "$candidate_script"
+        test "$KPANEL_KEEP_HOST_SCRIPT" = true
+        kpanel_prepare_shared_script "$candidate_script"
         test -z "$(find "$TEST_DIR" -name 'latest-script.latest.*' -print)"
         cmp "$current" /usr/local/bin/k
         cmp "$current" /root/kejilion.sh
+        test "$(stat -c %a /usr/local/bin/k)" = 700
     done
-    rm /usr/local/bin/k /root/kejilion.sh
+    # Without an installed k, a failed refresh uses the verified image and
+    # the existing accepted license rather than blocking a fresh installation.
+    rm /usr/local/bin/k
+    KPANEL_MOCK_DOWNLOAD=fail kpanel_extract_release mock-image "$candidate_agent" "$candidate_script"
+    test "$KPANEL_KEEP_HOST_SCRIPT" = false
+    grep -Fx 'permission_granted="true"' "$candidate_script"
+    ! grep -F '# latest-download-fixture' "$candidate_script"
+    mkdir -p /home/docker/kpanel/bin
+    kpanel_prepare_shared_script "$candidate_script"
+    cmp "$candidate_script" /usr/local/bin/k
+    kpanel_restore_shared_script
+    test ! -e /usr/local/bin/k
+    cmp "$current" /root/kejilion.sh
+    kpanel_clear_update_files
+    rmdir /home/docker/kpanel/bin
+    rm /root/kejilion.sh
     printf '%s\n' 'app_conf_latest_script_download=pass'
 }
 
