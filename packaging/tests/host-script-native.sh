@@ -43,7 +43,7 @@ done
 [[ ! -e "$work" ]] || exit 2
 mkdir -m 711 "$work"; mkdir -m 755 "$work/evidence"
 self="$(realpath "$0")"
-checks=0; update_pid=''; owned=false
+checks=0; update_pid=''; owned=false; parent_mode_before=''
 finish() {
   local result=$? cleanup=passed
   trap - EXIT TERM INT
@@ -57,6 +57,9 @@ finish() {
   if [[ "$owned" = true && -d "$app" ]]; then
     bash "$self" --invoke uninstall "$work/preview.conf" >"$work/evidence/cleanup.log" 2>&1 || cleanup=failed
     [[ ! -e "$app" && -z "$(docker ps -aq --filter name='^/kejilion-panel$')" ]] || cleanup=failed
+  fi
+  if [[ -n "$parent_mode_before" ]]; then
+    chmod "$parent_mode_before" /home/docker || cleanup=failed
   fi
   [[ "$cleanup" = passed ]] || result=1
   printf '{"candidate":"%s","runId":"%s","attempt":"%s","exitCode":%s,"checks":%s,"cleanup":"%s","mocked":false,"productVersion":"1.29.0-rc.6","stableDigest":"%s","productDigest":"%s"}\n' \
@@ -72,6 +75,18 @@ docker version >"$work/evidence/docker-version.log"
 systemd --version >"$work/evidence/systemd-version.log"
 umask >"$work/evidence/caller-umask.log"
 uname -a >"$work/evidence/kernel.log"
+# Hosted images may already provide /home/docker as root:root 0775. Migration
+# deliberately rejects writable ancestors. Establish its documented trusted
+# root as a fixture prerequisite; do not relax the production path checks.
+if [[ -e /home/docker || -L /home/docker ]]; then
+  [[ -d /home/docker && ! -L /home/docker && "$(stat -c '%u:%g' /home/docker)" = 0:0 ]]
+  parent_mode_before="$(stat -c '%a' /home/docker)"
+  stat -c '%n %u:%g %a %F' /home/docker >"$work/evidence/parent-before.log"
+else
+  mkdir -m 755 /home/docker
+fi
+chmod go-w /home/docker
+stat -c '%n %u:%g %a %F' /home/docker >"$work/evidence/parent-qualified.log"
 for channel in stable preview; do
   image="$stable"; [[ "$channel" = stable ]] || image="$preview"
   docker pull "$image" >"$work/evidence/pull-$channel.log" 2>&1
