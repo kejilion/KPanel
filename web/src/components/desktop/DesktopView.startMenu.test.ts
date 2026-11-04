@@ -8,6 +8,7 @@ import { resetDesktopIconsForTest } from '@/stores/desktopIcons'
 import { resetThemeForTest } from '@/stores/theme'
 import type { DesktopEntries } from '@/lib/desktopEntries'
 import { api } from '@/lib/api'
+import { desktopApps } from '@/lib/desktopApps'
 import type { DesktopWorkspace } from '@/types/api'
 
 vi.mock('@/lib/desktopWindowRoute', async (importOriginal) => ({
@@ -130,8 +131,8 @@ describe('DesktopView start menu', () => {
     await mountDesktop()
     await openMenu()
     const keys = wrapper.findAll('#desktop-start-menu [role="option"]').map((option) => option.attributes('data-start-menu-key'))
-    expect(keys.slice(0, 20).every((key) => key?.startsWith('nav:'))).toBe(true)
-    expect(keys.slice(20)).toEqual(['app:nginx', 'app:kuma', 'site:blog'])
+    expect(keys.slice(0, desktopApps.length).every((key) => key?.startsWith('nav:'))).toBe(true)
+    expect(keys.slice(desktopApps.length)).toEqual(['app:nginx', 'app:kuma', 'site:blog'])
     expect(wrapper.get('[data-start-menu-key="app:kuma"]').text()).toContain('桌面已隐藏')
     // The desktop itself still hides the app.
     expect(wrapper.find('.desktop__icons [aria-label="Uptime Kuma"]').exists()).toBe(false)
