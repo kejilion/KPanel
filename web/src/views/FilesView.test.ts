@@ -865,7 +865,7 @@ describe('FilesView remote download', () => {
     const actions = source.slice(actionsStart, source.indexOf('class="file-browser"', actionsStart))
     expect(source).toContain('const filesSplit = inject(filesSplitControlKey, undefined)')
     // Both panes close themselves; only a single wide pane offers to split.
-    expect(actions).toMatch(/v-if="filesSplit\?\.open\.value"[\s\S]*?filesSplit\.closePane\(\)[\s\S]*?关闭此栏/)
+    expect(actions).toMatch(/v-if="filesSplit\?\.open\.value"[^>]*aria-label="关闭此栏"[^>]*@click="filesSplit\.closePane\(\)"/)
     expect(actions).toMatch(/v-else-if="filesSplit\?\.role === 'primary' && filesSplit\.available\.value"[\s\S]*?filesSplit\.openSplit\(\)/)
     expect(source).toContain('unregisterSplitBusyCheck = filesSplit?.registerBusyCheck(fileOperationsRunning)')
     expect(source).toMatch(/if \(fileOperationsRunning\(\)\) \{\s*toast\.show\('当前主机有文件操作进行中'/)
