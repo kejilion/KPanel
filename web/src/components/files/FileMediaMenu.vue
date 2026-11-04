@@ -53,7 +53,7 @@ onBeforeUnmount(() => {
 
 <template>
   <button ref="trigger" class="button button--secondary button--small" type="button" :aria-label="phrase('媒体')" aria-haspopup="menu" :aria-expanded="open" :aria-controls="open ? id : undefined" @click="toggle" @keydown.down.prevent="toggle">
-    <Images :size="15" /><span>{{ phrase('媒体') }}</span><ChevronDown :size="13" />
+    <Images :size="15" /><span class="file-command-bar__label">{{ phrase('媒体') }}</span><ChevronDown class="file-command-bar__label" :size="13" />
   </button>
   <Teleport to="body">
     <div v-if="open" :id="id" ref="menu" class="file-context-menu file-media-menu k-context-menu" role="menu" :aria-label="phrase('媒体')" :style="position" @keydown="keydown" @pointermove="showContextMenuPointerFocus">
