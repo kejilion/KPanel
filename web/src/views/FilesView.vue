@@ -3246,13 +3246,13 @@ onBeforeUnmount(() => {
         />
         <button
           v-if="filesSplit?.open.value"
-          class="button button--secondary button--small file-command-bar__split"
+          class="button button--secondary button--small file-command-bar__split file-command-bar__close"
           type="button"
           title="关闭此栏，保留另一栏"
           aria-label="关闭此栏"
           @click="filesSplit.closePane()"
         >
-          <X :size="15" /> <span class="file-command-bar__label">关闭此栏</span>
+          <X :size="15" />
         </button>
         <button
           v-else-if="filesSplit?.role === 'primary' && filesSplit.available.value"
@@ -4365,7 +4365,8 @@ onBeforeUnmount(() => {
   font-size: 14px;
 }
 
-.file-command-bar__actions .file-command-bar__refresh {
+.file-command-bar__actions .file-command-bar__refresh,
+.file-command-bar__actions .file-command-bar__close {
   width: 40px;
   min-width: 40px;
   flex: 0 0 40px;

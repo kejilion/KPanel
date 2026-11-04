@@ -17,13 +17,15 @@ describe('split pane command bar', () => {
     expect(workspace).not.toMatch(/\.button:not\(\.button--primary\)\s*\{[^}]*width:\s*40px;/)
   })
 
-  it('wraps the label of every secondary action and leaves the primary upload labelled', () => {
-    for (const label of ['回收站', '分享管理', "{{ i18n.t('desktop.newItem') }}", '关闭此栏']) {
+  it('keeps text on file actions and makes the pane close button a named icon', () => {
+    for (const label of ['回收站', '分享管理', "{{ i18n.t('desktop.newItem') }}"]) {
       expect(files).toContain(`<span class="file-command-bar__label">${label}</span>`)
     }
     expect(files).toContain('<FileMediaMenu @gallery="openGallery" @music="openMusic" />')
     expect(media).toContain('<span class="file-command-bar__label">{{ phrase(\'媒体\') }}</span>')
     expect(media).toContain('<ChevronDown class="file-command-bar__label"')
     expect(files).toContain('<Upload :size="15" /> 上传文件')
+    expect(files).toMatch(/file-command-bar__close"[^>]*aria-label="关闭此栏"[^>]*>\s*<X :size="15" \/>\s*<\/button>/)
+    expect(files).toMatch(/\.file-command-bar__close\s*\{[^}]*width:\s*40px;/)
   })
 })
