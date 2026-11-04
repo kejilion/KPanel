@@ -15,7 +15,7 @@ describe('file media menu', () => {
     await wrapper.get('button').trigger('click')
     expect(wrapper.get('button').attributes('aria-expanded')).toBe('true')
     const items = document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')
-    expect([...items].map(item => item.textContent)).toEqual(['图库', '音乐'])
+    expect([...items].map(item => item.textContent)).toEqual(['图库', '音乐', '影视'])
     items[1]!.click(); await nextTick()
     expect(wrapper.emitted('music')).toHaveLength(1)
     expect(wrapper.emitted('gallery')).toBeUndefined()

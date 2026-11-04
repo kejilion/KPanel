@@ -143,6 +143,12 @@ export const router = createRouter({
           meta: { titleKey: 'route.gallery' },
         },
         {
+          path: 'cinema',
+          name: 'cinema',
+          component: () => loadNavigationRoute('/cinema'),
+          meta: { titleKey: 'route.cinema' },
+        },
+        {
           path: 'offers',
           name: 'offers',
           component: () => loadNavigationRoute('/offers'),

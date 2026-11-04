@@ -143,6 +143,7 @@ body:has(.classic-backdrop) {
 }
 
 :root:has(.classic-backdrop) .page-content .music-page,
+:root:has(.classic-backdrop) .page-content .cinema-page,
 :root[data-theme='dark']:has(.classic-backdrop) .page-content .gallery-page {
   background: color-mix(in srgb, var(--classic-surface-base, var(--surface)) var(--classic-wallpaper-sidebar), transparent);
 }
@@ -241,6 +242,7 @@ body:has(.classic-backdrop) {
   }
 
   :root:has(.classic-backdrop) .page-content .music-page,
+  :root:has(.classic-backdrop) .page-content .cinema-page,
   :root[data-theme='dark']:has(.classic-backdrop) .page-content .gallery-page {
     background: Canvas;
   }

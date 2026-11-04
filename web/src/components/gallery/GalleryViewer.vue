@@ -74,6 +74,7 @@ const props = defineProps<{
   canMove?: boolean
   /** Whether the thumbnail strip is shown; the page remembers the choice. */
   filmstrip?: boolean
+  navigationLabels?: { previous: string; next: string }
   /** Covers the open photo can be made; empty hides the button (videos, formats a browser cannot draw). */
   coverOptions?: GalleryCoverOption[]
 }>()
@@ -855,8 +856,8 @@ onBeforeUnmount(() => {
           v-if="index > 0"
           class="gallery-viewer__nav gallery-viewer__nav--prev"
           type="button"
-          :title="phrase('上一张')"
-          :aria-label="phrase('上一张')"
+          :title="navigationLabels?.previous ?? phrase('上一张')"
+          :aria-label="navigationLabels?.previous ?? phrase('上一张')"
           @pointerdown.stop
           @pointerenter="holdChrome(true)"
           @pointerleave="holdChrome(false)"
@@ -866,8 +867,8 @@ onBeforeUnmount(() => {
           v-if="index < items.length - 1"
           class="gallery-viewer__nav gallery-viewer__nav--next"
           type="button"
-          :title="phrase('下一张')"
-          :aria-label="phrase('下一张')"
+          :title="navigationLabels?.next ?? phrase('下一张')"
+          :aria-label="navigationLabels?.next ?? phrase('下一张')"
           @pointerdown.stop
           @pointerenter="holdChrome(true)"
           @pointerleave="holdChrome(false)"

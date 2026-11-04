@@ -21,7 +21,7 @@ describe('split pane command bar', () => {
     for (const label of ['回收站', '分享管理', "{{ i18n.t('desktop.newItem') }}"]) {
       expect(files).toContain(`<span class="file-command-bar__label">${label}</span>`)
     }
-    expect(files).toContain('<FileMediaMenu @gallery="openGallery" @music="openMusic" />')
+    expect(files).toContain('<FileMediaMenu @gallery="openGallery" @music="openMusic" @cinema="openCinema" />')
     expect(media).toContain('<span class="file-command-bar__label">{{ phrase(\'媒体\') }}</span>')
     expect(media).toContain('<ChevronDown class="file-command-bar__label"')
     expect(files).toContain('<Upload :size="15" /> 上传文件')

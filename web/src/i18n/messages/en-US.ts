@@ -353,6 +353,7 @@ export const enUSMessages = {
   'route.apps': 'App marketplace',
   'route.files': 'Files',
   'route.music': 'Music',
+  'route.cinema': 'Cinema',
   'route.gallery': 'Gallery',
   'route.offersNew': 'Sponsored (new offers)',
   'route.offers': 'Sponsored',

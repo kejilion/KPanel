@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { inject, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
-import { ChevronDown, Images, Music2 } from '@lucide/vue'
+import { ChevronDown, Clapperboard, Images, Music2 } from '@lucide/vue'
 import { useI18n } from '@/i18n'
 import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
 import { desktopWindowVisibleKey } from '@/lib/desktopRouteKeys'
 import { focusFirstContextMenuItem, moveContextMenuFocus, placeContextMenu, showContextMenuKeyboardFocus, showContextMenuPointerFocus } from '@/lib/contextMenu'
 
-const emit = defineEmits<{ gallery: []; music: [] }>()
+const emit = defineEmits<{ gallery: []; music: []; cinema: [] }>()
 const i18n = useI18n(), id = useId()
 const trigger = ref<HTMLButtonElement>(), menu = ref<HTMLElement>(), open = ref(false)
 const position = ref({ left: '0px', top: '0px' })
@@ -26,7 +26,12 @@ async function toggle(event: MouseEvent | KeyboardEvent) {
   place()
   if (menu.value) focusFirstContextMenuItem(menu.value, event instanceof KeyboardEvent || event.detail === 0 ? 'keyboard' : 'pointer')
 }
-function select(target: 'gallery' | 'music') { close(true); if (target === 'gallery') emit('gallery'); else emit('music') }
+function select(target: 'gallery' | 'music' | 'cinema') {
+  close(true)
+  if (target === 'gallery') emit('gallery')
+  else if (target === 'music') emit('music')
+  else emit('cinema')
+}
 function keydown(event: KeyboardEvent) {
   if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(true) }
   else if (event.key === 'Tab') close(true)
@@ -59,6 +64,7 @@ onBeforeUnmount(() => {
     <div v-if="open" :id="id" ref="menu" class="file-context-menu file-media-menu k-context-menu" role="menu" :aria-label="phrase('媒体')" :style="position" @keydown="keydown" @pointermove="showContextMenuPointerFocus">
       <button type="button" role="menuitem" @click="select('gallery')"><Images :size="17" />{{ phrase('图库') }}</button>
       <button type="button" role="menuitem" @click="select('music')"><Music2 :size="17" />{{ i18n.t('route.music') }}</button>
+      <button type="button" role="menuitem" @click="select('cinema')"><Clapperboard :size="17" />{{ i18n.t('route.cinema') }}</button>
     </div>
   </Teleport>
 </template>

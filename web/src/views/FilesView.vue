@@ -1135,6 +1135,12 @@ function openMusic(): void {
   void router.push({ name: 'music', query })
 }
 
+function openCinema(): void {
+  const query: Record<string, string> = currentPath.value === '/' ? {} : { path: currentPath.value }
+  if (fileHostId.value) query.hostId = fileHostId.value
+  void router.push({ name: 'cinema', query })
+}
+
 function openGallery(): void {
   // The root folder would sweep every system directory; it opens the library instead.
   const query: Record<string, string> = currentPath.value === '/' ? {} : { path: currentPath.value }
@@ -3197,7 +3203,7 @@ onBeforeUnmount(() => {
         <button class="button button--secondary button--small file-command-bar__refresh" type="button" :disabled="loading" title="刷新目录" aria-label="刷新目录" @click="loadDirectory()">
           <RefreshCw :size="16" :class="{ spinning: loading }" />
         </button>
-        <FileMediaMenu @gallery="openGallery" @music="openMusic" />
+        <FileMediaMenu @gallery="openGallery" @music="openMusic" @cinema="openCinema" />
         <button class="button button--secondary button--small" type="button" title="打开回收站" aria-label="打开回收站" @click="openTrash">
           <Trash2 :size="15" /> <span class="file-command-bar__label">回收站</span>
         </button>

@@ -45,6 +45,7 @@ describe('desktop app catalogue', () => {
         '/virtual-machines',
         '/files',
         '/gallery',
+        '/cinema',
         '/terminal',
         '/diagnostics',
         '/cluster',
@@ -54,7 +55,7 @@ describe('desktop app catalogue', () => {
         '/offers',
       ]),
     )
-    expect(desktopApps).toHaveLength(20)
+    expect(desktopApps).toHaveLength(21)
   })
 
   it('lets every fixed system entry be hidden from the desktop', () => {

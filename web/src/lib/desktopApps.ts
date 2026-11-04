@@ -6,6 +6,7 @@ import {
   Boxes,
   Bot,
   ClipboardList,
+  Clapperboard,
   Container,
   Folder,
   HeartPulse,
@@ -123,6 +124,15 @@ export const desktopApps: DesktopApp[] = [
     desktopIconURL: '/desktop-icons/gallery-kpanel-flat-v2.webp',
     allowMultiple: false,
     gradient: ['#f472b6', '#be185d'],
+  },
+  {
+    path: '/cinema',
+    labelKey: 'route.cinema',
+    icon: Clapperboard,
+    desktopIconURL: '/desktop-icons/cinema-kpanel-flat-v1.webp',
+    allowMultiple: false,
+    gradient: ['#5eead4', '#164e63'],
+    windowSize: { width: 1120, height: 780 },
   },
   {
     path: '/terminal',
