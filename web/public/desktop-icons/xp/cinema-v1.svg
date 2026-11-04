@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <title>KPanel Cinema</title>
+  <defs>
+    <linearGradient id="case" x2=".2" y2="1">
+      <stop stop-color="#61e0ce"/>
+      <stop offset="1" stop-color="#16608a"/>
+    </linearGradient>
+    <linearGradient id="slate" x2="0" y2="1">
+      <stop stop-color="#fcffff"/>
+      <stop offset="1" stop-color="#a8c3dd"/>
+    </linearGradient>
+  </defs>
+  <ellipse cx="33" cy="56" rx="25" ry="5" fill="#28455c" opacity=".2"/>
+  <rect x="7" y="24" width="50" height="31" rx="7" fill="url(#case)" stroke="#154762" stroke-width="2"/>
+  <path d="M10 29H54" stroke="#b6ffed" stroke-opacity=".65"/>
+  <g transform="rotate(-12 9 26)">
+    <rect x="7" y="13" width="50" height="13" rx="3" fill="url(#slate)" stroke="#365572" stroke-width="2"/>
+    <path d="M15 14H22L16 25H9ZM29 14H36L30 25H23ZM43 14H50L44 25H37Z" fill="#537291"/>
+  </g>
+  <path d="M27 33 43 41 27 49Z" fill="#f0fffe" stroke="#28758b" stroke-linejoin="round"/>
+</svg>

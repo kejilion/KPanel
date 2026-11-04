@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" shape-rendering="crispEdges">
+  <title>KPanel Cinema</title>
+  <path d="M3 11H28V28H3Z" fill="#000"/>
+  <path d="M4 12H27V27H4Z" fill="#008080"/>
+  <path d="M4 12H27V14H6V25H4Z" fill="#80ffff"/>
+  <path d="M6 25H27V27H6Z" fill="#004040"/>
+  <path d="M3 6H9V4H17V2H25V4H28V9H22V11H14V13H3Z" fill="#000"/>
+  <path d="M4 7H10V5H18V3H25V5H27V8H21V10H13V12H4Z" fill="#c0c0c0"/>
+  <path d="M6 7H10V10H6ZM14 5H18V8H14ZM22 3H25V6H22Z" fill="#fff"/>
+  <path d="M13 16H16V17H18V18H20V20H18V21H16V22H13Z" fill="#fff"/>
+</svg>
