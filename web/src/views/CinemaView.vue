@@ -305,6 +305,21 @@ onBeforeUnmount(() => {
       </button>
     </header>
 
+    <section class="cinema-source" :aria-label="phrase('影片来源')">
+      <HostSwitcher
+        ref="picker" :hosts="hosts" :active-id="selectedHost?.id ?? hostId"
+        :label="selectedHost?.name || hostId || phrase('本机')" :loading="hostsLoading" :error="hostsError"
+        :status-of="host => { const status = fileHostStatus(host); return { ...status, label: phrase(status.label) } }"
+        :disabled="saving" @open="loadHosts" @refresh="loadHosts" @select="selectHost"
+      />
+      <form class="cinema-location" @submit.prevent="openDirectory">
+        <input v-model="directory" :aria-label="phrase('影视目录')" :disabled="saving" />
+        <button class="button button--secondary" :disabled="saving">{{ phrase('打开目录') }}</button>
+      </form>
+      <button class="icon-button" type="button" :aria-label="phrase('上级目录')" :title="phrase('上级目录')" :disabled="path === '/' || saving" @click="browse(galleryParentPath(path))"><FolderOpen :size="17" /></button>
+      <button class="icon-button" type="button" :aria-label="phrase('刷新')" :title="phrase('刷新')" :disabled="loading || saving" @click="load"><RefreshCw :size="17" /></button>
+    </section>
+
     <section v-if="featured" class="cinema-feature" :aria-label="phrase('精选影片')">
       <div class="cinema-feature__art" aria-hidden="true">
         <Film :size="84" />
@@ -322,20 +337,6 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <section class="cinema-source" :aria-label="phrase('影片来源')">
-      <HostSwitcher
-        ref="picker" :hosts="hosts" :active-id="selectedHost?.id ?? hostId"
-        :label="selectedHost?.name || hostId || phrase('本机')" :loading="hostsLoading" :error="hostsError"
-        :status-of="host => { const status = fileHostStatus(host); return { ...status, label: phrase(status.label) } }"
-        :disabled="saving" @open="loadHosts" @refresh="loadHosts" @select="selectHost"
-      />
-      <form class="cinema-location" @submit.prevent="openDirectory">
-        <input v-model="directory" :aria-label="phrase('影视目录')" :disabled="saving" />
-        <button class="button button--secondary" :disabled="saving">{{ phrase('打开目录') }}</button>
-      </form>
-      <button class="icon-button" type="button" :aria-label="phrase('上级目录')" :title="phrase('上级目录')" :disabled="path === '/' || saving" @click="browse(galleryParentPath(path))"><FolderOpen :size="17" /></button>
-      <button class="icon-button" type="button" :aria-label="phrase('刷新')" :title="phrase('刷新')" :disabled="loading || saving" @click="load"><RefreshCw :size="17" /></button>
-    </section>
     <nav v-if="snapshot?.folders.length" class="cinema-folders" :aria-label="phrase('影视目录')">
       <button v-for="folder in snapshot.folders.slice(0, 24)" :key="folder.path" class="button button--secondary button--small" type="button" :disabled="saving" @click="browse(folder.path)"><Folder :size="15" />{{ folder.name }}</button>
     </nav>
@@ -436,6 +437,7 @@ p { color: var(--text-soft); line-height: 1.55; }
 .cinema-feature__play { background: #d9f4f5; color: #142c36; }
 .cinema-feature__edit { background: #233441; border-color: #5c707e; color: #fff; }
 .cinema-source, .cinema-folders { margin-top: 14px; flex-wrap: wrap; }
+.cinema-source { margin-bottom: 16px; }
 .cinema-location { flex: 1 1 220px; display: flex; gap: 8px; min-width: 0; }
 .cinema-location input { flex: 1 1 0; }
 .cinema-location .button { flex: 0 0 auto; white-space: nowrap; }

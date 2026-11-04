@@ -27,6 +27,7 @@ const path = computed(() => typeof route.query.path === 'string' && (route.query
 const location = ref(''), search = ref(''), error = ref(''), loading = ref(false), truncated = ref(false)
 const entries = ref<FileEntry[]>([]), hosts = ref<ClusterHost[]>([]), hostsError = ref(false)
 const picker = ref<InstanceType<typeof HostSwitcher>>()
+const locationInput = ref<HTMLInputElement>()
 const activeHost = computed(() => hosts.value.find(h => hostId.value ? h.id === hostId.value : h.isLocal))
 const hostLabel = computed(() => activeHost.value?.name || hostId.value || phrase('本机'))
 const allTracks = computed(() => tracksFromEntries(entries.value, hostId.value))
@@ -58,6 +59,11 @@ function openLocation() {
   const target = location.value === '/' ? '/' : normalizeGalleryRoot(location.value)
   if (!target) { error.value = phrase('请输入有效的绝对路径'); return }
   navigate(target)
+}
+async function focusLocation() {
+  locationOpen.value = true
+  await nextTick()
+  locationInput.value?.focus()
 }
 function selectHost(host: ClusterHost) {
   picker.value?.close(true)
@@ -108,19 +114,21 @@ onBeforeUnmount(() => { destroyed = true; listing?.abort(); if (visible.value) s
       <div class="music-brand"><img src="/desktop-icons/music-kpanel-flat-v1.webp" alt="" /><div><h1>音乐</h1><p>把日常，交给一首好歌</p></div></div>
     </header>
     <nav class="music-tabs" :aria-label="phrase('音乐导航')"><button :aria-current="tab === 'library' ? 'page' : undefined" @click="tab = 'library'"><Disc3 :size="18" /> 音乐库</button><button :aria-current="tab === 'listen' ? 'page' : undefined" @click="tab = 'listen'"><Music2 :size="18" /> 正在播放</button><button :aria-current="tab === 'queue' ? 'page' : undefined" @click="tab = 'queue'"><ListMusic :size="18" /> 播放队列 <span>{{ state.queue.length }}</span></button></nav>
+    <template v-if="tab === 'library'">
+      <div class="music-location"><div class="music-location__source"><HostSwitcher ref="picker" :hosts="hosts" :active-id="activeHost?.id || hostId" :label="hostLabel" :error="hostsError" :status-of="h => ({ ...fileHostStatus(h), label: phrase(fileHostStatus(h).label) })" @select="selectHost" @refresh="loadHosts" /><button class="music-text-button" @click="locationOpen = !locationOpen" :aria-expanded="locationOpen"><FolderOpen :size="16" /><span>{{ path }}</span><ChevronRight :size="15" /></button></div><div class="music-location__actions"><button class="button button--secondary" :aria-label="phrase('刷新')" :disabled="loading" @click="load"><RefreshCw :size="17" /></button><button class="music-text-button" @click="files">文件管理</button></div></div>
+      <form v-if="locationOpen" class="music-location-form" @submit.prevent="openLocation"><input ref="locationInput" v-model="location" :aria-label="phrase('音乐文件夹')" spellcheck="false" /><button class="button button--secondary" type="submit">打开</button><button class="button button--secondary" type="button" :disabled="path === '/'" @click="navigate(galleryParentPath(path))">上级文件夹</button></form>
+    </template>
     <div class="music-layout" :class="{ 'music-layout--focus': tab === 'listen' }">
       <section v-if="tab !== 'listen'" class="music-library">
         <template v-if="tab === 'library'">
           <div class="music-library__hero"><div><span class="music-eyebrow">私人音乐收藏</span><h2>{{ path.split('/').filter(Boolean).pop() || phrase('音乐库') }}</h2><p>{{ allTracks.length }} {{ phrase('首歌曲') }} <span v-if="folders.length"> · {{ folders.length }} {{ phrase('个文件夹') }}</span></p></div><div class="music-library__hero-actions"><button class="button button--primary" :disabled="!tracks.length" @click="player.shuffle(false); player.replaceQueue(tracks)"><Play :size="17" /> 播放全部</button><button class="music-icon-button" :aria-label="phrase('随机播放全部')" :disabled="!tracks.length" @click="player.shuffle(true); player.replaceQueue(tracks, tracks[Math.floor(Math.random() * tracks.length)])"><Shuffle :size="19" /></button></div></div>
-          <div class="music-location"><div class="music-location__source"><HostSwitcher ref="picker" :hosts="hosts" :active-id="activeHost?.id || hostId" :label="hostLabel" :error="hostsError" :status-of="h => ({ ...fileHostStatus(h), label: phrase(fileHostStatus(h).label) })" @select="selectHost" @refresh="loadHosts" /><button class="music-text-button" @click="locationOpen = !locationOpen" :aria-expanded="locationOpen"><FolderOpen :size="16" /><span>{{ path }}</span><ChevronRight :size="15" /></button></div><div class="music-location__actions"><button class="button button--secondary" :aria-label="phrase('刷新')" :disabled="loading" @click="load"><RefreshCw :size="17" /></button><button class="music-text-button" @click="files">文件管理</button></div></div>
-          <form v-if="locationOpen" class="music-location-form" @submit.prevent="openLocation"><input v-model="location" :aria-label="phrase('音乐文件夹')" spellcheck="false" /><button class="button button--secondary" type="submit">打开</button><button class="button button--secondary" type="button" :disabled="path === '/'" @click="navigate(galleryParentPath(path))">上级文件夹</button></form>
           <div class="music-search"><label><Search :size="18" /><input v-model="search" type="search" :placeholder="phrase('搜索歌曲或歌手')" :aria-label="phrase('搜索歌曲或歌手')" /></label><select v-model="sort" :aria-label="phrase('歌曲排序')"><option value="name">按歌名</option><option value="artist">按歌手</option></select></div>
           <p v-if="loading" role="status" class="music-empty">正在读取音乐…</p>
           <div v-else-if="error" role="alert" class="music-error"><p>{{ error }}</p><p>检查主机连接和文件夹路径后重试。也可从文件管理上传音乐。</p><button class="button button--secondary" @click="load">重试</button></div>
           <template v-else>
             <p v-if="truncated" role="status">仅显示部分文件，请进入子文件夹继续浏览。</p>
             <div v-if="folders.length && !search" class="music-folders"><button v-for="folder in folders" :key="folder.path" @click="navigate(folder.path)"><span><Disc3 :size="25" /></span><strong>{{ folder.name }}</strong><ChevronRight :size="16" /></button></div>
-            <div v-if="!tracks.length" class="music-empty"><Disc3 :size="48" /><h2>{{ search ? phrase('没有匹配的歌曲') : phrase('让音乐住进这里') }}</h2><p>{{ search ? phrase('试试其他歌名或歌手') : phrase('选择音乐文件夹，或通过文件管理上传歌曲。') }}</p><button v-if="search" class="button button--secondary" @click="search = ''">清除搜索</button><button v-else class="button button--secondary" @click="locationOpen = true">选择文件夹</button></div>
+            <div v-if="!tracks.length" class="music-empty"><Disc3 :size="48" /><h2>{{ search ? phrase('没有匹配的歌曲') : phrase('让音乐住进这里') }}</h2><p>{{ search ? phrase('试试其他歌名或歌手') : phrase('选择音乐文件夹，或通过文件管理上传歌曲。') }}</p><button v-if="search" class="button button--secondary" @click="search = ''">清除搜索</button><button v-else class="button button--secondary" @click="focusLocation">选择文件夹</button></div>
             <ol class="music-tracks" :aria-label="phrase('歌曲列表')"><li v-for="(track, index) in tracks" :key="trackKey(track)" :class="{ active: isCurrent(track) }">
               <button class="music-track" :aria-label="`${phrase('播放')} ${track.title}`" @click="choose(track)"><span class="music-track__number"><Pause v-if="isCurrent(track) && state.playing" :size="16" /><Play v-else-if="isCurrent(track)" :size="16" /><template v-else>{{ String(index + 1).padStart(2, '0') }}</template></span><span class="music-track__art"><img v-if="track.cover" :src="artwork(track)" alt="" loading="lazy" @error="($event.target as HTMLImageElement).hidden = true" /><Music2 v-else :size="21" /></span><span class="music-track__name"><strong>{{ track.title }}</strong><span>{{ track.artist || phrase('未知歌手') }}</span></span><span class="music-track__format">{{ musicExtension(track.entry.name).toUpperCase() }}<small>{{ formatBytes(track.entry.sizeBytes) }}</small></span></button>
               <button class="music-icon-button music-next" :aria-label="`${phrase('下一首播放')} ${track.title}`" :title="phrase('下一首播放')" @click="player.enqueue(track, true)"><ListPlus :size="18" /></button><button class="music-icon-button" :aria-label="`${phrase('加入播放队列')} ${track.title}`" :title="phrase('加入播放队列')" @click="player.enqueue(track)"><Plus :size="18" /></button>
