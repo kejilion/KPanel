@@ -152,6 +152,12 @@ onBeforeUnmount(() => { destroyed = true; listing?.abort(); if (visible.value) s
 
 <style scoped>
 .music-page { display:block; --music-accent: #ad315e; --music-tint: color-mix(in srgb, var(--music-accent) 8%, var(--surface)); container-type: inline-size; color: var(--text); }
+.music-page {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: clamp(16px, 2vw, 24px);
+}
 .music-page:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
 .music-header,.music-brand,.music-tabs,.music-location,.music-section-heading,.music-search,.music-transport,.music-progress { display:flex; align-items:center; gap:12px; }
 .music-header { justify-content:space-between; flex-wrap:wrap; margin-bottom:16px; }

@@ -136,6 +136,10 @@ body:has(.classic-backdrop) {
   --border: color-mix(in srgb, var(--classic-border-base) 78%, transparent);
 }
 
+:root:has(.classic-backdrop) .page-content .music-page {
+  background: color-mix(in srgb, var(--classic-surface-base, var(--surface)) var(--classic-wallpaper-sidebar), transparent);
+}
+
 /* Keep one page fill beneath nested workspaces; retain cards and interactive row fills. */
 :root[data-classic-wallpaper='clear'] .app-shell:has(.classic-backdrop) .page-content :where(
   .diagnostic-result.is-overview,
@@ -227,6 +231,10 @@ body:has(.classic-backdrop) {
 
   :root:has(.classic-backdrop) .sidebar {
     background: var(--sidebar);
+  }
+
+  :root:has(.classic-backdrop) .page-content .music-page {
+    background: Canvas;
   }
 
   :root:has(.classic-backdrop) .topbar {
