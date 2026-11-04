@@ -1675,6 +1675,7 @@ export default [
   ["取消选择 {0}", "Deselect {0}"],
   ["本机", "Local host"],
   ["图库", "Gallery"],
+  ["媒体", "Media"],
   ["操作未完成，请稍后重试。", "The operation did not finish. Try again later."],
   ["{0} 创建命令", "{0} run command"],
   ["当前 Agent 版本不支持查看创建命令，请先更新 KPanel。", "This Agent version cannot show run commands. Update KPanel first."],

@@ -25,7 +25,6 @@ import {
   Eye,
   FolderOpen,
   HardDrive,
-  Images,
   LayoutGrid,
   List,
   ListRestart,
@@ -63,6 +62,7 @@ import ModalWindowControls from '@/components/common/ModalWindowControls.vue'
 import PageHeader from '@/components/common/PageHeader.vue'
 import FileShareDialog from '@/components/files/FileShareDialog.vue'
 import FileShareManagerDialog from '@/components/files/FileShareManagerDialog.vue'
+import FileMediaMenu from '@/components/files/FileMediaMenu.vue'
 import FileArchiveTools from '@/components/files/FileArchiveTools.vue'
 import { ApiError, api } from '@/lib/api'
 import {
@@ -3197,16 +3197,7 @@ onBeforeUnmount(() => {
         <button class="button button--secondary button--small file-command-bar__refresh" type="button" :disabled="loading" title="刷新目录" aria-label="刷新目录" @click="loadDirectory()">
           <RefreshCw :size="16" :class="{ spinning: loading }" />
         </button>
-        <button class="button button--secondary button--small" type="button" @click="openMusic">{{ i18n.t('route.music') }}</button>
-        <button
-          class="button button--secondary button--small file-command-bar__gallery"
-          type="button"
-          title="以图库方式浏览当前文件夹中的照片和视频"
-          aria-label="图库"
-          @click="openGallery"
-        >
-          <Images :size="15" /> <span class="file-command-bar__label">图库</span>
-        </button>
+        <FileMediaMenu @gallery="openGallery" @music="openMusic" />
         <button class="button button--secondary button--small" type="button" title="打开回收站" aria-label="打开回收站" @click="openTrash">
           <Trash2 :size="15" /> <span class="file-command-bar__label">回收站</span>
         </button>
