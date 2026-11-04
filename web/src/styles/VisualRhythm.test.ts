@@ -115,6 +115,13 @@ function landscapeBlock(source: string): string {
 }
 
 describe('visual rhythm contract', () => {
+  it('keeps music on shared wallpaper surfaces with a readable track-list backing', () => {
+    const music = readFileSync(new URL('../views/MusicView.vue', import.meta.url), 'utf8')
+    expect(music).not.toContain('--classic-surface-base')
+    expect(classicWallpaper).not.toMatch(/\.music-page\s*\{/)
+    expect(music).toMatch(/\.music-tracks,\.music-queue\s*\{\s*background:var\(--surface\)/)
+  })
+
   it('discovers every Vue style block for the repo-wide contract', () => {
     expect(componentStyleBlocks.length).toBeGreaterThan(0)
     const files = new Set(componentStyleBlocks.map((block) => block.file))

@@ -136,13 +136,6 @@ body:has(.classic-backdrop) {
   --border: color-mix(in srgb, var(--classic-border-base) 78%, transparent);
 }
 
-/* Music keeps dense text and sticky playback controls opaque over the wallpaper. */
-:root[data-classic-wallpaper='clear'] .app-shell:has(.classic-backdrop) .music-page {
-  --surface: var(--classic-surface-base);
-  --surface-subtle: var(--classic-surface-subtle-base);
-  --surface-raised: var(--classic-surface-raised-base);
-}
-
 /* Keep one page fill beneath nested workspaces; retain cards and interactive row fills. */
 :root[data-classic-wallpaper='clear'] .app-shell:has(.classic-backdrop) .page-content :where(
   .diagnostic-result.is-overview,
