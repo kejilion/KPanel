@@ -4360,7 +4360,7 @@ onBeforeUnmount(() => {
   gap: 7px;
 }
 
-.file-command-bar__actions .button {
+.file-command-bar__actions :deep(.button) {
   min-height: 40px;
   font-size: 14px;
 }

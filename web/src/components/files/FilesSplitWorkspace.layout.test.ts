@@ -6,6 +6,10 @@ const files = readFileSync(new URL('../../views/FilesView.vue', import.meta.url)
 const media = readFileSync(new URL('./FileMediaMenu.vue', import.meta.url), 'utf8')
 
 describe('split pane command bar', () => {
+  it('applies the shared toolbar height to buttons inside child components', () => {
+    expect(files).toMatch(/\.file-command-bar__actions\s+:deep\(\.button\)\s*\{[^}]*min-height:\s*40px;/)
+  })
+
   it('keeps the actions on one row by shrinking secondary buttons to icon squares', () => {
     expect(workspace).toMatch(/\.file-command-bar__actions\s*\{\s*flex-wrap:\s*nowrap;\s*\}/)
     expect(workspace).toMatch(/\.button:not\(\.button--primary\)\s*\{[^}]*width:\s*40px;[^}]*flex:\s*0 0 40px;/)
