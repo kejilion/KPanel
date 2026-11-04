@@ -131,6 +131,12 @@ export const router = createRouter({
           meta: { titleKey: 'route.files' },
         },
         {
+          path: 'music',
+          name: 'music',
+          component: () => loadNavigationRoute('/music'),
+          meta: { titleKey: 'route.music' },
+        },
+        {
           path: 'gallery',
           name: 'gallery',
           component: () => loadNavigationRoute('/gallery'),

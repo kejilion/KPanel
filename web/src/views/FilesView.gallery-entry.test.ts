@@ -50,6 +50,12 @@ async function pane(hostId: string, path: string) {
 }
 
 describe('file pane gallery entry', () => {
+  it('opens music with the pane host and folder', async () => {
+    const remote = await pane('b', '/srv/music')
+    router.push.mockReset()
+    remote.openMusic()
+    expect(router.push).toHaveBeenCalledWith({ name: 'music', query: { path: '/srv/music', hostId: 'b' } })
+  })
   it('opens the gallery for the pane\'s own host and folder, independently per pane', async () => {
     const left = await pane('a', '/srv/photos')
     const right = await pane('b', '/home/me/trips')

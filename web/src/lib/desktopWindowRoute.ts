@@ -210,6 +210,11 @@ export function windowRouteRecords(): RouteRecordRaw[] {
       component: WINDOW_ROUTE_PLACEHOLDER,
     },
     {
+      path: '/music',
+      name: 'music',
+      component: WINDOW_ROUTE_PLACEHOLDER,
+    },
+    {
       path: '/gallery',
       name: 'gallery',
       component: WINDOW_ROUTE_PLACEHOLDER,

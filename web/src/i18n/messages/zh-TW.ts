@@ -352,6 +352,7 @@ export const zhTWMessages = {
   "route.environment": "網站 · 環境管理",
   "route.apps": "應用市場",
   "route.files": "檔案",
+  'route.music': '音樂',
   "route.gallery": "圖庫",
   "route.offersNew": "廣告專欄（有新內容）",
   "route.offers": "廣告專欄",

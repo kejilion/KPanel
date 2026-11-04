@@ -351,6 +351,7 @@ export const zhCNMessages = {
   'route.environment': '网站 · 环境管理',
   'route.apps': '应用市场',
   'route.files': '文件',
+  'route.music': '音乐',
   'route.gallery': '图库',
   'route.offersNew': '广告专栏（有新内容）',
   'route.offers': '广告专栏',

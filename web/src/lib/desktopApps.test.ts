@@ -54,7 +54,7 @@ describe('desktop app catalogue', () => {
         '/offers',
       ]),
     )
-    expect(desktopApps).toHaveLength(19)
+    expect(desktopApps).toHaveLength(20)
   })
 
   it('lets every fixed system entry be hidden from the desktop', () => {

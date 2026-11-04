@@ -10,6 +10,7 @@ import {
   Folder,
   HeartPulse,
   Images,
+  Music2,
   LayoutDashboard,
   ListTree,
   Megaphone,
@@ -105,6 +106,15 @@ export const desktopApps: DesktopApp[] = [
     desktopIconURL: '/desktop-icons/files-kpanel-flat-v1.webp',
     allowMultiple: false,
     gradient: ['#facc15', '#ca8a04'],
+  },
+  {
+    path: '/music',
+    labelKey: 'route.music',
+    icon: Music2,
+    desktopIconURL: '/desktop-icons/music-kpanel-flat-v1.webp',
+    allowMultiple: false,
+    gradient: ['#fb7185', '#7c3aed'],
+    windowSize: { width: 1050, height: 740 },
   },
   {
     path: '/gallery',

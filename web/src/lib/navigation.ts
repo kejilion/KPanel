@@ -21,6 +21,7 @@ const routeViewLoaders = {
   '/sites/environment': () => import('@/views/EnvironmentView.vue'),
   '/apps': () => import('@/views/AppsView.vue'),
   '/files': () => import('@/views/FilesView.vue'),
+  '/music': () => import('@/views/MusicView.vue'),
   '/gallery': () => import('@/views/GalleryView.vue'),
   '/offers': () => import('@/views/OffersView.vue'),
   '/terminal': () => import('@/views/TerminalView.vue'),
