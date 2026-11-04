@@ -10,12 +10,11 @@ describe('split pane command bar', () => {
     expect(files).toMatch(/\.file-command-bar__actions\s+:deep\(\.button\)\s*\{[^}]*min-height:\s*40px;/)
   })
 
-  it('keeps the actions on one row by shrinking secondary buttons to icon squares', () => {
-    expect(workspace).toMatch(/\.file-command-bar__actions\s*\{\s*flex-wrap:\s*nowrap;\s*\}/)
-    expect(workspace).toMatch(/\.button:not\(\.button--primary\)\s*\{[^}]*width:\s*40px;[^}]*flex:\s*0 0 40px;/)
-    // The label stays in the DOM for assistive technology; only its pixels are removed.
-    expect(workspace).toMatch(/\.file-command-bar__label\s*\{[^}]*position:\s*absolute;[^}]*clip-path:\s*inset\(50%\);/)
-    expect(workspace).not.toMatch(/\.file-command-bar__label\s*\{[^}]*display:\s*none/)
+  it('wraps labelled actions instead of collapsing them into icon-only buttons', () => {
+    expect(workspace).toMatch(/\.file-command-bar__actions\s*\{[^}]*flex-wrap:\s*wrap;/)
+    expect(workspace).not.toMatch(/\.file-command-bar__actions\s*\{[^}]*flex-wrap:\s*nowrap;/)
+    expect(workspace).not.toMatch(/\.file-command-bar__label\s*\{/)
+    expect(workspace).not.toMatch(/\.button:not\(\.button--primary\)\s*\{[^}]*width:\s*40px;/)
   })
 
   it('wraps the label of every secondary action and leaves the primary upload labelled', () => {
