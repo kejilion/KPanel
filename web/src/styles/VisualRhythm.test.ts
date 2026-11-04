@@ -29,6 +29,16 @@ const componentStyleBlocks = collectVueStyleBlocks(componentStyleRoot)
 const componentDeclarations = collectVueStyleDeclarations(componentStyleRoot)
 const baselineKeys = new Set(VISUAL_CONTRACT_BASELINE.map((entry) => baselineKey(entry)))
 
+it('keeps the persistent music controls above the desktop but below modal dialogs', () => {
+  const mini = readFileSync(new URL('../components/music/MusicMiniPlayer.vue', import.meta.url), 'utf8')
+  const layer = (source: string, selector: RegExp) => Number(source.match(selector)?.[1])
+  const miniLayer = layer(mini, /\.music-mini\s*\{[^}]*z-index:\s*(\d+)/)
+  const desktopLayer = layer(desktop, /\.desktop\s*\{[^}]*z-index:\s*(\d+)/)
+  const modalLayer = layer(desktop, /\.desktop-mode-open \.modal-backdrop\s*\{[^}]*z-index:\s*(\d+)/)
+  expect(miniLayer).toBeGreaterThan(desktopLayer)
+  expect(miniLayer).toBeLessThan(modalLayer)
+})
+
 /** A selector or literal, escaped for use inside a RegExp source. */
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')

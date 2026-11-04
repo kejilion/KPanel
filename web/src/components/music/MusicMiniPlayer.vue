@@ -29,7 +29,7 @@ function open() {
   </aside>
 </template>
 <style scoped>
-.music-mini { position:fixed; right:20px; bottom:72px; width:min(440px,calc(100vw - 32px)); display:flex; align-items:center; gap:6px; padding:12px; border:1px solid var(--border-strong); border-radius:var(--radius-lg); background:var(--surface-raised); color:var(--text); box-shadow:var(--shadow-md); z-index:80; }
+.music-mini { position:fixed; right:20px; bottom:72px; width:min(440px,calc(100vw - 32px)); display:flex; align-items:center; gap:6px; padding:12px; border:1px solid var(--border-strong); border-radius:var(--radius-lg); background:var(--surface-raised); color:var(--text); box-shadow:var(--shadow-md); z-index:1100; }
 .music-mini button { font:inherit; font-size:14px; color:inherit; background:none; border:0; min-width:36px; min-height:40px; border-radius:var(--radius-md); cursor:pointer; }
 .music-mini button:hover { background:var(--surface); } .music-mini button:focus-visible { outline:3px solid var(--brand); outline-offset:2px; }
 .music-mini .music-mini__song { display:flex; gap:10px; align-items:center; text-align:start; min-width:0; flex:1; padding:0; }

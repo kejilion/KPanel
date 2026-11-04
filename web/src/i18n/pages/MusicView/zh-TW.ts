@@ -1,5 +1,6 @@
 import type { PhraseCatalog } from '@/i18n/phrase'
 export default [
+  ["首歌曲", "首歌曲"],
   [
     "音乐",
     "音樂"
