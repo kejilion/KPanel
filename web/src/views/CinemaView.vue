@@ -437,7 +437,8 @@ p { color: var(--text-soft); line-height: 1.55; }
 .cinema-feature__edit { background: #233441; border-color: #5c707e; color: #fff; }
 .cinema-source, .cinema-folders { margin-top: 14px; flex-wrap: wrap; }
 .cinema-location { flex: 1 1 220px; display: flex; gap: 8px; min-width: 0; }
-.cinema-location input { width: 100%; }
+.cinema-location input { flex: 1 1 0; }
+.cinema-location .button { flex: 0 0 auto; white-space: nowrap; }
 .cinema-page input:not([type=checkbox]), .cinema-page select { min-width: 0; min-height: 40px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font: inherit; padding: 8px 10px; }
 .cinema-library { margin-top: 24px; }
 .cinema-toolbar { flex-wrap: wrap; justify-content: space-between; margin-bottom: 14px; }
