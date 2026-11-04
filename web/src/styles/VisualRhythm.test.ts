@@ -118,7 +118,7 @@ describe('visual rhythm contract', () => {
   it('keeps music on shared wallpaper surfaces with a readable track-list backing', () => {
     const music = readFileSync(new URL('../views/MusicView.vue', import.meta.url), 'utf8')
     expect(music).not.toContain('--classic-surface-base')
-    expect(classicWallpaper).toMatch(/\.page-content \.music-page\s*\{[^}]*background: color-mix\([^;]*var\(--classic-wallpaper-sidebar\)/)
+    expect(classicWallpaper).toMatch(/\.page-content \.music-page,\s*:root\[data-theme='dark'\]:has\(\.classic-backdrop\) \.page-content \.gallery-page\s*\{[^}]*background: color-mix\([^;]*var\(--classic-wallpaper-sidebar\)/)
     expect(music).toMatch(/\.music-tracks,\.music-queue\s*\{\s*background:var\(--surface\)/)
   })
 
