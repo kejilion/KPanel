@@ -13,6 +13,7 @@ const windowsIconNames: Readonly<Record<string, string>> = {
   '/apps': 'apps',
   '/docker': 'docker',
   '/files': 'files',
+  '/music': 'music',
   '/gallery': 'gallery',
   '/terminal': 'terminal',
   '/diagnostics': 'diagnostics',
