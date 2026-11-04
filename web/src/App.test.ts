@@ -6,12 +6,16 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import App from './App.vue'
 import { resetLocaleForTest, setLocale, t } from '@/i18n'
 import { initializeDesktopMode, resetDesktopModeForTest, useDesktopMode } from '@/stores/desktopMode'
+import { useSession } from '@/stores/session'
+import { useMusicPlayer } from '@/stores/musicPlayer'
+import type { Track } from '@/lib/music'
 
 vi.mock('@/i18n/phrase', () => ({
   usePhraseCatalog: vi.fn(),
   installPhraseLocalization: () => () => {},
 }))
 vi.mock('@/components/feedback/ToastHost.vue', () => ({ default: { template: '<div />' } }))
+vi.mock('@/components/music/MusicMiniPlayer.vue', () => ({ default: { template: '<div />' } }))
 
 let wrapper: VueWrapper | undefined
 
@@ -42,6 +46,8 @@ describe('browser tab title', () => {
     wrapper?.unmount()
     wrapper = undefined
     document.title = ''
+    useSession().state.authenticated = false
+    useSession().state.user = undefined
   })
 
   it('follows the active mode, while public pages keep their route title', async () => {
@@ -75,5 +81,23 @@ describe('browser tab title', () => {
     initializeDesktopMode()
     await mountAt('/settings')
     expect(document.title).toBe('桌面模式 · KPanel')
+  })
+  it('retains the listening session across navigation and releases it when authentication ends', async () => {
+    const session = useSession(), music = useMusicPlayer()
+    session.state.user = { id: 'listener', username: 'listener' }; session.state.authenticated = true
+    const router = await mountAt('/overview')
+    music.state.current = { title: 'Listening', hostId: '' } as Track
+    await router.push('/settings')
+    expect(music.state.current?.title).toBe('Listening')
+    session.state.authenticated = false
+    expect(music.state.current).toBeUndefined()
+  })
+  it('releases the listening session before another user takes over', async () => {
+    const session = useSession(), music = useMusicPlayer()
+    session.state.user = { id: 'one', username: 'one' }; session.state.authenticated = true
+    await mountAt('/overview')
+    music.state.current = { title: 'Private listening', hostId: '' } as Track
+    session.state.user = { id: 'two', username: 'two' }
+    expect(music.state.current).toBeUndefined()
   })
 })

@@ -11,9 +11,11 @@ export function tracksFromEntries(entries: FileEntry[], hostId: string): Track[]
   return entries.filter(isMusic).map(entry => {
     const stem = entry.name.replace(/\.[^.]+$/, '')
     const split = stem.indexOf(' - ')
-    const cover = entries.find(e => e.kind === 'file' && e.sizeBytes <= 8 * 1024 * 1024 &&
+    const coverNames = [stem.toLowerCase(), 'cover', 'folder', 'front']
+    const cover = entries.filter(e => e.kind === 'file' && e.sizeBytes <= 8 * 1024 * 1024 &&
       ['jpg', 'jpeg', 'png', 'webp'].includes(musicExtension(e.name)) &&
-      [stem.toLowerCase(), 'cover', 'folder', 'front'].includes(e.name.replace(/\.[^.]+$/, '').toLowerCase()))
+      coverNames.includes(e.name.replace(/\.[^.]+$/, '').toLowerCase()))
+      .sort((a, b) => coverNames.indexOf(a.name.replace(/\.[^.]+$/, '').toLowerCase()) - coverNames.indexOf(b.name.replace(/\.[^.]+$/, '').toLowerCase()))[0]
     const lyrics = entries.find(e => e.kind === 'file' && e.sizeBytes <= 256 * 1024 && e.name.toLowerCase() === `${stem}.lrc`.toLowerCase())
     return { entry, hostId, title: split > 0 ? stem.slice(split + 3) : stem, artist: split > 0 ? stem.slice(0, split) : '', cover: cover?.path, lyrics: lyrics?.path }
   })

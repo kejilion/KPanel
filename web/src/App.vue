@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, watchEffect, type WatchStopHandle } from 'vue'
+import { computed, onBeforeUnmount, onMounted, watch, watchEffect, type WatchStopHandle } from 'vue'
 import { RouterView } from 'vue-router'
 import { useRoute } from 'vue-router'
 import ToastHost from '@/components/feedback/ToastHost.vue'
+import MusicMiniPlayer from '@/components/music/MusicMiniPlayer.vue'
+import { useMusicPlayer } from '@/stores/musicPlayer'
 import { useI18n } from '@/i18n'
 import { installPhraseLocalization, usePhraseCatalog } from '@/i18n/phrase'
 import { useDesktopMode } from '@/stores/desktopMode'
@@ -14,6 +16,12 @@ const route = useRoute()
 const i18n = useI18n()
 const desktop = useDesktopMode()
 const session = useSession()
+const music = useMusicPlayer()
+// Navigation does not own audio. Authentication and app teardown do.
+watch(() => session.state.authenticated ? session.state.user?.id : undefined, (id, previous) => {
+  if ((!id || (previous && id !== previous)) && music.state.current) music.stop()
+}, { flush: 'sync', immediate: true })
+onBeforeUnmount(() => music.stop())
 const branding = useSiteBranding()
 const brandIcons = Array.from(document.querySelectorAll<HTMLLinkElement>('link[rel="icon"], link[rel="apple-touch-icon"]')).map((link) => ({
   link, href: link.href, type: link.type, sizes: link.getAttribute('sizes'),
@@ -50,5 +58,6 @@ watchEffect(() => {
 
 <template>
   <RouterView />
+  <MusicMiniPlayer v-if="session.state.authenticated && !route.meta.public" />
   <ToastHost />
 </template>

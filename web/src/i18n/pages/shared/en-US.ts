@@ -1835,4 +1835,12 @@ export default [
   ["保存后，在机器人私聊中发送本次验证命令，再点击发现私聊。验证命令五分钟内有效，仅当前登录会话可完成绑定。","After saving, send this verification command in a private chat with the bot, then discover the chat. The command expires in five minutes and can only be completed by this signed-in session."],
   ["请发送验证命令，再点击发现私聊。","Send the verification command, then discover the private chat."],
   ["验证截止时间","Verification expires"],
+  ["迷你音乐播放器", "Music mini player"],
+  ["返回音乐播放器", "Back to music"],
+  ["播放遇到问题，返回播放器重试", "Playback needs attention. Return to the player."],
+  ["停止播放并关闭", "Stop and close"],
+  ["正在缓冲…", "Buffering…"],
+  ["暂停", "Pause"],
+  ["播放", "Play"],
+  ["下一首", "Next track"],
 ] as const satisfies PhraseCatalog

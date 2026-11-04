@@ -23,6 +23,11 @@ describe('music library', () => {
     expect(list.mock.calls.every(call => call[0] === 'edge')).toBe(true)
     expect(list).toHaveBeenCalledTimes(4)
   })
+  it('prefers a song-specific cover over a generic folder cover regardless of entry order', () => {
+    const entries = [file('cover.jpg'), file('folder.png'), file('Song.webp'), file('Song.flac')]
+    expect(tracksFromEntries(entries, '')[0]?.cover).toBe('/music/Song.webp')
+    expect(tracksFromEntries(entries.reverse(), '')[0]?.cover).toBe('/music/Song.webp')
+  })
   it('parses repeated timestamps, decimal precision and sorting without HTML', () => {
     expect(parseLyrics('[00:02.20][00:01.005]<b>Hi</b>\n[99:99]invalid')).toEqual([{ time: 1.005, text: '<b>Hi</b>' }, { time: 2.2, text: '<b>Hi</b>' }])
     expect(parseLyrics('ordinary lyrics')).toEqual([])
