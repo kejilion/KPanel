@@ -12,7 +12,7 @@
     "Makefile": "f651d8ce2f10adc487118e1ccb476615347661922a8c8ef529f1b8013da5d53e"
   },
   "closureSha256": "1b96e36ad1f8dc23eff77c3387e7d9360c8f654b460ea2114ef37be7ca676b03",
-  "firstPartySourceSha256": "a7d370326b74c192bdb8f7541084e54246ca07e250115ea468bea759948202be",
+  "firstPartySourceSha256": "faf6061354c82ccb2971c1d539e63de3a607214fa5c887261f66839e36999087",
   "buildTargetHashEncoding": "UTF-8 with LF line endings",
   "closureEncoding": "SHA256 of JSON.stringify of ordered OS/architecture rows; packages sorted by import path; path, module and selected version; stdlib go1.27.3; main-module packages additionally bind relative sourceDirectory and sorted actual GoFiles.",
   "firstPartySourceEncoding": "SHA256 of JSON.stringify of all cmd/internal Go source path and SHA256 pairs sorted by relative path; contents normalized to UTF-8 LF. All actual main-module production GoFiles must be covered. Generated .pb.go and .proto files or symlinks require a new review.",
@@ -170,7 +170,9 @@
     "rc7QualificationEvidenceSha256": "addf3945fa8c5ba7b8b80d08a80504725cd72913d6f4126b1b48a0abcba6fa8f",
     "rc7QualificationSummary": "Release takeover recomputed six fixed-Go actual/original production closures and all first-party Go source hashes after audit integration, 4f40f68e/2bdb1828 review fixes and the 31c18bf7 test clock correction; actual/original rows match. Module graph, build inputs, original backport, scanner findings, dispositions and observation/expiry dates unchanged. Source/GoFiles binding qualification only; canonical L2/L3 and public validation required.",
     "stable129VersionEvidenceSha256": "6870fc8ff961f9e1cd1df4e3a6b47c6e6be95291a443847a600bf66fc26e0a14",
-    "stable129VersionSummary": "RC7 product source is unchanged except internal/version/version.go, whose reviewed RC7 suffix is removed for the stable release. All 1262 source files compared; production GoFiles/module/build identities, existing findings and expiry are unchanged. Full stable L3 remains required."
+    "stable129VersionSummary": "RC7 product source is unchanged except internal/version/version.go, whose reviewed RC7 suffix is removed for the stable release. All 1262 source files compared; production GoFiles/module/build identities, existing findings and expiry are unchanged. Full stable L3 remains required.",
+    "v130PreviewVersionEvidenceSha256": "5abecd6ff2e7f76252d9a55ac1e74b918018d064da4ef3d47e78bb47b4e51ef4",
+    "v130PreviewVersionSummary": "Only internal/version/version.go literal changes among Go sources; Web-only product chain has no Go imports, module, closure or build-target changes. Source identity rebound; existing findings, dispositions, closure and expiry remain unchanged. Exact-candidate CI and L3 remain required."
   },
   "findings": [
     {
