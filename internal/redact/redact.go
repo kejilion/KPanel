@@ -1,6 +1,8 @@
 package redact
 
 import (
+	"bytes"
+	"encoding/base64"
 	"errors"
 	"net/url"
 	"regexp"
@@ -436,7 +438,28 @@ func redactLine(value string) string {
 	value = secretAssignment.ReplaceAllString(value, "${1}${2}${3}[REDACTED]")
 	value = secretFlag.ReplaceAllString(value, "${1}[REDACTED]")
 	value = bearerSecret.ReplaceAllString(value, "Bearer [REDACTED]")
-	value = basicSecret.ReplaceAllString(value, "Basic [REDACTED]")
+	value = basicSecret.ReplaceAllStringFunc(value, func(match string) string {
+		parts := strings.Fields(match)
+		if len(parts) != 2 {
+			return match
+		}
+		if len(parts[1]) < 8 {
+			decoded, err := base64.StdEncoding.DecodeString(parts[1])
+			if err != nil {
+				decoded, err = base64.RawStdEncoding.DecodeString(parts[1])
+			}
+			if err != nil {
+				decoded, err = base64.URLEncoding.DecodeString(parts[1])
+			}
+			if err != nil {
+				decoded, err = base64.RawURLEncoding.DecodeString(parts[1])
+			}
+			if err != nil || !bytes.ContainsRune(decoded, ':') {
+				return match
+			}
+		}
+		return "Basic [REDACTED]"
+	})
 	value = openAISecret.ReplaceAllString(value, "[REDACTED]")
 	value = urlCredentials.ReplaceAllString(value, "${1}[REDACTED]@")
 	return strings.Map(func(character rune) rune {

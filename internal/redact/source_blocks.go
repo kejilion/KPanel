@@ -36,7 +36,7 @@ func sourceBlockHeaders(lines []string) map[int]bool {
 			}
 			continue
 		}
-		if depth == 0 || sensitiveSourceFields(line) || strings.Contains(line, "\\") || strings.Count(line, "{") != strings.Count(line, "}") || strings.ContainsAny(line[:1], "\"'[{\\") || !(strings.HasSuffix(line, ";") || strings.HasSuffix(line, ")") || strings.HasSuffix(line, "}")) {
+		if sensitiveSourceFields(line) || strings.Contains(line, "\\") || strings.Count(line, "{") != strings.Count(line, "}") || strings.ContainsAny(line[:1], "\"'[{\\") || !(strings.HasSuffix(line, ";") || strings.HasSuffix(line, ")") || strings.HasSuffix(line, "}")) {
 			return nil
 		}
 	}

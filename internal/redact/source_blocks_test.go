@@ -13,6 +13,7 @@ func TestSourceBlocksKeepProjectionAndFailClosedOnAmbiguity(t *testing.T) {
 		"server {\n auth: CONFIG_SECRET;\n}\n",
 		"server {\n _auth=CONFIG_SECRET;\n}\n",
 		"server {\n # _auth=CONFIG_SECRET\n listen 443;\n}\n",
+		"_auth=CONFIG_SECRET;\nevents {\n worker_connections 1024;\n}\n",
 		"server {\n location / { proxy_set_header Authorization \"Basic dTpw\"; }\n}\n",
 		"server {\n location / { proxy_set_header X-Api-Key CONFIG_SECRET; }\n}\n",
 		"server auth=CONFIG_SECRET {\n listen 443;\n}\n",
@@ -52,6 +53,19 @@ func TestLogSeverityPrefixesDoNotHideStructuredFailures(t *testing.T) {
 		raw, _ := json.Marshal(map[string]string{"content": content})
 		if safe, err := JSON(raw); err == nil && strings.Contains(string(safe), "CONFIG_SECRET") {
 			t.Fatalf("malformed array leaked: %s", safe)
+		}
+	}
+}
+
+func TestShortBasicCredentialsAreRedacted(t *testing.T) {
+	for _, value := range []string{"Basic dTpw", "user supplied Basic dTpw credentials"} {
+		if safe := Text(value); strings.Contains(safe, "dTpw") {
+			t.Fatalf("short Basic credential was not redacted: %s", safe)
+		}
+	}
+	for _, value := range []string{"The Basic plan is active", "Basic test complete"} {
+		if safe := Text(value); safe != value {
+			t.Fatalf("ordinary text changed: %s", safe)
 		}
 	}
 }
