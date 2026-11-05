@@ -98,6 +98,10 @@ it('ignores unavailable files and does not erase their saved checkpoint', async 
   await startPreferencesSync('admin'); await vi.advanceTimersByTimeAsync(1000)
   expect(useMusicPlayer().state.current).toBeUndefined()
   expect(mocks.update).not.toHaveBeenCalled()
+  mocks.entry.mockResolvedValue({ ...entry })
+  window.dispatchEvent(new Event('focus')); await vi.advanceTimersByTimeAsync(1)
+  expect(useMusicPlayer().state.current?.entry.path).toBe(entry.path)
+  expect(mocks.play).not.toHaveBeenCalled()
 })
 
 it('saves an explicit seek without waiting for the progress interval', async () => {

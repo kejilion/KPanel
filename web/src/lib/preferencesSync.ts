@@ -97,7 +97,7 @@ function refreshMusic(sync: Sync): void {
       const server = await api.preferences.get(requestSignal(sync))
       if (current !== sync || sync.server !== previous || sync.saving || sync.musicTouched || sync.pending.musicPlayback) return
       sync.server = server
-      if (!sameSection('musicPlayback', previous.musicPlayback, server.musicPlayback)) await restoreMusic(sync, parseMusicPlayback(server.musicPlayback))
+      if (!music.state.current || !sameSection('musicPlayback', previous.musicPlayback, server.musicPlayback)) await restoreMusic(sync, parseMusicPlayback(server.musicPlayback))
     } catch { /* A later focus or login can retry without interrupting playback. */ }
     finally { sync.musicRefreshing = undefined }
   })()
