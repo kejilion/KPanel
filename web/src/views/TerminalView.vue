@@ -28,7 +28,8 @@ import type { ClusterHost, ClusterHostList } from '@/types/api'
 import { usePhraseCatalog } from '@/i18n/phrase'
 import { useI18n } from '@/i18n'
 import { useToast } from '@/stores/toast'
-import { desktopCloseGuardCoordinator, desktopWindowCloseGuardKey } from '@/lib/desktopRouteKeys'
+import { desktopCloseGuardCoordinator, desktopWindowCloseGuardKey, desktopWindowIdentityKey, desktopWindowLaunchKey } from '@/lib/desktopRouteKeys'
+import { readWindowIdentities, windowIdentityKey, writeWindowIdentities } from '@/lib/windowSessionIdentities'
 
 usePhraseCatalog((locale) => locale === 'en-US'
   ? import('@/i18n/pages/TerminalView/en-US').then((module) => module.default)
@@ -36,6 +37,8 @@ usePhraseCatalog((locale) => locale === 'en-US'
 const { locale, t } = useI18n()
 const toast = useToast()
 const desktopWindowCloseGuards = inject(desktopWindowCloseGuardKey, undefined)
+const windowId = inject(desktopWindowIdentityKey, undefined)
+const consumeWindowLaunch = inject(desktopWindowLaunchKey, () => false)
 let unregisterWindowCloseGuard: (() => void) | undefined
 
 interface OpenTerminal {
@@ -96,6 +99,11 @@ let disposed = false
 let userClosed = false
 const account = useSession()
 const owner = account.state.authenticated ? account.state.user?.id || '' : ''
+const identityKey = windowIdentityKey('terminal', owner, windowId || 'classic')
+let restoredSessionIDs: string[] = []
+function rememberSessions(): void {
+  writeWindowIdentities(identityKey, sessions.value.map(item => item.id).filter(id => /^[a-f0-9]{64}$/.test(id)))
+}
 function cleanupLateSession(id: string): void {
   if (owner && (!account.state.authenticated || account.state.user?.id !== owner)) {
     deferTerminalClose(id, owner)
@@ -188,6 +196,7 @@ async function performLoadHosts(): Promise<void> {
           state: 'connecting', closeFailed: session.closeRequested, launchUncertain: session.launchUncertain })
       }
       activeSessionId.value = sessions.value[0]?.id || ''
+      rememberSessions()
       initialHostLoad = false
       if (userClosed) return
       const startHost = requestedTerminalHost() || inventory.value.items.find((host) => host.isLocal && host.terminalAvailable)
@@ -252,6 +261,7 @@ async function openSession(host: ClusterHost, retained = true): Promise<void> {
     }
 	const item: OpenTerminal = { id: opened.sessionId, hostId: host.id, hostName: host.name, retained: opened.retained, ordinal: nextOrdinal(host.id), offset: opened.offset, state: 'connecting' }
     sessions.value.push(item)
+    rememberSessions()
     activeSessionId.value = item.id
     void nextTick(() => {
       workspaceRef.value?.selectSession(item.id)
@@ -280,28 +290,23 @@ async function closeSession(id: string): Promise<boolean> {
     removeSession(id)
     return true
   }
-  try {
-    await closeTerminalQuietly(id, async () => {
-      if (handle) await handle.closeSession()
-      else {
-        const result = await api.terminals.close(id)
-        if (!result.closed) throw new Error('Terminal close was not confirmed')
-      }
-    })
-    removeSession(id)
-    return true
-  } catch {
-    removeSession(id)
-    return true
-  } finally {
-    item.closing = false
-  }
+  const cleanup = closeTerminalQuietly(id, async () => {
+    if (handle) await handle.closeSession()
+    else {
+      const result = await api.terminals.close(id)
+      if (!result.closed) throw new Error('Terminal close was not confirmed')
+    }
+  })
+  removeSession(id)
+  void cleanup.catch(() => undefined)
+  return true
 }
 
 function removeSession(id: string): void {
   const index = sessions.value.findIndex((item) => item.id === id)
   if (index < 0) return
   sessions.value.splice(index, 1)
+  rememberSessions()
   terminalRefs.delete(id)
   // A closed terminal frees a slot, so the limit notice no longer holds.
   limitReached.value = false
@@ -522,6 +527,8 @@ watch(() => route.query.hostId, () => {
 
 onMounted(() => {
   retryPendingTerminalCloses()
+  if (consumeWindowLaunch()) writeWindowIdentities(identityKey, [])
+  else restoredSessionIDs = readWindowIdentities(identityKey, /^[a-f0-9]{64}$/, 16)
 	window.addEventListener(clusterRemoteAccessChanged, loadHosts)
   unsubscribeClusterHostOrder = subscribeClusterHostOrder(() => {
     clusterHostOrderRevision.value += 1
@@ -537,6 +544,7 @@ onMounted(() => {
     userClosed = true
     disposed = true
     controller?.abort()
+    if (initialHostLoad) for (const id of restoredSessionIDs) cleanupLateSession(id)
     for (const item of [...sessions.value]) void closeSession(item.id)
     return true
   }

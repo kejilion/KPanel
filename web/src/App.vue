@@ -40,12 +40,20 @@ usePhraseCatalog((locale) => locale === 'en-US'
   ? import('@/i18n/pages/shared/en-US').then((module) => module.default)
   : import('@/i18n/pages/shared/zh-TW').then((module) => module.default))
 
+const retryAfterOnline = () => {
+  const owner = session.state.authenticated ? session.state.user?.id || '' : ''
+  if (!owner) return
+  retryPendingTerminalCloses()
+  retryPendingAppJobStops(owner, () => session.state.authenticated ? session.state.user?.id || '' : '')
+}
+
 onMounted(() => {
+  window.addEventListener('online', retryAfterOnline)
   const root = document.querySelector<HTMLElement>('#app')
   if (root) stopPhraseLocalization = installPhraseLocalization(root)
 })
 
-onBeforeUnmount(() => stopPhraseLocalization?.())
+onBeforeUnmount(() => { window.removeEventListener('online', retryAfterOnline); stopPhraseLocalization?.() })
 
 watchEffect(() => {
   const title = desktop.mode.value === 'desktop' && !route.meta.public

@@ -2,15 +2,16 @@
 import { mount, flushPromises } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { desktopWindowCloseGuardKey } from '@/lib/desktopRouteKeys'
+import { desktopWindowCloseGuardKey, desktopWindowIdentityKey, desktopWindowLaunchKey } from '@/lib/desktopRouteKeys'
 import TerminalView from './TerminalView.vue'
 import { ApiError } from '@/lib/api'
 
 const mocks = vi.hoisted(() => ({ close: vi.fn(), closeApi: vi.fn(), detach: vi.fn(), markDetached: vi.fn(), hosts: vi.fn(), open: vi.fn(), list: vi.fn() }))
 let closeGuard: () => boolean | Promise<boolean>
-function create() {
+function create(windowId?: string, fresh = true) {
   return mount(TerminalView, { global: { provide: {
     [desktopWindowCloseGuardKey as symbol]: { register: (guard: typeof closeGuard) => { closeGuard = guard; return () => undefined } },
+    ...(windowId ? { [desktopWindowIdentityKey as symbol]: windowId, [desktopWindowLaunchKey as symbol]: () => fresh } : {}),
   } } })
 }
 afterEach(() => vi.restoreAllMocks())
@@ -32,6 +33,7 @@ vi.mock('@/components/terminal/HostTerminal.vue', () => ({ default: defineCompon
 describe('explicit terminal tab close', () => {
   beforeEach(() => {
     window.localStorage.clear()
+    window.sessionStorage.clear()
     mocks.close.mockReset()
     mocks.closeApi.mockReset().mockResolvedValue({ closed: true })
     mocks.detach.mockReset().mockResolvedValue({ detached: true })
@@ -82,7 +84,7 @@ describe('explicit terminal tab close', () => {
     wrapper.unmount()
   })
 
-  it('deduplicates clicks and closes locally even if background registration fails', async () => {
+  it('dismisses immediately and deduplicates cleanup when the network is slow', async () => {
     mocks.detach.mockRejectedValueOnce(new Error('unavailable'))
     let reject!: (reason: Error) => void
     mocks.close.mockReturnValueOnce(new Promise((_, fail) => { reject = fail }))
@@ -92,8 +94,8 @@ describe('explicit terminal tab close', () => {
     await close.trigger('click')
     await close.trigger('click')
     expect(mocks.close).toHaveBeenCalledTimes(1)
-    expect(wrapper.findAll('.terminal-tab')).toHaveLength(1)
-    expect(wrapper.find('[aria-label="正在关闭终端"]').exists()).toBe(true)
+    expect(wrapper.findAll('.terminal-tab')).toHaveLength(0)
+    expect(wrapper.find('[aria-label="正在关闭终端"]').exists()).toBe(false)
     reject(new Error('Agent disconnected'))
     await flushPromises()
     expect(wrapper.findAll('.terminal-tab')).toHaveLength(0)
@@ -182,6 +184,31 @@ describe('explicit terminal tab close', () => {
     expect(mocks.list).not.toHaveBeenCalled()
     expect(mocks.closeApi).not.toHaveBeenCalled()
     wrapper.unmount()
+  })
+
+  it('restores only this window’s known session when closed before its list loads', async () => {
+    const id = 'a'.repeat(64)
+    mocks.list.mockResolvedValueOnce({ items: [{ sessionId: id, hostId: 'local', retained: true, workspaceVisible: true, offset: 0 }] })
+    const original = create('window-a')
+    await flushPromises()
+    original.unmount()
+    mocks.list.mockReturnValue(new Promise(() => undefined))
+    const other = create('window-b')
+    await flushPromises()
+    expect(await closeGuard()).toBe(true)
+    expect(mocks.closeApi).not.toHaveBeenCalled()
+    other.unmount()
+    const restored = create('window-a', false)
+    await flushPromises()
+    expect(await closeGuard()).toBe(true)
+    expect(mocks.closeApi).toHaveBeenCalledWith(id)
+    restored.unmount()
+    mocks.closeApi.mockClear()
+    const reused = create('window-a', true)
+    await flushPromises()
+    expect(await closeGuard()).toBe(true)
+    expect(mocks.closeApi).not.toHaveBeenCalled()
+    reused.unmount()
   })
 
 })

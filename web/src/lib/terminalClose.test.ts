@@ -1,17 +1,17 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/lib/api'
-import { closeTerminalForOwner, closeTerminalQuietly, queueTerminalLaunchClose, retryPendingTerminalCloses } from './terminalClose'
+import { closeTerminalForOwner, closeTerminalQuietly, deferTerminalClose, queueTerminalLaunchAck, queueTerminalLaunchClose, retryPendingTerminalCloses } from './terminalClose'
 
-const mocks = vi.hoisted(() => ({ detach: vi.fn(), close: vi.fn(), resolveShortcut: vi.fn(), owner: { authenticated: false, user: { id: 'owner' } } }))
+const mocks = vi.hoisted(() => ({ detach: vi.fn(), close: vi.fn(), resolveShortcut: vi.fn(), acknowledgeLaunch: vi.fn(), owner: { authenticated: false, user: { id: 'owner' } } }))
 vi.mock('@/lib/api', () => ({
-  api: { terminals: { detach: mocks.detach, close: mocks.close, resolveShortcut: mocks.resolveShortcut } },
+  api: { terminals: { detach: mocks.detach, close: mocks.close, resolveShortcut: mocks.resolveShortcut, acknowledgeLaunch: mocks.acknowledgeLaunch } },
   ApiError: class extends Error { constructor(message: string, public status: number, public code: string) { super(message) } },
 }))
 vi.mock('@/stores/session', () => ({ useSession: () => ({ state: mocks.owner }) }))
 
 describe('quiet terminal close', () => {
-  beforeEach(() => { vi.useFakeTimers(); mocks.detach.mockReset(); mocks.close.mockReset(); mocks.owner.authenticated = false; mocks.owner.user.id = 'owner'; window.localStorage.clear() })
+  beforeEach(() => { vi.useFakeTimers(); mocks.detach.mockReset(); mocks.close.mockReset(); mocks.acknowledgeLaunch.mockReset(); mocks.owner.authenticated = false; mocks.owner.user.id = 'owner'; window.localStorage.clear() })
   afterEach(() => { vi.clearAllTimers(); vi.useRealTimers() })
   it('does not detach a confirmed close', async () => {
     await expect(closeTerminalQuietly('id', async () => undefined)).resolves.toBe('closed')
@@ -38,10 +38,10 @@ describe('quiet terminal close', () => {
     mocks.detach.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce({ detached: true })
     mocks.close.mockRejectedValue(new Error('offline'))
     await expect(closeTerminalQuietly(id, async () => { throw new Error('offline') })).resolves.toBe('pending')
-    expect(JSON.parse(window.localStorage.getItem('kpanel:pending-terminal-closes:owner')!)).toEqual([id])
+    expect(window.localStorage.getItem(`kpanel:pending-terminal-closes:owner:${id}`)).toBe('1')
     await vi.advanceTimersByTimeAsync(2000)
     expect(mocks.close).toHaveBeenCalledTimes(1)
-    expect(JSON.parse(window.localStorage.getItem('kpanel:pending-terminal-closes:owner')!)).toEqual([])
+    expect(window.localStorage.getItem(`kpanel:pending-terminal-closes:owner:${id}`)).toBeNull()
   })
   it('does not retry a previous account’s session after an account switch', async () => {
     const id = 'b'.repeat(64)
@@ -52,7 +52,7 @@ describe('quiet terminal close', () => {
     mocks.owner.user.id = 'other'
     await vi.advanceTimersByTimeAsync(2000)
     expect(mocks.close).not.toHaveBeenCalled()
-    expect(JSON.parse(window.localStorage.getItem('kpanel:pending-terminal-closes:owner')!)).toEqual([id])
+    expect(window.localStorage.getItem(`kpanel:pending-terminal-closes:owner:${id}`)).toBe('1')
   })
   it('keeps the original owner when the account changes during close', async () => {
     const id = 'c'.repeat(64)
@@ -63,8 +63,8 @@ describe('quiet terminal close', () => {
     reject(new Error('offline'))
     await expect(closing).resolves.toBe('pending')
     expect(mocks.detach).not.toHaveBeenCalled()
-    expect(JSON.parse(window.localStorage.getItem('kpanel:pending-terminal-closes:owner')!)).toEqual([id])
-    expect(window.localStorage.getItem('kpanel:pending-terminal-closes:other')).toBeNull()
+    expect(window.localStorage.getItem(`kpanel:pending-terminal-closes:owner:${id}`)).toBe('1')
+    expect(window.localStorage.getItem(`kpanel:pending-terminal-closes:other:${id}`)).toBeNull()
   })
   it('defers a late session to its original owner without using another account', async () => {
     mocks.owner.authenticated = true
@@ -73,7 +73,7 @@ describe('quiet terminal close', () => {
     const id = 'f'.repeat(64)
     await expect(closeTerminalForOwner(id, 'owner', close)).resolves.toBe('pending')
     expect(close).not.toHaveBeenCalled()
-    expect(JSON.parse(window.localStorage.getItem('kpanel:pending-terminal-closes:owner')!)).toContain(id)
+    expect(window.localStorage.getItem(`kpanel:pending-terminal-closes:owner:${id}`)).toBe('1')
   })
   it('retries a lost launch lookup only for its owner without launching again', async () => {
     mocks.owner.authenticated = true
@@ -84,13 +84,63 @@ describe('quiet terminal close', () => {
     mocks.owner.user.id = 'other'
     await vi.advanceTimersByTimeAsync(2000)
     expect(mocks.resolveShortcut).toHaveBeenCalledTimes(1)
-    expect(JSON.parse(window.localStorage.getItem('kpanel:pending-terminal-launch-closes:owner')!)).toEqual([launch])
+    const key = `kpanel:pending-terminal-launch-closes:owner:${launch.launchId}`
+    expect(JSON.parse(window.localStorage.getItem(key)!)).toEqual(launch)
     mocks.owner.user.id = 'owner'
     mocks.resolveShortcut.mockResolvedValue({ sessionId: 'e'.repeat(64) })
     mocks.close.mockResolvedValue({ closed: true })
     retryPendingTerminalCloses()
     await vi.advanceTimersByTimeAsync(0)
     expect(mocks.close).toHaveBeenCalledWith('e'.repeat(64))
-    expect(JSON.parse(window.localStorage.getItem('kpanel:pending-terminal-launch-closes:owner')!)).toEqual([])
+    expect(window.localStorage.getItem(key)).toBeNull()
+  })
+  it('persists failed acknowledgements and releases their slot after the same user reconnects', async () => {
+    const sessionId = '1'.repeat(64), launchId = '2'.repeat(64)
+    mocks.owner.authenticated = true
+    mocks.acknowledgeLaunch.mockRejectedValue(new Error('offline'))
+    queueTerminalLaunchAck(sessionId, launchId, 'owner')
+    await vi.advanceTimersByTimeAsync(4000)
+    expect(mocks.acknowledgeLaunch).toHaveBeenCalledTimes(3)
+    const key = `kpanel:pending-terminal-launch-acks:owner:${sessionId}:${launchId}`
+    expect(window.localStorage.getItem(key)).toBe('1')
+    mocks.owner.user.id = 'other'
+    retryPendingTerminalCloses()
+    expect(mocks.acknowledgeLaunch).toHaveBeenCalledTimes(3)
+    mocks.owner.user.id = 'owner'
+    mocks.acknowledgeLaunch.mockResolvedValueOnce({ acknowledged: true })
+    retryPendingTerminalCloses()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(mocks.acknowledgeLaunch).toHaveBeenCalledTimes(4)
+    expect(window.localStorage.getItem(key)).toBeNull()
+  })
+  it('retries all unconfirmed launch acknowledgements after repeated offline reopenings', async () => {
+    const sessionId = '3'.repeat(64)
+    mocks.owner.authenticated = true
+    mocks.acknowledgeLaunch.mockRejectedValue(new Error('offline'))
+    for (let index = 0; index < 16; index++) queueTerminalLaunchAck(sessionId, index.toString(16).padStart(64, '0'), 'owner')
+    await vi.advanceTimersByTimeAsync(4000)
+    expect(mocks.acknowledgeLaunch).toHaveBeenCalledTimes(48)
+    mocks.acknowledgeLaunch.mockResolvedValue({ acknowledged: true })
+    retryPendingTerminalCloses()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(mocks.acknowledgeLaunch).toHaveBeenCalledTimes(64)
+    expect([...Array(window.localStorage.length)].map((_, index) => window.localStorage.key(index)).filter(key => key?.startsWith('kpanel:pending-terminal-launch-acks:owner:'))).toEqual([])
+  })
+  it('keeps every pending session identity when more than 32 are deferred', () => {
+    mocks.owner.authenticated = true
+    mocks.owner.user.id = 'other'
+    for (let index = 0; index < 40; index++) deferTerminalClose(index.toString(16).padStart(64, '0'), 'bulk-owner')
+    expect(window.localStorage.getItem(`kpanel:pending-terminal-closes:bulk-owner:${'0'.repeat(64)}`)).toBe('1')
+    expect(window.localStorage.getItem(`kpanel:pending-terminal-closes:bulk-owner:${(39).toString(16).padStart(64, '0')}`)).toBe('1')
+  })
+  it('retries an earlier array-format terminal close without discarding it', async () => {
+    const id = '7'.repeat(64)
+    mocks.owner.authenticated = true
+    window.localStorage.setItem('kpanel:pending-terminal-closes:owner', JSON.stringify([id]))
+    mocks.close.mockResolvedValue({ closed: true })
+    retryPendingTerminalCloses()
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(mocks.close).toHaveBeenCalledWith(id)
+    expect(JSON.parse(window.localStorage.getItem('kpanel:pending-terminal-closes:owner')!)).toEqual([])
   })
 })

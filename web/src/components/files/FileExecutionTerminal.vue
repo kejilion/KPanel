@@ -84,23 +84,16 @@ async function onStateChange(state: string): Promise<void> {
 async function close(): Promise<void> {
   if (closing.value) return
   closing.value = true
-  try {
-    if (session.value) {
-      const target = session.value
-      const outcome = await closeTerminalForOwner(target.sessionId, owner, () => terminal.value ? terminal.value.closeSession() : reclaim(target))
-      if (outcome !== 'closed') terminal.value?.markDetached?.()
-      session.value = undefined
-    }
-    disposed = true
-    controller.abort()
-    emit('close')
-  } catch {
-    disposed = true
-    controller.abort()
-    emit('close')
-  } finally {
-    closing.value = false
+  const target = session.value
+  const handle = terminal.value
+  if (target) {
+    handle?.markDetached?.()
+    void closeTerminalForOwner(target.sessionId, owner, () => handle ? handle.closeSession() : reclaim(target)).catch(() => undefined)
+    session.value = undefined
   }
+  disposed = true
+  controller.abort()
+  emit('close')
 }
 
 onMounted(open)

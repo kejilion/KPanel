@@ -2317,9 +2317,11 @@ export const api = {
       id: string,
       action: 'start' | 'stop' | 'restart' | 'update' | 'uninstall' | 'direct_access' | 'manage',
       body: { resourceVersion: string; accessMode?: 'direct' | 'domain_only'; jobId?: string },
+      signal?: AbortSignal,
     ): Promise<AppMutationResult | AppInstallJob> =>
       request<AppMutationResult | AppInstallJob>(`/apps/${encodeURIComponent(id)}/${action}`, {
         method: 'POST',
+        signal,
         body,
       }),
     checkUpdate: (id: string, resourceVersion: string, signal?: AbortSignal): Promise<AppImageUpdateResult> =>

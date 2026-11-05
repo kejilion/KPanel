@@ -3,7 +3,7 @@ import { flushPromises, shallowMount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { resetLocaleForTest, setLocale } from '@/i18n'
-import { desktopWindowCloseGuardKey, desktopWindowLaunchKey, type DesktopWindowCloseGuardRegistry } from '@/lib/desktopRouteKeys'
+import { desktopWindowCloseGuardKey, desktopWindowIdentityKey, desktopWindowLaunchKey, type DesktopWindowCloseGuardRegistry } from '@/lib/desktopRouteKeys'
 import { resetDesktopModeForTest, useDesktopMode } from '@/stores/desktopMode'
 import AppScriptView from './AppScriptView.vue'
 
@@ -62,7 +62,7 @@ const job = {
   createdAt: '',
 }
 
-async function mountView(closeGuards?: DesktopWindowCloseGuardRegistry, consumeLaunch = () => true) {
+async function mountView(closeGuards?: DesktopWindowCloseGuardRegistry, consumeLaunch = () => true, windowId?: string) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [{ path: '/app-script/:appId', component: AppScriptView }],
@@ -74,6 +74,7 @@ async function mountView(closeGuards?: DesktopWindowCloseGuardRegistry, consumeL
       plugins: [router],
       provide: {
         [desktopWindowLaunchKey as symbol]: consumeLaunch,
+        ...(windowId ? { [desktopWindowIdentityKey as symbol]: windowId } : {}),
         ...(closeGuards ? { [desktopWindowCloseGuardKey as symbol]: closeGuards } : {}),
       },
       stubs: { AppInteractiveTerminal: true },
@@ -89,6 +90,7 @@ describe('dedicated desktop app script terminal', () => {
     mocks.owner.user.id = `app-test-${crypto.randomUUID()}`
     resetDesktopModeForTest()
     window.localStorage.clear()
+    window.sessionStorage.clear()
     mocks.inventory.mockResolvedValue({ items: [app] })
     mocks.jobs.mockResolvedValue({ items: [] })
     mocks.job.mockResolvedValue({ ...job, inputOpen: false, status: 'cancelled', stage: 'cancelled' })
@@ -104,7 +106,7 @@ describe('dedicated desktop app script terminal', () => {
   it('starts the structured manage action without mounting the app marketplace', async () => {
     const wrapper = await mountView()
 
-    expect(mocks.action).toHaveBeenCalledWith('openclaw', 'manage', { resourceVersion: 'rv-1', jobId: expect.stringMatching(/^[a-f0-9]{32}$/) })
+    expect(mocks.action).toHaveBeenCalledWith('openclaw', 'manage', { resourceVersion: 'rv-1', jobId: expect.stringMatching(/^[a-f0-9]{32}$/) }, expect.any(AbortSignal))
     expect(wrapper.find('.app-script-page__header').exists()).toBe(false)
     expect(wrapper.findComponent({ name: 'AppInteractiveTerminal' }).props()).toMatchObject({
       jobId: 'job-1',
@@ -189,7 +191,7 @@ describe('dedicated desktop app script terminal', () => {
   it('starts this app while another application has an active shell', async () => {
     mocks.jobs.mockResolvedValue({ items: [{ ...job, id: 'other-job', appId: 'other-app' }] })
     const wrapper = await mountView()
-    expect(mocks.action).toHaveBeenCalledWith('openclaw', 'manage', { resourceVersion: 'rv-1', jobId: expect.stringMatching(/^[a-f0-9]{32}$/) })
+    expect(mocks.action).toHaveBeenCalledWith('openclaw', 'manage', { resourceVersion: 'rv-1', jobId: expect.stringMatching(/^[a-f0-9]{32}$/) }, expect.any(AbortSignal))
     expect(wrapper.findComponent({ name: 'AppInteractiveTerminal' }).props('jobId')).toBe('job-1')
     wrapper.unmount()
   })
@@ -287,7 +289,7 @@ describe('dedicated desktop app script terminal', () => {
     const jobId = mocks.action.mock.calls[0]![2].jobId as string
     expect(await guard?.()).toBe(true)
     expect(mocks.cancelJob).toHaveBeenCalledWith(jobId, expect.any(AbortSignal))
-    expect(JSON.parse(window.localStorage.getItem(`kpanel:pending-app-job-stops:${mocks.owner.user.id}`)!)).toContain(jobId)
+    expect(window.localStorage.getItem(`kpanel:pending-app-job-stops:${mocks.owner.user.id}:${jobId}`)).toBe('1')
     wrapper.unmount()
   })
 
@@ -304,9 +306,32 @@ describe('dedicated desktop app script terminal', () => {
     const second = mocks.action.mock.calls[1]![2].jobId as string
     expect(first).not.toBe(second)
     expect(await guard?.()).toBe(true)
-    const pending = JSON.parse(window.localStorage.getItem(`kpanel:pending-app-job-stops:${mocks.owner.user.id}`)!)
-    expect(pending).toEqual(expect.arrayContaining([first, second]))
+    expect(window.localStorage.getItem(`kpanel:pending-app-job-stops:${mocks.owner.user.id}:${first}`)).toBe('1')
+    expect(window.localStorage.getItem(`kpanel:pending-app-job-stops:${mocks.owner.user.id}:${second}`)).toBe('1')
     wrapper.unmount()
+  })
+
+  it('persists an uncertain launch for its restored window without giving it to a different window', async () => {
+    let guard: (() => boolean | Promise<boolean>) | undefined
+    const guards: DesktopWindowCloseGuardRegistry = { register: candidate => { guard = candidate; return vi.fn() } }
+    mocks.action.mockRejectedValueOnce(new Error('lost response'))
+    const original = await mountView(guards, () => true, 'window-a')
+    const id = mocks.action.mock.calls[0]![2].jobId as string
+    original.unmount()
+    mocks.jobs.mockReturnValue(new Promise(() => undefined))
+    const other = await mountView(guards, () => true, 'window-b')
+    expect(await guard?.()).toBe(true)
+    expect(mocks.cancelJob).not.toHaveBeenCalled()
+    other.unmount()
+    const restored = await mountView(guards, () => false, 'window-a')
+    expect(await guard?.()).toBe(true)
+    expect(mocks.cancelJob).toHaveBeenCalledWith(id, expect.any(AbortSignal))
+    restored.unmount()
+    mocks.cancelJob.mockClear()
+    const reused = await mountView(guards, () => true, 'window-a')
+    expect(await guard?.()).toBe(true)
+    expect(mocks.cancelJob).not.toHaveBeenCalled()
+    reused.unmount()
   })
 
   it('closes silently but preserves the task identity when shutdown cannot be confirmed', async () => {

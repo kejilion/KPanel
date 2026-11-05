@@ -45,6 +45,18 @@ beforeEach(() => {
 afterEach(() => { for (const wrapper of wrappers.splice(0)) wrapper.unmount() })
 
 describe('shortcut command terminal lifecycle', () => {
+  it('closes the window immediately while slow cleanup continues', async () => {
+    let reject!: (reason: Error) => void
+    mocks.childClose.mockReturnValueOnce(new Promise((_, fail) => { reject = fail }))
+    mocks.detach.mockResolvedValueOnce({ detached: true })
+    const wrapper = create('remote-1', 'Remote', { shortcutId: 'a'.repeat(32) })
+    await flushPromises()
+    expect(await closeGuard()).toBe(true)
+    expect(wrapper.emitted('close')).toHaveLength(1)
+    reject(new Error('offline'))
+    await flushPromises()
+    expect(mocks.detach).toHaveBeenCalledWith(opened.sessionId)
+  })
   it('closes silently after saving an unconfirmed shortcut for cleanup', async () => {
     mocks.childClose.mockRejectedValueOnce(new Error('offline'))
     mocks.detach.mockResolvedValueOnce({ detached: true })

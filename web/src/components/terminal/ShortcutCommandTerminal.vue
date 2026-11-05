@@ -4,7 +4,7 @@ import { LoaderCircle } from '@lucide/vue'
 import { desktopWindowCloseGuardKey } from '@/lib/desktopRouteKeys'
 import HostTerminal from '@/components/terminal/HostTerminal.vue'
 import { api, ApiError } from '@/lib/api'
-import { closeTerminalQuietly, deferTerminalClose, queueTerminalLaunchClose } from '@/lib/terminalClose'
+import { closeTerminalForOwner, closeTerminalQuietly, deferTerminalClose, queueTerminalLaunchAck, queueTerminalLaunchClose, retryPendingTerminalCloses } from '@/lib/terminalClose'
 import { useSession } from '@/stores/session'
 import { useI18n } from '@/i18n'
 import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
@@ -15,7 +15,6 @@ const { t } = useI18n()
 const emit = defineEmits<{ close: [] }>()
 const closeGuards = inject(desktopWindowCloseGuardKey, undefined)
 let unregisterCloseGuard: (() => void) | undefined
-let openingRequest: Promise<void> | undefined
 const terminal = ref<InstanceType<typeof HostTerminal>>()
 const session = ref<TerminalSession>()
 const opening = ref(true)
@@ -58,6 +57,7 @@ async function reclaim(opened: TerminalSession): Promise<void> {
 async function open(): Promise<void> {
   opening.value = true
   error.value = ''
+  retryPendingTerminalCloses()
   try {
     if (namedLaunch && !props.existingSession && !launchId) {
       launchId = (await (launchTarget.purpose ? api.terminals.preparePurpose(launchTarget.purpose) : api.terminals.prepareShortcut(hostId, launchTarget.shortcutId!))).launchId
@@ -88,7 +88,7 @@ async function open(): Promise<void> {
       return
     }
     session.value = opened
-    if (launchId) void api.terminals.acknowledgeLaunch(opened.sessionId, launchId).catch(() => undefined)
+    if (launchId) queueTerminalLaunchAck(opened.sessionId, launchId, owner)
     if (opened.launchUncertain) error.value = t('terminal.launchUncertain')
   } catch (reason) {
     if (!disposed) error.value = reason instanceof ApiError && reason.code === 'terminal_limit'
@@ -113,56 +113,25 @@ async function close(): Promise<boolean> {
   if (closing.value) return false
   closing.value = true
   userClosed = true
-  if (owner && (!account.state.authenticated || account.state.user?.id !== owner)) {
-    if (session.value) deferTerminalClose(session.value.sessionId, owner)
-    else queueLaunchClose()
-    disposed = true
-    emit('close')
-    return true
-  }
-  if (opening.value) {
-    disposed = true
+  const target = session.value
+  const handle = terminal.value
+  if (target) {
+    handle?.markDetached?.()
+    void closeTerminalForOwner(target.sessionId, owner, () => handle ? handle.closeSession() : reclaim(target)).catch(() => undefined)
+    session.value = undefined
+  } else if (namedLaunch) {
     queueLaunchClose()
-    emit('close')
-    return true
   }
-  if (!session.value && namedLaunch) {
-    disposed = true
-    queueLaunchClose()
-    emit('close')
-    return true
-  }
-  try {
-    await openingRequest
-    let target = session.value
-    if (target) {
-      try {
-        const outcome = await closeTerminalQuietly(target.sessionId, () => session.value && terminal.value ? terminal.value.closeSession() : reclaim(target))
-        if (outcome !== 'closed') terminal.value?.markDetached?.()
-      } catch (reason) {
-        session.value = target
-        throw reason
-      }
-      session.value = undefined
-    }
-    disposed = true
-    emit('close')
-    return true
-  } catch {
-    queueLaunchClose()
-    disposed = true
-    emit('close')
-    return true
-  } finally {
-    closing.value = false
-  }
+  disposed = true
+  emit('close')
+  return true
 }
 
 defineExpose({ close })
 
 onMounted(() => {
   unregisterCloseGuard = closeGuards?.register(close)
-  openingRequest = open()
+  void open()
 })
 onBeforeUnmount(() => {
   unregisterCloseGuard?.()

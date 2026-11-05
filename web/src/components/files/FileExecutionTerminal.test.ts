@@ -40,6 +40,18 @@ beforeEach(() => {
 afterEach(() => { for (const wrapper of wrappers.splice(0)) wrapper.unmount() })
 
 describe('file execution terminal lifecycle', () => {
+  it('dismisses immediately and continues cleanup after a slow close fails', async () => {
+    let reject!: (reason: Error) => void
+    mocks.childClose.mockReturnValueOnce(new Promise((_, fail) => { reject = fail }))
+    const wrapper = create()
+    await flushPromises()
+    wrapper.findComponent({ name: 'ModalDialog' }).vm.$emit('close')
+    await flushPromises()
+    expect(wrapper.emitted('close')).toHaveLength(1)
+    reject(new Error('offline'))
+    await flushPromises()
+    expect(mocks.detach).toHaveBeenCalledWith(opened.sessionId)
+  })
   it('keeps late cleanup with the original account after switching users', async () => {
     let resolve!: (value: TerminalSession) => void
     mocks.open.mockReturnValueOnce(new Promise(done => { resolve = done }))
@@ -51,8 +63,8 @@ describe('file execution terminal lifecycle', () => {
     resolve({ ...opened, sessionId: id })
     await flushPromises()
     expect(mocks.close).not.toHaveBeenCalled()
-    expect(JSON.parse(window.localStorage.getItem('kpanel:pending-terminal-closes:owner-a')!)).toEqual([id])
-    expect(window.localStorage.getItem('kpanel:pending-terminal-closes:owner-b')).toBeNull()
+    expect(window.localStorage.getItem(`kpanel:pending-terminal-closes:owner-a:${id}`)).toBe('1')
+    expect(window.localStorage.getItem(`kpanel:pending-terminal-closes:owner-b:${id}`)).toBeNull()
   })
   it('closes silently after recording an unconfirmed terminal for cleanup', async () => {
     mocks.childClose.mockRejectedValueOnce(new Error('offline'))

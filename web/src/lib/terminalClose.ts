@@ -11,22 +11,40 @@ export const terminalCleanupOwner = currentOwner
 function readPending(owner: string): string[] {
   if (!owner) return []
   try {
-    const value: unknown = JSON.parse(window.localStorage.getItem(`${pendingKey}:${encodeURIComponent(owner)}`) || '[]')
-    return Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string' && /^[a-f0-9]{64}$/.test(id)).slice(-32) : []
+    const base = `${pendingKey}:${encodeURIComponent(owner)}`
+    const ids = new Set<string>()
+    try {
+      const value: unknown = JSON.parse(window.localStorage.getItem(base) || '[]')
+      if (Array.isArray(value)) for (const id of value) if (typeof id === 'string' && /^[a-f0-9]{64}$/.test(id)) ids.add(id)
+    } catch { /* Ignore an invalid legacy value. */ }
+    for (let index = 0; index < window.localStorage.length; index++) {
+      const key = window.localStorage.key(index)
+      if (key?.startsWith(`${base}:`)) {
+        const id = key.slice(base.length + 1)
+        if (/^[a-f0-9]{64}$/.test(id)) ids.add(id)
+      }
+    }
+    return [...ids]
   } catch { return [] }
 }
-function writePending(owner: string, ids: string[]): void {
+function writePending(owner: string, id: string): void {
   if (!owner) return
-  try { window.localStorage.setItem(`${pendingKey}:${encodeURIComponent(owner)}`, JSON.stringify(ids.slice(-32))) } catch { /* best effort */ }
+  try { window.localStorage.setItem(`${pendingKey}:${encodeURIComponent(owner)}:${id}`, '1') } catch { /* best effort */ }
 }
 function forgetPending(owner: string, id: string): void {
-  writePending(owner, readPending(owner).filter(value => value !== id))
+  if (!owner) return
+  try {
+    const base = `${pendingKey}:${encodeURIComponent(owner)}`
+    window.localStorage.removeItem(`${base}:${id}`)
+    const value: unknown = JSON.parse(window.localStorage.getItem(base) || '[]')
+    if (Array.isArray(value) && value.includes(id)) window.localStorage.setItem(base, JSON.stringify(value.filter(entry => entry !== id)))
+  } catch { /* best effort */ }
 }
 function queuePending(id: string, owner: string): void {
   if (!owner || !/^[a-f0-9]{64}$/.test(id)) return
   const key = `${owner}\0${id}`
   if (active.has(key)) return
-  writePending(owner, [...readPending(owner).filter(value => value !== id), id])
+  writePending(owner, id)
   active.add(key)
   const attempt = async (remaining: number): Promise<void> => {
     if (currentOwner() !== owner) { active.delete(key); return }
@@ -57,32 +75,145 @@ export async function closeTerminalForOwner(id: string, owner: string, close: ()
   return closeTerminalQuietly(id, close)
 }
 
+const scanningCloses = new Set<string>()
 export function retryPendingTerminalCloses(): void {
   const owner = currentOwner()
-  for (const id of readPending(owner)) queuePending(id, owner)
-  for (const launch of readLaunches(owner)) queueTerminalLaunchClose(launch, owner)
+  retryLaunchAcks(owner)
+  if (!owner || scanningCloses.has(owner)) return
+  const pending: Array<() => void> = [
+    ...readPending(owner).map(id => () => queuePending(id, owner)),
+    ...readLaunches(owner).map(launch => () => queueTerminalLaunchClose(launch, owner)),
+  ]
+  if (!pending.length) return
+  scanningCloses.add(owner)
+  let index = 0
+  const batch = () => {
+    if (currentOwner() !== owner) { scanningCloses.delete(owner); return }
+    for (const retry of pending.slice(index, index + 64)) retry()
+    index += 64
+    if (index < pending.length) window.setTimeout(batch, 2000)
+    else scanningCloses.delete(owner)
+  }
+  batch()
+}
+
+type LaunchAck = { sessionId: string; launchId: string }
+const ackKey = 'kpanel:pending-terminal-launch-acks'
+const scanningAcks = new Set<string>()
+function readLaunchAcks(owner: string): LaunchAck[] {
+  if (!owner) return []
+  try {
+    const prefix = `${ackKey}:${encodeURIComponent(owner)}:`
+    const result: LaunchAck[] = []
+    for (let index = 0; index < window.localStorage.length; index++) {
+      const key = window.localStorage.key(index)
+      if (!key?.startsWith(prefix)) continue
+      const [sessionId, launchId, extra] = key.slice(prefix.length).split(':')
+      if (!extra && /^[a-f0-9]{64}$/.test(sessionId || '') && /^[a-f0-9]{64}$/.test(launchId || '')) result.push({ sessionId: sessionId!, launchId: launchId! })
+    }
+    return result
+  } catch { return [] }
+}
+function launchAckStorageKey(owner: string, sessionId: string, launchId: string): string {
+  return `${ackKey}:${encodeURIComponent(owner)}:${sessionId}:${launchId}`
+}
+function retryLaunchAcks(owner: string): void {
+  if (!owner || scanningAcks.has(owner)) return
+  const pending = readLaunchAcks(owner)
+  if (!pending.length) return
+  scanningAcks.add(owner)
+  let index = 0
+  const batch = () => {
+    if (currentOwner() !== owner) { scanningAcks.delete(owner); return }
+    for (const ack of pending.slice(index, index + 64)) queueTerminalLaunchAck(ack.sessionId, ack.launchId, owner)
+    index += 64
+    if (index < pending.length) window.setTimeout(batch, 2000)
+    else scanningAcks.delete(owner)
+  }
+  batch()
+}
+
+// The server keeps a launch identity until the browser confirms receipt.
+// Keep failed acknowledgements so reconnecting can release that bounded slot.
+export function queueTerminalLaunchAck(sessionId: string, launchId: string, owner: string): void {
+  if (!owner || !/^[a-f0-9]{64}$/.test(sessionId) || !/^[a-f0-9]{64}$/.test(launchId)) {
+    void api.terminals.acknowledgeLaunch(sessionId, launchId).catch(() => undefined)
+    return
+  }
+  const key = `ack\0${owner}\0${sessionId}\0${launchId}`
+  const storageKey = launchAckStorageKey(owner, sessionId, launchId)
+  try { window.localStorage.setItem(storageKey, '1') } catch { /* best effort */ }
+  if (active.has(key)) return
+  active.add(key)
+  const attempt = async (remaining: number): Promise<void> => {
+    if (currentOwner() !== owner) { active.delete(key); return }
+    try {
+      const result = await api.terminals.acknowledgeLaunch(sessionId, launchId)
+      if (currentOwner() !== owner) { active.delete(key); return }
+      if (!result.acknowledged) throw new Error('Launch acknowledgement was not confirmed')
+      try { window.localStorage.removeItem(storageKey) } catch { /* best effort */ }
+      active.delete(key)
+    } catch (reason) {
+      if (currentOwner() !== owner) { active.delete(key); return }
+      if (reason instanceof ApiError && reason.code === 'terminal_not_found') {
+        try { window.localStorage.removeItem(storageKey) } catch { /* best effort */ }
+        active.delete(key)
+      } else if (remaining > 1) {
+        window.setTimeout(() => void attempt(remaining - 1), 2000)
+      } else active.delete(key)
+    }
+  }
+  void attempt(3)
 }
 
 type PendingLaunch = { launchId: string; hostId: string; shortcutId?: string; purpose?: 'site-management' }
 const launchKey = 'kpanel:pending-terminal-launch-closes'
+function validLaunch(value: unknown): value is PendingLaunch {
+  if (!value || typeof value !== 'object') return false
+  const item = value as Partial<PendingLaunch>
+  return typeof item.launchId === 'string' && /^[a-f0-9]{64}$/.test(item.launchId) && typeof item.hostId === 'string' && item.hostId.length <= 128 && (item.purpose === 'site-management' || typeof item.shortcutId === 'string' && /^[a-f0-9]{32}$/.test(item.shortcutId))
+}
 function readLaunches(owner: string): PendingLaunch[] {
   if (!owner) return []
   try {
-    const values: unknown = JSON.parse(window.localStorage.getItem(`${launchKey}:${encodeURIComponent(owner)}`) || '[]')
-    if (!Array.isArray(values)) return []
-    return values.filter((v): v is PendingLaunch => v && typeof v === 'object' && /^[a-f0-9]{64}$/.test(v.launchId) && typeof v.hostId === 'string' && v.hostId.length <= 128 && (v.purpose === 'site-management' || /^[a-f0-9]{32}$/.test(v.shortcutId))).slice(-32)
+    const base = `${launchKey}:${encodeURIComponent(owner)}`
+    const entries = new Map<string, PendingLaunch>()
+    try {
+      const value: unknown = JSON.parse(window.localStorage.getItem(base) || '[]')
+      if (Array.isArray(value)) for (const item of value) if (validLaunch(item)) entries.set(item.launchId, item)
+    } catch { /* Ignore an invalid legacy value. */ }
+    for (let index = 0; index < window.localStorage.length; index++) {
+      const key = window.localStorage.key(index)
+      if (!key?.startsWith(`${base}:`)) continue
+      try {
+        const value: unknown = JSON.parse(window.localStorage.getItem(key) || 'null')
+        if (validLaunch(value) && key === `${base}:${value.launchId}`) entries.set(value.launchId, value)
+      } catch { /* Ignore an invalid entry. */ }
+    }
+    return [...entries.values()]
   } catch { return [] }
 }
-function writeLaunches(owner: string, launches: PendingLaunch[]): void {
+function writeLaunch(owner: string, launch: PendingLaunch): void {
   if (!owner) return
-  try { window.localStorage.setItem(`${launchKey}:${encodeURIComponent(owner)}`, JSON.stringify(launches.slice(-32))) } catch { /* best effort */ }
+  try { window.localStorage.setItem(`${launchKey}:${encodeURIComponent(owner)}:${launch.launchId}`, JSON.stringify(launch)) } catch { /* best effort */ }
+}
+function forgetLaunch(owner: string, launchId: string): void {
+  if (!owner) return
+  try {
+    const base = `${launchKey}:${encodeURIComponent(owner)}`
+    window.localStorage.removeItem(`${base}:${launchId}`)
+    const value: unknown = JSON.parse(window.localStorage.getItem(base) || '[]')
+    if (Array.isArray(value) && value.some(entry => validLaunch(entry) && entry.launchId === launchId)) {
+      window.localStorage.setItem(base, JSON.stringify(value.filter(entry => !validLaunch(entry) || entry.launchId !== launchId)))
+    }
+  } catch { /* best effort */ }
 }
 
 // Lookup consumes the prepared identity and never starts a command.
 export function queueTerminalLaunchClose(launch: PendingLaunch, owner: string): void {
-  if (!owner) return
+  if (!owner || !validLaunch(launch)) return
   const key = `launch\0${owner}\0${launch.launchId}`
-  writeLaunches(owner, [...readLaunches(owner).filter(value => value.launchId !== launch.launchId), launch])
+  writeLaunch(owner, launch)
   if (active.has(key)) return
   active.add(key)
   const attempt = async (remaining: number): Promise<void> => {
@@ -96,11 +227,12 @@ export function queueTerminalLaunchClose(launch: PendingLaunch, owner: string): 
       await closeTerminalQuietly(session.sessionId, async () => {
         if (!(await api.terminals.close(session.sessionId)).closed) throw new Error('Terminal close was not confirmed')
       })
-      writeLaunches(owner, readLaunches(owner).filter(value => value.launchId !== launch.launchId))
+      forgetLaunch(owner, launch.launchId)
       active.delete(key)
     } catch (reason) {
+      if (currentOwner() !== owner) { active.delete(key); return }
       if (reason instanceof ApiError && reason.code === 'terminal_shortcut_session_not_found') {
-        writeLaunches(owner, readLaunches(owner).filter(value => value.launchId !== launch.launchId))
+        forgetLaunch(owner, launch.launchId)
         active.delete(key)
       } else if (remaining > 1) {
         window.setTimeout(() => void attempt(remaining - 1), 2000)
@@ -118,6 +250,10 @@ export async function closeTerminalQuietly(id: string, close: () => Promise<void
     await close()
     return 'closed'
   } catch (reason) {
+    if (owner && currentOwner() !== owner) {
+      if (queueOnFailure) queuePending(id, owner)
+      return 'pending'
+    }
     if (reason instanceof ApiError && reason.code === 'terminal_not_found') return 'missing'
   }
   if (owner && currentOwner() !== owner) {
@@ -129,6 +265,10 @@ export async function closeTerminalQuietly(id: string, close: () => Promise<void
     if (!result.detached) throw new Error('Terminal cleanup was not recorded')
     return 'detached'
   } catch (reason) {
+    if (owner && currentOwner() !== owner) {
+      if (queueOnFailure) queuePending(id, owner)
+      return 'pending'
+    }
     if (reason instanceof ApiError && reason.code === 'terminal_not_found') return 'missing'
     // The server may itself be unreachable or its bounded cleanup queue full.
     // Do not claim termination: its existing session remains eligible for retry.

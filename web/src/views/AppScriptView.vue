@@ -8,7 +8,8 @@ import { localizeError } from '@/i18n/errors'
 import { ApiError, api } from '@/lib/api'
 import { requestQuietAppJobStop, retryPendingAppJobStops } from '@/lib/appJobQuietStop'
 import { useSession } from '@/stores/session'
-import { desktopWindowCloseGuardKey, desktopWindowLaunchKey } from '@/lib/desktopRouteKeys'
+import { desktopWindowCloseGuardKey, desktopWindowIdentityKey, desktopWindowLaunchKey } from '@/lib/desktopRouteKeys'
+import { readWindowIdentities, windowIdentityKey, writeWindowIdentities } from '@/lib/windowSessionIdentities'
 import { usePhraseCatalog } from '@/i18n/phrase'
 import type { AppInstallJob, AppMarketItem } from '@/types/api'
 
@@ -23,6 +24,7 @@ const currentOwner = () => session.state.authenticated ? session.state.user?.id 
 const owner = currentOwner()
 const windowCloseGuards = inject(desktopWindowCloseGuardKey, undefined)
 const consumeWindowLaunch = inject(desktopWindowLaunchKey, () => false)
+const windowId = inject(desktopWindowIdentityKey, undefined)
 const loading = ref(true)
 const error = ref('')
 const item = ref<AppMarketItem>()
@@ -32,12 +34,19 @@ let loadRequest: Promise<void> | undefined
 let closeRequest: Promise<boolean> | undefined
 let unregisterWindowCloseGuard: (() => void) | undefined
 let userClosed = false
+let disposed = false
 let closingOwner = ''
 let launchJobID = ''
 const launchJobIDs = new Set<string>()
 
 const activeJobStorageKey = 'kpanel:active-app-job'
 const appID = computed(() => String(route.params.appId || ''))
+const identityKey = windowIdentityKey('app', owner, windowId, appID.value)
+function trackJob(id: string): void {
+  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id)) return
+  launchJobIDs.add(id)
+  writeWindowIdentities(identityKey, [...launchJobIDs])
+}
 function isActiveJob(value?: AppInstallJob): boolean {
   return value?.status === 'queued' || value?.status === 'running'
 }
@@ -71,13 +80,13 @@ async function existingInteractiveJob(appId: string, signal: AbortSignal): Promi
 async function launchManage(target: AppMarketItem): Promise<AppInstallJob> {
   if (launchJobIDs.size >= 32) throw new Error('Task launch limit reached')
   launchJobID = Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('')
-  launchJobIDs.add(launchJobID)
+  trackJob(launchJobID)
   const jobId = launchJobID
   const start = async (candidate: AppMarketItem): Promise<AppInstallJob> => {
     if (userClosed || currentOwner() !== owner) throw new Error('Task launch cancelled')
     const resourceVersion = candidate.runtime.resourceVersion
     if (!resourceVersion) throw new Error(i18n.t('appScript.resourceVersionMissing'))
-    const result = await api.apps.action(candidate.id, 'manage', { resourceVersion, jobId })
+    const result = await api.apps.action(candidate.id, 'manage', { resourceVersion, jobId }, AbortSignal.timeout(120_000))
     if (!isInteractiveJob(result) || !result.interactive) {
       throw new Error(i18n.t('appScript.interactiveTaskMissing'))
     }
@@ -118,8 +127,13 @@ async function load(allowLaunch = false): Promise<void> {
     }
     const existing = await existingInteractiveJob(target.id, requestController.signal)
     if (controller !== requestController || userClosed) return
-    job.value = existing || (allowLaunch && !userClosed && currentOwner() === owner ? await launchManage(target) : undefined)
-    if (job.value && !userClosed && currentOwner() === owner) rememberJob(job.value.id)
+    const active = existing || (allowLaunch && !userClosed && currentOwner() === owner ? await launchManage(target) : undefined)
+    if (disposed && !userClosed) return
+    job.value = active
+    if (job.value && !userClosed && currentOwner() === owner) {
+      trackJob(job.value.id)
+      rememberJob(job.value.id)
+    }
     if (userClosed && isActiveJob(job.value)) requestQuietAppJobStop(job.value!.id, closingOwner, currentOwner)
   } catch (reason) {
     if (reason instanceof DOMException && reason.name === 'AbortError') return
@@ -161,9 +175,13 @@ function guardWindowClose(): Promise<boolean> {
 onMounted(() => {
   retryPendingAppJobStops(currentOwner(), currentOwner)
   unregisterWindowCloseGuard = windowCloseGuards?.register(guardWindowClose)
-  startLoad(consumeWindowLaunch())
+  const fresh = consumeWindowLaunch()
+  if (fresh) writeWindowIdentities(identityKey, [])
+  else for (const id of readWindowIdentities(identityKey, /^[a-zA-Z0-9_-]{1,128}$/, 64)) launchJobIDs.add(id)
+  startLoad(fresh)
 })
 onBeforeUnmount(() => {
+  disposed = true
   unregisterWindowCloseGuard?.()
   if (!userClosed || !launchJobID) controller?.abort()
 })
