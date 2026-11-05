@@ -22,7 +22,9 @@ usePhraseCatalog(locale => locale === 'en-US' ? import('@/i18n/pages/MusicView/e
 function phrase(value: string) { phraseCatalogVersion.value; return translatePhrase(value) }
 const i18n = useI18n(), player = useMusicPlayer(), state = player.state
 const route = useRoute(), router = useRouter()
-const visible = inject(desktopWindowVisibleKey, ref(true))
+const windowVisible = inject(desktopWindowVisibleKey, undefined)
+const windowed = Boolean(windowVisible)
+const visible = windowVisible ?? ref(true)
 const explicitLocation = computed(() => typeof route.query.path === 'string' || typeof route.query.hostId === 'string')
 const hostId = computed(() => explicitLocation.value ? (typeof route.query.hostId === 'string' ? route.query.hostId : '') : mediaLocations.musicLocation?.hostId ?? '')
 const path = computed(() => typeof route.query.path === 'string' && (route.query.path === '/' || normalizeGalleryRoot(route.query.path)) ? route.query.path : explicitLocation.value ? MUSIC_ROOT : mediaLocations.musicLocation?.path ?? MUSIC_ROOT)
@@ -115,9 +117,10 @@ onBeforeUnmount(() => { destroyed = true; listing?.abort(); if (visible.value) s
 
 <template>
   <main class="page music-page" tabindex="0" @keydown="keyboard">
-    <header class="music-header">
+    <header v-if="!windowed" class="music-header">
       <div class="music-brand"><img :src="'/desktop-icons/music-kpanel-flat-v2.webp'" alt="" /><div><h1>音乐</h1><p>把日常，交给一首好歌</p></div></div>
     </header>
+    <h1 v-else class="sr-only">{{ i18n.t('route.music') }}</h1>
     <nav class="music-tabs" :aria-label="phrase('音乐导航')"><button :aria-current="tab === 'library' ? 'page' : undefined" @click="tab = 'library'"><Disc3 :size="18" /> 音乐库</button><button :aria-current="tab === 'listen' ? 'page' : undefined" @click="tab = 'listen'"><Music2 :size="18" /> 正在播放</button><button :aria-current="tab === 'queue' ? 'page' : undefined" @click="tab = 'queue'"><ListMusic :size="18" /> 播放队列 <span>{{ state.queue.length }}</span></button></nav>
     <template v-if="tab === 'library'">
       <div class="music-location"><div class="music-location__source"><HostSwitcher ref="picker" :hosts="hosts" :active-id="activeHost?.id || hostId" :label="hostLabel" :error="hostsError" :status-of="h => ({ ...fileHostStatus(h), label: phrase(fileHostStatus(h).label) })" @select="selectHost" @refresh="loadHosts" /><button class="music-text-button" @click="locationOpen = !locationOpen" :aria-expanded="locationOpen"><FolderOpen :size="16" /><span>{{ path }}</span><ChevronRight :size="15" /></button></div><div class="music-location__actions"><button class="button button--secondary" :aria-label="phrase('刷新')" :disabled="loading" @click="load"><RefreshCw :size="17" /></button><button class="music-text-button" @click="files">文件管理</button></div></div>

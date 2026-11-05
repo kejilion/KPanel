@@ -298,7 +298,7 @@ onBeforeUnmount(() => {
 
 <template>
   <main class="page cinema-page">
-    <header class="cinema-heading">
+    <header v-if="!windowed" class="cinema-heading">
       <img class="cinema-heading__icon" :src="'/desktop-icons/cinema-kpanel-flat-v2.webp'" alt="" />
       <div>
         <h1>{{ i18n.t('route.cinema') }}</h1>
@@ -308,6 +308,7 @@ onBeforeUnmount(() => {
         <FolderOpen :size="17" /> {{ phrase('文件管理') }}
       </button>
     </header>
+    <h1 v-else class="sr-only">{{ i18n.t('route.cinema') }}</h1>
 
     <section class="cinema-source" :aria-label="phrase('影片来源')">
       <HostSwitcher
@@ -322,6 +323,7 @@ onBeforeUnmount(() => {
       </form>
       <button class="icon-button" type="button" :aria-label="phrase('上级目录')" :title="phrase('上级目录')" :disabled="path === '/' || saving" @click="browse(galleryParentPath(path))"><FolderOpen :size="17" /></button>
       <button class="icon-button" type="button" :aria-label="phrase('刷新')" :title="phrase('刷新')" :disabled="loading || saving" @click="load"><RefreshCw :size="17" /></button>
+      <button v-if="windowed" class="button button--secondary" type="button" @click="openFiles()"><FolderOpen :size="17" /> {{ phrase('文件管理') }}</button>
     </section>
 
     <section v-if="featured" class="cinema-feature" :aria-label="phrase('精选影片')">
@@ -420,7 +422,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.cinema-page { container-type: inline-size; padding: clamp(14px, 2vw, 24px); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); color: var(--text); }
+.cinema-page { display: block; container-type: inline-size; padding: clamp(14px, 2vw, 24px); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); color: var(--text); }
 .cinema-heading, .cinema-feature__actions, .cinema-source, .cinema-folders, .cinema-toolbar, .cinema-toolbar__controls, .cinema-layout, .cinema-card__footer { display: flex; align-items: center; gap: 10px; }
 .cinema-heading { flex-wrap: wrap; margin-bottom: 20px; }
 .cinema-heading__icon { width: 52px; height: 52px; border-radius: 22%; }
