@@ -116,7 +116,7 @@ onBeforeUnmount(() => { destroyed = true; listing?.abort(); if (visible.value) s
 <template>
   <main class="page music-page" tabindex="0" @keydown="keyboard">
     <header class="music-header">
-      <div class="music-brand"><img :src="'/desktop-icons/music-kpanel-flat-v1.webp'" alt="" /><div><h1>音乐</h1><p>把日常，交给一首好歌</p></div></div>
+      <div class="music-brand"><img :src="'/desktop-icons/music-kpanel-flat-v2.webp'" alt="" /><div><h1>音乐</h1><p>把日常，交给一首好歌</p></div></div>
     </header>
     <nav class="music-tabs" :aria-label="phrase('音乐导航')"><button :aria-current="tab === 'library' ? 'page' : undefined" @click="tab = 'library'"><Disc3 :size="18" /> 音乐库</button><button :aria-current="tab === 'listen' ? 'page' : undefined" @click="tab = 'listen'"><Music2 :size="18" /> 正在播放</button><button :aria-current="tab === 'queue' ? 'page' : undefined" @click="tab = 'queue'"><ListMusic :size="18" /> 播放队列 <span>{{ state.queue.length }}</span></button></nav>
     <template v-if="tab === 'library'">
