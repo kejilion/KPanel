@@ -88,6 +88,7 @@ async function open(): Promise<void> {
       return
     }
     session.value = opened
+    if (launchId) void api.terminals.acknowledgeLaunch(opened.sessionId, launchId).catch(() => undefined)
     if (opened.launchUncertain) error.value = t('terminal.launchUncertain')
   } catch (reason) {
     if (!disposed) error.value = reason instanceof ApiError && reason.code === 'terminal_limit'

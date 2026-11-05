@@ -639,6 +639,29 @@ func (s *Server) handleTerminalOperation(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	switch action {
+	case "launch-ack":
+		if r.Method != http.MethodPost {
+			s.writeProblem(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "Request method not allowed", "")
+			return
+		}
+		var input struct {
+			LaunchID string `json:"launchId"`
+		}
+		if err := s.decodeJSON(w, r, &input); err != nil {
+			return
+		}
+		if !validTerminalLaunchID(input.LaunchID) {
+			s.writeValidationProblem(w, r, "launchId", "a valid launch identity is required")
+			return
+		}
+		s.terminalMu.Lock()
+		if current, exists := s.terminalSessions[id]; exists && current.UserID == userID {
+			current.LaunchIDs = slices.DeleteFunc(current.LaunchIDs, func(value string) bool { return value == input.LaunchID })
+			s.terminalSessions[id] = current
+		}
+		s.terminalMu.Unlock()
+		s.writeJSON(w, http.StatusOK, map[string]bool{"acknowledged": true})
+		return
 	case "detach":
 		if r.Method != http.MethodPost {
 			s.writeProblem(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "Request method not allowed", "")

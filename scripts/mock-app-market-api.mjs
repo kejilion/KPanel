@@ -3263,6 +3263,11 @@ createServer(async (request, response) => {
       send(response, 200, { accepted: true })
       return
     }
+    if (request.method === 'POST' && action === 'launch-ack') {
+      await readJSON(request)
+      send(response, 200, { acknowledged: true })
+      return
+    }
     if (request.method === 'POST' && action === 'input-transport') {
       // Answer like an Agent without terminal-input-v1: the page falls back to /input.
       await readJSON(request)

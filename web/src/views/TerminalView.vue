@@ -96,6 +96,16 @@ let disposed = false
 let userClosed = false
 const account = useSession()
 const owner = account.state.authenticated ? account.state.user?.id || '' : ''
+const workspaceKey = `kpanel:terminal-workspace:${encodeURIComponent(owner)}`
+let restoredSessionIDs: string[] = []
+try {
+  const value: unknown = JSON.parse(window.localStorage.getItem(workspaceKey) || '[]')
+  if (owner && Array.isArray(value)) restoredSessionIDs = value.filter((id): id is string => typeof id === 'string' && /^[a-f0-9]{64}$/.test(id)).slice(-16)
+} catch { /* best effort */ }
+function rememberWorkspace(): void {
+  if (!owner) return
+  try { window.localStorage.setItem(workspaceKey, JSON.stringify(sessions.value.map(item => item.id).filter(id => /^[a-f0-9]{64}$/.test(id)).slice(-16))) } catch { /* best effort */ }
+}
 function cleanupLateSession(id: string): void {
   if (owner && (!account.state.authenticated || account.state.user?.id !== owner)) {
     deferTerminalClose(id, owner)
@@ -188,6 +198,7 @@ async function performLoadHosts(): Promise<void> {
           state: 'connecting', closeFailed: session.closeRequested, launchUncertain: session.launchUncertain })
       }
       activeSessionId.value = sessions.value[0]?.id || ''
+      rememberWorkspace()
       initialHostLoad = false
       if (userClosed) return
       const startHost = requestedTerminalHost() || inventory.value.items.find((host) => host.isLocal && host.terminalAvailable)
@@ -252,6 +263,7 @@ async function openSession(host: ClusterHost, retained = true): Promise<void> {
     }
 	const item: OpenTerminal = { id: opened.sessionId, hostId: host.id, hostName: host.name, retained: opened.retained, ordinal: nextOrdinal(host.id), offset: opened.offset, state: 'connecting' }
     sessions.value.push(item)
+    rememberWorkspace()
     activeSessionId.value = item.id
     void nextTick(() => {
       workspaceRef.value?.selectSession(item.id)
@@ -302,6 +314,7 @@ function removeSession(id: string): void {
   const index = sessions.value.findIndex((item) => item.id === id)
   if (index < 0) return
   sessions.value.splice(index, 1)
+  rememberWorkspace()
   terminalRefs.delete(id)
   // A closed terminal frees a slot, so the limit notice no longer holds.
   limitReached.value = false
@@ -537,6 +550,7 @@ onMounted(() => {
     userClosed = true
     disposed = true
     controller?.abort()
+    if (initialHostLoad) for (const id of restoredSessionIDs) cleanupLateSession(id)
     for (const item of [...sessions.value]) void closeSession(item.id)
     return true
   }

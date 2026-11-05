@@ -2025,6 +2025,8 @@ export const api = {
       request('/terminal-sessions', { method: 'POST', signal, body: { hostId: 'local', purpose, launchId, rows: 30, columns: 120, lookupOnly: true } }),
     resolveShortcut: (hostId: string, shortcutId: string, launchId?: string, signal?: AbortSignal): Promise<TerminalSession> =>
       request<TerminalSession>('/terminal-sessions', { method: 'POST', signal, body: { hostId, shortcutId, launchId, rows: 30, columns: 120, lookupOnly: true } }),
+    acknowledgeLaunch: (sessionId: string, launchId: string): Promise<{ acknowledged: boolean }> =>
+      request(`/terminal-sessions/${encodeURIComponent(sessionId)}/launch-ack`, { method: 'POST', body: { launchId }, signal: AbortSignal.timeout(5_000) }),
     open: (hostId: string, rows: number, columns: number, options?: { containerId?: string; resourceVersion?: string; retained?: boolean; shortcutId?: string; shortcutVersion?: string; launchId?: string; purpose?: 'site-management' }): Promise<TerminalSession> =>
       request<TerminalSession>('/terminal-sessions', {
         method: 'POST',

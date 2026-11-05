@@ -260,6 +260,16 @@ describe('dedicated desktop app script terminal', () => {
     wrapper.unmount()
   })
 
+  it('uses a previously bound job identity when the restoration request is still pending', async () => {
+    let guard: (() => boolean | Promise<boolean>) | undefined
+    window.localStorage.setItem(`kpanel:app-script-job:${mocks.owner.user.id}:openclaw`, 'previous-job')
+    mocks.jobs.mockReturnValueOnce(new Promise(() => undefined))
+    const wrapper = await mountView({ register: candidate => { guard = candidate; return vi.fn() } })
+    expect(await guard?.()).toBe(true)
+    expect(mocks.cancelJob).toHaveBeenCalledWith('previous-job', expect.any(AbortSignal))
+    wrapper.unmount()
+  })
+
   it('closes during an in-flight manage action and stops its returned task', async () => {
     let guard: (() => boolean | Promise<boolean>) | undefined
     let complete!: (value: typeof job) => void
@@ -287,6 +297,24 @@ describe('dedicated desktop app script terminal', () => {
     expect(await guard?.()).toBe(true)
     expect(mocks.cancelJob).toHaveBeenCalledWith(jobId, expect.any(AbortSignal))
     expect(JSON.parse(window.localStorage.getItem(`kpanel:pending-app-job-stops:${mocks.owner.user.id}`)!)).toContain(jobId)
+    wrapper.unmount()
+  })
+
+  it('retains every uncertain launch identity when a user retries before closing', async () => {
+    let guard: (() => boolean | Promise<boolean>) | undefined
+    mocks.action.mockRejectedValueOnce(new Error('lost response')).mockReturnValueOnce(new Promise(() => undefined))
+    mocks.cancelJob.mockRejectedValue(new Error('offline'))
+    const wrapper = await mountView({ register: candidate => { guard = candidate; return vi.fn() } })
+    await wrapper.find('.app-script-page__state.is-error button').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-app-script-start]').trigger('click')
+    await flushPromises()
+    const first = mocks.action.mock.calls[0]![2].jobId as string
+    const second = mocks.action.mock.calls[1]![2].jobId as string
+    expect(first).not.toBe(second)
+    expect(await guard?.()).toBe(true)
+    const pending = JSON.parse(window.localStorage.getItem(`kpanel:pending-app-job-stops:${mocks.owner.user.id}`)!)
+    expect(pending).toEqual(expect.arrayContaining([first, second]))
     wrapper.unmount()
   })
 
@@ -321,7 +349,7 @@ describe('dedicated desktop app script terminal', () => {
 
     expect(await guard?.()).toBe(true)
     expect(window.confirm).not.toHaveBeenCalled()
-    expect(mocks.cancelJob).toHaveBeenCalledOnce()
+    expect(mocks.cancelJob).toHaveBeenCalledWith('job-1', expect.any(AbortSignal))
     wrapper.unmount()
   })
 

@@ -20,6 +20,7 @@ vi.mock('vue-router', async (importOriginal) => ({
 }))
 
 vi.mock('@/lib/api', () => ({ api: { cluster: { hosts: mocks.hosts }, terminals: { batches: () => Promise.resolve({ available: true, items: [] }), list: mocks.list, open: mocks.open, close: mocks.closeApi, detach: mocks.detach } }, ApiError: class extends Error { constructor(message: string, public status: number, public code: string) { super(message) } } }))
+vi.mock('@/stores/session', () => ({ useSession: () => ({ state: { authenticated: true, user: { id: 'workspace-owner' } } }) }))
 vi.mock('@/components/terminal/HostTerminal.vue', () => ({ default: defineComponent({
   props: ['sessionId', 'hostName', 'initialOffset'],
   setup(_, { expose }) {
@@ -30,6 +31,7 @@ vi.mock('@/components/terminal/HostTerminal.vue', () => ({ default: defineCompon
 
 describe('explicit terminal tab close', () => {
   beforeEach(() => {
+    window.localStorage.clear()
     mocks.close.mockReset()
     mocks.closeApi.mockReset().mockResolvedValue({ closed: true })
     mocks.detach.mockReset().mockResolvedValue({ detached: true })
@@ -179,6 +181,17 @@ describe('explicit terminal tab close', () => {
     await flushPromises()
     expect(mocks.list).not.toHaveBeenCalled()
     expect(mocks.closeApi).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('closes previously bound session identities while restoration is pending', async () => {
+    const id = 'a'.repeat(64)
+    window.localStorage.setItem('kpanel:terminal-workspace:workspace-owner', JSON.stringify([id]))
+    mocks.list.mockReturnValue(new Promise(() => undefined))
+    const wrapper = create()
+    await flushPromises()
+    expect(await closeGuard()).toBe(true)
+    expect(mocks.closeApi).toHaveBeenCalledWith(id)
     wrapper.unmount()
   })
 })

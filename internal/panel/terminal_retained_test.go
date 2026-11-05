@@ -144,11 +144,35 @@ func TestShortcutOldCloseIdentityCannotResolveReplacement(t *testing.T) {
 	if opened.Code != 201 || json.Unmarshal(opened.Body.Bytes(), &old) != nil {
 		t.Fatal(opened.Body.String())
 	}
+	var lastAcknowledged string
 	for index := 1; index <= maxPanelTerminals; index++ {
 		request.LaunchID = prepare()
 		resumed := call(request)
 		if index < maxPanelTerminals && resumed.Code != 200 || index == maxPanelTerminals && resumed.Code != 429 {
 			t.Fatalf("resume %d: %d %s", index, resumed.Code, resumed.Body)
+		}
+		if index < maxPanelTerminals {
+			lastAcknowledged = request.LaunchID
+		}
+	}
+	body, _ := json.Marshal(map[string]string{"launchId": lastAcknowledged})
+	ack := authenticatedRequest(s, http.MethodPost, "/api/v1/terminal-sessions/"+old.SessionID+"/launch-ack", body, cookie, csrf, retainedHeaders(csrf))
+	if ack.Code != 200 {
+		t.Fatalf("ack: %d %s", ack.Code, ack.Body)
+	}
+	request.LaunchID = prepare()
+	if response := call(request); response.Code != 200 {
+		t.Fatalf("ack did not free an identity: %d %s", response.Code, response.Body)
+	}
+	for index := 0; index < 32; index++ {
+		body, _ = json.Marshal(map[string]string{"launchId": request.LaunchID})
+		ack = authenticatedRequest(s, http.MethodPost, "/api/v1/terminal-sessions/"+old.SessionID+"/launch-ack", body, cookie, csrf, retainedHeaders(csrf))
+		if ack.Code != 200 {
+			t.Fatalf("ack %d: %d", index, ack.Code)
+		}
+		request.LaunchID = prepare()
+		if response := call(request); response.Code != 200 {
+			t.Fatalf("reopen %d: %d %s", index, response.Code, response.Body)
 		}
 	}
 	request.LookupOnly, request.LaunchID = true, oldID

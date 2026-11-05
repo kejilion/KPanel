@@ -7,10 +7,10 @@ import ShortcutCommandTerminal from './ShortcutCommandTerminal.vue'
 import type { TerminalSession } from '@/types/api'
 import { ApiError } from '@/lib/api'
 
-const mocks = vi.hoisted(() => ({ open: vi.fn(), prepareShortcut: vi.fn(), resolveShortcut: vi.fn(), preparePurpose: vi.fn(), resolvePurpose: vi.fn(), close: vi.fn(), detach: vi.fn(), markDetached: vi.fn(), closeOnUnload: vi.fn(), execute: vi.fn(), childClose: vi.fn() }))
+const mocks = vi.hoisted(() => ({ open: vi.fn(), prepareShortcut: vi.fn(), resolveShortcut: vi.fn(), preparePurpose: vi.fn(), resolvePurpose: vi.fn(), acknowledgeLaunch: vi.fn(), close: vi.fn(), detach: vi.fn(), markDetached: vi.fn(), closeOnUnload: vi.fn(), execute: vi.fn(), childClose: vi.fn() }))
 vi.mock('@/lib/api', () => ({
   ApiError: class extends Error { code = '' },
-  api: { terminals: { open: mocks.open, prepareShortcut: mocks.prepareShortcut, resolveShortcut: mocks.resolveShortcut, preparePurpose: mocks.preparePurpose, resolvePurpose: mocks.resolvePurpose, close: mocks.close, detach: mocks.detach, closeOnUnload: mocks.closeOnUnload } },
+  api: { terminals: { open: mocks.open, prepareShortcut: mocks.prepareShortcut, resolveShortcut: mocks.resolveShortcut, preparePurpose: mocks.preparePurpose, resolvePurpose: mocks.resolvePurpose, acknowledgeLaunch: mocks.acknowledgeLaunch, close: mocks.close, detach: mocks.detach, closeOnUnload: mocks.closeOnUnload } },
 }))
 vi.mock('@/stores/session', () => ({ useSession: () => ({ state: { authenticated: true, user: { id: 'test-owner' } } }) }))
 const HostTerminal = defineComponent({
@@ -37,6 +37,7 @@ beforeEach(() => {
   mocks.resolvePurpose.mockRejectedValue(Object.assign(new ApiError('absent', 404, 'terminal_shortcut_session_not_found'), { code: 'terminal_shortcut_session_not_found' }))
   mocks.resolveShortcut.mockRejectedValue(Object.assign(new ApiError('absent', 404, 'terminal_shortcut_session_not_found'), { code: 'terminal_shortcut_session_not_found' }))
   mocks.close.mockResolvedValue({ closed: true })
+  mocks.acknowledgeLaunch.mockResolvedValue({ acknowledged: true })
   mocks.detach.mockRejectedValue(new Error('cleanup unavailable'))
   mocks.execute.mockReturnValue(true)
   mocks.childClose.mockResolvedValue(undefined)
@@ -63,6 +64,7 @@ describe('shortcut command terminal lifecycle', () => {
     expect(mocks.preparePurpose).toHaveBeenCalledWith('site-management')
     expect(mocks.prepareShortcut).not.toHaveBeenCalled()
     expect(mocks.open).toHaveBeenCalledTimes(legacy ? 2 : 1)
+    expect(mocks.acknowledgeLaunch).toHaveBeenCalledWith(opened.sessionId, 'b'.repeat(64))
     expect(mocks.open).toHaveBeenLastCalledWith('local', 30, 120, expect.objectContaining({ purpose: 'site-management', retained: !legacy, launchId: 'b'.repeat(64) }))
     wrapper.findComponent(HostTerminal).vm.$emit('stateChange', 'connected')
     await flushPromises()

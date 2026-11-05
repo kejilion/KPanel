@@ -34,9 +34,16 @@ let unregisterWindowCloseGuard: (() => void) | undefined
 let userClosed = false
 let closingOwner = ''
 let launchJobID = ''
+const launchJobIDs = new Set<string>()
 
 const activeJobStorageKey = 'kpanel:active-app-job'
 const appID = computed(() => String(route.params.appId || ''))
+const restoredJobKey = `kpanel:app-script-job:${encodeURIComponent(owner)}:${encodeURIComponent(appID.value)}`
+let restoredJobID = ''
+try {
+  const value = window.localStorage.getItem(restoredJobKey) || ''
+  if (owner && /^[a-zA-Z0-9_-]{1,128}$/.test(value)) restoredJobID = value
+} catch { /* best effort */ }
 function isActiveJob(value?: AppInstallJob): boolean {
   return value?.status === 'queued' || value?.status === 'running'
 }
@@ -54,6 +61,7 @@ function isInteractiveJob(value: unknown): value is AppInstallJob {
 function rememberJob(id: string): void {
   try {
     window.localStorage.setItem(activeJobStorageKey, id)
+    if (owner) window.localStorage.setItem(restoredJobKey, id)
   } catch {
     // The terminal remains usable when browser storage is unavailable.
   }
@@ -68,12 +76,15 @@ async function existingInteractiveJob(appId: string, signal: AbortSignal): Promi
 }
 
 async function launchManage(target: AppMarketItem): Promise<AppInstallJob> {
+  if (launchJobIDs.size >= 32) throw new Error('Task launch limit reached')
   launchJobID = Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('')
+  launchJobIDs.add(launchJobID)
+  const jobId = launchJobID
   const start = async (candidate: AppMarketItem): Promise<AppInstallJob> => {
     if (userClosed || currentOwner() !== owner) throw new Error('Task launch cancelled')
     const resourceVersion = candidate.runtime.resourceVersion
     if (!resourceVersion) throw new Error(i18n.t('appScript.resourceVersionMissing'))
-    const result = await api.apps.action(candidate.id, 'manage', { resourceVersion, jobId: launchJobID })
+    const result = await api.apps.action(candidate.id, 'manage', { resourceVersion, jobId })
     if (!isInteractiveJob(result) || !result.interactive) {
       throw new Error(i18n.t('appScript.interactiveTaskMissing'))
     }
@@ -137,7 +148,8 @@ async function stopActiveJobBeforeClose(): Promise<boolean> {
   userClosed = true
   closingOwner = owner
   if (!launchJobID) controller?.abort()
-  if (!job.value && launchJobID) requestQuietAppJobStop(launchJobID, closingOwner, currentOwner)
+  for (const id of launchJobIDs) requestQuietAppJobStop(id, closingOwner, currentOwner)
+  if (!job.value && restoredJobID) requestQuietAppJobStop(restoredJobID, closingOwner, currentOwner)
   const active = job.value
   if (!active || !isActiveJob(active)) return true
   requestQuietAppJobStop(active.id, closingOwner, currentOwner)
