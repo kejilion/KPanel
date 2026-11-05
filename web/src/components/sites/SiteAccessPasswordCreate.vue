@@ -41,7 +41,7 @@ function change<K extends keyof SiteAccessPasswordDraft>(key: K, value: SiteAcce
     </button>
     <div id="site-create-access-password" v-show="expanded" class="access-password-fields">
       <label class="access-password-enable">
-        <input type="checkbox" :checked="modelValue.enabled" :disabled="!writable" @change="change('enabled', ($event.target as HTMLInputElement).checked)" />
+        <input type="checkbox" :checked="modelValue.enabled" :disabled="!writable && !modelValue.enabled" @change="change('enabled', ($event.target as HTMLInputElement).checked)" />
         {{ phrase('开启访问密码') }}
       </label>
       <small v-if="!writable && unavailableReason">{{ unavailableReason }}</small>
@@ -61,6 +61,7 @@ function change<K extends keyof SiteAccessPasswordDraft>(key: K, value: SiteAcce
           <small>{{ phrase('访问密码不能超过 256 字节。') }}</small>
         </label>
         <small>{{ phrase('认证可能影响接口、回调和证书自动续签；已有路径规则、包含配置或重定向也可能改变认证范围，请保存后测试。') }} {{ phrase('建议使用 HTTPS。') }}</small>
+        <small>{{ phrase('反向代理的上游端口可能仍可直接访问。') }}</small>
       </template>
     </div>
   </section>

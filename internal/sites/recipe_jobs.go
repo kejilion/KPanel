@@ -340,6 +340,9 @@ func (m *Manager) directSiteWritable(required ...string) error {
 }
 
 func (m *Manager) StartRecipe(_ context.Context, input ScriptSiteInput) (RecipeJob, error) {
+	if input.AccessPassword != nil && (input.Recipe == "bitwarden" || input.Recipe == "halo") {
+		return RecipeJob{}, fmt.Errorf("%w: this recipe exposes a direct application port", ErrUnprocessable)
+	}
 	if err := m.prepareAccessPassword(input.AccessPassword); err != nil {
 		return RecipeJob{}, err
 	}

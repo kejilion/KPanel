@@ -328,7 +328,8 @@ const form = reactive({
 })
 const accessDraft = ref({ enabled: false, path: '/', username: '', password: '' })
 const accessPasswordCapability = computed(() => capabilities.value.find((item) => item.id === 'sites.access-password.write'))
-const canConfigureAccessPassword = computed(() => capabilitiesLoaded.value && accessPasswordCapability.value?.enabled === true && !panel.isReadOnly.value)
+const accessTemplateUnsupported = computed(() => form.type === 'redirect' || form.type === 'recipe' && ['bitwarden', 'halo'].includes(form.recipe))
+const canConfigureAccessPassword = computed(() => capabilitiesLoaded.value && accessPasswordCapability.value?.enabled === true && !panel.isReadOnly.value && !accessTemplateUnsupported.value)
 
 const certificateSite = ref<Site>()
 const replacement = reactive({ certificate: '', privateKey: '', error: '', submitting: false })
@@ -955,6 +956,14 @@ async function submitSite(): Promise<void> {
     formError.value = customCertificateFormReason.value || '请检查域名和当前服务所需的配置。'
     return
   }
+	if (!editingSite.value && accessDraft.value.enabled && form.type === 'recipe' && ['bitwarden', 'halo'].includes(form.recipe)) {
+	  formError.value = '该模板会开放应用直连端口，暂不支持创建时设置访问密码。'
+	  return
+	}
+	if (!editingSite.value && accessDraft.value.enabled && form.type === 'redirect') {
+	  formError.value = '跳转站点的跳转发生在身份验证之前，暂不支持创建时设置访问密码。'
+	  return
+	}
 	if (!editingSite.value && accessDraft.value.enabled && textByteLength(accessDraft.value.password) > 256) {
 	  formError.value = '访问密码不能超过 256 字节。'
 	  return
@@ -963,10 +972,6 @@ async function submitSite(): Promise<void> {
 	  formError.value = '请检查访问密码的路径、账号和密码。'
 	  return
 	}
-  if (!editingSite.value && accessDraft.value.enabled && form.type === 'redirect') {
-    formError.value = '跳转站点的跳转发生在身份验证之前，暂不支持创建时设置访问密码。'
-    return
-  }
   if (form.type === 'wordpress' && !canInstallWordPress.value) {
     formError.value = wordPressReason.value
     return
@@ -1868,7 +1873,7 @@ onBeforeUnmount(() => {
           v-if="!editingSite"
           v-model="accessDraft"
           :writable="canConfigureAccessPassword"
-          :unavailable-reason="phrase('当前脚本不支持访问密码管理，请先更新配套脚本。')"
+          :unavailable-reason="accessTemplateUnsupported ? phrase('该模板暂不支持创建时设置访问密码。') : phrase('当前脚本不支持访问密码管理，请先更新配套脚本。')"
         />
         <small v-if="!editingSite" class="site-create-footnote">
           <ShieldCheck :size="14" />

@@ -1,6 +1,7 @@
 import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
+  ['该模板会开放应用直连端口，暂不支持创建时设置访问密码。', 'This template exposes an application port and cannot currently use an access password during creation.'],
   ['访问密码不能超过 256 字节。', 'The access password must be no more than 256 bytes.'],
   ['跳转站点的跳转发生在身份验证之前，暂不支持创建时设置访问密码。', 'Redirects execute before access authentication. Access passwords are not yet supported during redirect-site creation.'],
   ['请检查访问密码的路径、账号和密码。', 'Check the access path, account name, and password.'],

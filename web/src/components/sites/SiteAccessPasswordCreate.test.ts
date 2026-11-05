@@ -26,4 +26,12 @@ describe('SiteAccessPasswordCreate', () => {
     expect(toggle.attributes('aria-expanded')).toBe('false')
     expect(wrapper.props('modelValue').enabled).toBe(true)
   })
+
+  it('allows disabling a draft when the chosen template becomes unsupported', async () => {
+    const wrapper = mount(SiteAccessPasswordCreate, { props: { modelValue: { enabled: true, path: '/', username: 'alice', password: 'test' }, writable: false } })
+    await wrapper.get('button').trigger('click')
+    expect(wrapper.get('input[type=checkbox]').attributes('disabled')).toBeUndefined()
+    await wrapper.get('input[type=checkbox]').setValue(false)
+    expect(wrapper.emitted('update:modelValue')?.[0]?.[0]).toMatchObject({ enabled: false })
+  })
 })

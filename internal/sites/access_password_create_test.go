@@ -1,7 +1,9 @@
 package sites
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -89,5 +91,18 @@ func TestAccessPasswordCreationFailsWithoutRequiredStagedFile(t *testing.T) {
 	}
 	if err := validateAccessPasswordCreate(&AccessPasswordCreateInput{Scope: "location", Path: "../../unsafe", Username: "alice", Password: "secret"}); err == nil {
 		t.Fatal("invalid path was accepted")
+	}
+}
+
+func TestAccessPasswordCreationRejectsRecipesWithPublicDirectPorts(t *testing.T) {
+	for _, recipe := range []string{"bitwarden", "halo"} {
+		m := NewManager(t.TempDir(), nil, nil)
+		_, err := m.StartRecipe(context.Background(), ScriptSiteInput{
+			SiteInput:      SiteInput{Recipe: recipe},
+			AccessPassword: &AccessPasswordCreateInput{Scope: "server", Username: "alice", Password: "secret"},
+		})
+		if !errors.Is(err, ErrUnprocessable) {
+			t.Fatalf("recipe %s: %v", recipe, err)
+		}
 	}
 }

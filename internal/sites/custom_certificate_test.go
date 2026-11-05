@@ -72,12 +72,13 @@ func TestSiteCommandEnvironmentDropsInheritedCertificatePaths(t *testing.T) {
 		"PATH=/usr/bin",
 		"KJ_WEB_CERTIFICATE_FILE=/inherited/certificate.pem",
 		"KJ_WEB_PRIVATE_KEY_FILE=/inherited/private-key.pem",
+		"KJ_WEB_ACCESS_VERIFY=1",
 		"KJ_WEB_DOMAIN=example.com",
 	}
 	extra := []string{"KJ_WEB_CERTIFICATE_FILE=/staged/certificate.pem"}
 	environment := sanitizeSiteCommandEnvironment(base, extra)
 	joined := strings.Join(environment, "\n")
-	if strings.Contains(joined, "/inherited/") || !strings.Contains(joined, "/staged/certificate.pem") ||
+	if strings.Contains(joined, "/inherited/") || strings.Contains(joined, "KJ_WEB_ACCESS_VERIFY=") || !strings.Contains(joined, "/staged/certificate.pem") ||
 		!strings.Contains(joined, "KJ_WEB_DOMAIN=example.com") {
 		t.Fatalf("certificate environment was not sanitized: %s", joined)
 	}

@@ -40,7 +40,7 @@ func sanitizeSiteCommandEnvironment(base, extra []string) []string {
 	environment := make([]string, 0, len(base)+len(extra))
 	for _, value := range base {
 		name, _, found := strings.Cut(value, "=")
-		if found && (name == "KJ_WEB_CERTIFICATE_FILE" || name == "KJ_WEB_PRIVATE_KEY_FILE" || name == "KJ_WEB_CERTIFICATE_EPHEMERAL" || name == "KJ_WEB_ACCESS_PASSWORD_FILE" || name == "KJ_WEB_ACCESS_PASSWORD_APPLIED" || name == "KJ_WEB_ACCESS_CONFIG_VERSION" || name == "KJ_WEB_ACCESS_DOMAIN" || name == "KJ_WEB_STAGED_CONFIG" || name == "KJ_WEB_ACCESS_STAGED_NAME" || name == "KJ_WEB_ACCESS_PUBLISHED_HASH") {
+		if found && (name == "KJ_WEB_CERTIFICATE_FILE" || name == "KJ_WEB_PRIVATE_KEY_FILE" || name == "KJ_WEB_CERTIFICATE_EPHEMERAL" || name == "KJ_WEB_ACCESS_PASSWORD_FILE" || name == "KJ_WEB_ACCESS_PASSWORD_APPLIED" || name == "KJ_WEB_ACCESS_CONFIG_VERSION" || name == "KJ_WEB_ACCESS_DOMAIN" || name == "KJ_WEB_STAGED_CONFIG" || name == "KJ_WEB_ACCESS_STAGED_NAME" || name == "KJ_WEB_ACCESS_PUBLISHED_HASH" || name == "KJ_WEB_ACCESS_VERIFY") {
 			continue
 		}
 		environment = append(environment, value)
