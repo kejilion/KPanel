@@ -48,7 +48,14 @@ func sourceBlockHeaders(lines []string) map[int]bool {
 
 func sensitiveSourceFields(value string) bool {
 	line := strings.ToLower(strings.TrimSpace(value))
-	allowServerTokens := line == "server_tokens on;" || line == "server_tokens off;" || line == "server_tokens build;"
+	allowServerTokens := false
+	if strings.HasPrefix(line, "server_tokens") {
+		rest := line[len("server_tokens"):]
+		if rest != "" && (rest[0] == ' ' || rest[0] == '\t') {
+			setting := strings.TrimSpace(rest)
+			allowServerTokens = setting == "on;" || setting == "off;" || setting == "build;"
+		}
+	}
 	count := 0
 	for len(value) > 0 {
 		value = strings.TrimLeft(value, ":= \t")

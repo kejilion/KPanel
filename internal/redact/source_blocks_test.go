@@ -16,6 +16,7 @@ func TestSourceBlocksKeepProjectionAndFailClosedOnAmbiguity(t *testing.T) {
 		"_auth=CONFIG_SECRET;\nevents {\n worker_connections 1024;\n}\n",
 		"server {\n server_tokens CONFIG_SECRET;\n}\n",
 		"server {\n server_tokens Z9U4XYZ123;\n}\n",
+		"server {\n server_tokens\t Z9U4XYZ123;\n}\n",
 		"server {\n location / { proxy_set_header Authorization \"Basic dTpw\"; }\n}\n",
 		"server {\n location / { proxy_set_header X-Api-Key CONFIG_SECRET; }\n}\n",
 		"server auth=CONFIG_SECRET {\n listen 443;\n}\n",
