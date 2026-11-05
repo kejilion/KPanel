@@ -126,7 +126,9 @@ async function load() {
   error.value = ''
   failedCovers.value.clear()
   try {
-    const result = await readCinemaFolder(path.value, hostId.value, controller.signal)
+    const result = await readCinemaFolder(path.value, hostId.value, controller.signal, partial => {
+      if (!controller.signal.aborted) snapshot.value = partial
+    })
     if (!controller.signal.aborted) snapshot.value = result
   } catch (cause) {
     if (!controller.signal.aborted) error.value = message(cause)

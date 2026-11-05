@@ -42,7 +42,7 @@ export interface CinemaFolder {
   truncated: boolean
 }
 
-export async function readCinemaFolder(root: string, host: string, signal: AbortSignal): Promise<CinemaFolder> {
+export async function readCinemaFolder(root: string, host: string, signal: AbortSignal, onUpdate?: (snapshot: CinemaFolder) => void): Promise<CinemaFolder> {
   const files = fileAPIForHost(host)
   const result: CinemaFolder = { films: [], images: new Map(), folders: [], unreadable: 0, truncated: false }
   const pending = [root]
@@ -64,13 +64,12 @@ export async function readCinemaFolder(root: string, host: string, signal: Abort
             if (pending.length < DIRECTORY_LIMIT) pending.push(entry.path)
             else result.truncated = true
           } else if (cinemaImage(entry)) {
-            const images = result.images.get(folder) ?? []
-            images.push(entry)
-            result.images.set(folder, images)
+            result.images.set(folder, [...(result.images.get(folder) ?? []), entry])
           } else if (galleryMediaKind(entry) === 'video') {
             result.films.push({ entry, folder, kind: 'video', time: Date.parse(entry.modifiedAt) || 0 })
           }
         }
+        onUpdate?.({ ...result, films: [...result.films], folders: [...result.folders], images: new Map(result.images) })
         if (page.nextOffset === undefined || page.nextOffset <= offset) break
         offset = page.nextOffset
       }
@@ -78,6 +77,10 @@ export async function readCinemaFolder(root: string, host: string, signal: Abort
       if (signal.aborted || folder === root) throw error
       result.unreadable++
     }
+    // Publish independent snapshots as folders finish, without exposing the
+    // mutable accumulator to the view or waiting for every descendant.
+    signal.throwIfAborted()
+    onUpdate?.({ ...result, films: [...result.films], folders: [...result.folders], images: new Map(result.images) })
   }
   result.truncated ||= count >= ENTRY_LIMIT
   return result

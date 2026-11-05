@@ -56,4 +56,19 @@ describe('cinema library', () => {
     expect(result.folders[0]?.path).toBe('/home')
     expect(result.films[0]?.entry.path).toBe('/preview.mp4')
   })
+
+  it('publishes completed pages before a slow child and keeps prior snapshots immutable', async () => {
+    let finishChild!: (value: unknown) => void
+    list.mockImplementation((path: string) => path === '/films'
+      ? Promise.resolve({ entries: [entry('/films/a.mp4'), entry('/films/sub', 'directory'), entry('/films/a.jpg')] })
+      : new Promise(resolve => { finishChild = resolve }))
+    const updates: import('./cinema').CinemaFolder[] = []
+    const loading = readCinemaFolder('/films', '', new AbortController().signal, value => updates.push(value))
+    await vi.waitFor(() => expect(finishChild).toBeDefined())
+    expect(updates[0]?.films.map(film => film.entry.name)).toEqual(['a.mp4'])
+    finishChild({ entries: [entry('/films/sub/b.mp4')] })
+    const result = await loading
+    expect(result.films).toHaveLength(2)
+    expect(updates[0]?.films).toHaveLength(1)
+  })
 })
