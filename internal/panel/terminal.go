@@ -1119,7 +1119,7 @@ func (s *Server) resumeShortcut(w http.ResponseWriter, r *http.Request, userID s
 		if current, ok := s.terminalSessions[item.ID]; ok {
 			if len(current.LaunchIDs) >= maxPanelTerminals {
 				s.terminalMu.Unlock()
-				s.writeProblem(w, r, 429, "terminal_limit", "Terminal launch identity limit reached", "Close the existing session before reopening it")
+				s.writeProblem(w, r, 429, "terminal_launch_ack_pending", "Terminal launch identity limit reached", "Pending launch acknowledgements must be cleared")
 				return true
 			}
 			current.LaunchIDs = append(current.LaunchIDs, input.LaunchID)

@@ -151,6 +151,9 @@ func TestShortcutOldCloseIdentityCannotResolveReplacement(t *testing.T) {
 		if index < maxPanelTerminals && resumed.Code != 200 || index == maxPanelTerminals && resumed.Code != 429 {
 			t.Fatalf("resume %d: %d %s", index, resumed.Code, resumed.Body)
 		}
+		if index == maxPanelTerminals && !strings.Contains(resumed.Body.String(), "terminal_launch_ack_pending") {
+			t.Fatalf("identity limit was not distinguishable from a general launch failure: %s", resumed.Body)
+		}
 		if index < maxPanelTerminals {
 			lastAcknowledged = request.LaunchID
 		}

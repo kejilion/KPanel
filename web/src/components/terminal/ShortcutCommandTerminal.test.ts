@@ -42,7 +42,7 @@ beforeEach(() => {
   mocks.execute.mockReturnValue(true)
   mocks.childClose.mockResolvedValue(undefined)
 })
-afterEach(() => { for (const wrapper of wrappers.splice(0)) wrapper.unmount() })
+afterEach(() => { for (const wrapper of wrappers.splice(0)) wrapper.unmount(); vi.useRealTimers() })
 
 describe('shortcut command terminal lifecycle', () => {
   it('releases pending launch acknowledgements before reopening a named session', async () => {
@@ -69,6 +69,22 @@ describe('shortcut command terminal lifecycle', () => {
     await flushPromises()
     expect(mocks.prepareShortcut).not.toHaveBeenCalled()
     expect(mocks.open).not.toHaveBeenCalled()
+  })
+  it('automatically retries an acknowledgement-capacity rejection without repeating a command', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const pending = Object.assign(new ApiError('pending', 429, 'terminal_launch_ack_pending'), { code: 'terminal_launch_ack_pending' })
+    mocks.prepareShortcut.mockResolvedValueOnce({ launchId: 'b'.repeat(64) }).mockResolvedValueOnce({ launchId: 'c'.repeat(64) })
+    mocks.open.mockRejectedValueOnce(pending).mockResolvedValueOnce(opened)
+    const wrapper = create('remote-1', 'Remote', { shortcutId: 'a'.repeat(32) })
+    await flushPromises()
+    expect(mocks.open).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(2000)
+    await flushPromises()
+    expect(mocks.prepareShortcut).toHaveBeenCalledTimes(2)
+    expect(mocks.open).toHaveBeenCalledTimes(2)
+    expect(mocks.open.mock.calls[1]![3]).toEqual(expect.objectContaining({ launchId: 'c'.repeat(64) }))
+    expect(mocks.execute).not.toHaveBeenCalled()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
   })
   it('closes the window immediately while slow cleanup continues', async () => {
     let reject!: (reason: Error) => void

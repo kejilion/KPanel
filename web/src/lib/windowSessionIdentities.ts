@@ -10,7 +10,7 @@ function randomToken(): string {
   return Array.from(crypto.getRandomValues(new Uint8Array(16)), value => value.toString(16).padStart(2, '0')).join('')
 }
 
-function tryLease(token: string, attemptGeneration: number): Promise<'busy' | string> {
+function tryWebLease(token: string, attemptGeneration: number): Promise<'busy' | string> {
   return new Promise(resolve => {
     let settled = false
     const finish = (value: string) => {
@@ -33,19 +33,49 @@ function tryLease(token: string, attemptGeneration: number): Promise<'busy' | st
   })
 }
 
+function trySharedLease(token: string, attemptGeneration: number): Promise<'busy' | string> {
+  return new Promise(resolve => {
+    let settled = false
+    let worker: SharedWorker | undefined
+    const finish = (value: string) => {
+      if (settled) return
+      settled = true
+      window.clearTimeout(timer)
+      if (value !== token) worker?.port.close()
+      resolve(value)
+    }
+    const timer = window.setTimeout(() => finish(''), 750)
+    try {
+      worker = new SharedWorker(new URL('./windowIdentityLease.worker.ts', import.meta.url), { type: 'module', name: 'kpanel-window-identity-v1' })
+      const port = worker.port
+      worker.onerror = () => finish('')
+      port.onmessage = event => {
+        if (event.data?.status === 'busy') { finish('busy'); return }
+        if (event.data?.status !== 'acquired' || settled || generation !== attemptGeneration) { finish(''); return }
+        releaseLease = () => { port.postMessage({ op: 'release', token }); port.close() }
+        finish(token)
+      }
+      port.start()
+      port.postMessage({ op: 'claim', token })
+    } catch { finish('') }
+  })
+}
+
 async function acquireTabLease(attemptGeneration: number): Promise<string> {
-  if (!navigator.locks?.request) return ''
+  const locks = (navigator as unknown as { locks?: LockManager }).locks
+  const claim = locks ? tryWebLease : typeof SharedWorker === 'function' ? trySharedLease : undefined
+  if (!claim) return ''
   try {
     let token = window.sessionStorage.getItem(tabTokenKey) || ''
     if (!/^[a-f0-9]{32}$/.test(token)) {
       token = randomToken()
       window.sessionStorage.setItem(tabTokenKey, token)
     }
-    let acquired = await tryLease(token, attemptGeneration)
+    let acquired = await claim(token, attemptGeneration)
     if (acquired === 'busy' && generation === attemptGeneration) {
       token = randomToken()
       window.sessionStorage.setItem(tabTokenKey, token)
-      acquired = await tryLease(token, attemptGeneration)
+      acquired = await claim(token, attemptGeneration)
     }
     return acquired === 'busy' ? '' : acquired
   } catch { return '' }
@@ -57,7 +87,7 @@ function resetTabLease(): void {
   releaseLease = undefined
   tabLease = undefined
 }
-window.addEventListener('pagehide', resetTabLease)
+window.addEventListener('pagehide', event => { if (!event.persisted) resetTabLease() })
 
 // Window snapshots contain only opaque identities, never output or commands.
 // On browsers without an exclusive tab lease, skip persistence rather than

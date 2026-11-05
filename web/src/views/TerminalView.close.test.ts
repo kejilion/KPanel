@@ -4,6 +4,7 @@ import { defineComponent } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { desktopWindowCloseGuardKey, desktopWindowIdentityKey, desktopWindowLaunchKey } from '@/lib/desktopRouteKeys'
 import { resetWindowIdentityForTest } from '@/lib/windowSessionIdentities'
+import { clusterRemoteAccessChanged } from '@/lib/clusterSettings'
 import TerminalView from './TerminalView.vue'
 import { ApiError } from '@/lib/api'
 
@@ -186,6 +187,19 @@ describe('explicit terminal tab close', () => {
     await flushPromises()
     expect(mocks.list).not.toHaveBeenCalled()
     expect(mocks.closeApi).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+  it('waits for window identity before reacting to a remote-access settings change', async () => {
+    let grant!: () => void
+    Object.defineProperty(navigator, 'locks', { configurable: true, value: { request: (_name: string, _options: unknown, callback: (lock: Lock) => unknown) => new Promise(resolve => { grant = () => resolve(callback({ name: 'test', mode: 'exclusive' } as Lock)) }) } })
+    mocks.hosts.mockClear()
+    const wrapper = create('window-a')
+    window.dispatchEvent(new Event(clusterRemoteAccessChanged))
+    await flushPromises()
+    expect(mocks.hosts).not.toHaveBeenCalled()
+    grant()
+    await flushPromises()
+    expect(mocks.hosts).toHaveBeenCalled()
     wrapper.unmount()
   })
 

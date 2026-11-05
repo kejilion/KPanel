@@ -54,6 +54,38 @@ async function reclaim(opened: TerminalSession): Promise<void> {
   if (!result.closed) throw new Error('Terminal close was not confirmed')
 }
 
+async function prepareLaunch(): Promise<boolean> {
+  launchId = (await (launchTarget.purpose ? api.terminals.preparePurpose(launchTarget.purpose) : api.terminals.prepareShortcut(hostId, launchTarget.shortcutId!))).launchId
+  if (!launchId) throw new Error('Terminal launch identity is missing')
+  if (disposed) {
+    if (userClosed) queueLaunchClose()
+    else void resolveLaunch().catch(() => undefined)
+    return false
+  }
+  return !closing.value
+}
+
+async function openNamed(): Promise<TerminalSession | undefined> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await api.terminals.open(hostId, 30, 120, { ...launchTarget, retained: true, launchId }).catch(reason => {
+        if (disposed || closing.value || !(reason instanceof ApiError) || reason.code !== 'terminal_retention_unavailable') throw reason
+        // Explicit rejection happens before starting a command; reuse the identity.
+        return api.terminals.open(hostId, 30, 120, { ...launchTarget, retained: false, launchId })
+      })
+    } catch (reason) {
+      // This particular rejection is emitted before a session can start.
+      // A fresh intent is safe after retrying pending acknowledgements.
+      if (disposed || closing.value || !(reason instanceof ApiError) || reason.code !== 'terminal_launch_ack_pending' || attempt >= 2) throw reason
+      await new Promise<void>(resolve => window.setTimeout(resolve, 2000))
+      if (disposed || closing.value) return undefined
+      await flushPendingTerminalLaunchAcks(owner, launchTarget)
+      if (disposed || closing.value || owner && (!account.state.authenticated || account.state.user?.id !== owner)) return undefined
+      if (!(await prepareLaunch())) return undefined
+    }
+  }
+}
+
 async function open(): Promise<void> {
   opening.value = true
   error.value = ''
@@ -64,26 +96,14 @@ async function open(): Promise<void> {
     }
     retryPendingTerminalCloses()
     if (namedLaunch && !props.existingSession && !launchId) {
-      launchId = (await (launchTarget.purpose ? api.terminals.preparePurpose(launchTarget.purpose) : api.terminals.prepareShortcut(hostId, launchTarget.shortcutId!))).launchId
-      if (!launchId) throw new Error('Terminal launch identity is missing')
-      if (disposed) {
-        if (userClosed) queueLaunchClose()
-        else void resolveLaunch().catch(() => undefined)
-        return
-      }
-      if (closing.value) return
+      if (!(await prepareLaunch())) return
     }
     if (owner && (!account.state.authenticated || account.state.user?.id !== owner)) {
       if (userClosed) queueLaunchClose()
       return
     }
-    const opened = props.existingSession || await (namedLaunch
-      ? api.terminals.open(hostId, 30, 120, { ...launchTarget, retained: true, launchId }).catch(reason => {
-        if (disposed || closing.value || !(reason instanceof ApiError) || reason.code !== 'terminal_retention_unavailable') throw reason
-        // The server rejected retention before launching the command. Reuse its identity; never retry an uncertain launch.
-        return api.terminals.open(hostId, 30, 120, { ...launchTarget, retained: false, launchId })
-      })
-      : api.terminals.open(hostId, 30, 120))
+    const opened = props.existingSession || await (namedLaunch ? openNamed() : api.terminals.open(hostId, 30, 120))
+    if (!opened) return
     if (disposed) {
       if (userClosed || !opened.retained) {
         if (owner && (!account.state.authenticated || account.state.user?.id !== owner)) deferTerminalClose(opened.sessionId, owner)

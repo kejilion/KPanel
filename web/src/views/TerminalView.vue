@@ -526,6 +526,10 @@ watch(() => route.query.hostId, () => {
   if (host) void openHost(host)
 })
 
+function reloadHostsAfterIdentity(): void {
+  void identityReady.then(() => { if (!disposed) void loadHosts() })
+}
+
 onMounted(() => {
   retryPendingTerminalCloses()
 
@@ -536,7 +540,7 @@ onMounted(() => {
     else restoredSessionIDs = readWindowIdentities(identityKey, /^[a-f0-9]{64}$/, 16)
     if (!disposed) void loadHosts()
   })()
-	window.addEventListener(clusterRemoteAccessChanged, loadHosts)
+	window.addEventListener(clusterRemoteAccessChanged, reloadHostsAfterIdentity)
   unsubscribeClusterHostOrder = subscribeClusterHostOrder(() => {
     clusterHostOrderRevision.value += 1
   })
@@ -561,7 +565,7 @@ onMounted(() => {
     : desktopCloseGuardCoordinator.register('classic-terminal', guard)
 })
 onBeforeUnmount(() => {
-	window.removeEventListener(clusterRemoteAccessChanged, loadHosts)
+	window.removeEventListener(clusterRemoteAccessChanged, reloadHostsAfterIdentity)
   disposed = true
   unsubscribeClusterHostOrder?.()
   unregisterWindowCloseGuard?.()
