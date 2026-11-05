@@ -3128,7 +3128,7 @@ createServer(async (request, response) => {
     return
   }
   if (request.method === 'GET' && url.pathname === '/api/v1/terminal-sessions') {
-    send(response, 200, { items: [...mockTerminalSessions.values()].filter(session => session.metadata?.retained && !session.exitedAt).map(session => session.metadata) })
+    send(response, 200, { items: [...mockTerminalSessions.values()].filter(session => !session.detached && session.metadata?.retained && !session.exitedAt).map(session => session.metadata) })
     return
   }
   if (request.method === 'POST' && url.pathname === '/api/v1/terminal-sessions') {
@@ -3168,7 +3168,7 @@ createServer(async (request, response) => {
         return
       }
     }
-    if (mockTerminalSessions.size >= 4) {
+    if ([...mockTerminalSessions.values()].filter(session => !session.detached).length >= 4) {
       send(response, 429, { title: 'Terminal session limit reached', code: 'terminal_limit' })
       return
     }
@@ -3188,7 +3188,7 @@ createServer(async (request, response) => {
     send(response, 201, metadata)
     return
   }
-  const terminalSessionMatch = url.pathname.match(/^\/api\/v1\/terminal-sessions\/([^/]+)\/(output|input-transport|input|resize|close)$/)
+  const terminalSessionMatch = url.pathname.match(/^\/api\/v1\/terminal-sessions\/([^/]+)\/(output|input-transport|input|resize|close|detach)$/)
   if (terminalSessionMatch) {
     const [, sessionId, action] = terminalSessionMatch
     const session = mockTerminalSessions.get(sessionId)
@@ -3278,8 +3278,23 @@ createServer(async (request, response) => {
     }
     if (request.method === 'POST' && action === 'close') {
       await readJSON(request)
+      if (process.env.KPANEL_MOCK_TERMINAL_OFFLINE === '1' && !session.metadata.closeRequested) {
+        session.metadata.closeRequested = true
+        send(response, 502, { title: 'Mock terminal offline', code: 'terminal_close_failed' })
+        return
+      }
       mockTerminalSessions.delete(sessionId)
       send(response, 200, { closed: true })
+      return
+    }
+    if (request.method === 'POST' && action === 'detach') {
+      await readJSON(request)
+      if (!session.metadata.closeRequested || session.metadata.shortcutId || session.metadata.purpose || (!session.detached && [...mockTerminalSessions.values()].filter(item => item.detached).length >= 4)) {
+        send(response, 409, { title: 'Terminal cannot be detached', code: 'terminal_detach_unavailable' })
+        return
+      }
+      session.detached = true
+      send(response, 200, { detached: true })
       return
     }
     send(response, 405, { title: 'Request method not allowed', code: 'method_not_allowed' })
