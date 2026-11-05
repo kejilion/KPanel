@@ -6,7 +6,7 @@ export default [
   ['访问密码不能超过 256 字节。', 'The access password must be no more than 256 bytes.'],
   ['跳转站点的跳转发生在身份验证之前，暂不支持创建时设置访问密码。', 'Redirects execute before access authentication. Access passwords are not yet supported during redirect-site creation.'],
   ['请检查访问密码的路径、账号和密码。', 'Check the access path, account name, and password.'],
-  ['规则已保存，但网站状态刷新失败，请重新打开网站详情。', 'The rule was saved, but the site could not be refreshed. Reopen the site details.'],
+  ['网站状态刷新失败，请重新打开网站详情。', 'Could not refresh the site status. Reopen the site details.'],
   ['请填写账号和密码。', 'Enter an account name and password.'],
   ['请求', 'requests'],
   ['事件', 'events'],

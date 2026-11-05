@@ -29,12 +29,27 @@ function sameScope(rule: SiteAccessPasswordRule): SiteAccessPasswordRule[] {
   return rules.value.filter((item) => item.scope === rule.scope && item.path === rule.path && (item.modifier || '') === (rule.modifier || ''))
 }
 
-function refreshAfterFailure(): void {
+async function refreshSiteVersion(site: string): Promise<void> {
+  currentSiteVersion.value = ''
+  try {
+    const refreshed = await api.sites.list()
+    if (!disposed && site === props.siteId) {
+      currentSiteVersion.value = refreshed.items.find((item) => item.id === site)?.resourceVersion || ''
+      if (currentSiteVersion.value) emit('changed', currentSiteVersion.value)
+      else notice.value = phrase('网站状态刷新失败，请重新打开网站详情。')
+    }
+  } catch {
+    if (!disposed && site === props.siteId) notice.value = phrase('网站状态刷新失败，请重新打开网站详情。')
+  }
+}
+
+async function refreshAfterFailure(): Promise<void> {
   editing.value = undefined
   ruleForm.value = undefined
   deleteRule.value = undefined
   saveError.value = ''
-  void load()
+  notice.value = ''
+  await Promise.all([load(), refreshSiteVersion(props.siteId)])
 }
 
 async function load(): Promise<void> {
@@ -90,17 +105,7 @@ async function saveRule(): Promise<void> {
     rules.value = updated
     ruleForm.value = undefined
     deleteRule.value = undefined
-    currentSiteVersion.value = ''
-    try {
-      const refreshed = await api.sites.list()
-      if (!disposed && site === props.siteId) {
-        currentSiteVersion.value = refreshed.items.find((item) => item.id === site)?.resourceVersion || ''
-        if (currentSiteVersion.value) emit('changed', currentSiteVersion.value)
-        else notice.value = phrase('规则已保存，但网站状态刷新失败，请重新打开网站详情。')
-      }
-    } catch {
-      if (!disposed && site === props.siteId) notice.value = phrase('规则已保存，但网站状态刷新失败，请重新打开网站详情。')
-    }
+    await refreshSiteVersion(site)
   } catch {
     if (!disposed && site === props.siteId) saveError.value = phrase('操作结果未确认，请刷新查看后再重试。')
   } finally { if (!disposed) saving.value = false }
