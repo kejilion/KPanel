@@ -166,6 +166,10 @@ func TestShortcutOldCloseIdentityCannotResolveReplacement(t *testing.T) {
 			lastAcknowledged = request.LaunchID
 		}
 	}
+	request.LaunchID = oldID
+	if response := call(request); response.Code != http.StatusOK {
+		t.Fatalf("registered launch retry at capacity: %d %s", response.Code, response.Body)
+	}
 	body, _ := json.Marshal(map[string]string{"launchId": lastAcknowledged})
 	ack := authenticatedRequest(s, http.MethodPost, "/api/v1/terminal-sessions/"+old.SessionID+"/launch-ack", body, cookie, csrf, retainedHeaders(csrf))
 	if ack.Code != 200 {

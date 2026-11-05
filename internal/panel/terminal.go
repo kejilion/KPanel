@@ -1110,6 +1110,16 @@ func (s *Server) resumeShortcut(w http.ResponseWriter, r *http.Request, userID s
 		return true
 	}
 	if input.LaunchID != "" {
+		// A retry of an already registered launch must reattach to the same
+		// session even though its one-time intent has been consumed.
+		s.terminalMu.Lock()
+		current, exists := s.terminalSessions[item.ID]
+		alreadyRegistered := exists && slices.Contains(current.LaunchIDs, input.LaunchID)
+		s.terminalMu.Unlock()
+		if alreadyRegistered {
+			s.writeJSON(w, http.StatusOK, terminalSessionResponse(current))
+			return true
+		}
 		intent, ok := s.terminalLaunchIntents[input.LaunchID]
 		if !ok || !intent.matches(userID, input) || !time.Now().Before(intent.ExpiresAt) {
 			s.writeProblem(w, r, 409, "terminal_launch_intent_invalid", "Terminal launch expired or was cancelled", "")
