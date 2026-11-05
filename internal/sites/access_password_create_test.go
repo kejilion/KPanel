@@ -65,7 +65,8 @@ func TestAccessPasswordCreationMustReconcileBeforeSuccess(t *testing.T) {
 	if err := m.verifyCreatedAccess(job, findSite(all, job.Domain)); err == nil {
 		t.Fatal("missing access rule was reported as verified")
 	}
-	config := `server { server_name static.example.com; root /var/www/html/static.example.com; auth_basic "Private"; auth_basic_user_file /etc/nginx/conf.d/.users; }`
+	config := `server { listen 80; server_name static.example.com; return 301 https://static.example.com$request_uri; }
+	server { listen 443 ssl; server_name static.example.com; root /var/www/html/static.example.com; auth_basic "Private"; auth_basic_user_file /etc/nginx/conf.d/.users; }`
 	if err := os.WriteFile(filepath.Join(root, "conf.d", job.Domain+".conf"), []byte(config), 0600); err != nil {
 		t.Fatal(err)
 	}

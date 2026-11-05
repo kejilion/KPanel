@@ -91,6 +91,71 @@ type accessPasswordDirective struct {
 	UserFile    string
 }
 
+// accessRedirectOnlyServers mirrors the script's narrow exception for an
+// unconditional server-level redirect to HTTPS. Such a server serves no
+// content before the redirect and does not need a password rule of its own.
+func accessRedirectOnlyServers(input string) (map[int]bool, error) {
+	tokens, err := accessPasswordTokens(input)
+	if err != nil {
+		return nil, err
+	}
+	type candidate struct {
+		returns       int
+		https, unsafe bool
+	}
+	var candidates []candidate
+	var blocks, statement []string
+	server, serverDepth := -1, 0
+	for _, token := range tokens {
+		switch token.delimiter {
+		case '{':
+			name := ""
+			if len(statement) > 0 {
+				name = statement[0]
+			}
+			if name == "server" && len(statement) == 1 && (len(blocks) == 0 || len(blocks) == 1 && blocks[0] == "http") {
+				candidates = append(candidates, candidate{})
+				server, serverDepth = len(candidates)-1, len(blocks)+1
+			} else if server >= 0 && len(blocks) == serverDepth && name == "if" {
+				candidates[server].unsafe = true
+			}
+			blocks = append(blocks, name)
+			statement = nil
+		case ';':
+			if server >= 0 && len(blocks) == serverDepth && len(statement) > 0 {
+				item := &candidates[server]
+				if statement[0] == "rewrite" {
+					item.unsafe = true
+				}
+				if statement[0] == "return" {
+					item.returns++
+					item.https = len(statement) == 3 && (statement[1] == "301" || statement[1] == "302" || statement[1] == "307" || statement[1] == "308") && strings.HasPrefix(strings.ToLower(statement[2]), "https://")
+				}
+			}
+			statement = nil
+		case '}':
+			if len(blocks) == 0 {
+				return nil, errors.New("unbalanced Nginx configuration")
+			}
+			if server >= 0 && len(blocks) == serverDepth {
+				server = -1
+			}
+			blocks = blocks[:len(blocks)-1]
+			statement = nil
+		default:
+			statement = append(statement, token.value)
+		}
+	}
+	if len(blocks) != 0 || len(statement) != 0 {
+		return nil, errors.New("incomplete Nginx configuration")
+	}
+	result := make(map[int]bool)
+	for index, item := range candidates {
+		result[index] = item.returns == 1 && item.https && !item.unsafe
+	}
+	return result, nil
+}
+
 // parseAccessPasswordDirectives finds explicit Basic Auth pairs in server and
 // location blocks, including configurations edited outside of the panel.
 // Conflicting or incomplete directives are not presented as complete rules.

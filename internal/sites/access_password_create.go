@@ -48,7 +48,14 @@ func (m *Manager) verifyCreatedAccess(job RecipeJob, site contract.SiteSummary) 
 		return errors.New("created site configuration unavailable")
 	}
 	expected := 0
-	for _, server := range nginxServers(string(config)) {
+	redirectOnly, err := accessRedirectOnlyServers(string(config))
+	if err != nil {
+		return errors.New("created site server context unavailable")
+	}
+	for index, server := range nginxServers(string(config)) {
+		if redirectOnly[index] {
+			continue
+		}
 		for _, domain := range validDomains(server.names) {
 			if containsString(site.Domains, domain) {
 				expected++
