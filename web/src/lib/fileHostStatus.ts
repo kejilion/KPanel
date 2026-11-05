@@ -13,6 +13,13 @@ export interface FileHostStatus extends HostSwitcherStatus {
   tone: HostSwitcherTone
 }
 
+/** Display the local file source consistently while retaining remote names. */
+export function fileHostLabel(hostId: string | undefined, hosts: readonly Pick<ClusterHost, 'id' | 'name' | 'isLocal'>[], localLabel: string): string {
+  if (!hostId) return localLabel
+  const host = hosts.find(item => item.id === hostId)
+  return host?.isLocal ? localLabel : host?.name || hostId
+}
+
 export function fileHostStatus(host: ClusterHost): FileHostStatus {
   if (host.isLocal) return { action: 'select', tone: 'online', label: '当前面板' }
   if (host.remoteFilesDisabled) return { action: 'manage', disabled: true, tone: 'neutral', label: '当前中心已禁用远程文件管理' }

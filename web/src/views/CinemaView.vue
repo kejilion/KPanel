@@ -13,7 +13,7 @@ import { automaticCinemaCover, CINEMA_ROOT, cinemaImage, cinemaRenameTarget, cin
 import { clusterHostPanelPageURL } from '@/lib/clusterHostNavigation'
 import { desktopWindowVisibleKey } from '@/lib/desktopRouteKeys'
 import { fileAPIForHost } from '@/lib/fileHostContext'
-import { fileHostStatus } from '@/lib/fileHostStatus'
+import { fileHostLabel, fileHostStatus } from '@/lib/fileHostStatus'
 import { notifyFileDirectoriesChanged } from '@/lib/fileWindowTransfer'
 import { formatBytes } from '@/lib/format'
 import { galleryBaseName, galleryBrowserCanShow, galleryFileExtension, galleryParentPath, nextGalleryUploadName, normalizeGalleryRoot, type GalleryItem } from '@/lib/gallery'
@@ -312,7 +312,7 @@ onBeforeUnmount(() => {
     <section class="cinema-source" :aria-label="phrase('影片来源')">
       <HostSwitcher
         ref="picker" :hosts="hosts" :active-id="selectedHost?.id ?? hostId"
-        :label="selectedHost?.name || hostId || phrase('本机')" :loading="hostsLoading" :error="hostsError"
+        :label="fileHostLabel(hostId, hosts, phrase('本机'))" :loading="hostsLoading" :error="hostsError"
         :status-of="host => { const status = fileHostStatus(host); return { ...status, label: phrase(status.label) } }"
         :disabled="saving" @open="loadHosts" @refresh="loadHosts" @select="selectHost"
       />

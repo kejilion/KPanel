@@ -6,7 +6,7 @@ import { Music2, Play, Pause, SkipBack, SkipForward, FolderOpen, Plus, RefreshCw
 import HostSwitcher from '@/components/common/HostSwitcher.vue'
 import { api } from '@/lib/api'
 import { fileAPIForHost } from '@/lib/fileHostContext'
-import { fileHostStatus } from '@/lib/fileHostStatus'
+import { fileHostLabel, fileHostStatus } from '@/lib/fileHostStatus'
 import { clusterHostPanelPageURL } from '@/lib/clusterHostNavigation'
 import { withoutUnsupportedLightNodes } from '@/lib/nodeFeatureHosts'
 import { galleryParentPath, normalizeGalleryRoot } from '@/lib/gallery'
@@ -31,7 +31,7 @@ const entries = ref<FileEntry[]>([]), hosts = ref<ClusterHost[]>([]), hostsError
 const picker = ref<InstanceType<typeof HostSwitcher>>()
 const locationInput = ref<HTMLInputElement>()
 const activeHost = computed(() => hosts.value.find(h => hostId.value ? h.id === hostId.value : h.isLocal))
-const hostLabel = computed(() => activeHost.value?.name || hostId.value || phrase('本机'))
+const hostLabel = computed(() => fileHostLabel(hostId.value, hosts.value, phrase('本机')))
 const allTracks = computed(() => tracksFromEntries(entries.value, hostId.value))
 const sort = ref('name'), tab = ref<'library' | 'listen' | 'queue'>(route.query.view === 'listen' ? 'listen' : 'library'), locationOpen = ref(false)
 const tracks = computed(() => allTracks.value.filter(t => `${t.title} ${t.artist}`.toLocaleLowerCase().includes(search.value.toLocaleLowerCase())).sort((a,b) => sort.value === 'artist' ? a.artist.localeCompare(b.artist) || a.title.localeCompare(b.title) : a.title.localeCompare(b.title, undefined, {numeric:true})))
@@ -40,7 +40,7 @@ const volumeOpen = ref(false)
 const coverFailed = ref(false), lyricPanel = ref<HTMLElement>(), following = ref(true)
 const lyrics = computed(() => parseLyrics(state.lyrics))
 const activeLine = computed(() => { let active = -1; lyrics.value.forEach((line, index) => { if (line.time <= state.position) active = index }); return active })
-const currentHost = computed(() => hosts.value.find(h => state.current?.hostId ? h.id === state.current.hostId : h.isLocal)?.name || state.current?.hostId || phrase('本机'))
+const currentHost = computed(() => fileHostLabel(state.current?.hostId, hosts.value, phrase('本机')))
 const repeatLabel = computed(() => state.repeat === 'off' ? phrase('顺序播放') : state.repeat === 'all' ? phrase('列表循环') : phrase('单曲循环'))
 const notice = computed(() => state.notice === 'next' ? phrase('已设为下一首') : state.notice === 'added' ? phrase('已加入播放队列') : state.notice === 'full' ? phrase('队列已满，请先移除部分歌曲') : '')
 const playbackError = computed(() => state.error === 'blocked' ? phrase('浏览器暂停了自动播放，点击播放继续') : state.error === 'network' ? phrase('音乐连接中断，请检查来源主机后重试') : state.error ? phrase('当前浏览器无法解码此音频，可下载原文件播放') : '')
@@ -144,7 +144,7 @@ onBeforeUnmount(() => { destroyed = true; listing?.abort(); if (visible.value) s
           <div class="music-section-heading"><div><span class="music-eyebrow">接下来听什么</span><h2>播放队列</h2></div><button class="button button--secondary" :disabled="!state.queue.length" @click="player.clearQueue">清空待播</button></div>
           <p class="music-caption">跨主机歌曲可以放在同一队列。移除歌曲不会打断当前播放。</p>
           <div v-if="!state.queue.length" class="music-empty"><ListMusic :size="44" /><h2>队列还是空的</h2><button class="button button--secondary" @click="tab = 'library'">去音乐库选歌</button></div>
-          <ol class="music-queue"><li v-for="(track, index) in state.queue" :key="trackKey(track)" :class="{ active: isCurrent(track) }"><button class="music-track" @click="player.choose(track)"><span class="music-track__number">{{ index + 1 }}</span><span class="music-track__name"><strong>{{ track.title }}</strong><span>{{ track.artist || phrase('未知歌手') }} · {{ hosts.find(h => track.hostId ? h.id === track.hostId : h.isLocal)?.name || track.hostId || phrase('本机') }}</span></span><Play v-if="isCurrent(track)" :size="16" /></button><button class="music-icon-button" :disabled="index === 0" :aria-label="`${phrase('上移')} ${track.title}`" @click="player.move(track, -1)"><ArrowUp :size="16" /></button><button class="music-icon-button" :disabled="index === state.queue.length - 1" :aria-label="`${phrase('下移')} ${track.title}`" @click="player.move(track, 1)"><ArrowDown :size="16" /></button><button class="music-icon-button" :aria-label="`${phrase('移出队列')} ${track.title}`" @click="player.remove(track)"><X :size="17" /></button></li></ol>
+          <ol class="music-queue"><li v-for="(track, index) in state.queue" :key="trackKey(track)" :class="{ active: isCurrent(track) }"><button class="music-track" @click="player.choose(track)"><span class="music-track__number">{{ index + 1 }}</span><span class="music-track__name"><strong>{{ track.title }}</strong><span>{{ track.artist || phrase('未知歌手') }} · {{ fileHostLabel(track.hostId, hosts, phrase('本机')) }}</span></span><Play v-if="isCurrent(track)" :size="16" /></button><button class="music-icon-button" :disabled="index === 0" :aria-label="`${phrase('上移')} ${track.title}`" @click="player.move(track, -1)"><ArrowUp :size="16" /></button><button class="music-icon-button" :disabled="index === state.queue.length - 1" :aria-label="`${phrase('下移')} ${track.title}`" @click="player.move(track, 1)"><ArrowDown :size="16" /></button><button class="music-icon-button" :aria-label="`${phrase('移出队列')} ${track.title}`" @click="player.remove(track)"><X :size="17" /></button></li></ol>
         </template>
       </section>
       <aside class="music-now" :class="{ 'music-now--mobile-hidden': tab !== 'listen' }">

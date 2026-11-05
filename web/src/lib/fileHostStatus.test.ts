@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { fileHostStatus } from './fileHostStatus'
+import { fileHostLabel, fileHostStatus } from './fileHostStatus'
 import type { ClusterHost } from '@/types/api'
+
+it('labels local sources consistently and retains remote identity when inventory is unavailable', () => {
+  const hosts = [{ id: 'local-id', name: 'Australia', isLocal: true }, { id: 'remote-id', name: 'Tokyo', isLocal: false }]
+  expect(fileHostLabel('', hosts, '本机')).toBe('本机')
+  expect(fileHostLabel('local-id', hosts, 'Local')).toBe('Local')
+  expect(fileHostLabel('remote-id', hosts, '本机')).toBe('Tokyo')
+  expect(fileHostLabel('remote-id', [], '本机')).toBe('remote-id')
+})
 
 describe('file transport availability', () => {
   const host = { id: 'remote', kind: 'panel', fileManagementAvailable: true } as ClusterHost
