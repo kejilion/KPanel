@@ -106,6 +106,7 @@ type RecipeJob struct {
 	Events            []RecipeJobEvent      `json:"events,omitempty"`
 	Interactive       bool                  `json:"interactive,omitempty"`
 	CustomCertificate bool                  `json:"customCertificate,omitempty"`
+	AccessPassword    bool                  `json:"accessPassword,omitempty"`
 	InputOpen         bool                  `json:"inputOpen,omitempty"`
 	Site              *contract.SiteSummary `json:"site,omitempty"`
 	CreatedAt         time.Time             `json:"createdAt"`
@@ -216,6 +217,7 @@ func (m *Manager) configureRecipeJobState(
 	m.jobRunner = runner
 	m.recoverInterruptedRecipeJobs()
 	cleanupOrphanCustomCertificateFiles(registry)
+	cleanupOrphanAccessPasswordFiles(registry)
 	return nil
 }
 
@@ -338,6 +340,9 @@ func (m *Manager) directSiteWritable(required ...string) error {
 }
 
 func (m *Manager) StartRecipe(_ context.Context, input ScriptSiteInput) (RecipeJob, error) {
+	if err := m.prepareAccessPassword(input.AccessPassword); err != nil {
+		return RecipeJob{}, err
+	}
 	input, httpPort, addressErr := normalizeScriptSiteAddress(input)
 	if addressErr != nil {
 		return RecipeJob{}, addressErr
@@ -376,30 +381,38 @@ func (m *Manager) StartRecipe(_ context.Context, input ScriptSiteInput) (RecipeJ
 		Message: "一键建站任务已进入后台队列", CreatedAt: time.Now().UTC(),
 		Interactive:       true,
 		CustomCertificate: customCertificate.present(),
+		AccessPassword:    input.AccessPassword != nil,
 	}
 	appendRecipeEvent(&job, job.Stage, job.Progress, job.Message)
 	if err := stageCustomCertificateFiles(m.recipeJobs.stateDir, job.ID, customCertificate); err != nil {
 		return RecipeJob{}, fmt.Errorf("%w: stage custom certificate: %v", ErrUnavailable, err)
 	}
+	if err := stageAccessPassword(m.recipeJobs.stateDir, job.ID, domain, input.AccessPassword); err != nil {
+		cleanupSiteCreationSecrets(m.recipeJobs.stateDir, job.ID)
+		return RecipeJob{}, fmt.Errorf("%w: stage access credentials", ErrUnavailable)
+	}
 	if err := hostpty.CreateInput(m.recipeJobs.inputPath(job.ID)); err != nil {
-		cleanupCustomCertificateFiles(m.recipeJobs.stateDir, job.ID)
+		cleanupSiteCreationSecrets(m.recipeJobs.stateDir, job.ID)
 		return RecipeJob{}, fmt.Errorf("%w: prepare interactive website terminal: %v", ErrUnavailable, err)
 	}
 	if err := m.recipeJobs.put(job); err != nil {
 		_ = hostpty.RemoveInput(m.recipeJobs.inputPath(job.ID))
-		cleanupCustomCertificateFiles(m.recipeJobs.stateDir, job.ID)
+		cleanupSiteCreationSecrets(m.recipeJobs.stateDir, job.ID)
 		return RecipeJob{}, fmt.Errorf("%w: persist recipe job: %v", ErrNeedsAttention, err)
 	}
 	if err := m.launchRecipeJob(context.Background(), job); err != nil {
 		m.failRecipeJob(job, "start_failed", err)
 		_ = hostpty.RemoveInput(m.recipeJobs.inputPath(job.ID))
-		cleanupCustomCertificateFiles(m.recipeJobs.stateDir, job.ID)
+		cleanupSiteCreationSecrets(m.recipeJobs.stateDir, job.ID)
 		return RecipeJob{}, fmt.Errorf("%w: launch website job: %v", ErrUnavailable, err)
 	}
 	return job, nil
 }
 
 func (m *Manager) StartWordPress(ctx context.Context, input ScriptSiteInput) (RecipeJob, error) {
+	if err := m.prepareAccessPassword(input.AccessPassword); err != nil {
+		return RecipeJob{}, err
+	}
 	input, httpPort, addressErr := normalizeScriptSiteAddress(input)
 	if addressErr != nil {
 		return RecipeJob{}, addressErr
@@ -421,10 +434,14 @@ func (m *Manager) StartWordPress(ctx context.Context, input ScriptSiteInput) (Re
 		wordPressInvocation(spec.Primary),
 		httpPort,
 		customCertificate,
+		input.AccessPassword,
 	)
 }
 
 func (m *Manager) StartProxy(input ScriptSiteInput) (RecipeJob, error) {
+	if err := m.prepareAccessPassword(input.AccessPassword); err != nil {
+		return RecipeJob{}, err
+	}
 	input, httpPort, addressErr := normalizeScriptSiteAddress(input)
 	if addressErr != nil {
 		return RecipeJob{}, addressErr
@@ -446,10 +463,17 @@ func (m *Manager) StartProxy(input ScriptSiteInput) (RecipeJob, error) {
 		proxyInvocation(spec.Primary, host, port),
 		httpPort,
 		customCertificate,
+		input.AccessPassword,
 	)
 }
 
 func (m *Manager) StartTemplate(input ScriptSiteInput) (RecipeJob, error) {
+	if err := m.prepareAccessPassword(input.AccessPassword); err != nil {
+		return RecipeJob{}, err
+	}
+	if input.Type == "redirect" && input.AccessPassword != nil {
+		return RecipeJob{}, fmt.Errorf("%w: redirect executes before Nginx access authentication", ErrUnprocessable)
+	}
 	input, httpPort, addressErr := normalizeScriptSiteAddress(input)
 	if addressErr != nil {
 		return RecipeJob{}, addressErr
@@ -482,6 +506,7 @@ func (m *Manager) StartTemplate(input ScriptSiteInput) (RecipeJob, error) {
 		invocation,
 		httpPort,
 		customCertificate,
+		input.AccessPassword,
 	)
 }
 
@@ -573,6 +598,7 @@ func (m *Manager) startDirectSiteJob(
 	invocation scriptSiteInvocation,
 	httpPort int,
 	customCertificate normalizedCustomCertificate,
+	accessPassword *AccessPasswordCreateInput,
 ) (RecipeJob, error) {
 	siteWriteMutex.Lock()
 	defer siteWriteMutex.Unlock()
@@ -592,6 +618,7 @@ func (m *Manager) startDirectSiteJob(
 		Message: "kejilion.sh 原生建站任务已进入后台队列", CreatedAt: time.Now().UTC(),
 		Interactive:       true,
 		CustomCertificate: customCertificate.present(),
+		AccessPassword:    accessPassword != nil,
 	}
 	if recipe == "reverse-proxy" {
 		job.ProxyHost = invocation.arguments[2]
@@ -604,19 +631,23 @@ func (m *Manager) startDirectSiteJob(
 	if err := stageCustomCertificateFiles(m.recipeJobs.stateDir, job.ID, customCertificate); err != nil {
 		return RecipeJob{}, fmt.Errorf("%w: stage custom certificate: %v", ErrUnavailable, err)
 	}
+	if err := stageAccessPassword(m.recipeJobs.stateDir, job.ID, spec.Primary, accessPassword); err != nil {
+		cleanupSiteCreationSecrets(m.recipeJobs.stateDir, job.ID)
+		return RecipeJob{}, fmt.Errorf("%w: stage access credentials", ErrUnavailable)
+	}
 	if err := hostpty.CreateInput(m.recipeJobs.inputPath(job.ID)); err != nil {
-		cleanupCustomCertificateFiles(m.recipeJobs.stateDir, job.ID)
+		cleanupSiteCreationSecrets(m.recipeJobs.stateDir, job.ID)
 		return RecipeJob{}, fmt.Errorf("%w: prepare interactive website terminal: %v", ErrUnavailable, err)
 	}
 	if err := m.recipeJobs.put(job); err != nil {
 		_ = hostpty.RemoveInput(m.recipeJobs.inputPath(job.ID))
-		cleanupCustomCertificateFiles(m.recipeJobs.stateDir, job.ID)
+		cleanupSiteCreationSecrets(m.recipeJobs.stateDir, job.ID)
 		return RecipeJob{}, fmt.Errorf("%w: persist website job: %v", ErrNeedsAttention, err)
 	}
 	if err := m.launchRecipeJob(context.Background(), job); err != nil {
 		m.failRecipeJob(job, "start_failed", err)
 		_ = hostpty.RemoveInput(m.recipeJobs.inputPath(job.ID))
-		cleanupCustomCertificateFiles(m.recipeJobs.stateDir, job.ID)
+		cleanupSiteCreationSecrets(m.recipeJobs.stateDir, job.ID)
 		return RecipeJob{}, fmt.Errorf("%w: launch website job: %v", ErrUnavailable, err)
 	}
 	return job, nil
@@ -909,7 +940,7 @@ func (m *Manager) markRecipeJobInterrupted(job RecipeJob) {
 	appendRecipeEvent(&job, job.Stage, job.Progress, job.Message)
 	_ = m.recipeJobs.put(job)
 	_ = hostpty.RemoveInput(m.recipeJobs.inputPath(job.ID))
-	cleanupCustomCertificateFiles(m.recipeJobs.stateDir, job.ID)
+	cleanupSiteCreationSecrets(m.recipeJobs.stateDir, job.ID)
 }
 
 func (m *Manager) RecipeJob(id string) (RecipeJob, error) {
@@ -1047,7 +1078,7 @@ func RunRecipeJob(ctx context.Context, stateDir, webRoot, id string) error {
 		job.Message = "后台建站任务参数无效"
 		job.FinishedAt = &finished
 		_ = registry.put(job)
-		cleanupCustomCertificateFiles(stateDir, id)
+		cleanupSiteCreationSecrets(stateDir, id)
 		return err
 	}
 	invocation, err = withCustomCertificateInvocation(invocation, stateDir, id, job.CustomCertificate)
@@ -1058,7 +1089,15 @@ func RunRecipeJob(ctx context.Context, stateDir, webRoot, id string) error {
 		job.Message = "后台建站任务证书材料无效"
 		job.FinishedAt = &finished
 		_ = registry.put(job)
-		cleanupCustomCertificateFiles(stateDir, id)
+		cleanupSiteCreationSecrets(stateDir, id)
+		return err
+	}
+	invocation, err = withAccessPasswordInvocation(invocation, stateDir, id, job.AccessPassword)
+	if err != nil {
+		finished := time.Now().UTC()
+		job.Status, job.Stage, job.Message, job.FinishedAt = "failed", "invalid_job", "后台建站任务访问密码材料无效", &finished
+		_ = registry.put(job)
+		cleanupSiteCreationSecrets(stateDir, id)
 		return err
 	}
 	manager := NewManager(webRoot, NewDiscoverer(webRoot), nil)
@@ -1161,7 +1200,7 @@ func (m *Manager) runRecipeJob(ctx context.Context, id string, invocation script
 	}
 	defer func() {
 		_ = hostpty.RemoveInput(m.recipeJobs.inputPath(id))
-		cleanupCustomCertificateFiles(m.recipeJobs.stateDir, id)
+		cleanupSiteCreationSecrets(m.recipeJobs.stateDir, id)
 	}()
 	script, err := findTrustedKejilionScript(invocation.required...)
 	if err != nil {
@@ -1247,6 +1286,10 @@ func (m *Manager) runRecipeJob(ctx context.Context, id string, invocation script
 	}
 	if job.Site == nil {
 		m.failRecipeJob(job, "reconcile_failed", errors.New("site artifacts were not discovered"))
+		return
+	}
+	if err := m.verifyCreatedAccess(job, *job.Site); err != nil {
+		m.failRecipeJob(job, "access_reconcile_failed", errors.New("site was created but access password rules could not be confirmed; check the site before use"))
 		return
 	}
 	finished := time.Now().UTC()
@@ -1352,6 +1395,8 @@ func (m *Manager) failRecipeJob(job RecipeJob, stage string, cause error) {
 
 func recipeFailureMessage(job RecipeJob, stage string, cause error) string {
 	switch {
+	case errors.Is(cause, context.DeadlineExceeded) && job.AccessPassword:
+		return "建站任务超时，站点可能已产生；访问密码未确认，请检查网站和访问限制"
 	case errors.Is(cause, context.DeadlineExceeded):
 		return "一键建站执行超时并已终止，请核对当前服务器网络和实际站点产物"
 	case stage == "script_unavailable":
@@ -1364,6 +1409,10 @@ func recipeFailureMessage(job RecipeJob, stage string, cause error) string {
 		return "建站交互终端启动失败，请检查 Host Agent 的 PTY、状态目录和 init 权限"
 	case stage == "reconcile_failed":
 		return "脚本已结束，但 KPanel 未发现完整站点产物，请检查 Nginx 配置、站点目录和证书"
+	case stage == "access_reconcile_failed":
+		return "站点已创建，但访问密码未能确认生效；请检查站点和访问限制后再使用"
+	case stage == "failed" && job.AccessPassword:
+		return "建站任务失败，站点可能已产生；访问密码未确认，请检查网站和访问限制"
 	}
 
 	message := strings.TrimSpace(job.Message)
@@ -1647,6 +1696,6 @@ func (registry *recipeJobRegistry) pruneLocked() {
 		_ = os.Remove(registry.path(job.ID))
 		_ = hostpty.RemoveOutputLog(registry.logPath(job.ID))
 		_ = hostpty.RemoveInput(registry.inputPath(job.ID))
-		cleanupCustomCertificateFiles(registry.stateDir, job.ID)
+		cleanupSiteCreationSecrets(registry.stateDir, job.ID)
 	}
 }

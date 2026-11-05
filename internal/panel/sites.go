@@ -98,35 +98,44 @@ func (value *optionalInt) UnmarshalJSON(data []byte) error {
 }
 
 type siteWriteInput struct {
-	PrimaryDomain           optionalString  `json:"primaryDomain"`
-	Aliases                 optionalStrings `json:"aliases"`
-	Type                    optionalString  `json:"type"`
-	Certificate             optionalString  `json:"certificate"`
-	PrivateKey              optionalString  `json:"privateKey"`
-	Recipe                  optionalString  `json:"recipe"`
-	Upstream                optionalString  `json:"upstream"`
-	Upstreams               optionalStrings `json:"upstreams"`
-	RedirectTarget          optionalString  `json:"redirectTarget"`
-	RedirectCode            optionalInt     `json:"redirectCode"`
-	PHPVersion              optionalString  `json:"phpVersion"`
-	Enabled                 optionalBool    `json:"enabled"`
-	ExpectedResourceVersion optionalString  `json:"expectedResourceVersion"`
+	PrimaryDomain           optionalString         `json:"primaryDomain"`
+	Aliases                 optionalStrings        `json:"aliases"`
+	Type                    optionalString         `json:"type"`
+	Certificate             optionalString         `json:"certificate"`
+	PrivateKey              optionalString         `json:"privateKey"`
+	Recipe                  optionalString         `json:"recipe"`
+	Upstream                optionalString         `json:"upstream"`
+	Upstreams               optionalStrings        `json:"upstreams"`
+	RedirectTarget          optionalString         `json:"redirectTarget"`
+	RedirectCode            optionalInt            `json:"redirectCode"`
+	PHPVersion              optionalString         `json:"phpVersion"`
+	Enabled                 optionalBool           `json:"enabled"`
+	ExpectedResourceVersion optionalString         `json:"expectedResourceVersion"`
+	AccessPassword          *siteAccessCreateInput `json:"accessPassword,omitempty"`
+}
+
+type siteAccessCreateInput struct {
+	Scope    string `json:"scope"`
+	Path     string `json:"path,omitempty"`
+	Username string `json:"username"`
+	Password string `json:"password"`
 }
 
 type siteAgentPayload struct {
-	PrimaryDomain           *string   `json:"primaryDomain,omitempty"`
-	Aliases                 *[]string `json:"aliases,omitempty"`
-	Type                    *string   `json:"type,omitempty"`
-	Certificate             *string   `json:"certificate,omitempty"`
-	PrivateKey              *string   `json:"privateKey,omitempty"`
-	Recipe                  *string   `json:"recipe,omitempty"`
-	Upstream                *string   `json:"upstream,omitempty"`
-	Upstreams               *[]string `json:"upstreams,omitempty"`
-	RedirectTarget          *string   `json:"redirectTarget,omitempty"`
-	RedirectCode            *int      `json:"redirectCode,omitempty"`
-	PHPVersion              *string   `json:"phpVersion,omitempty"`
-	Enabled                 *bool     `json:"enabled,omitempty"`
-	ExpectedResourceVersion *string   `json:"expectedResourceVersion,omitempty"`
+	PrimaryDomain           *string                `json:"primaryDomain,omitempty"`
+	Aliases                 *[]string              `json:"aliases,omitempty"`
+	Type                    *string                `json:"type,omitempty"`
+	Certificate             *string                `json:"certificate,omitempty"`
+	PrivateKey              *string                `json:"privateKey,omitempty"`
+	Recipe                  *string                `json:"recipe,omitempty"`
+	Upstream                *string                `json:"upstream,omitempty"`
+	Upstreams               *[]string              `json:"upstreams,omitempty"`
+	RedirectTarget          *string                `json:"redirectTarget,omitempty"`
+	RedirectCode            *int                   `json:"redirectCode,omitempty"`
+	PHPVersion              *string                `json:"phpVersion,omitempty"`
+	Enabled                 *bool                  `json:"enabled,omitempty"`
+	ExpectedResourceVersion *string                `json:"expectedResourceVersion,omitempty"`
+	AccessPassword          *siteAccessCreateInput `json:"accessPassword,omitempty"`
 }
 
 func (s *Server) handleSiteInstallationInput(w http.ResponseWriter, r *http.Request) {
@@ -363,6 +372,15 @@ func (s *Server) handleSiteWrite(
 }
 
 func validateSiteWriteInput(input *siteWriteInput, create bool) (field, detail string) {
+	if input.AccessPassword != nil {
+		access := input.AccessPassword
+		if !create || access.Username == "" || len(access.Username) > 256 || hasControlCharacter(access.Username) || strings.Contains(access.Username, ":") || strings.HasPrefix(access.Username, "#") || access.Password == "" || len(access.Password) > 1024 || strings.ContainsAny(access.Password, "\x00\r\n") {
+			return "accessPassword", "Invalid access password input"
+		}
+		if access.Scope == "server" && access.Path != "" || access.Scope == "location" && (!strings.HasPrefix(access.Path, "/") || len(access.Path) > 1024 || hasControlCharacter(access.Path)) || access.Scope != "server" && access.Scope != "location" {
+			return "accessPassword", "Invalid access password scope"
+		}
+	}
 	if create {
 		if input.ExpectedResourceVersion.Set {
 			return "expectedResourceVersion", "expectedResourceVersion is not allowed when creating a site"
@@ -623,6 +641,7 @@ func validateSiteCertificateInput(input *siteWriteInput, create bool) (field, de
 
 func (input siteWriteInput) agentPayload() siteAgentPayload {
 	var payload siteAgentPayload
+	payload.AccessPassword = input.AccessPassword
 	if input.PrimaryDomain.Set {
 		payload.PrimaryDomain = &input.PrimaryDomain.Value
 	}
