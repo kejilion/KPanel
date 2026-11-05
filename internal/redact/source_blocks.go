@@ -16,7 +16,7 @@ func sourceBlockHeaders(lines []string) map[int]bool {
 		}
 		if strings.HasSuffix(line, "{") {
 			header := strings.TrimSpace(strings.TrimSuffix(line, "{"))
-			if header == "" || strings.ContainsAny(header, "{}\"'\\[]") || !sourceHeaderStart(header[0]) {
+			if header == "" || strings.ContainsAny(header, "{}\"'\\[]=") || !sourceHeaderStart(header[0]) {
 				return nil
 			}
 			depth++
