@@ -31,7 +31,7 @@ func TestAIFileProjectionOrdinarySource(t *testing.T) {
 		"nginx":      "server {\n    listen 80;\n}\n",
 		"nginx_tls":  "server {\n    listen 443 ssl;\n    server_name example.test;\n    ssl_certificate /etc/nginx/certs/example.test_cert.pem;\n    ssl_certificate_key /etc/nginx/certs/example.test_key.pem;\n    location / {\n        proxy_pass http://127.0.0.1:8080;\n    }\n}\n",
 		"nginx_php":  "server {\n    listen 443 ssl;\n    location / { try_files $uri $uri/ /index.php?$args; }\n    location ~ \\.php$ {\n        fastcgi_pass unix:/run/php/php-fpm.sock;\n    }\n}\n",
-		"nginx_main": "worker_processes auto;\nevents {\n    worker_connections 1024;\n}\nhttp {\n    include /etc/nginx/mime.types;\n}\n",
+		"nginx_main": "worker_processes auto;\nevents {\n    worker_connections 1024;\n}\nhttp {\n    server_tokens off;\n    include /etc/nginx/mime.types;\n}\n",
 		"javascript": "function hello() {\n    return 42;\n}\n",
 	}
 	for name, content := range cases {

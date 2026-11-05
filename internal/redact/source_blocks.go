@@ -61,7 +61,10 @@ func sensitiveSourceFields(value string) bool {
 		if end < 0 {
 			end = len(value)
 		}
-		if secretNormalizedJSONKey(normalizedJSONKey(value[:end])) {
+		name := normalizedJSONKey(value[:end])
+		// This Nginx display directive is a boolean/version setting, not a
+		// credential. All its other fields are still inspected independently.
+		if name != "servertokens" && secretNormalizedJSONKey(name) {
 			return true
 		}
 		value = value[end:]
