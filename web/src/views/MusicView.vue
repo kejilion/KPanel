@@ -168,17 +168,17 @@ onBeforeUnmount(() => { destroyed = true; listing?.abort(); if (visible.value) s
 </template>
 
 <style scoped>
-.music-page { display:flex; flex-direction:column; gap:0; width:100%; height:100%; min-height:0; --music-accent: #ad315e; --music-tint: color-mix(in srgb, var(--music-accent) 8%, var(--surface)); container-type: inline-size; color: var(--text); }
+.music-page { display:flex; flex-direction:column; gap:0; width:100%; height:100%; min-height:0; --music-page-padding:clamp(16px, 2vw, 24px); --music-accent: #ad315e; --music-tint: color-mix(in srgb, var(--music-accent) 8%, var(--surface)); container-type: inline-size; color: var(--text); }
 :global(.app-shell__main:has(> .page-content > .music-page)) { display:flex; flex-direction:column; height:100dvh; min-height:0; overflow:hidden; }
 :global(.app-shell__main:has(> .page-content > .music-page) > .topbar) { flex-shrink:0; }
 :global(.page-content:has(> .music-page)) { display:flex; flex:1 1 0; min-height:0; }
-:global(.desktop-window__body:has(> .music-page)) { overflow:hidden; }
-.music-content { flex:1 1 auto; min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-gutter:stable; }
+:global(.desktop-window__body:has(> .music-page)) { overflow:hidden; scrollbar-gutter:auto; }
+.music-content { flex:1 1 auto; min-height:0; margin-inline-end:calc(-1 * var(--music-page-padding)); padding-inline-end:var(--music-page-padding); overflow-y:auto; overscroll-behavior:contain; scrollbar-gutter:stable; }
 .music-page {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: clamp(16px, 2vw, 24px);
+  padding: var(--music-page-padding);
 }
 .music-page:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
 .music-header,.music-brand,.music-tabs,.music-location,.music-section-heading,.music-search,.music-transport,.music-progress { display:flex; align-items:center; gap:12px; }
