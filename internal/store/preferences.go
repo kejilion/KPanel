@@ -15,13 +15,13 @@ import (
 // Preferences is bounded Panel-owned UI state, shared by the single administrator.
 // Nil sections have not been configured and may be migrated once by a client.
 type Preferences struct {
-	Browser         *BrowserPreferences `json:"browser,omitempty"`
-	Locale          string              `json:"locale,omitempty"`
-	Desktop         *DesktopPreferences `json:"desktop,omitempty"`
-	GalleryLocation *MediaLocation      `json:"galleryLocation,omitempty"`
-	MusicLocation   *MediaLocation      `json:"musicLocation,omitempty"`
-	CinemaLocation  *MediaLocation      `json:"cinemaLocation,omitempty"`
-	MusicPlayback *MusicPlaybackPreference `json:"musicPlayback,omitempty"`
+	Browser         *BrowserPreferences      `json:"browser,omitempty"`
+	Locale          string                   `json:"locale,omitempty"`
+	Desktop         *DesktopPreferences      `json:"desktop,omitempty"`
+	GalleryLocation *MediaLocation           `json:"galleryLocation,omitempty"`
+	MusicLocation   *MediaLocation           `json:"musicLocation,omitempty"`
+	CinemaLocation  *MediaLocation           `json:"cinemaLocation,omitempty"`
+	MusicPlayback   *MusicPlaybackPreference `json:"musicPlayback,omitempty"`
 }
 
 type MediaLocation struct {
@@ -66,65 +66,7 @@ type MusicPlaybackPreference struct {
 	Shuffle  bool    `json:"shuffle"`
 }
 
-var musicHostPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{0,128}package store
-
-import (
-	"crypto/sha256"
-	"encoding/json"
-	"fmt"
-	"math"
-	"net/url"
-	"regexp"
-	"strings"
-	"unicode/utf16"
-	"unicode/utf8"
-)
-
-// Preferences is bounded Panel-owned UI state, shared by the single administrator.
-// Nil sections have not been configured and may be migrated once by a client.
-type Preferences struct {
-	Browser         *BrowserPreferences `json:"browser,omitempty"`
-	Locale          string              `json:"locale,omitempty"`
-	Desktop         *DesktopPreferences `json:"desktop,omitempty"`
-	GalleryLocation *MediaLocation      `json:"galleryLocation,omitempty"`
-	MusicLocation   *MediaLocation      `json:"musicLocation,omitempty"`
-	CinemaLocation  *MediaLocation      `json:"cinemaLocation,omitempty"`
-	MusicPlayback *MusicPlaybackPreference `json:"musicPlayback,omitempty"`
-}
-
-type MediaLocation struct {
-	Path   string `json:"path"`
-	HostID string `json:"hostId"`
-}
-
-var mediaHostPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{0,128}$`)
-
-// Match JavaScript String.trim so a path accepted by the client is never
-// rejected during a combined preferences update. Go's TrimSpace differs.
-func mediaTrimSpace(r rune) bool {
-	return r == 0x20 || (r >= 0x09 && r <= 0x0d) || r == 0x00a0 || r == 0x1680 || (r >= 0x2000 && r <= 0x200a) || r == 0x2028 || r == 0x2029 || r == 0x202f || r == 0x205f || r == 0x3000 || r == 0xfeff
-}
-
-func validMediaLocation(value *MediaLocation, allowRoot bool) bool {
-	if value == nil {
-		return true
-	}
-	p := value.Path
-	if !utf8.ValidString(p) || len(p) > 4096 || len(utf16.Encode([]rune(p))) > 1024 || strings.TrimFunc(p, mediaTrimSpace) != p || !strings.HasPrefix(p, "/") || strings.Contains(p, "\\") || strings.IndexFunc(p, func(r rune) bool { return r < 32 || r == 127 }) >= 0 || !mediaHostPattern.MatchString(value.HostID) {
-		return false
-	}
-	if p == "/" {
-		return allowRoot
-	}
-	for _, part := range strings.Split(p[1:], "/") {
-		if part == "" || part == "." || part == ".." {
-			return false
-		}
-	}
-	return true
-}
-
-)
+var musicHostPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{0,128}$`)
 
 func validMusicPlayback(m *MusicPlaybackPreference) bool {
 	if m == nil {
@@ -193,7 +135,9 @@ func validDimension(value float64) bool {
 }
 
 func ValidatePreferences(value Preferences) error {
-	if !validMusicPlayback(value.MusicPlayback) { return ErrInvalidRecord }
+	if !validMusicPlayback(value.MusicPlayback) {
+		return ErrInvalidRecord
+	}
 	if !validMediaLocation(value.GalleryLocation, false) || (value.GalleryLocation != nil && value.GalleryLocation.HostID != "") || !validMediaLocation(value.MusicLocation, true) || !validMediaLocation(value.CinemaLocation, true) {
 		return ErrInvalidRecord
 	}
@@ -236,7 +180,10 @@ func ValidatePreferences(value Preferences) error {
 }
 
 func clonePreferences(value Preferences) Preferences {
-	if value.MusicPlayback != nil { v := *value.MusicPlayback; value.MusicPlayback = &v }
+	if value.MusicPlayback != nil {
+		v := *value.MusicPlayback
+		value.MusicPlayback = &v
+	}
 	if value.GalleryLocation != nil {
 		v := *value.GalleryLocation
 		value.GalleryLocation = &v
@@ -302,7 +249,9 @@ func (s *Store) PatchPreferences(expected string, patch Preferences) error {
 	if patch.CinemaLocation != nil {
 		s.data.Preferences.CinemaLocation = clonePreferences(patch).CinemaLocation
 	}
-	if patch.MusicPlayback != nil { s.data.Preferences.MusicPlayback = clonePreferences(patch).MusicPlayback }
+	if patch.MusicPlayback != nil {
+		s.data.Preferences.MusicPlayback = clonePreferences(patch).MusicPlayback
+	}
 	if err := s.persistLocked(); err != nil {
 		s.data = previous
 		return err

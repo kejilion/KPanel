@@ -330,3 +330,29 @@ func TestMusicCheckpointPersistsAndRejectsInvalidInput(t *testing.T) {
 	}
 }
 
+func TestMediaLocationAndPlaybackRemainIndependent(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "panel.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	_, version := s.Preferences()
+	if err := s.PatchPreferences(version, Preferences{MusicLocation: &MediaLocation{Path: "/music", HostID: "edge"}}); err != nil {
+		t.Fatal(err)
+	}
+	_, version = s.Preferences()
+	if err := s.PatchPreferences(version, Preferences{MusicPlayback: &MusicPlaybackPreference{Path: "/music/a.mp3", HostID: "edge", Position: 42, Repeat: "off"}}); err != nil {
+		t.Fatal(err)
+	}
+	got, version := s.Preferences()
+	if got.MusicLocation == nil || got.MusicLocation.Path != "/music" || got.MusicPlayback == nil || got.MusicPlayback.Position != 42 {
+		t.Fatalf("lost media preference: %+v", got)
+	}
+	if err := s.PatchPreferences(version, Preferences{CinemaLocation: &MediaLocation{Path: "/films"}}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = s.Preferences()
+	if got.MusicLocation.Path != "/music" || got.MusicPlayback.Position != 42 || got.CinemaLocation.Path != "/films" {
+		t.Fatalf("lost media preference after update: %+v", got)
+	}
+}

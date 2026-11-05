@@ -9,6 +9,7 @@ vi.mock('@/lib/api', () => ({ api: { preferences: { get: mocks.get, update: mock
 vi.mock('@/lib/fileHostContext', () => ({ fileAPIForHost: () => ({ entry: mocks.entry, contentUrl: (path: string) => path, text: vi.fn() }) }))
 vi.mock('@/stores/toast', () => ({ useToast: () => ({ danger: mocks.danger }) }))
 import { startPreferencesSync, stopPreferencesSync } from './preferencesSync'
+import { mediaLocations, setMediaLocation } from './mediaLocations'
 import { useMusicPlayer } from '@/stores/musicPlayer'
 
 const entry: FileEntry = { name: 'Song.mp3', path: '/music/Song.mp3', kind: 'file', sizeBytes: 100, mode: '', owner: '', group: '', modifiedAt: '', resourceVersion: 'v1', editable: false, previewable: true }
@@ -43,6 +44,22 @@ it('restores a saved track and progress without starting audio or overwriting th
   expect(state.playing).toBe(false)
   expect(mocks.play).not.toHaveBeenCalled()
   expect(mocks.update).not.toHaveBeenCalled()
+})
+
+it('saves music location and playback changes together without losing either section', async () => {
+  mocks.get.mockResolvedValue({ ...remote(), musicPlayback: { ...saved, playing: false }, musicLocation: { path: '/old', hostId: '' } })
+  await startPreferencesSync('admin'); await vi.advanceTimersByTimeAsync(0)
+  expect(useMusicPlayer().state.current?.entry.path).toBe(entry.path)
+  setMediaLocation('musicLocation', '/music', 'edge')
+  useMusicPlayer().toggle()
+  await vi.advanceTimersByTimeAsync(500)
+  expect(mediaLocations.musicLocation).toEqual({ path: '/music', hostId: 'edge' })
+  expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({
+    musicLocation: { path: '/music', hostId: 'edge' },
+    musicPlayback: expect.objectContaining({ path: entry.path, position: 42, playing: true }),
+    expectedResourceVersion: 'v1',
+  }), expect.any(AbortSignal))
+  expect(sessionStorage.getItem('kpanel:preferences-pending:v1')).toBeNull()
 })
 
 it('does not replace a song chosen while the saved file is loading', async () => {
