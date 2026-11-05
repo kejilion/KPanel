@@ -161,10 +161,12 @@ async function performLoadHosts(): Promise<void> {
       const retained = await api.terminals.list(request.signal)
       if (request.signal.aborted || controller !== request) return
       for (const session of retained.items) {
-        if ((!session.retained && !session.closeRequested) || sessions.value.some(item => item.id === session.sessionId)) continue
+        const visible = session.detachable && (session.retained || session.closeRequested)
+          || session.retained && (session.shortcutId || session.purpose)
+        if (!visible || sessions.value.some(item => item.id === session.sessionId)) continue
         sessions.value.push({ id: session.sessionId, hostId: session.hostId,
           hostName: names.get(session.hostId) || session.hostId, title: session.title,
-          retained: session.retained, canDetach: !session.shortcutId && !session.purpose, ordinal: nextOrdinal(session.hostId), offset: 0,
+          retained: session.retained, canDetach: session.detachable === true, ordinal: nextOrdinal(session.hostId), offset: 0,
           state: 'connecting', closeFailed: session.closeRequested, launchUncertain: session.launchUncertain })
       }
       activeSessionId.value = sessions.value[0]?.id || ''

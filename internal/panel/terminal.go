@@ -88,6 +88,7 @@ func (intent panelTerminalLaunchIntent) matches(userID string, input terminalOpe
 
 type terminalOpenResponse struct {
 	Retained        bool       `json:"retained,omitempty"`
+	Detachable      bool       `json:"detachable,omitempty"`
 	ShortcutID      string     `json:"shortcutId,omitempty"`
 	Purpose         string     `json:"purpose,omitempty"`
 	Title           string     `json:"title,omitempty"`
@@ -980,7 +981,7 @@ func randomTerminalSessionID() (string, error) {
 // Lists metadata only. A network failure is not evidence that the process ended.
 // Neither listing nor reattaching extends the target's fixed lifetime.
 func terminalSessionResponse(item panelTerminalSession) terminalOpenResponse {
-	result := terminalOpenResponse{SessionID: item.ID, HostID: item.HostID, Offset: 0, CreatedAt: item.CreatedAt, Retained: item.Retained, ShortcutID: item.ShortcutID, Purpose: item.Purpose, Title: item.Title, CloseRequested: item.CloseRequested, LaunchUncertain: item.LaunchUncertain}
+	result := terminalOpenResponse{SessionID: item.ID, HostID: item.HostID, Offset: 0, CreatedAt: item.CreatedAt, Retained: item.Retained, Detachable: item.Detachable, ShortcutID: item.ShortcutID, Purpose: item.Purpose, Title: item.Title, CloseRequested: item.CloseRequested, LaunchUncertain: item.LaunchUncertain}
 	if item.Retained {
 		expiry := item.CreatedAt.Add(terminal.DefaultLifetime)
 		result.ExpiresAt = &expiry

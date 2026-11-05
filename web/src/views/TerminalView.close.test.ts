@@ -171,7 +171,7 @@ describe('explicit terminal tab close', () => {
     const wrapper = create()
     await flushPromises()
     const closing = closeGuard()
-    resolve({ items: [{ sessionId: 'original', hostId: 'local', retained: true, offset: 0 }] })
+    resolve({ items: [{ sessionId: 'original', hostId: 'local', retained: true, detachable: true, offset: 0 }] })
     expect(await closing).toBe(true)
     expect(mocks.open).not.toHaveBeenCalled()
     expect(mocks.close).toHaveBeenCalledOnce()

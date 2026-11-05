@@ -72,6 +72,9 @@ func TestDetachRetainsUnconfirmedIdentityButFreesInteractiveSlot(t *testing.T) {
 	if opened.Code != http.StatusCreated || json.Unmarshal(opened.Body.Bytes(), &session) != nil {
 		t.Fatal(opened.Body.String())
 	}
+	if !session.Detachable {
+		t.Fatal("interactive session missing detachable classification")
+	}
 	path := "/api/v1/terminal-sessions/" + session.SessionID
 	if got := authenticatedRequest(server, http.MethodPost, path+"/detach", []byte(`{}`), cookie, csrf, headers); got.Code != http.StatusConflict {
 		t.Fatalf("detached active session: %d", got.Code)
@@ -138,6 +141,9 @@ func TestDetachEnforcesOwnershipAndBoundedCleanupRecords(t *testing.T) {
 	protected := item
 	protected.ID, protected.Detachable = "protected", false
 	server.terminalSessions[protected.ID] = protected
+	if terminalSessionResponse(protected).Detachable {
+		t.Fatal("protected session incorrectly classified as detachable")
+	}
 	if got := authenticatedRequest(server, http.MethodPost, "/api/v1/terminal-sessions/protected/detach", []byte(`{}`), cookie, csrf, headers); got.Code != http.StatusConflict {
 		t.Fatalf("non-interactive detach = %d", got.Code)
 	}

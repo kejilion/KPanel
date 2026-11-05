@@ -3175,7 +3175,7 @@ createServer(async (request, response) => {
     mockTerminalSessionCounter += 1
     const sessionId = `visual-terminal-${mockTerminalSessionCounter}`
     const createdAt = new Date().toISOString()
-    const metadata = { sessionId, hostId: input.hostId, offset: 0, createdAt, retained: input.retained === true, ...(shortcut ? { shortcutId: shortcut.id, title: shortcut.name } : {}), ...(siteManagement ? { purpose: input.purpose, title: 'k web' } : {}) }
+    const metadata = { sessionId, hostId: input.hostId, offset: 0, createdAt, retained: input.retained === true, detachable: !input.containerId && !input.shortcutId && !input.purpose, ...(shortcut ? { shortcutId: shortcut.id, title: shortcut.name } : {}), ...(siteManagement ? { purpose: input.purpose, title: 'k web' } : {}) }
     const launchCommand = shortcut?.command || (siteManagement ? 'k web' : '')
     mockTerminalSessions.set(sessionId, {
       metadata,

@@ -91,7 +91,7 @@ describe('retained terminal restoration', () => {
   })
   it('restores the same local and remote shortcut sessions without replay or new opens', async () => {
     mocks.list.mockResolvedValue({ items: [
-      { sessionId: 'original', hostId: 'local', offset: 123, retained: true },
+      { sessionId: 'original', hostId: 'local', offset: 123, retained: true, detachable: true },
       { sessionId: 'remote', hostId: 'offline-node', offset: 456, retained: true, title: 'Saved command', shortcutId: 'a'.repeat(32), closeRequested: true },
     ] })
     const wrapper = mount(TerminalView)
@@ -105,13 +105,25 @@ describe('retained terminal restoration', () => {
     wrapper.unmount()
   })
   it('restores a temporary session whose close was not confirmed', async () => {
-    mocks.list.mockResolvedValue({ items: [{ sessionId: 'pending-temporary', hostId: 'local', retained: false, closeRequested: true }] })
+    mocks.list.mockResolvedValue({ items: [{ sessionId: 'pending-temporary', hostId: 'local', retained: false, closeRequested: true, detachable: true }] })
     const wrapper = mount(TerminalView)
     await flushPromises()
     expect(mocks.open).not.toHaveBeenCalled()
     expect(wrapper.findAll('.terminal-tab')).toHaveLength(1)
     expect(wrapper.findComponent({ name: 'HostTerminalStub' }).props()).toMatchObject({ sessionId: 'pending-temporary', retained: false })
     expect(wrapper.get('[role="alert"]').text()).toContain('移除本地页签')
+    wrapper.unmount()
+  })
+  it('does not restore container or unclassified cleanup records into the host workspace', async () => {
+    mocks.list.mockResolvedValue({ items: [
+      { sessionId: 'container', hostId: 'local', retained: false, closeRequested: true },
+      { sessionId: 'uncertain', hostId: 'local', retained: true, closeRequested: true },
+    ] })
+    const wrapper = mount(TerminalView)
+    await flushPromises()
+    expect(wrapper.findAll('.terminal-tab')).toHaveLength(1)
+    expect(wrapper.findComponent({ name: 'HostTerminalStub' }).props('sessionId')).toBe('new')
+    expect(wrapper.text()).not.toContain('移除本地页签')
     wrapper.unmount()
   })
   it('blocks automatic and manual opens after lookup failure until restoration succeeds', async () => {
@@ -121,7 +133,7 @@ describe('retained terminal restoration', () => {
     expect(wrapper.find('[role="alert"]').exists()).toBe(true)
     await wrapper.get('.terminal-host').trigger('click')
     expect(mocks.open).not.toHaveBeenCalled()
-    mocks.list.mockResolvedValue({ items: [{ sessionId: 'original', hostId: 'local', offset: 0, retained: true }] })
+    mocks.list.mockResolvedValue({ items: [{ sessionId: 'original', hostId: 'local', offset: 0, retained: true, detachable: true }] })
     await wrapper.get('[aria-label="刷新连接"]').trigger('click')
     await flushPromises()
     expect(mocks.open).not.toHaveBeenCalled()
