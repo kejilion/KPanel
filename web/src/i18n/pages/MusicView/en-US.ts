@@ -150,10 +150,6 @@ export default [
     "No lyrics yet. Matching LRC files are read automatically."
   ],
   [
-    "原文件播放 · FLAC / WAV 等格式取决于浏览器解码能力；不支持时可下载原文件。自动读取同目录 cover、folder 或同名图片。",
-    "Original audio · FLAC / WAV and other formats depend on browser decoding support. Download the original if unsupported. Artwork is read from cover, folder or matching images."
-  ],
-  [
     "已设为下一首",
     "Playing next"
   ],
@@ -316,18 +312,6 @@ export default [
   [
     "播放控制",
     "Playback controls"
-  ],
-  [
-    "播放说明与快捷键",
-    "Playback tips and shortcuts"
-  ],
-  [
-    "焦点在音乐页面空白区域时：空格播放或暂停，左右方向键快退或快进 5 秒。输入框和按钮保留原有键盘操作。",
-    "With focus on the music page background: Space plays or pauses; left and right arrows seek by 5 seconds. Inputs and buttons keep their normal keyboard behavior."
-  ],
-  [
-    "音乐在当前标签页内持续播放，关闭音乐窗口或切换页面不会中断；退出登录、关闭标签页或停止播放会结束聆听。",
-    "Music keeps playing in this tab when you close the music window or switch pages. Signing out, closing the tab or stopping playback ends listening."
   ],
   [
     "音量设置",
