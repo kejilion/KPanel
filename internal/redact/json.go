@@ -422,6 +422,12 @@ func looksLikeJSON(value string) bool {
 	if value[0] != '[' {
 		return false
 	}
+	if end := strings.IndexByte(value, ']'); end > 1 {
+		switch strings.ToLower(value[1:end]) {
+		case "notice", "trace", "debug", "info", "warn", "warning", "error", "err", "critical", "crit", "fatal", "alert", "emerg", "panic":
+			return false
+		}
+	}
 	// Bracketed log prefixes such as [INFO] are ordinary text. An array starts
 	// with a JSON value token; malformed array-shaped data is fail closed.
 	tail := strings.TrimSpace(value[1:])
@@ -496,9 +502,16 @@ func (p *projection) unstructuredText(value string, depth int, invalidJSON bool)
 			return nil, err
 		}
 		parts := strings.Split(value, "\n")
+		headers := sourceBlockHeaders(parts)
 		sequence := textSequence{values: make([]any, 0, len(parts))}
-		for _, part := range parts {
-			item, err := p.normalizedText(part, depth)
+		for index, part := range parts {
+			var item any
+			var err error
+			if headers[index] {
+				item, err = p.leaf(part)
+			} else {
+				item, err = p.normalizedText(part, depth)
+			}
 			if err != nil {
 				return nil, err
 			}

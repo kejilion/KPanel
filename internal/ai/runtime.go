@@ -640,6 +640,16 @@ func (r *NativeRuntime) recoverToolFailure(ctx context.Context, run Run, call To
 		if err := r.recordToolRejection(ctx, run, call, cause); err != nil {
 			return true, err
 		}
+	case errors.Is(cause, ErrToolResultUnavailable):
+		// Do not automatically replan after a write whose result was lost.
+		definition, ok := findTool(r.tools.Definitions(), call.Name)
+		if !ok || !definition.ReadOnly {
+			return false, nil
+		}
+		content := "工具返回的数据未能通过安全处理，本次读取结果不可用。请勿声称已看到数据，不得反复重放相同调用；请说明限制或使用其他已注册的只读工具核实。"
+		if _, err := r.store.AddMessage(ctx, Message{SessionID: run.SessionID, RunID: run.ID, Role: RoleTool, ToolCallID: call.ID, Content: content}); err != nil {
+			return true, err
+		}
 	default:
 		return false, nil
 	}
