@@ -7,10 +7,38 @@ function uint(bytes: Uint8Array, offset: number): number {
   return offset + 4 <= bytes.length ? new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(offset) : 0
 }
 function syncSafe(bytes: Uint8Array, offset: number): number { return ((bytes[offset]! & 127) << 21) | ((bytes[offset + 1]! & 127) << 14) | ((bytes[offset + 2]! & 127) << 7) | (bytes[offset + 3]! & 127) }
+function legacyText(bytes: Uint8Array): string {
+  // Some ID3 tags label UTF-8 or GBK bytes as ISO-8859-1. Only use GBK
+  // when it decodes cleanly to multiple Chinese characters; Western tags
+  // otherwise retain the ID3 default rather than guessing from one pair.
+  try {
+    const utf8 = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+    if (/[^\x00-\x7f]/u.test(utf8)) return utf8
+  } catch { /* Try the common legacy Chinese encoding next. */ }
+  try {
+    const chinese = new TextDecoder('gbk', { fatal: true }).decode(bytes)
+    let highPairs = 0
+    for (let i = 0; i < bytes.length; i++) {
+      if (bytes[i]! >= 0x80) { if (bytes[i + 1]! >= 0x80) highPairs++; i++ }
+    }
+    if (highPairs >= 2 && (chinese.match(/\p{Script=Han}/gu) ?? []).length >= 2) return chinese
+  } catch { /* Keep the standard Western decoding below. */ }
+  return new TextDecoder('windows-1252').decode(bytes)
+}
+
+export function readableMusicTag(value: string | undefined, fallback: string): string {
+  if (!value || value.includes('\ufffd')) return fallback
+  // An already-corrupted tag can be valid Unicode; do not replace a known
+  // Chinese filename with a dense run of Western mojibake characters.
+  const extended = (value.match(/[\u00c0-\u00ff]/gu) ?? []).length
+  if (/\p{Script=Han}/u.test(fallback) && !/\p{Script=Han}/u.test(value) && extended >= 3 && extended / value.length >= .3) return fallback
+  return value
+}
 function text(bytes: Uint8Array): string {
   if (!bytes.length) return ''
-  const encoding = bytes[0] === 0 ? 'windows-1252' : bytes[0] === 1 ? 'utf-16' : bytes[0] === 2 ? 'utf-16be' : 'utf-8'
-  return new TextDecoder(encoding).decode(bytes.subarray(1)).replace(/\0/g, '').trim().slice(0, 65536)
+  const encoding = bytes[0] === 1 ? 'utf-16' : bytes[0] === 2 ? 'utf-16be' : 'utf-8'
+  const decoded = bytes[0] === 0 ? legacyText(bytes.subarray(1)) : new TextDecoder(encoding).decode(bytes.subarray(1))
+  return decoded.replace(/\0/g, '').trim().slice(0, 65536)
 }
 function terminated(bytes: Uint8Array, start: number, wide: boolean): number {
   for (let i = start; i < bytes.length - (wide ? 1 : 0); i += wide ? 2 : 1) if (bytes[i] === 0 && (!wide || bytes[i + 1] === 0)) return i + (wide ? 2 : 1)

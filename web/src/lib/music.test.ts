@@ -34,6 +34,24 @@ describe('music library', () => {
   })
 })
 describe('bounded embedded metadata', () => {
+  function id3(id: string, content: number[], version = 3): Uint8Array {
+    const length = content.length
+    const bytes = new Uint8Array(20 + length)
+    bytes.set([73, 68, 51, version, 0, 0, 0, 0, 0, 10 + length])
+    bytes.set([...new TextEncoder().encode(id), 0, 0, 0, length, 0, 0], 10)
+    bytes.set(content, 20)
+    return bytes
+  }
+  it('reads common GBK and mislabeled UTF-8 Chinese tags while keeping Western text', () => {
+    const gbk = [0xb7, 0xe7, 0xb8, 0xe8, 0xc7, 0xe0, 0xcc, 0xec]
+    expect(parseMusicTags(id3('TIT2', [0, ...gbk])).title).toBe('风歌青天')
+    expect(parseMusicTags(id3('TPE1', [0, 0xd6, 0xdc, 0xbd, 0xdc, 0xc2, 0xd7], 4)).artist).toBe('周杰伦')
+    expect(parseMusicTags(id3('TIT2', [0, ...new TextEncoder().encode('风歌青天')])).title).toBe('风歌青天')
+    expect(parseMusicTags(id3('TPE1', [0, ...[0x42, 0x6a, 0xf6, 0x72, 0x6b]])).artist).toBe('Björk')
+    expect(parseMusicTags(id3('TIT2', [0, 0x4e, 0x69, 0xf1, 0x6f, 0x20, 0x50, 0x65, 0xf1, 0x6f])).title).toBe('Niño Peño')
+    expect(parseMusicTags(id3('TIT2', [3, ...new TextEncoder().encode('你好')])).title).toBe('你好')
+    expect(parseMusicTags(id3('TIT2', [1, 0xff, 0xfe, 0x60, 0x4f, 0x7d, 0x59])).title).toBe('你好')
+  })
   it('reads ID3 text and ignores truncated frames', () => {
     const text = new TextEncoder().encode('\x03Song')
     const bytes = new Uint8Array(20 + text.length)

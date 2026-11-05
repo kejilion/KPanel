@@ -112,6 +112,19 @@ describe('music listening session', () => {
     await flushPromises()
     expect(player.state.current?.title).toBe('New title'); expect(player.state.lyrics).toBe(''); expect(audios).toHaveLength(2)
   })
+  it('keeps readable filenames when embedded tags are visibly corrupted', async () => {
+    const { player } = setup(vi.fn(async () => ({ title: 'ïèÇài', artist: 'ïÉæèÌÀ', album: 'bad\ufffd' })))
+    player.play({ ...track('风歌青天'), artist: '影视原声' })
+    await flushPromises()
+    expect(player.state.current?.title).toBe('风歌青天')
+    expect(player.state.current?.artist).toBe('影视原声')
+    expect(player.state.album).toBe('')
+  })
+  it('retains valid accented artists even with Chinese filenames', async () => {
+    const { player } = setup(vi.fn(async () => ({ title: '情歌', artist: 'Björk' })))
+    player.play({ ...track('情歌'), artist: '歌手' }); await flushPromises()
+    expect(player.state.current?.artist).toBe('Björk')
+  })
   it('uses embedded lyrics when the sidecar fails and clamps seek/volume', async () => {
     const { player, audios } = setup(vi.fn(async () => ({ lyrics: 'embedded' })), vi.fn(async () => { throw new Error('offline') }))
     player.play({ ...track('A'), lyrics: '/music/A.lrc' }); await flushPromises()

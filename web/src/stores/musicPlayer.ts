@@ -1,7 +1,7 @@
 import { computed, reactive } from 'vue'
 import { fileAPIForHost } from '@/lib/fileHostContext'
 import { MUSIC_LIMIT, trackKey, type Track } from '@/lib/music'
-import { readMusicTags } from '@/lib/musicTags'
+import { readMusicTags, readableMusicTag } from '@/lib/musicTags'
 
 type Repeat = 'off' | 'all' | 'one'
 interface PlayerDependencies {
@@ -107,8 +107,8 @@ export function createMusicPlayer(overrides: Partial<PlayerDependencies> = {}) {
     if (id !== sequence || !state.current) return
     clearTimeout(timer)
     const embedded = tags.status === 'fulfilled' ? tags.value : {}
-    state.current = { ...state.current, title: embedded.title || track.title, artist: embedded.artist || track.artist }
-    state.album = embedded.album || ''
+    state.current = { ...state.current, title: readableMusicTag(embedded.title, track.title), artist: readableMusicTag(embedded.artist, track.artist) }
+    state.album = readableMusicTag(embedded.album, '')
     if (embedded.picture) state.embeddedCover = URL.createObjectURL(embedded.picture)
     state.lyrics = ((sidecar.status === 'fulfilled' && sidecar.value) || embedded.lyrics || '').slice(0, 256 * 1024)
     state.lyricsFailed = Boolean(track.lyrics && sidecar.status === 'rejected' && !state.lyrics)
