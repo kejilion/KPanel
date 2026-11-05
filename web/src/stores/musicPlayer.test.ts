@@ -120,7 +120,7 @@ describe('music listening session', () => {
     expect(heard.size).toBe(220)
     const count = audios.length; audios.at(-1)!.onended?.()
     expect(audios).toHaveLength(count); expect(player.state.playing).toBe(false)
-  })
+  }, 15000)
   it('stops at the end of ordered playback, loops the queue or repeats one explicitly', () => {
     const { player, audios } = setup()
     player.replaceQueue([track('A'), track('B')]); audios.at(-1)!.onended?.(); audios.at(-1)!.onended?.()

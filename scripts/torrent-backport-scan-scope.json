@@ -12,7 +12,7 @@
     "Makefile": "f651d8ce2f10adc487118e1ccb476615347661922a8c8ef529f1b8013da5d53e"
   },
   "closureSha256": "1b96e36ad1f8dc23eff77c3387e7d9360c8f654b460ea2114ef37be7ca676b03",
-  "firstPartySourceSha256": "e262d1950371b296af48cca572ab928763968085a506eb9e4725a880b25127ea",
+  "firstPartySourceSha256": "92e24687c1095ed8f4eeca74c1b97584f97e03cc09358ee5c80caae8225ef158",
   "buildTargetHashEncoding": "UTF-8 with LF line endings",
   "closureEncoding": "SHA256 of JSON.stringify of ordered OS/architecture rows; packages sorted by import path; path, module and selected version; stdlib go1.27.3; main-module packages additionally bind relative sourceDirectory and sorted actual GoFiles.",
   "firstPartySourceEncoding": "SHA256 of JSON.stringify of all cmd/internal Go source path and SHA256 pairs sorted by relative path; contents normalized to UTF-8 LF. All actual main-module production GoFiles must be covered. Generated .pb.go and .proto files or symlinks require a new review.",
@@ -174,7 +174,9 @@
     "v130PreviewVersionEvidenceSha256": "5abecd6ff2e7f76252d9a55ac1e74b918018d064da4ef3d47e78bb47b4e51ef4",
     "v130PreviewVersionSummary": "Only internal/version/version.go literal changes among Go sources; Web-only product chain has no Go imports, module, closure or build-target changes. Source identity rebound; existing findings, dispositions, closure and expiry remain unchanged. Exact-candidate CI and L3 remain required.",
     "v130Rc2VersionEvidenceSha256": "6b23a06bc67471e1e0a7dd011f97532fcd0af1807b627bbb0c42272bc062774a",
-    "v130Rc2VersionSummary": "Relative to reviewed product candidate only internal/version/version.go version literal changes; no new imports, modules or build target changes. Existing product Go preference changes were qualified at f9d0150f. Existing findings, dispositions, closure and expiry unchanged; exact candidate CI and L3 required."
+    "v130Rc2VersionSummary": "Relative to reviewed product candidate only internal/version/version.go version literal changes; no new imports, modules or build target changes. Existing product Go preference changes were qualified at f9d0150f. Existing findings, dispositions, closure and expiry unchanged; exact candidate CI and L3 required.",
+    "v130Rc3VersionEvidenceSha256": "f71480b49b2a4a5a1521caf328557e83709904b5b418f5581f73a6787213e1ff",
+    "v130Rc3VersionSummary": "Only internal/version/version.go version literal changes among Go sources from rc.2; dependency closure and build targets unchanged. Existing source findings and expiry retained. Exact candidate CI and L3 required."
   },
   "findings": [
     {
