@@ -27,7 +27,7 @@ var (
 	authorizationFlag           = regexp.MustCompile(`(?i)(--?(?:proxy-)?authorization\s+)("(?:\\.|[^"\\])*"|'[^']*'|[^\r\n]+)`)
 	cookieHeader                = regexp.MustCompile(`(?i)\b(cookie|set-cookie)(\s*:\s*)[^\r\n]+`)
 	bearerSecret                = regexp.MustCompile(`(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+`)
-	basicSecret                 = regexp.MustCompile(`(?i)\bBasic\s+[A-Za-z0-9_+/=-]{8,}`)
+	basicSecret                 = regexp.MustCompile(`(?i)\bBasic\s+[A-Za-z0-9_+/=-]{4,}`)
 	openAISecret                = regexp.MustCompile(`(?i)\bsk-[A-Za-z0-9._~+/=-]{4,}`)
 	urlCredentials              = regexp.MustCompile(`([a-zA-Z][a-zA-Z0-9+.-]*://)[^/\s@]+@`)
 	urlQueryParameter           = regexp.MustCompile(`(?i)([?&]((?:[A-Za-z0-9_.-]|%[0-9a-f]{2})+)=)([^&#\s]*)`)

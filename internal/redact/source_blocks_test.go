@@ -11,8 +11,15 @@ func TestSourceBlocksKeepProjectionAndFailClosedOnAmbiguity(t *testing.T) {
 		"server {\n password=CONFIG_SECRET;\n listen 443;\n}\n",
 		"server {\n key: CONFIG_SECRET;\n}\n",
 		"server {\n auth: CONFIG_SECRET;\n}\n",
+		"server {\n _auth=CONFIG_SECRET;\n}\n",
+		"server {\n # _auth=CONFIG_SECRET\n listen 443;\n}\n",
+		"server {\n location / { proxy_set_header Authorization \"Basic dTpw\"; }\n}\n",
+		"server {\n location / { proxy_set_header X-Api-Key CONFIG_SECRET; }\n}\n",
 		"server auth=CONFIG_SECRET {\n listen 443;\n}\n",
+		"auth CONFIG_SECRET {\n listen 443;\n}\n",
 		"server {\n pass\\u0077ord=CONFIG_SECRET;\n}\n",
+		"server {\n location \\u0061uth {\n  value CONFIG_SECRET;\n }\n}\n",
+		"server {\n location / { password=CONFIG_SECRET; }\n}\n",
 		"server {\n value = \"{\\\"passw\\\\u006frd\\\":\\\"CONFIG_SECRET\\\"}\";\n}\n",
 		"server {\n false\n \"CONFIG_SECRET\"\n}\n",
 		"server {\n \"passw\\u006frd\": \"CONFIG_SECRET\"\n}\n",
@@ -23,10 +30,10 @@ func TestSourceBlocksKeepProjectionAndFailClosedOnAmbiguity(t *testing.T) {
 			t.Fatal(err)
 		}
 		projected, err := JSON(raw)
-		if err == nil && strings.Contains(string(projected), "CONFIG_SECRET") {
+		if err == nil && (strings.Contains(string(projected), "CONFIG_SECRET") || strings.Contains(string(projected), "dTpw")) {
 			t.Fatalf("secret leaked from %q: %s", content, projected)
 		}
-		if safe := Text(string(raw)); strings.Contains(safe, "CONFIG_SECRET") {
+		if safe := Text(string(raw)); strings.Contains(safe, "CONFIG_SECRET") || strings.Contains(safe, "dTpw") {
 			t.Fatalf("secret leaked by text projection: %s", safe)
 		}
 	}

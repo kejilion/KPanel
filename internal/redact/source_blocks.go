@@ -11,12 +11,18 @@ func sourceBlockHeaders(lines []string) map[int]bool {
 	depth := 0
 	for i, raw := range lines {
 		line := strings.TrimSpace(raw)
-		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "//") {
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "#") || strings.HasPrefix(line, "//") {
+			if strings.Contains(line, "\\") || sensitiveSourceFields(line) {
+				return nil
+			}
 			continue
 		}
 		if strings.HasSuffix(line, "{") {
 			header := strings.TrimSpace(strings.TrimSuffix(line, "{"))
-			if header == "" || strings.ContainsAny(header, "{}\"'\\[]=") || !sourceHeaderStart(header[0]) {
+			if header == "" || strings.ContainsAny(header, "{}\"'[]=") || !sourceHeaderStart(header[0]) || unsafeSourceEscapes(header) || sensitiveSourceFields(header) {
 				return nil
 			}
 			depth++
@@ -30,11 +36,7 @@ func sourceBlockHeaders(lines []string) map[int]bool {
 			}
 			continue
 		}
-		fields := strings.FieldsFunc(line, func(r rune) bool { return r == ':' || r == '=' || r == ' ' || r == '\t' })
-		if len(fields) > 0 && (strings.EqualFold(fields[0], "key") || strings.EqualFold(fields[0], "auth")) {
-			return nil
-		}
-		if depth == 0 || strings.ContainsAny(line, "{}\\") || strings.ContainsAny(line[:1], "\"'[{\\") || !(strings.HasSuffix(line, ";") || strings.HasSuffix(line, ")")) {
+		if depth == 0 || sensitiveSourceFields(line) || strings.Contains(line, "\\") || strings.Count(line, "{") != strings.Count(line, "}") || strings.ContainsAny(line[:1], "\"'[{\\") || !(strings.HasSuffix(line, ";") || strings.HasSuffix(line, ")") || strings.HasSuffix(line, "}")) {
 			return nil
 		}
 	}
@@ -42,6 +44,44 @@ func sourceBlockHeaders(lines []string) map[int]bool {
 		return nil
 	}
 	return headers
+}
+
+func sensitiveSourceFields(value string) bool {
+	count := 0
+	for len(value) > 0 {
+		value = strings.TrimLeft(value, ":= \t")
+		if value == "" {
+			break
+		}
+		count++
+		if count > maxProjectionEntries {
+			return true
+		}
+		end := strings.IndexAny(value, ":= \t")
+		if end < 0 {
+			end = len(value)
+		}
+		if secretNormalizedJSONKey(normalizedJSONKey(value[:end])) {
+			return true
+		}
+		value = value[end:]
+	}
+	return false
+}
+
+// Regex-style escapes of punctuation are common in source block headers. An
+// escaped letter or digit could conceal a credential name and stays strict.
+func unsafeSourceEscapes(value string) bool {
+	for i := 0; i < len(value); i++ {
+		if value[i] != '\\' {
+			continue
+		}
+		i++
+		if i == len(value) || !strings.ContainsRune("./$^+*?()|-", rune(value[i])) {
+			return true
+		}
+	}
+	return false
 }
 
 func sourceHeaderStart(c byte) bool {
