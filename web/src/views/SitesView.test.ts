@@ -76,6 +76,7 @@ interface SitesBindings {
     certificate: string
     privateKey: string
   }
+  accessDraft: Ref<{ enabled: boolean; path: string; username: string; password: string }>
   editorOpen: Ref<boolean>
   formValid: ComputedRef<boolean>
   submitSite: () => Promise<void>
@@ -153,6 +154,22 @@ afterEach(() => {
 
 describe('SitesView creation experience', () => {
   const runningJob: SiteInstallationProgress = { id: 'recovery-job', status: 'running', stage: 'installing', progress: 88, message: 'installing' }
+
+  it('forwards optional access credentials during creation', async () => {
+    const view = setupView()
+    view.capabilities.value = [{ id: 'sites.templates.install', enabled: true }, { id: 'sites.access-password.write', enabled: true }]
+    view.capabilitiesLoaded.value = true
+    view.form.type = 'static'
+    view.form.primaryDomain = 'secure.example.com'
+    expect(view.accessDraft.value.enabled).toBe(false)
+    view.accessDraft.value = { enabled: true, path: '/', username: 'alice', password: 'synthetic-secret' }
+    vi.mocked(api.sites.create).mockImplementationOnce(async (input) => {
+      expect(input.accessPassword).toEqual({ scope: 'server', path: undefined, username: 'alice', password: 'synthetic-secret' })
+      throw new ApiError('script unavailable', 422)
+    })
+    await view.submitSite()
+    expect(api.sites.create).toHaveBeenCalledOnce()
+  })
 
   it('submits FastAdmin as a shared script recipe without overriding its PHP version', async () => {
     const view = setupView()

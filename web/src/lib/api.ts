@@ -117,6 +117,9 @@ import type {
   SetupRequest,
   Site,
   SiteAppearance,
+  SiteAccessPasswordRule,
+  SiteAccessAccountInput,
+  SiteAccessRuleInput,
   SiteDeleteResult,
   SiteInput,
   SiteInstallationProgress,
@@ -2170,6 +2173,24 @@ export const api = {
       request<{ ok: boolean }>('/site-traffic/actions', { method: 'POST', body: { action } }),
   },
   sites: {
+    accessPasswords: async (id: string, signal?: AbortSignal): Promise<SiteAccessPasswordRule[]> => {
+      const result = normalizeList(await request<ApiList<SiteAccessPasswordRule> | SiteAccessPasswordRule[]>(
+        `/sites/${encodeURIComponent(id)}/access-passwords`, { signal },
+      ))
+      return result.items
+    },
+    updateAccessAccount: async (id: string, body: SiteAccessAccountInput): Promise<SiteAccessPasswordRule[]> => {
+      const result = normalizeList(await request<ApiList<SiteAccessPasswordRule> | SiteAccessPasswordRule[]>(
+        `/sites/${encodeURIComponent(id)}/access-passwords/accounts`, { method: 'POST', body },
+      ))
+      return result.items
+    },
+    updateAccessRule: async (id: string, body: SiteAccessRuleInput): Promise<SiteAccessPasswordRule[]> => {
+      const result = normalizeList(await request<ApiList<SiteAccessPasswordRule> | SiteAccessPasswordRule[]>(
+        `/sites/${encodeURIComponent(id)}/access-passwords/rules`, { method: 'POST', body },
+      ))
+      return result.items
+    },
     iconURL: (id: string): string =>
       buildUrl(`/sites/${encodeURIComponent(id)}/icon`),
     appearance: (id: string, signal?: AbortSignal): Promise<SiteAppearance> =>

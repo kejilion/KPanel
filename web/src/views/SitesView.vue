@@ -45,6 +45,8 @@ import ShortcutCommandTerminal from '@/components/terminal/ShortcutCommandTermin
 import PageHeader from '@/components/common/PageHeader.vue'
 import StatusBadge from '@/components/feedback/StatusBadge.vue'
 import SitesSectionTabs from '@/components/sites/SitesSectionTabs.vue'
+import SiteAccessPasswordRules from '@/components/sites/SiteAccessPasswordRules.vue'
+import SiteAccessPasswordCreate from '@/components/sites/SiteAccessPasswordCreate.vue'
 import SiteFavicon from '@/components/sites/SiteFavicon.vue'
 import SiteAppearanceName from '@/components/sites/SiteAppearanceName.vue'
 import SiteDeleteDialog from '@/components/sites/SiteDeleteDialog.vue'
@@ -324,6 +326,10 @@ const form = reactive({
   certificate: '',
   privateKey: '',
 })
+const accessDraft = ref({ enabled: false, path: '/', username: '', password: '' })
+const accessPasswordCapability = computed(() => capabilities.value.find((item) => item.id === 'sites.access-password.write'))
+const accessTemplateUnsupported = computed(() => form.type === 'redirect' || form.type === 'recipe' && ['bitwarden', 'halo'].includes(form.recipe))
+const canConfigureAccessPassword = computed(() => capabilitiesLoaded.value && accessPasswordCapability.value?.enabled === true && !panel.isReadOnly.value && !accessTemplateUnsupported.value)
 
 const certificateSite = ref<Site>()
 const replacement = reactive({ certificate: '', privateKey: '', error: '', submitting: false })
@@ -746,6 +752,13 @@ async function load(silent = false): Promise<void> {
   }
 }
 
+function accessRulesChanged(version: string): void {
+  const current = selectedSite.value
+  if (!current) return
+  selectedSite.value = { ...current, resourceVersion: version }
+  sites.value = sites.value.map((site) => site.id === current.id ? { ...site, resourceVersion: version } : site)
+}
+
 function openCreate(): void {
   if (installTaskActive.value && installProgress.value?.id) {
     editorOpen.value = true
@@ -770,6 +783,7 @@ function openCreate(): void {
   form.certificateMode = 'automatic'
   form.certificate = ''
   form.privateKey = ''
+  accessDraft.value = { enabled: false, path: '/', username: '', password: '' }
   formError.value = ''
   installProgress.value = undefined
   focusedInstallationID = ''
@@ -788,6 +802,7 @@ function closeEditor(): void {
       ? installProgress.value.domain || form.primaryDomain
       : ''
   editorOpen.value = false
+  accessDraft.value.password = ''
   showMoreTemplates.value = false
   if (completedDomain) void revealCreatedSite(completedDomain)
 }
@@ -941,6 +956,22 @@ async function submitSite(): Promise<void> {
     formError.value = customCertificateFormReason.value || '请检查域名和当前服务所需的配置。'
     return
   }
+	if (!editingSite.value && accessDraft.value.enabled && form.type === 'recipe' && ['bitwarden', 'halo'].includes(form.recipe)) {
+	  formError.value = '该模板会开放应用直连端口，暂不支持创建时设置访问密码。'
+	  return
+	}
+	if (!editingSite.value && accessDraft.value.enabled && form.type === 'redirect') {
+	  formError.value = '跳转站点的跳转发生在身份验证之前，暂不支持创建时设置访问密码。'
+	  return
+	}
+	if (!editingSite.value && accessDraft.value.enabled && textByteLength(accessDraft.value.password) > 256) {
+	  formError.value = '访问密码不能超过 256 字节。'
+	  return
+	}
+	if (!editingSite.value && accessDraft.value.enabled && (!canConfigureAccessPassword.value || !accessDraft.value.path.trim().startsWith('/') || !accessDraft.value.username.trim() || !accessDraft.value.password)) {
+	  formError.value = '请检查访问密码的路径、账号和密码。'
+	  return
+	}
   if (form.type === 'wordpress' && !canInstallWordPress.value) {
     formError.value = wordPressReason.value
     return
@@ -984,6 +1015,12 @@ async function submitSite(): Promise<void> {
     phpVersion: !scriptedTemplateCreate.value && form.type === 'php' ? form.phpVersion : undefined,
     certificate: useCustomCertificate.value ? form.certificate.trim() : undefined,
     privateKey: useCustomCertificate.value ? form.privateKey.trim() : undefined,
+    accessPassword: !editingSite.value && accessDraft.value.enabled ? {
+      scope: accessDraft.value.path.trim() === '/' ? 'server' : 'location',
+      path: accessDraft.value.path.trim() === '/' ? undefined : accessDraft.value.path.trim(),
+      username: accessDraft.value.username,
+      password: accessDraft.value.password,
+    } : undefined,
     enabled: true,
     expectedResourceVersion: editingSite.value?.resourceVersion,
   }
@@ -994,7 +1031,11 @@ async function submitSite(): Promise<void> {
       ? await api.sites.update(editingSite.value.id, input)
       : await api.sites.create(input, (progress) => {
           installProgress.value = progress
-          if (progress.id) void focusInstallationPanel()
+          if (progress.id) {
+            accessDraft.value.password = ''
+            if (input.accessPassword) input.accessPassword.password = ''
+            void focusInstallationPanel()
+          }
         })
     if (wasEditing) editorOpen.value = false
     toast.success(
@@ -1404,6 +1445,15 @@ onBeforeUnmount(() => {
           </button>
           <p v-if="!canReplaceCertificate">{{ certificateReplaceCapability?.reason || phrase('当前脚本尚不支持更换证书，请先更新配套脚本。') }}</p>
         </section>
+
+        <SiteAccessPasswordRules
+          :site-id="selectedSite.id"
+          :site-version="selectedSite.resourceVersion"
+          :allow-add="selectedSite.type !== 'redirect'"
+          :writable="capabilitiesLoaded && capabilities.some((item) => item.id === 'sites.access-password.write' && item.enabled) && !panel.isReadOnly.value"
+          :unavailable-reason="capabilitiesLoaded && !capabilities.some((item) => item.id === 'sites.access-password.write' && item.enabled) ? phrase('当前脚本不支持访问密码管理，请先更新配套脚本。') : ''"
+          @changed="accessRulesChanged"
+        />
 
         <section v-if="selectedSite.artifacts?.length" class="detail-section">
           <h3><FileCode2 :size="17" /> {{ phrase('实际配置与文件') }}</h3>
@@ -1819,6 +1869,12 @@ onBeforeUnmount(() => {
           </p>
           <small v-if="useCustomCertificate">{{ phrase('自有证书需在到期前手动更换，脚本不会自动续签。') }}</small>
         </fieldset>
+        <SiteAccessPasswordCreate
+          v-if="!editingSite"
+          v-model="accessDraft"
+          :writable="canConfigureAccessPassword"
+          :unavailable-reason="accessTemplateUnsupported ? phrase('该模板暂不支持创建时设置访问密码。') : phrase('当前脚本不支持访问密码管理，请先更新配套脚本。')"
+        />
         <small v-if="!editingSite" class="site-create-footnote">
           <ShieldCheck :size="14" />
           {{ phrase('建站任务在后台执行，关闭窗口不会中断。') }}

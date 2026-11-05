@@ -1621,6 +1621,37 @@ export interface SiteAppearance {
   name?: string
 }
 
+export interface SiteAccessPasswordRule {
+  id: string
+  path: string
+  modifier?: string
+  scope: 'server' | 'location'
+  realm: string
+  usernames: string[]
+  accountsReadable: boolean
+  resourceVersion: string
+}
+
+export interface SiteAccessAccountInput {
+  ruleId: string
+  resourceVersion: string
+  action: 'add' | 'update' | 'delete'
+  username: string
+  previousUsername?: string
+  password?: string
+}
+
+export interface SiteAccessRuleInput {
+  action: 'add' | 'delete'
+  resourceVersion: string
+  ruleId?: string
+  scope?: 'server' | 'location'
+  path?: string
+  modifier?: '' | '=' | '^~' | '~' | '~*'
+  username?: string
+  password?: string
+}
+
 export interface SiteInput {
   primaryDomain: string
   aliases?: string[]
@@ -1629,6 +1660,8 @@ export interface SiteInput {
   certificate?: string
   /** Unencrypted PEM key; replacement sends identity/version and no settings edits. */
   privateKey?: string
+
+  accessPassword?: { scope: 'server' | 'location'; path?: string; username: string; password: string }
   recipe?: 'discuz' | 'kodbox' | 'maccms' | 'dujiaoka' | 'flarum' | 'typecho' | 'linkstack' | 'fastadmin' | 'ai-prompt' | 'bitwarden' | 'halo'
   upstream?: string
   upstreams?: string[]

@@ -657,6 +657,7 @@ func (s *Server) capabilities(w http.ResponseWriter, r *http.Request) {
 		customCertificateErr  error
 		certificateReplaceErr error
 		certificateRenewErr   error
+		accessPasswordErr     error
 		siteDeleteErr         error
 		diagnosticErr         = errors.New("体检服务未配置")
 		environmentReadErr    = errors.New("LDNMP 环境读取服务未配置")
@@ -700,6 +701,7 @@ func (s *Server) capabilities(w http.ResponseWriter, r *http.Request) {
 		customCertificateErr = s.sitesManager.CustomCertificateWritable()
 		certificateReplaceErr = s.sitesManager.CertificateReplaceWritable()
 		certificateRenewErr = s.sitesManager.CertificateRenewWritable()
+		accessPasswordErr = s.sitesManager.AccessPasswordWritable()
 	}()
 	go func() {
 		defer checks.Done()
@@ -751,6 +753,7 @@ func (s *Server) capabilities(w http.ResponseWriter, r *http.Request) {
 		{ID: "sites.custom-certificate", Enabled: customCertificateErr == nil, Reason: reasonIf(customCertificateErr, "当前 kejilion.sh 不支持自定义证书协议"), Methods: []string{"POST"}},
 		{ID: "sites.certificate-renew", Enabled: certificateRenewErr == nil, Reason: reasonIf(certificateRenewErr, "当前 kejilion.sh 不支持手动申请证书协议"), Methods: []string{"POST"}},
 		{ID: "sites.certificate-replace", Enabled: certificateReplaceErr == nil, Reason: reasonIf(certificateReplaceErr, "当前 kejilion.sh 不支持更换证书协议"), Methods: []string{"PATCH"}},
+		{ID: "sites.access-password.write", Enabled: accessPasswordErr == nil, Reason: reasonIf(accessPasswordErr, "当前脚本不支持访问密码管理，请先更新配套脚本。"), Methods: []string{"POST"}},
 		{ID: "diagnostics.run", Enabled: diagnosticErr == nil, Reason: reasonIf(diagnosticErr, "请更新本机 kejilion.sh 以启用体检协议"), Methods: []string{"GET", "POST"}},
 		{ID: "files.read", Enabled: fileErr == nil, Reason: reasonIf(fileErr, "宿主机文件根目录不可用"), Methods: []string{"GET"}},
 		{ID: "files.write", Enabled: fileErr == nil, Reason: reasonIf(fileErr, "宿主机文件根目录不可用"), Methods: []string{"POST", "PUT"}},
@@ -1094,7 +1097,7 @@ func (s *Server) siteCollection(w http.ResponseWriter, r *http.Request, requestI
 			writeJSON(w, http.StatusAccepted, job)
 			return
 		}
-		if input.HasCustomCertificate() {
+		if input.HasCustomCertificate() || input.AccessPassword != nil {
 			s.writeSiteError(w, requestID, fmt.Errorf(
 				"%w: custom certificates are only accepted when creating a script-backed website",
 				sites.ErrUnprocessable,
@@ -1223,6 +1226,70 @@ func (s *Server) siteInstallation(w http.ResponseWriter, r *http.Request, reques
 func (s *Server) siteOperation(w http.ResponseWriter, r *http.Request, requestID string) {
 	rest := strings.TrimPrefix(r.URL.Path, "/v1/sites/")
 	parts := strings.Split(rest, "/")
+	if len(parts) == 3 && parts[1] == "access-passwords" && parts[2] == "rules" {
+		if r.URL.RawPath != "" || r.URL.RawQuery != "" || !validSiteID(parts[0]) {
+			writeProblem(w, requestID, http.StatusNotFound, "not_found", "资源不存在", "")
+			return
+		}
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", http.MethodPost)
+			writeProblem(w, requestID, http.StatusMethodNotAllowed, "method_not_allowed", "请求方法不允许", "")
+			return
+		}
+		var input sites.AccessPasswordRuleInput
+		if err := decodeJSON(w, r, &input); err != nil {
+			writeProblem(w, requestID, http.StatusBadRequest, "invalid_request", "请求格式无效", "")
+			return
+		}
+		rules, err := s.sitesManager.EditAccessPasswordRule(r.Context(), parts[0], input)
+		if err != nil {
+			s.writeSiteError(w, requestID, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, contract.PageResult[sites.SiteAccessPasswordRule]{Items: rules})
+		return
+	}
+	if len(parts) == 3 && parts[1] == "access-passwords" && parts[2] == "accounts" {
+		if r.URL.RawPath != "" || r.URL.RawQuery != "" || !validSiteID(parts[0]) {
+			writeProblem(w, requestID, http.StatusNotFound, "not_found", "资源不存在", "")
+			return
+		}
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", http.MethodPost)
+			writeProblem(w, requestID, http.StatusMethodNotAllowed, "method_not_allowed", "请求方法不允许", "")
+			return
+		}
+		var input sites.AccessPasswordAccountInput
+		if err := decodeJSON(w, r, &input); err != nil {
+			writeProblem(w, requestID, http.StatusBadRequest, "invalid_request", "请求格式无效", "")
+			return
+		}
+		rules, err := s.sitesManager.EditAccessPasswordAccount(r.Context(), parts[0], input)
+		if err != nil {
+			s.writeSiteError(w, requestID, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, contract.PageResult[sites.SiteAccessPasswordRule]{Items: rules})
+		return
+	}
+	if len(parts) == 2 && parts[1] == "access-passwords" {
+		if r.URL.RawPath != "" || r.URL.RawQuery != "" || !validSiteID(parts[0]) {
+			writeProblem(w, requestID, http.StatusNotFound, "not_found", "资源不存在", "")
+			return
+		}
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", http.MethodGet)
+			writeProblem(w, requestID, http.StatusMethodNotAllowed, "method_not_allowed", "请求方法不允许", "")
+			return
+		}
+		rules, err := s.sitesManager.AccessPasswordRules(parts[0])
+		if err != nil {
+			s.writeSiteError(w, requestID, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, contract.PageResult[sites.SiteAccessPasswordRule]{Items: rules})
+		return
+	}
 	if len(parts) == 2 && parts[1] == "appearance" {
 		if r.URL.RawPath != "" || r.URL.RawQuery != "" {
 			writeProblem(w, requestID, http.StatusBadRequest, "invalid_site_appearance_request", "网站外观信息 URL 无效", "")
@@ -1312,6 +1379,10 @@ func (s *Server) siteOperation(w http.ResponseWriter, r *http.Request, requestID
 	var input sites.ScriptSiteInput
 	if err := decodeJSON(w, r, &input); err != nil {
 		writeProblem(w, requestID, http.StatusBadRequest, "invalid_request", "请求格式无效", "")
+		return
+	}
+	if input.AccessPassword != nil {
+		s.writeSiteError(w, requestID, fmt.Errorf("%w: manage access passwords separately from site settings", sites.ErrUnprocessable))
 		return
 	}
 	var result contract.SiteSummary

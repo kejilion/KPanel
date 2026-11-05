@@ -588,6 +588,12 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 	case isLocalAppRequest(r.URL.Path):
 		s.handleLocalApps(w, r)
 	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/v1/sites/") &&
+		strings.HasSuffix(r.URL.Path, "/access-passwords/rules"):
+		s.handleSiteAccessPasswordRule(w, r)
+	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/v1/sites/") &&
+		strings.HasSuffix(r.URL.Path, "/access-passwords/accounts"):
+		s.handleSiteAccessPasswordAccount(w, r)
+	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/v1/sites/") &&
 		strings.HasSuffix(r.URL.Path, "/certificate-renewal"):
 		s.handleSiteCertificateRenew(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/sites":
@@ -1467,8 +1473,8 @@ func allowedAgentPath(publicPath string) (string, bool) {
 	if strings.HasPrefix(publicPath, sitePrefix) {
 		rest := strings.TrimPrefix(publicPath, sitePrefix)
 		parts := strings.Split(rest, "/")
-		if len(parts) == 2 && siteIDPattern.MatchString(parts[0]) && parts[1] == "appearance" {
-			return "/v1/sites/" + parts[0] + "/appearance", true
+		if len(parts) == 2 && siteIDPattern.MatchString(parts[0]) && (parts[1] == "appearance" || parts[1] == "access-passwords") {
+			return "/v1/sites/" + parts[0] + "/" + parts[1], true
 		}
 	}
 	const appJobPrefix = "/api/v1/app-jobs/"

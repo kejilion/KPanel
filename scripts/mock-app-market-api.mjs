@@ -15,6 +15,7 @@ import { mockOffers } from './mock-offers.mjs'
 import { handleMockSystemServices } from './mock-system-services.mjs'
 import { mockTutorials } from './mock-tutorials.mjs'
 import { mockArchiveFiles, mockArchiveZIP } from './mock-archive-download.mjs'
+import { handleMockSiteAccess, mockCreatedSiteAccess } from './mock-site-access.mjs'
 import { readFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -2174,6 +2175,7 @@ createServer(async (request, response) => {
       allowedActions: ['update', 'delete'],
     }
     mockCreatedSites.push(site)
+    mockCreatedSiteAccess(site.id, body.accessPassword)
     send(response, 201, site)
     return
   }
@@ -3076,6 +3078,7 @@ createServer(async (request, response) => {
     send(response, 200, materializeSystemLogEntries(url))
     return
   }
+  if (await handleMockSiteAccess(request, response, url, readJSON, send)) return
   if (request.method === 'GET' && url.pathname === '/api/v1/sites') {
     send(response, 200, {
       items: [...mockCreatedSites, ...(domainSiteDeleted ? [] : [
@@ -3562,6 +3565,7 @@ createServer(async (request, response) => {
         { id: 'sites.proxy.install', enabled: true, methods: ['POST'] },
         { id: 'sites.recipes.install', enabled: true, methods: ['POST'] },
         { id: 'sites.templates.install', enabled: true, methods: ['POST'] },
+        { id: 'sites.access-password.write', enabled: true, methods: ['POST'] },
         { id: 'sites.custom-certificate', enabled: true, methods: ['POST'] },
         { id: 'sites.certificate-replace', enabled: true, methods: ['PATCH'] },
         { id: 'sites.delete', enabled: true, methods: ['DELETE'] },
