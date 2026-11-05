@@ -30,7 +30,11 @@ func sourceBlockHeaders(lines []string) map[int]bool {
 			}
 			continue
 		}
-		if depth == 0 || strings.ContainsAny(line, "{}") || strings.ContainsAny(line[:1], "\"'[{\\") || !(strings.HasSuffix(line, ";") || strings.HasSuffix(line, ")")) {
+		fields := strings.FieldsFunc(line, func(r rune) bool { return r == ':' || r == '=' || r == ' ' || r == '\t' })
+		if len(fields) > 0 && (strings.EqualFold(fields[0], "key") || strings.EqualFold(fields[0], "auth")) {
+			return nil
+		}
+		if depth == 0 || strings.ContainsAny(line, "{}\\") || strings.ContainsAny(line[:1], "\"'[{\\") || !(strings.HasSuffix(line, ";") || strings.HasSuffix(line, ")")) {
 			return nil
 		}
 	}

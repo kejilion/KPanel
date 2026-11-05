@@ -422,6 +422,12 @@ func looksLikeJSON(value string) bool {
 	if value[0] != '[' {
 		return false
 	}
+	if end := strings.IndexByte(value, ']'); end > 1 {
+		switch strings.ToLower(value[1:end]) {
+		case "notice", "trace", "debug", "info", "warn", "warning", "error", "err", "critical", "crit", "fatal", "alert", "emerg", "panic":
+			return false
+		}
+	}
 	// Bracketed log prefixes such as [INFO] are ordinary text. An array starts
 	// with a JSON value token; malformed array-shaped data is fail closed.
 	tail := strings.TrimSpace(value[1:])

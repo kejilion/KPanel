@@ -9,6 +9,9 @@ import (
 func TestSourceBlocksKeepProjectionAndFailClosedOnAmbiguity(t *testing.T) {
 	for _, content := range []string{
 		"server {\n password=CONFIG_SECRET;\n listen 443;\n}\n",
+		"server {\n key: CONFIG_SECRET;\n}\n",
+		"server {\n auth: CONFIG_SECRET;\n}\n",
+		"server {\n pass\\u0077ord=CONFIG_SECRET;\n}\n",
 		"server {\n value = \"{\\\"passw\\\\u006frd\\\":\\\"CONFIG_SECRET\\\"}\";\n}\n",
 		"server {\n false\n \"CONFIG_SECRET\"\n}\n",
 		"server {\n \"passw\\u006frd\": \"CONFIG_SECRET\"\n}\n",

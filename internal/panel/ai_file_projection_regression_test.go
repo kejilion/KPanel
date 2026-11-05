@@ -29,7 +29,7 @@ func TestAIFileProjectionOrdinarySource(t *testing.T) {
 	cases := map[string]string{
 		"go":         "func main() {\n    println(\"hello\")\n}\n",
 		"nginx":      "server {\n    listen 80;\n}\n",
-		"nginx_tls":  "server {\n    listen 443 ssl;\n    server_name example.test;\n    ssl_certificate /home/web/cert/example.test/fullchain.pem;\n    ssl_certificate_key /home/web/cert/example.test/privkey.pem;\n    location / {\n        proxy_pass http://127.0.0.1:8080;\n    }\n}\n",
+		"nginx_tls":  "server {\n    listen 443 ssl;\n    server_name example.test;\n    ssl_certificate /etc/nginx/certs/example.test_cert.pem;\n    ssl_certificate_key /etc/nginx/certs/example.test_key.pem;\n    location / {\n        proxy_pass http://127.0.0.1:8080;\n    }\n}\n",
 		"javascript": "function hello() {\n    return 42;\n}\n",
 	}
 	for name, content := range cases {
@@ -61,7 +61,7 @@ func TestAIFileProjectionRejectsMalformedSecret(t *testing.T) {
 }
 
 func TestApprovedAIReadProjectsNginxTLSConfig(t *testing.T) {
-	content := "server {\n    listen 443 ssl;\n    server_name example.test;\n    ssl_certificate /home/web/cert/example.test/fullchain.pem;\n    ssl_certificate_key /home/web/cert/example.test/privkey.pem;\n}\n"
+	content := "server {\n    listen 443 ssl;\n    server_name example.test;\n    ssl_certificate /etc/nginx/certs/example.test_cert.pem;\n    ssl_certificate_key /etc/nginx/certs/example.test_key.pem;\n}\n"
 	body, err := json.Marshal(map[string]any{"path": "/home/web/conf.d/example.test.conf", "content": content, "sizeBytes": len(content), "resourceVersion": "sha256:test"})
 	if err != nil {
 		t.Fatal(err)
@@ -78,7 +78,20 @@ func TestApprovedAIReadProjectsNginxTLSConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("approved read failed: %v", err)
 	}
-	if !strings.Contains(result, "ssl_certificate") || !strings.Contains(result, "fullchain.pem") {
+	if !strings.Contains(result, "ssl_certificate") || !strings.Contains(result, "example.test_cert.pem") {
 		t.Fatalf("certificate path missing: %s", result)
+	}
+}
+
+func TestApprovedAITailProjectsNginxNoticeLog(t *testing.T) {
+	content := "2026/11/05 20:43:00 [notice] 42#42: signal process started\n"
+	body, _ := json.Marshal(map[string]any{"path": "/home/web/log/nginx/error.log", "content": content})
+	server, _ := newTestServer(t)
+	server.agent = &stubAgent{response: AgentResponse{StatusCode: http.StatusOK, Body: body}}
+	tools := &panelAITools{server: server}
+	args := json.RawMessage(`{"path":"/home/web/log/nginx/error.log"}`)
+	result, err := tools.Execute(context.Background(), ai.ToolExecutionContext{UserID: "admin", Approved: true}, "host_file_tail", args)
+	if err != nil || !strings.Contains(result, "signal process started") {
+		t.Fatalf("approved log tail result=%q err=%v", result, err)
 	}
 }
