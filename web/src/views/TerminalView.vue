@@ -49,6 +49,7 @@ interface OpenTerminal {
   state: 'pending' | 'connecting' | 'connected' | 'reconnecting' | 'finished'
   closing?: boolean
   closeFailed?: boolean
+  canDetach?: boolean
   launchUncertain?: boolean
 }
 
@@ -160,10 +161,10 @@ async function performLoadHosts(): Promise<void> {
       const retained = await api.terminals.list(request.signal)
       if (request.signal.aborted || controller !== request) return
       for (const session of retained.items) {
-        if (!session.retained || sessions.value.some(item => item.id === session.sessionId)) continue
+        if ((!session.retained && !session.closeRequested) || sessions.value.some(item => item.id === session.sessionId)) continue
         sessions.value.push({ id: session.sessionId, hostId: session.hostId,
           hostName: names.get(session.hostId) || session.hostId, title: session.title,
-          retained: true, ordinal: nextOrdinal(session.hostId), offset: 0,
+          retained: session.retained, canDetach: !session.shortcutId && !session.purpose, ordinal: nextOrdinal(session.hostId), offset: 0,
           state: 'connecting', closeFailed: session.closeRequested, launchUncertain: session.launchUncertain })
       }
       activeSessionId.value = sessions.value[0]?.id || ''
@@ -232,7 +233,7 @@ async function openSession(host: ClusterHost, retained = true): Promise<void> {
       }
       return
     }
-	const item: OpenTerminal = { id: opened.sessionId, hostId: host.id, hostName: host.name, retained: opened.retained, ordinal: nextOrdinal(host.id), offset: opened.offset, state: 'connecting' }
+	const item: OpenTerminal = { id: opened.sessionId, hostId: host.id, hostName: host.name, retained: opened.retained, canDetach: true, ordinal: nextOrdinal(host.id), offset: opened.offset, state: 'connecting' }
     sessions.value.push(item)
     activeSessionId.value = item.id
     void nextTick(() => {
@@ -264,7 +265,12 @@ async function closeSession(id: string): Promise<boolean> {
     }
     removeSession(id)
     return true
-  } catch {
+  } catch (reason) {
+    if (reason instanceof ApiError && reason.code === 'terminal_not_found') {
+      removeSession(id)
+      toast.show(t('terminal.detachMissingNotice'))
+      return true
+    }
     item.closeFailed = true
     return false
   } finally {
@@ -282,8 +288,14 @@ async function detachSession(id: string): Promise<void> {
     terminalRefs.get(id)?.markDetached?.()
     removeSession(id)
     toast.show(t('terminal.detachedNotice'))
-  } catch {
-    toast.danger(t('terminal.detachFailed'))
+  } catch (reason) {
+    if (reason instanceof ApiError && reason.code === 'terminal_not_found') {
+      terminalRefs.get(id)?.markDetached?.()
+      removeSession(id)
+      toast.show(t('terminal.detachMissingNotice'))
+    } else {
+      toast.danger(t('terminal.detachFailed'))
+    }
   } finally {
     item.closing = false
   }
@@ -565,7 +577,7 @@ onBeforeUnmount(() => {
     <div v-for="item in sessions.filter((session) => session.closeFailed)" :key="item.id" class="terminal-alert" role="alert">
       <strong>{{ sessionLabel(item) }}</strong>：<span>关闭未确认，会话已保留。请检查目标主机连接后重试。</span>
       <button type="button" :disabled="item.closing" @click="closeSession(item.id)">重试关闭</button>
-      <button type="button" :disabled="item.closing" @click="detachSession(item.id)">{{ t('terminal.detachTab') }}</button>
+      <button v-if="item.canDetach" type="button" :disabled="item.closing" @click="detachSession(item.id)">{{ t('terminal.detachTab') }}</button>
     </div>
 
     <section

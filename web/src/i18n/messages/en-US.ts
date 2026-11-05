@@ -651,6 +651,7 @@ export const enUSMessages = {
   'terminal.detachTab': 'Remove local tab',
   'terminal.detachConfirm': 'The remote terminal may still be running. Removing this tab keeps a cleanup record; the panel will retry closing it when a terminal is opened. Remove the tab?',
   'terminal.detachedNotice': 'The local tab was removed; remote termination is still unconfirmed.',
+  'terminal.detachMissingNotice': 'The panel no longer has this session; the local tab was removed. The remote terminal state is unknown.',
   'terminal.detachFailed': 'Could not remove the tab. The pending cleanup limit may have been reached; reconnect the host and retry closing.',
   'terminal.emptyTitle': 'Select a host and open a terminal',
   'terminal.emptyDescription': 'Choose an available host from the connection list to start an encrypted terminal session.',

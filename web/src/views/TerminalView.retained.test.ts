@@ -101,6 +101,17 @@ describe('retained terminal restoration', () => {
     expect(wrapper.text()).toContain('Saved command')
     expect(wrapper.findComponent({ name: 'HostTerminalStub' }).props()).toMatchObject({ sessionId: 'original', retained: true, initialOffset: 0 })
     expect(wrapper.text()).toContain('会话已保留')
+    expect(wrapper.get('[role="alert"]').text()).not.toContain('移除本地页签')
+    wrapper.unmount()
+  })
+  it('restores a temporary session whose close was not confirmed', async () => {
+    mocks.list.mockResolvedValue({ items: [{ sessionId: 'pending-temporary', hostId: 'local', retained: false, closeRequested: true }] })
+    const wrapper = mount(TerminalView)
+    await flushPromises()
+    expect(mocks.open).not.toHaveBeenCalled()
+    expect(wrapper.findAll('.terminal-tab')).toHaveLength(1)
+    expect(wrapper.findComponent({ name: 'HostTerminalStub' }).props()).toMatchObject({ sessionId: 'pending-temporary', retained: false })
+    expect(wrapper.get('[role="alert"]').text()).toContain('移除本地页签')
     wrapper.unmount()
   })
   it('blocks automatic and manual opens after lookup failure until restoration succeeds', async () => {

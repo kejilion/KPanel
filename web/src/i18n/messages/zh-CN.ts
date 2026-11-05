@@ -650,6 +650,7 @@ export const zhCNMessages = {
   'terminal.detachTab': '移除本地页签',
   'terminal.detachConfirm': '无法确认远端终端已关闭，命令可能仍在运行。移除本地页签后，面板会保留待清理记录，并在新建终端时重试关闭。确定移除吗？',
   'terminal.detachedNotice': '本地页签已移除；远端终端是否关闭仍未确认。',
+  'terminal.detachMissingNotice': '面板已无该会话记录，本地页签已移除；远端终端状态未知。',
   'terminal.detachFailed': '无法移除页签，待清理会话可能已达上限，请恢复主机连接后重试关闭。',
   'terminal.emptyTitle': '选择主机，打开终端',
   'terminal.emptyDescription': '从连接列表选择一台可用主机，开始加密终端会话。',

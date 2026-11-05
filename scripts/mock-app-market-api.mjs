@@ -3128,7 +3128,7 @@ createServer(async (request, response) => {
     return
   }
   if (request.method === 'GET' && url.pathname === '/api/v1/terminal-sessions') {
-    send(response, 200, { items: [...mockTerminalSessions.values()].filter(session => !session.detached && session.metadata?.retained && !session.exitedAt).map(session => session.metadata) })
+    send(response, 200, { items: [...mockTerminalSessions.values()].filter(session => !session.detached && (session.metadata?.retained || session.metadata?.closeRequested) && !session.exitedAt).map(session => session.metadata) })
     return
   }
   if (request.method === 'POST' && url.pathname === '/api/v1/terminal-sessions') {

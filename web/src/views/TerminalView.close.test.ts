@@ -4,6 +4,7 @@ import { defineComponent } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { desktopWindowCloseGuardKey } from '@/lib/desktopRouteKeys'
 import TerminalView from './TerminalView.vue'
+import { ApiError } from '@/lib/api'
 
 const mocks = vi.hoisted(() => ({ close: vi.fn(), detach: vi.fn(), markDetached: vi.fn(), hosts: vi.fn(), open: vi.fn(), list: vi.fn() }))
 let closeGuard: () => boolean | Promise<boolean>
@@ -18,7 +19,7 @@ vi.mock('vue-router', async (importOriginal) => ({
   useRoute: () => ({ query: {} }),
 }))
 
-vi.mock('@/lib/api', () => ({ api: { cluster: { hosts: mocks.hosts }, terminals: { batches: () => Promise.resolve({ available: true, items: [] }), list: mocks.list, open: mocks.open, detach: mocks.detach } }, ApiError: class extends Error {} }))
+vi.mock('@/lib/api', () => ({ api: { cluster: { hosts: mocks.hosts }, terminals: { batches: () => Promise.resolve({ available: true, items: [] }), list: mocks.list, open: mocks.open, detach: mocks.detach } }, ApiError: class extends Error { constructor(message: string, public status: number, public code: string) { super(message) } } }))
 vi.mock('@/components/terminal/HostTerminal.vue', () => ({ default: defineComponent({
   props: ['sessionId', 'hostName', 'initialOffset'],
   setup(_, { expose }) {
@@ -54,6 +55,33 @@ describe('explicit terminal tab close', () => {
     expect(mocks.detach).toHaveBeenCalledWith('same-session')
     expect(mocks.markDetached).toHaveBeenCalledOnce()
     expect(wrapper.findAll('.terminal-tab')).toHaveLength(0)
+    wrapper.unmount()
+  })
+
+  it.each([
+    ['terminal_not_found', 0],
+    ['route_not_found', 1],
+  ])('only dismisses a missing session for the specific error %s', async (code, remaining) => {
+    mocks.close.mockRejectedValue(new Error('offline'))
+    mocks.detach.mockRejectedValue(new ApiError('missing', 404, code))
+    const wrapper = create()
+    await flushPromises()
+    await wrapper.get('[aria-label="关闭终端"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[role="alert"] button:last-child').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('.terminal-tab')).toHaveLength(remaining)
+    expect(mocks.markDetached).toHaveBeenCalledTimes(remaining === 0 ? 1 : 0)
+    wrapper.unmount()
+  })
+
+  it.each([['terminal_not_found', 0], ['route_not_found', 1]])('handles close error %s without mistaking generic 404 for a missing session', async (code, remaining) => {
+    mocks.close.mockRejectedValue(new ApiError('missing', 404, code))
+    const wrapper = create()
+    await flushPromises()
+    await wrapper.get('[aria-label="关闭终端"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('.terminal-tab')).toHaveLength(remaining)
     wrapper.unmount()
   })
 
