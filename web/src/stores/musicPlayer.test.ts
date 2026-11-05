@@ -26,7 +26,7 @@ function setup(tags = vi.fn(async (): Promise<MusicTags> => ({})), text = vi.fn(
   players.push(player)
   return { player, audios, tags, text }
 }
-afterEach(() => { players.splice(0).forEach(player => player.stop()); vi.restoreAllMocks() })
+afterEach(() => { players.splice(0).forEach(player => player.stop()); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 describe('music listening session', () => {
   it('retries a failed restored track at its saved position', () => {
     const { player, audios } = setup()
@@ -53,6 +53,40 @@ describe('music listening session', () => {
     expect(player.state.restored).toBe(false)
     expect(player.state.repeat).toBe('all')
     expect(player.state.shuffle).toBe(true)
+  })
+  it('connects system media controls to playback, tracks and the progress bar', () => {
+    const handlers = new Map<MediaSessionAction, MediaSessionActionHandler | null>()
+    const session = { setActionHandler: vi.fn((action: MediaSessionAction, handler: MediaSessionActionHandler | null) => handlers.set(action, handler)), setPositionState: vi.fn(), playbackState: 'none' }
+    vi.stubGlobal('navigator', { mediaSession: session })
+    const { player, audios } = setup()
+    player.replaceQueue([track('A'), track('B')])
+    expect(handlers.get('seekbackward')).toBeNull()
+    expect(handlers.get('seekforward')).toBeNull()
+    audios[0]!.onloadedmetadata?.()
+    handlers.get('seekto')?.({ action: 'seekto', seekTime: 25 })
+    expect(player.state.position).toBe(25)
+    handlers.get('pause')?.({ action: 'pause' })
+    expect(player.state.playing).toBe(false)
+    handlers.get('play')?.({ action: 'play' })
+    expect(player.state.playing).toBe(true)
+    handlers.get('nexttrack')?.({ action: 'nexttrack' })
+    expect(player.state.current?.title).toBe('B')
+    handlers.get('previoustrack')?.({ action: 'previoustrack' })
+    expect(player.state.current?.title).toBe('A')
+    player.stop()
+    expect(handlers.get('nexttrack')).toBeNull()
+    expect(handlers.get('previoustrack')).toBeNull()
+  })
+  it('still registers track controls if the browser does not support skip actions', () => {
+    const setActionHandler = vi.fn((action: MediaSessionAction) => {
+      if (action === 'seekbackward' || action === 'seekforward') throw new DOMException('Unsupported', 'NotSupportedError')
+    })
+    vi.stubGlobal('navigator', { mediaSession: { setActionHandler } })
+    const { player } = setup()
+    player.replaceQueue([track('A'), track('B')])
+    expect(setActionHandler).toHaveBeenCalledWith('previoustrack', expect.any(Function))
+    expect(setActionHandler).toHaveBeenCalledWith('nexttrack', expect.any(Function))
+    expect(setActionHandler).toHaveBeenCalledWith('seekto', expect.any(Function))
   })
   it('keeps source host immutable when different hosts share a path', () => {
     const { player, audios } = setup()

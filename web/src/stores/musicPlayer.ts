@@ -62,11 +62,15 @@ export function createMusicPlayer(overrides: Partial<PlayerDependencies> = {}) {
   function bindSession() {
     const session = mediaSession()
     if (!session) return
+    // Music controls should offer track navigation; clear skip handlers left by
+    // other media sessions so systems can prefer previous/next track controls.
+    for (const action of ['seekbackward', 'seekforward'] as MediaSessionAction[]) {
+      try { session.setActionHandler(action, null) } catch { /* Unsupported media key. */ }
+    }
     const handlers: Partial<Record<MediaSessionAction, MediaSessionActionHandler>> = {
       play: () => resume(), pause, nexttrack: () => next(), previoustrack: previous,
       seekto: detail => { if (detail.seekTime !== undefined) seek(detail.seekTime) },
-      seekbackward: detail => seek(state.position - (detail.seekOffset || 10)),
-      seekforward: detail => seek(state.position + (detail.seekOffset || 10)), stop,
+      stop,
     }
     for (const [action, handler] of Object.entries(handlers)) {
       try { session.setActionHandler(action as MediaSessionAction, handler) } catch { /* Unsupported media key. */ }
