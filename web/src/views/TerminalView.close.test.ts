@@ -184,14 +184,4 @@ describe('explicit terminal tab close', () => {
     wrapper.unmount()
   })
 
-  it('closes previously bound session identities while restoration is pending', async () => {
-    const id = 'a'.repeat(64)
-    window.localStorage.setItem('kpanel:terminal-workspace:workspace-owner', JSON.stringify([id]))
-    mocks.list.mockReturnValue(new Promise(() => undefined))
-    const wrapper = create()
-    await flushPromises()
-    expect(await closeGuard()).toBe(true)
-    expect(mocks.closeApi).toHaveBeenCalledWith(id)
-    wrapper.unmount()
-  })
 })

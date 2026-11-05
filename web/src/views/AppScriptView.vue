@@ -38,12 +38,6 @@ const launchJobIDs = new Set<string>()
 
 const activeJobStorageKey = 'kpanel:active-app-job'
 const appID = computed(() => String(route.params.appId || ''))
-const restoredJobKey = `kpanel:app-script-job:${encodeURIComponent(owner)}:${encodeURIComponent(appID.value)}`
-let restoredJobID = ''
-try {
-  const value = window.localStorage.getItem(restoredJobKey) || ''
-  if (owner && /^[a-zA-Z0-9_-]{1,128}$/.test(value)) restoredJobID = value
-} catch { /* best effort */ }
 function isActiveJob(value?: AppInstallJob): boolean {
   return value?.status === 'queued' || value?.status === 'running'
 }
@@ -61,7 +55,6 @@ function isInteractiveJob(value: unknown): value is AppInstallJob {
 function rememberJob(id: string): void {
   try {
     window.localStorage.setItem(activeJobStorageKey, id)
-    if (owner) window.localStorage.setItem(restoredJobKey, id)
   } catch {
     // The terminal remains usable when browser storage is unavailable.
   }
@@ -126,7 +119,7 @@ async function load(allowLaunch = false): Promise<void> {
     const existing = await existingInteractiveJob(target.id, requestController.signal)
     if (controller !== requestController || userClosed) return
     job.value = existing || (allowLaunch && !userClosed && currentOwner() === owner ? await launchManage(target) : undefined)
-    if (job.value) rememberJob(job.value.id)
+    if (job.value && !userClosed && currentOwner() === owner) rememberJob(job.value.id)
     if (userClosed && isActiveJob(job.value)) requestQuietAppJobStop(job.value!.id, closingOwner, currentOwner)
   } catch (reason) {
     if (reason instanceof DOMException && reason.name === 'AbortError') return
@@ -149,7 +142,6 @@ async function stopActiveJobBeforeClose(): Promise<boolean> {
   closingOwner = owner
   if (!launchJobID) controller?.abort()
   for (const id of launchJobIDs) requestQuietAppJobStop(id, closingOwner, currentOwner)
-  if (!job.value && restoredJobID) requestQuietAppJobStop(restoredJobID, closingOwner, currentOwner)
   const active = job.value
   if (!active || !isActiveJob(active)) return true
   requestQuietAppJobStop(active.id, closingOwner, currentOwner)

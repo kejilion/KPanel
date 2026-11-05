@@ -260,15 +260,6 @@ describe('dedicated desktop app script terminal', () => {
     wrapper.unmount()
   })
 
-  it('uses a previously bound job identity when the restoration request is still pending', async () => {
-    let guard: (() => boolean | Promise<boolean>) | undefined
-    window.localStorage.setItem(`kpanel:app-script-job:${mocks.owner.user.id}:openclaw`, 'previous-job')
-    mocks.jobs.mockReturnValueOnce(new Promise(() => undefined))
-    const wrapper = await mountView({ register: candidate => { guard = candidate; return vi.fn() } })
-    expect(await guard?.()).toBe(true)
-    expect(mocks.cancelJob).toHaveBeenCalledWith('previous-job', expect.any(AbortSignal))
-    wrapper.unmount()
-  })
 
   it('closes during an in-flight manage action and stops its returned task', async () => {
     let guard: (() => boolean | Promise<boolean>) | undefined
