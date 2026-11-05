@@ -182,10 +182,6 @@ export default [
     "Music navigation"
   ],
   [
-    "私人音乐收藏",
-    "YOUR COLLECTION"
-  ],
-  [
     "个文件夹",
     "folders"
   ],
