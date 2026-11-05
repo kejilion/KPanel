@@ -203,9 +203,9 @@ input:not([type=range]),select { border:1px solid var(--border); border-radius:v
 .music-track { display:flex; align-items:center; gap:12px; padding:12px 0; flex:1; min-width:0; text-align:start; }
 .music-track__number { width:24px; flex-shrink:0; display:flex; justify-content:center; color:var(--muted); font-size:12px; font-variant-numeric:tabular-nums; }
 .music-wave { display:inline-flex; align-items:end; justify-content:center; gap:2px; width:16px; height:16px; color:var(--music-accent); vertical-align:middle; }
-.music-wave i { width:3px; height:13px; border-radius:2px; background:currentColor; transform:scaleY(.35); transform-origin:bottom; }
-.music-wave.is-playing i { animation:music-wave 1s ease-in-out infinite alternate; }
-.music-wave.is-playing i:nth-child(2) { animation-delay:-.45s; } .music-wave.is-playing i:nth-child(3) { animation-delay:-.7s; }
+.music-wave i { width:3px; height:13px; border-radius:999px; background:currentColor; transform:scaleY(.35); transform-origin:bottom; }
+.music-wave.is-playing i { animation:music-wave calc(var(--motion-duration-ambient) * 2.4) ease-in-out infinite alternate; }
+.music-wave.is-playing i:nth-child(2) { animation-delay:calc(var(--motion-duration-ambient) * -1); } .music-wave.is-playing i:nth-child(3) { animation-delay:calc(var(--motion-duration-ambient) * -1.6); }
 @keyframes music-wave { from { transform:scaleY(.3); } to { transform:scaleY(1); } }
 @media (prefers-reduced-motion: reduce) { .music-wave.is-playing i { animation:none; transform:scaleY(.65); } }
 .active .music-track__number { color:var(--text); } .music-track__art { display:grid; place-items:center; width:44px; height:44px; flex-shrink:0; border-radius:var(--radius-sm); overflow:hidden; color:var(--music-accent); background:var(--music-tint); }
