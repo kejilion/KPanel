@@ -108,6 +108,14 @@ describe('HostTerminal command history', () => {
     expect(mocks.captured).toEqual(['ls \r'])
   })
 
+  it('sends an empty return using the composer and its Enter key', async () => {
+    const view = mountTerminal('host-a')
+    await flushPromises()
+    await view.get('.host-terminal__composer').trigger('submit')
+    await view.get('.host-terminal__composer input').trigger('keydown.enter')
+    expect(mocks.captured).toEqual(['\r', '\r'])
+  })
+
   it('sends mobile Ctrl+X immediately and preserves the draft', async () => {
     const view = mountTerminal('host-a')
     await flushPromises()

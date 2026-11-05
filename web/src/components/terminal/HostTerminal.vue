@@ -8,6 +8,7 @@ import { useTerminalController } from '@/composables/useTerminalController'
 import { useMobileTerminalCtrl } from '@/composables/useMobileTerminalCtrl'
 import { useI18n } from '@/i18n'
 import { isTouchPrimary } from '@/lib/touchFocus'
+import { terminalEnterShouldSubmit } from '@/lib/terminalInput'
 import { createTerminalCommandCapture, type TerminalCommandCapture } from '@/lib/terminalCommandCapture'
 import { useTerminalHistory } from '@/stores/terminalHistory'
 
@@ -37,7 +38,7 @@ const adapter = computed(() => hostTerminalAdapter(props.sessionId))
 const {
   terminal, state, pendingLine, canInput,
   focusTerminal, executeCommand, executePresentedCommand, scheduleResize, blockInput, queueInput,
-  containTerminalWheel, terminalTouchScroll, submitPendingLine, handlePendingLineEnter,
+  containTerminalWheel, terminalTouchScroll, submitPendingLine,
 } = useTerminalController({
   adapter: () => adapter.value, host, clipboardMenu,
   acceptedInput: (data, initialCommand) => {
@@ -87,6 +88,16 @@ function browseHistory(event: KeyboardEvent, step: 1 | -1): void {
   moveComposerCaretToEnd(false)
 }
 function editComposer(): void { historyIndex = -1 }
+function submitComposer(): void {
+  ctrlActive.value = false
+  if (pendingLine.value) submitPendingLine()
+  else queueInput('\r')
+}
+function composerEnter(event: KeyboardEvent): void {
+  if (!terminalEnterShouldSubmit(event)) return
+  event.preventDefault()
+  submitComposer()
+}
 const { ctrlActive, toggleCtrl, captureCtrlInput, startCtrlComposition, finishCtrlComposition } = useMobileTerminalCtrl(canInput, queueInput)
 function sendMobileTerminalKey(sequence: string): void {
   ctrlActive.value = false
@@ -183,7 +194,7 @@ defineExpose({ focusTerminal, executeCommand, executePresentedCommand, fillComma
         @click="toggleCtrl"
       >Ctrl{{ ctrlActive ? ' ✓' : '' }}</button>
     </div>
-    <form class="host-terminal__composer" @submit.prevent="ctrlActive = false; submitPendingLine()">
+    <form class="host-terminal__composer" @submit.prevent="submitComposer">
       <input
         ref="composerInput"
         v-model="pendingLine"
@@ -197,7 +208,7 @@ defineExpose({ focusTerminal, executeCommand, executePresentedCommand, fillComma
         @beforeinput="captureCtrlInput"
         @compositionstart="startCtrlComposition"
         @compositionend.capture="finishCtrlComposition"
-        @keydown.enter="ctrlActive = false; handlePendingLineEnter($event)"
+        @keydown.enter="composerEnter"
         @keydown.up="browseHistory($event, 1)"
         @keydown.down="browseHistory($event, -1)"
         @input="editComposer"
