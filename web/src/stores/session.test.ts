@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AuthStatus } from '@/types/api'
+import { watch } from 'vue'
 
 const mocks = vi.hoisted(() => ({
   status: vi.fn(), login: vi.fn(), logout: vi.fn(), reset: vi.fn(), stop: vi.fn(), apply: vi.fn(), cancel: vi.fn(),
@@ -27,6 +28,21 @@ const guest: AuthStatus = {
   loginAppearance: { theme: 'dark', colors: null, wallpaper: { url: '/wallpapers/kpanel-desktop-prism.webp', focusX: 500, focusY: 500, bright: false } },
 }
 const authenticated: AuthStatus = { setupRequired: false, authenticated: true, user: { id: 'admin', username: 'admin' }, appearance }
+
+it('stops preference syncing before an authentication failure tears down playback', async () => {
+  const session = useSession()
+  mocks.login.mockResolvedValue(authenticated)
+  await session.login({ username: 'admin', password: 'fixture-only' })
+  mocks.stopPreferences.mockClear()
+  let stoppedBeforeLogout = false
+  const unwatch = watch(() => session.state.authenticated, value => {
+    if (!value) stoppedBeforeLogout = mocks.stopPreferences.mock.calls.length > 0
+  }, { flush: 'sync' })
+  mocks.status.mockRejectedValue(new Error('offline'))
+  await session.refresh(true)
+  unwatch()
+  expect(stoppedBeforeLogout).toBe(true)
+})
 
 it('rechecks authentication after waiting for preferences so logout cannot enter the shell', async () => {
   let resolve!: () => void

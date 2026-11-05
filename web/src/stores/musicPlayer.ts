@@ -146,6 +146,7 @@ export function createMusicPlayer(overrides: Partial<PlayerDependencies> = {}) {
     state.repeat = repeat; state.shuffle = shuffle
     play(track, false, position, false)
   }
+  function retry() { if (state.current) play(state.current, false, state.position) }
   function replaceQueue(tracks: Track[], start?: Track) {
     state.queue = [...new Map(tracks.slice(0, MUSIC_LIMIT).map(track => [key(track), track])).values()]
     history = []; remaining = []; cycle.clear(); priority = ''
@@ -230,7 +231,7 @@ export function createMusicPlayer(overrides: Partial<PlayerDependencies> = {}) {
       }
     }
   }
-  return { state, currentIndex, cover, play, restore, choose, replaceQueue, enqueue, next, previous, toggle, pause, seek, setVolume, mute, remove, move, clearQueue, shuffle, stop }
+  return { state, currentIndex, cover, play, restore, retry, choose, replaceQueue, enqueue, next, previous, toggle, pause, seek, setVolume, mute, remove, move, clearQueue, shuffle, stop }
 }
 const player = createMusicPlayer()
 export function useMusicPlayer() { return player }

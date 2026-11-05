@@ -29,6 +29,7 @@ interface Sync {
   musicSeek?: () => void
   musicRefreshing?: Promise<void>
   musicRestoreSerial: number
+  lastMusicRestore?: MusicPlaybackPreference
 }
 let current: Sync | undefined
 const pendingKey = 'kpanel:preferences-pending:v1'
@@ -58,6 +59,9 @@ function watchMusic(sync: Sync): void {
     if (musicPlayback) changed(new CustomEvent('kpanel:preferences-changed', { detail: { musicPlayback } }))
   }
   sync.musicWatchers.push(watch([() => state.current?.entry.path, () => state.current?.hostId, () => state.playing, () => state.repeat, () => state.shuffle], update, { flush: 'sync' }))
+  sync.musicWatchers.push(watch(() => state.queue.map(track => `${track.hostId}\u0000${track.entry.path}`), () => {
+    if (current === sync && !sync.restoringMusic) sync.musicTouched = true
+  }, { flush: 'sync' }))
   sync.musicWatchers.push(watch(() => state.position, () => {
     if (!state.current || sync.restoringMusic) return
     if (state.playing && Date.now() - sync.lastMusicProgress >= 30000) update()
@@ -75,6 +79,7 @@ async function restoreMusic(sync: Sync, value: MusicPlaybackPreference | undefin
       sync.restoringMusic = true
       try { music.stop() } finally { sync.restoringMusic = false }
     }
+    sync.lastMusicRestore = value
     return
   }
   try {
@@ -83,7 +88,7 @@ async function restoreMusic(sync: Sync, value: MusicPlaybackPreference | undefin
     const track = tracksFromEntries([entry], value.hostId)[0]
     if (!track) return
     sync.restoringMusic = true
-    try { music.restore(track, value.position, value.repeat, value.shuffle) }
+    try { music.restore(track, value.position, value.repeat, value.shuffle); sync.lastMusicRestore = value }
     finally { sync.restoringMusic = false; sync.lastMusicProgress = Date.now() }
   } catch { /* The saved host or file may be offline; keep the checkpoint for retry. */ }
 }
@@ -97,7 +102,7 @@ function refreshMusic(sync: Sync): void {
       const server = await api.preferences.get(requestSignal(sync))
       if (current !== sync || sync.server !== previous || sync.saving || sync.musicTouched || sync.pending.musicPlayback) return
       sync.server = server
-      if (!music.state.current || !sameSection('musicPlayback', previous.musicPlayback, server.musicPlayback)) await restoreMusic(sync, parseMusicPlayback(server.musicPlayback))
+      if (!sameSection('musicPlayback', sync.lastMusicRestore, server.musicPlayback)) await restoreMusic(sync, parseMusicPlayback(server.musicPlayback))
     } catch { /* A later focus or login can retry without interrupting playback. */ }
     finally { sync.musicRefreshing = undefined }
   })()

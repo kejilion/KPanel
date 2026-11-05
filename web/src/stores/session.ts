@@ -56,8 +56,8 @@ async function refresh(force = false): Promise<void> {
       if (run !== generation) return
       cancelLoginWallpaper()
       state.appearance = undefined
-      state.authenticated = false
       stopPreferencesSync()
+      state.authenticated = false
       state.setupRequired = false
       state.user = undefined
       state.error = error

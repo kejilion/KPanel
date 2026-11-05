@@ -112,3 +112,26 @@ it('saves an explicit seek without waiting for the progress interval', async () 
   await vi.advanceTimersByTimeAsync(500)
   expect(mocks.update.mock.calls.at(-1)?.[0].musicPlayback.position).toBe(20)
 })
+
+it('retries a newer checkpoint after its file was temporarily unavailable', async () => {
+  await startPreferencesSync('admin'); await vi.advanceTimersByTimeAsync(0)
+  const newer = { ...entry, path: '/music/newer.mp3', name: 'newer.mp3' }
+  mocks.get.mockResolvedValue({ ...remote(), resourceVersion: 'v2', musicPlayback: { ...saved, path: newer.path, position: 80 } })
+  mocks.entry.mockRejectedValueOnce(new Error('offline'))
+  window.dispatchEvent(new Event('focus')); await vi.advanceTimersByTimeAsync(1)
+  expect(useMusicPlayer().state.current?.entry.path).toBe(entry.path)
+  mocks.entry.mockResolvedValue(newer)
+  window.dispatchEvent(new Event('focus')); await vi.advanceTimersByTimeAsync(1)
+  expect(useMusicPlayer().state.current?.entry.path).toBe(newer.path)
+})
+
+it('preserves a queue edited while a remote checkpoint is loading', async () => {
+  let finish!: (value: FileEntry) => void
+  mocks.entry.mockImplementationOnce(() => new Promise<FileEntry>(resolve => { finish = resolve }))
+  await startPreferencesSync('admin')
+  const queued = { entry: { ...entry, path: '/music/queued.mp3', name: 'queued.mp3' }, hostId: '', title: 'queued', artist: '' }
+  useMusicPlayer().enqueue(queued)
+  finish(entry); await vi.advanceTimersByTimeAsync(1)
+  expect(useMusicPlayer().state.queue.map(t => t.entry.path)).toEqual([queued.entry.path])
+  expect(useMusicPlayer().state.current).toBeUndefined()
+})

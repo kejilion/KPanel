@@ -28,6 +28,16 @@ function setup(tags = vi.fn(async (): Promise<MusicTags> => ({})), text = vi.fn(
 }
 afterEach(() => { players.splice(0).forEach(player => player.stop()); vi.restoreAllMocks() })
 describe('music listening session', () => {
+  it('retries a failed restored track at its saved position', () => {
+    const { player, audios } = setup()
+    player.restore(track('A'), 42, 'off', false)
+    audios[0]!.onerror?.()
+    player.retry()
+    expect(player.state.position).toBe(42)
+    audios[1]!.onloadedmetadata?.()
+    expect(audios[1]!.currentTime).toBe(42)
+    expect(audios[1]!.play).toHaveBeenCalledTimes(1)
+  })
   it('restores a checkpoint without autoplay and seeks when metadata arrives', async () => {
     const { player, audios } = setup()
     player.restore(track('A', 'edge'), 42, 'all', true)
