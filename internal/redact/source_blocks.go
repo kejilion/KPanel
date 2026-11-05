@@ -47,6 +47,8 @@ func sourceBlockHeaders(lines []string) map[int]bool {
 }
 
 func sensitiveSourceFields(value string) bool {
+	line := strings.ToLower(strings.TrimSpace(value))
+	allowServerTokens := line == "server_tokens on;" || line == "server_tokens off;" || line == "server_tokens build;"
 	count := 0
 	for len(value) > 0 {
 		value = strings.TrimLeft(value, ":= \t")
@@ -64,7 +66,7 @@ func sensitiveSourceFields(value string) bool {
 		name := normalizedJSONKey(value[:end])
 		// This Nginx display directive is a boolean/version setting, not a
 		// credential. All its other fields are still inspected independently.
-		if name != "servertokens" && secretNormalizedJSONKey(name) {
+		if !(allowServerTokens && name == "servertokens") && secretNormalizedJSONKey(name) {
 			return true
 		}
 		value = value[end:]
