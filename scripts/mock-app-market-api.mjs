@@ -3175,7 +3175,7 @@ createServer(async (request, response) => {
     mockTerminalSessionCounter += 1
     const sessionId = `visual-terminal-${mockTerminalSessionCounter}`
     const createdAt = new Date().toISOString()
-    const metadata = { sessionId, hostId: input.hostId, offset: 0, createdAt, retained: input.retained === true, detachable: !input.containerId && !input.shortcutId && !input.purpose, ...(shortcut ? { shortcutId: shortcut.id, title: shortcut.name } : {}), ...(siteManagement ? { purpose: input.purpose, title: 'k web' } : {}) }
+    const metadata = { sessionId, hostId: input.hostId, offset: 0, createdAt, retained: input.retained === true, detachable: true, workspaceVisible: !input.containerId, ...(shortcut ? { shortcutId: shortcut.id, title: shortcut.name } : {}), ...(siteManagement ? { purpose: input.purpose, title: 'k web' } : {}) }
     const launchCommand = shortcut?.command || (siteManagement ? 'k web' : '')
     mockTerminalSessions.set(sessionId, {
       metadata,
@@ -3289,7 +3289,7 @@ createServer(async (request, response) => {
     }
     if (request.method === 'POST' && action === 'detach') {
       await readJSON(request)
-      if (!session.metadata.closeRequested || session.metadata.shortcutId || session.metadata.purpose || (!session.detached && [...mockTerminalSessions.values()].filter(item => item.detached).length >= 4)) {
+      if (!session.metadata.closeRequested || (!session.detached && [...mockTerminalSessions.values()].filter(item => item.detached).length >= 4)) {
         send(response, 409, { title: 'Terminal cannot be detached', code: 'terminal_detach_unavailable' })
         return
       }

@@ -2,6 +2,7 @@
 import { nextTick, computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import TerminalContextMenu from '@/components/terminal/TerminalContextMenu.vue'
 import { api, ApiError } from '@/lib/api'
+import { closeTerminalQuietly } from '@/lib/terminalClose'
 import { closeTerminalsOnPageHide } from '@/lib/terminalPageHide'
 import { hostTerminalAdapter } from '@/lib/terminalAdapters'
 import { useTerminalController } from '@/composables/useTerminalController'
@@ -134,7 +135,9 @@ watch(() => props.sessionId, (_id, previous) => {
   detached = false
   closeRequest = undefined
   // A reused temporary viewer must not leave its previous PTY behind.
-  if (previous && !previousRetained) void api.terminals.close(previous).catch(() => api.terminals.closeOnUnload(previous))
+  if (previous && !previousRetained) void closeTerminalQuietly(previous, async () => {
+    if (!(await api.terminals.close(previous)).closed) throw new Error('Terminal close was not confirmed')
+  })
   previousRetained = props.retained
 }, { flush: 'sync' })
 let previousRetained = props.retained
@@ -145,7 +148,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   stopPageHideClose?.()
   commandCapture?.dispose()
-  if (!props.retained && !detached) void closeSession().catch(() => undefined)
+  if (!props.retained && !detached) void closeTerminalQuietly(props.sessionId, closeSession)
 })
 defineExpose({ focusTerminal, executeCommand, executePresentedCommand, fillCommand, scheduleResize, closeSession, markDetached })
 </script>

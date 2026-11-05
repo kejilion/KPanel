@@ -6,6 +6,8 @@ import AppInteractiveTerminal from '@/components/apps/AppInteractiveTerminal.vue
 import { useI18n } from '@/i18n'
 import { localizeError } from '@/i18n/errors'
 import { ApiError, api } from '@/lib/api'
+import { requestQuietAppJobStop, retryPendingAppJobStops } from '@/lib/appJobQuietStop'
+import { useSession } from '@/stores/session'
 import { desktopWindowCloseGuardKey, desktopWindowLaunchKey } from '@/lib/desktopRouteKeys'
 import { usePhraseCatalog } from '@/i18n/phrase'
 import type { AppInstallJob, AppMarketItem } from '@/types/api'
@@ -16,12 +18,12 @@ usePhraseCatalog((locale) => locale === 'en-US'
 
 const route = useRoute()
 const i18n = useI18n()
+const session = useSession()
+const currentOwner = () => session.state.authenticated ? session.state.user?.id || '' : ''
 const windowCloseGuards = inject(desktopWindowCloseGuardKey, undefined)
 const consumeWindowLaunch = inject(desktopWindowLaunchKey, () => false)
 const loading = ref(true)
 const error = ref('')
-const closeError = ref('')
-const closingJob = ref(false)
 const item = ref<AppMarketItem>()
 const job = ref<AppInstallJob>()
 let controller: AbortController | undefined
@@ -30,8 +32,6 @@ let closeRequest: Promise<boolean> | undefined
 let unregisterWindowCloseGuard: (() => void) | undefined
 
 const activeJobStorageKey = 'kpanel:active-app-job'
-const closePollDelay = 500
-const closePollAttempts = 25
 const appID = computed(() => String(route.params.appId || ''))
 function isActiveJob(value?: AppInstallJob): boolean {
   return value?.status === 'queued' || value?.status === 'running'
@@ -53,20 +53,6 @@ function rememberJob(id: string): void {
   } catch {
     // The terminal remains usable when browser storage is unavailable.
   }
-}
-
-function forgetJob(id: string): void {
-  try {
-    if (window.localStorage.getItem(activeJobStorageKey) === id) {
-      window.localStorage.removeItem(activeJobStorageKey)
-    }
-  } catch {
-    // Closing the process must not depend on browser storage availability.
-  }
-}
-
-function waitForClosePoll(): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, closePollDelay))
 }
 
 async function existingInteractiveJob(appId: string, signal: AbortSignal): Promise<AppInstallJob | undefined> {
@@ -140,47 +126,15 @@ function startLoad(allowLaunch = false): void {
   })
 }
 
-async function waitForJobToStop(current: AppInstallJob): Promise<boolean> {
-  for (let attempt = 0; attempt < closePollAttempts && isActiveJob(current); attempt += 1) {
-    if (attempt > 0) await waitForClosePoll()
-    current = await api.apps.job(current.id)
-    job.value = current
-  }
-  return !isActiveJob(current)
-}
-
 async function stopActiveJobBeforeClose(): Promise<boolean> {
-  closeError.value = ''
   // Discover or finish launching the task before deciding whether the window can close.
   await loadRequest
   controller?.abort()
 
   const active = job.value
   if (!active || !isActiveJob(active)) return true
-  if (!window.confirm(i18n.t('appScript.closeConfirm'))) return false
-
-  closingJob.value = true
-  try {
-    let current: AppInstallJob
-    try {
-      current = await api.apps.cancelJob(active.id)
-    } catch (reason) {
-      if (!(reason instanceof ApiError) || reason.code !== 'app_job_not_active') throw reason
-      current = await api.apps.job(active.id)
-    }
-    job.value = current
-    if (!(await waitForJobToStop(current))) {
-      closeError.value = i18n.t('appScript.closePending')
-      return false
-    }
-    forgetJob(active.id)
-    return true
-  } catch (reason) {
-    closeError.value = localizeError(reason, 'appScript.closeFailed')
-    return false
-  } finally {
-    closingJob.value = false
-  }
+  requestQuietAppJobStop(active.id, currentOwner(), currentOwner)
+  return true
 }
 
 function guardWindowClose(): Promise<boolean> {
@@ -194,6 +148,7 @@ function guardWindowClose(): Promise<boolean> {
 }
 
 onMounted(() => {
+  retryPendingAppJobStops(currentOwner(), currentOwner)
   unregisterWindowCloseGuard = windowCloseGuards?.register(guardWindowClose)
   startLoad(consumeWindowLaunch())
 })
@@ -205,11 +160,6 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="app-script-page terminal-theme-scope">
-    <div v-if="closeError" class="app-script-page__close-error" role="alert">
-      <TriangleAlert :size="16" />
-      <span>{{ closeError }}</span>
-      <button type="button" @click="closeError = ''">{{ i18n.t('common.closeNotification') }}</button>
-    </div>
 
     <div v-if="loading" class="app-script-page__state" role="status">
       <LoaderCircle class="spin" :size="24" />
@@ -224,12 +174,6 @@ onBeforeUnmount(() => {
       <button class="button button--small" type="button" @click="startLoad()">
         <RefreshCw :size="14" /><span>重新尝试</span>
       </button>
-    </div>
-
-    <div v-else-if="closingJob" class="app-script-page__state" role="status">
-      <LoaderCircle class="spin" :size="24" />
-      <strong>{{ i18n.t('appScript.closingTitle') }}</strong>
-      <small>{{ i18n.t('appScript.closingDescription') }}</small>
     </div>
 
     <!-- The window title bar already names the app and owns maximize, so the
@@ -274,30 +218,6 @@ onBeforeUnmount(() => {
 .app-script-page__terminal :deep(.interactive-terminal__screen) {
   height: auto;
   min-height: 0;
-}
-
-.app-script-page__close-error {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-bottom: 1px solid color-mix(in srgb, var(--danger) 24%, var(--border));
-  background: var(--danger-soft);
-  color: var(--danger);
-  font-size: 12px;
-}
-
-.app-script-page__close-error span {
-  min-width: 0;
-  flex: 1;
-}
-
-.app-script-page__close-error button {
-  border: 0;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  font: inherit;
 }
 
 .app-script-page__state {

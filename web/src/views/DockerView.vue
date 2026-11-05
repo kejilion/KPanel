@@ -56,6 +56,7 @@ import DockerUsageMeter from '@/components/docker/DockerUsageMeter.vue'
 import ImageUpdateBadge from '@/components/docker/ImageUpdateBadge.vue'
 import { localizeError } from '@/i18n/errors'
 import { ApiError, api } from '@/lib/api'
+import { closeTerminalQuietly } from '@/lib/terminalClose'
 import { useDockerImageUpdates } from '@/lib/dockerImageUpdate'
 import {
   contextMenuFocusOrigin,
@@ -1668,6 +1669,12 @@ function closeStats(): void {
   selectedContainer.value = undefined
 }
 
+async function cleanupContainerTerminal(id: string): Promise<void> {
+  await closeTerminalQuietly(id, async () => {
+    if (!(await api.terminals.close(id)).closed) throw new Error('Terminal close was not confirmed')
+  })
+}
+
 async function openConsole(container: DockerContainer): Promise<void> {
   if (consoleOpen.value && consoleTarget.value?.id === container.id && (consoleOpening.value || consoleSession.value)) return
   closeConsole()
@@ -1684,12 +1691,12 @@ async function openConsole(container: DockerContainer): Promise<void> {
       resourceVersion: container.resourceVersion,
     })
     if (generation !== consoleGeneration || !consoleOpen.value) {
-      await api.terminals.close(opened.sessionId).catch(() => undefined)
+      await cleanupContainerTerminal(opened.sessionId)
       return
     }
     consoleSession.value = opened
   } catch (reason) {
-    if (opened) await api.terminals.close(opened.sessionId).catch(() => undefined)
+    if (opened) await cleanupContainerTerminal(opened.sessionId)
     if (generation === consoleGeneration && consoleOpen.value) {
       consoleError.value = reason instanceof ApiError && reason.code === 'terminal_limit'
         ? '已达到终端会话上限，请先关闭不用的终端。'
@@ -1710,10 +1717,11 @@ function closeConsole(): void {
   if (session) {
     // Reuse the child's deduplicated close when mounted, but also reclaim a
     // session closed before Vue has rendered the terminal component.
-    const closing = mounted?.$props.sessionId === session.sessionId
-      ? mounted.closeSession()
-      : api.terminals.close(session.sessionId)
-    void closing.catch(() => undefined)
+    mounted?.markDetached?.()
+    void closeTerminalQuietly(session.sessionId, async () => {
+      if (mounted?.$props.sessionId === session.sessionId) await mounted.closeSession()
+      else if (!(await api.terminals.close(session.sessionId)).closed) throw new Error('Terminal close was not confirmed')
+    }).catch(() => undefined)
   }
   consoleGeneration += 1
   consoleOpen.value = false

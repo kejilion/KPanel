@@ -7,14 +7,14 @@ import ShortcutCommandTerminal from './ShortcutCommandTerminal.vue'
 import type { TerminalSession } from '@/types/api'
 import { ApiError } from '@/lib/api'
 
-const mocks = vi.hoisted(() => ({ open: vi.fn(), prepareShortcut: vi.fn(), resolveShortcut: vi.fn(), preparePurpose: vi.fn(), resolvePurpose: vi.fn(), close: vi.fn(), closeOnUnload: vi.fn(), execute: vi.fn(), childClose: vi.fn() }))
+const mocks = vi.hoisted(() => ({ open: vi.fn(), prepareShortcut: vi.fn(), resolveShortcut: vi.fn(), preparePurpose: vi.fn(), resolvePurpose: vi.fn(), close: vi.fn(), detach: vi.fn(), markDetached: vi.fn(), closeOnUnload: vi.fn(), execute: vi.fn(), childClose: vi.fn() }))
 vi.mock('@/lib/api', () => ({
   ApiError: class extends Error { code = '' },
-  api: { terminals: { open: mocks.open, prepareShortcut: mocks.prepareShortcut, resolveShortcut: mocks.resolveShortcut, preparePurpose: mocks.preparePurpose, resolvePurpose: mocks.resolvePurpose, close: mocks.close, closeOnUnload: mocks.closeOnUnload } },
+  api: { terminals: { open: mocks.open, prepareShortcut: mocks.prepareShortcut, resolveShortcut: mocks.resolveShortcut, preparePurpose: mocks.preparePurpose, resolvePurpose: mocks.resolvePurpose, close: mocks.close, detach: mocks.detach, closeOnUnload: mocks.closeOnUnload } },
 }))
 const HostTerminal = defineComponent({
   name: 'HostTerminal', props: ['sessionId', 'hostName', 'initialOffset', 'retained'], emits: ['stateChange'],
-  setup(_, { expose }) { expose({ executeCommand: mocks.execute, closeSession: mocks.childClose }); return () => null },
+  setup(_, { expose }) { expose({ executeCommand: mocks.execute, closeSession: mocks.childClose, markDetached: mocks.markDetached }); return () => null },
 })
 const opened: TerminalSession = { sessionId: 'session-1', hostId: 'remote-1', offset: 0, createdAt: '' }
 const wrappers: VueWrapper[] = []
@@ -35,12 +35,24 @@ beforeEach(() => {
   mocks.resolvePurpose.mockRejectedValue(Object.assign(new ApiError('absent', 404, 'terminal_shortcut_session_not_found'), { code: 'terminal_shortcut_session_not_found' }))
   mocks.resolveShortcut.mockRejectedValue(Object.assign(new ApiError('absent', 404, 'terminal_shortcut_session_not_found'), { code: 'terminal_shortcut_session_not_found' }))
   mocks.close.mockResolvedValue({ closed: true })
+  mocks.detach.mockRejectedValue(new Error('cleanup unavailable'))
   mocks.execute.mockReturnValue(true)
   mocks.childClose.mockResolvedValue(undefined)
 })
 afterEach(() => { for (const wrapper of wrappers.splice(0)) wrapper.unmount() })
 
 describe('shortcut command terminal lifecycle', () => {
+  it('closes silently after saving an unconfirmed shortcut for cleanup', async () => {
+    mocks.childClose.mockRejectedValueOnce(new Error('offline'))
+    mocks.detach.mockResolvedValueOnce({ detached: true })
+    const wrapper = create('remote-1', 'Remote', { shortcutId: 'a'.repeat(32), shortcutVersion: 'v1' })
+    await flushPromises()
+    expect(await closeGuard()).toBe(true)
+    expect(mocks.detach).toHaveBeenCalledWith('session-1')
+    expect(mocks.markDetached).toHaveBeenCalledOnce()
+    expect(wrapper.emitted('close')).toHaveLength(1)
+    expect(mocks.execute).not.toHaveBeenCalled()
+  })
   it.each([false, true])('uses the fixed website entry without client command submission (legacy=%s)', async legacy => {
     if (legacy) mocks.open.mockRejectedValueOnce(Object.assign(new ApiError('unsupported', 409, 'terminal_retention_unavailable'), { code: 'terminal_retention_unavailable' }))
     mocks.open.mockResolvedValueOnce({ ...opened, hostId: 'local', retained: !legacy, purpose: 'site-management' })
@@ -125,20 +137,14 @@ describe('shortcut command terminal lifecycle', () => {
     expect(mocks.execute).not.toHaveBeenCalled()
     expect(wrapper.emitted('close')).toHaveLength(1)
   })
-  it('keeps the window when lost-launch lookup fails, and preserves the recovered identity on close failure', async () => {
+  it('closes without replaying when lost-launch lookup fails', async () => {
     mocks.open.mockRejectedValueOnce(new Error('lost response'))
     mocks.resolveShortcut.mockRejectedValueOnce(new Error('offline'))
     const wrapper = create('remote-1', 'Remote', { shortcutId: 'a'.repeat(32) })
     await flushPromises()
-    expect(await closeGuard()).toBe(false)
-    expect(wrapper.emitted('close')).toBeUndefined()
-    mocks.resolveShortcut.mockResolvedValueOnce({ ...opened, retained: true })
-    mocks.close.mockResolvedValueOnce({ closed: false })
-    expect(await closeGuard()).toBe(false)
-    await flushPromises()
-    expect(wrapper.findComponent(HostTerminal).props('sessionId')).toBe(opened.sessionId)
     expect(await closeGuard()).toBe(true)
-    expect(mocks.resolveShortcut).toHaveBeenCalledTimes(2)
+    expect(wrapper.emitted('close')).toHaveLength(1)
+    expect(mocks.resolveShortcut).toHaveBeenCalledTimes(1)
     expect(mocks.open).toHaveBeenCalledTimes(1)
   })
   it('automatically uses the saved shortcut temporarily after an explicit capability rejection', async () => {
@@ -241,14 +247,10 @@ describe('shortcut command terminal lifecycle', () => {
     expect(mocks.execute).not.toHaveBeenCalled()
   })
 
-  it('keeps a failed close visible and allows retry through the existing terminal', async () => {
+  it('closes locally without claiming remote termination when cleanup cannot be recorded', async () => {
     const wrapper = create()
     await flushPromises()
     mocks.childClose.mockRejectedValueOnce(new Error('offline'))
-    expect(await closeGuard()).toBe(false)
-    await flushPromises()
-    expect(wrapper.emitted('close')).toBeUndefined()
-    expect(wrapper.text()).toContain('终端关闭失败')
     expect(await closeGuard()).toBe(true)
     await flushPromises()
     expect(wrapper.emitted('close')).toHaveLength(1)
@@ -274,7 +276,7 @@ it('reclaims a late open after unmount and falls back if close fails', async () 
   wrapper.unmount()
   resolveOpen(opened)
   await flushPromises()
-  expect(mocks.closeOnUnload).toHaveBeenCalledWith(opened.sessionId)
+  expect(mocks.detach).toHaveBeenCalledWith(opened.sessionId)
   expect(mocks.execute).not.toHaveBeenCalled()
 })
 
@@ -316,10 +318,6 @@ it('reattaches an existing shortcut without sending an open request or command',
   expect(wrapper.findComponent(HostTerminal).props('initialOffset')).toBe(0)
   expect(wrapper.text()).toContain('启动结果未确认')
   mocks.childClose.mockRejectedValueOnce(new Error('offline'))
-  expect(await closeGuard()).toBe(false)
-  await flushPromises()
-  expect(wrapper.findComponent(HostTerminal).exists()).toBe(true)
-  expect(wrapper.emitted('close')).toBeUndefined()
   expect(await closeGuard()).toBe(true)
   await flushPromises()
   expect(wrapper.emitted('close')).toHaveLength(1)

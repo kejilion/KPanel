@@ -44,7 +44,6 @@ export default [
   ["正在读取远程操作设置…","Loading remote operation settings…"],
   ["配置不可读取，远程操作已停用。请检查当前中心的数据目录。","The saved settings cannot be read, so remote operations are disabled. Check this center’s data directory."],
   ["远程操作设置读取失败，请重试。","Could not load remote operation settings. Try again."],
-  ["设置已保存，部分远端会话尚待关闭；远程输入与重连已禁用。可再次保存设置重试关闭。","Settings saved. Some remote sessions still need to close; input and reconnection are blocked. Save again to retry closing them."],
   ["远程操作设置已保存。","Remote operation settings saved."],
   ["设置已在其他页面更新，请重新读取后再修改。","Settings changed in another page. Reload them before editing."],
   ["远程操作设置保存失败，当前选择尚未保存，请重试。","Could not save remote operation settings. Your changes are unsaved; try again."],
@@ -94,7 +93,6 @@ export default [
   ["当前文件不支持在终端中执行。", "This file cannot be run in the terminal."],
   ["终端启动失败，请检查主机连接后重新打开。", "Could not start the terminal. Check the host connection and reopen it."],
   ["命令未发送，请关闭窗口后重新执行。", "The command was not sent. Close the window and run the file again."],
-  ["终端关闭失败，请重试关闭。", "Could not close the terminal. Try closing it again."],
   ["正在连接终端…", "Connecting to terminal…"],
 
   ['读取日志', 'Read logs'],

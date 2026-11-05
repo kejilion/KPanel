@@ -121,7 +121,9 @@ func (s *Server) handleClusterRemoteAccessScope(w http.ResponseWriter, r *http.R
 		return
 	}
 	if !terminalEnabled {
-		_ = s.closeDisabledRemoteTerminals(r.Context(), hostID)
+		if s.closeDisabledRemoteTerminals(r.Context(), hostID) > 0 {
+			s.scheduleTerminalCleanup()
+		}
 	}
 	_ = s.audit(r, session.User.ID, "cluster.remote-access.update", "cluster-settings", "remote-access", "success", change)
 	s.writeClusterRemoteAccess(w, hostID)

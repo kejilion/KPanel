@@ -14,6 +14,7 @@ import PageHeader from '@/components/common/PageHeader.vue'
 import OperatingSystemIcon from '@/components/overview/OperatingSystemIcon.vue'
 import { useTerminalFullscreen } from '@/composables/useTerminalFullscreen'
 import { api, ApiError } from '@/lib/api'
+import { closeTerminalQuietly, retryPendingTerminalCloses } from '@/lib/terminalClose'
 import {
   applyClusterHostOrderPreference,
   readClusterHostOrder,
@@ -49,7 +50,6 @@ interface OpenTerminal {
   state: 'pending' | 'connecting' | 'connected' | 'reconnecting' | 'finished'
   closing?: boolean
   closeFailed?: boolean
-  canDetach?: boolean
   launchUncertain?: boolean
 }
 
@@ -161,12 +161,17 @@ async function performLoadHosts(): Promise<void> {
       const retained = await api.terminals.list(request.signal)
       if (request.signal.aborted || controller !== request) return
       for (const session of retained.items) {
-        const visible = session.detachable && (session.retained || session.closeRequested)
-          || session.retained && (session.shortcutId || session.purpose)
+        const visible = session.workspaceVisible && (session.retained || session.closeRequested)
         if (!visible || sessions.value.some(item => item.id === session.sessionId)) continue
+        if (session.closeRequested && session.detachable) {
+          // The user already closed this session before a reload. Finish the
+          // local dismissal without restoring a prompt or replaying input.
+          void api.terminals.detach(session.sessionId).catch(() => undefined)
+          continue
+        }
         sessions.value.push({ id: session.sessionId, hostId: session.hostId,
           hostName: names.get(session.hostId) || session.hostId, title: session.title,
-          retained: session.retained, canDetach: session.detachable === true, ordinal: nextOrdinal(session.hostId), offset: 0,
+          retained: session.retained, ordinal: nextOrdinal(session.hostId), offset: 0,
           state: 'connecting', closeFailed: session.closeRequested, launchUncertain: session.launchUncertain })
       }
       activeSessionId.value = sessions.value[0]?.id || ''
@@ -229,13 +234,13 @@ async function openSession(host: ClusterHost, retained = true): Promise<void> {
 	const opened = await openingRequest
 	if (disposed) {
       if (!opened.retained) {
-        try {
-          if (!(await api.terminals.close(opened.sessionId)).closed) api.terminals.closeOnUnload(opened.sessionId)
-        } catch { api.terminals.closeOnUnload(opened.sessionId) }
+        await closeTerminalQuietly(opened.sessionId, async () => {
+          if (!(await api.terminals.close(opened.sessionId)).closed) throw new Error('Terminal close was not confirmed')
+        })
       }
       return
     }
-	const item: OpenTerminal = { id: opened.sessionId, hostId: host.id, hostName: host.name, retained: opened.retained, canDetach: true, ordinal: nextOrdinal(host.id), offset: opened.offset, state: 'connecting' }
+	const item: OpenTerminal = { id: opened.sessionId, hostId: host.id, hostName: host.name, retained: opened.retained, ordinal: nextOrdinal(host.id), offset: opened.offset, state: 'connecting' }
     sessions.value.push(item)
     activeSessionId.value = item.id
     void nextTick(() => {
@@ -260,44 +265,19 @@ async function closeSession(id: string): Promise<boolean> {
   item.closing = true
   item.closeFailed = false
   try {
-    if (handle) await handle.closeSession()
-    else {
-      const result = await api.terminals.close(id)
-      if (!result.closed) throw new Error('Terminal close was not confirmed')
-    }
+    const outcome = await closeTerminalQuietly(id, async () => {
+      if (handle) await handle.closeSession()
+      else {
+        const result = await api.terminals.close(id)
+        if (!result.closed) throw new Error('Terminal close was not confirmed')
+      }
+    })
+    if (outcome !== 'closed') handle?.markDetached?.()
     removeSession(id)
     return true
-  } catch (reason) {
-    if (reason instanceof ApiError && reason.code === 'terminal_not_found') {
-      removeSession(id)
-      toast.show(t('terminal.detachMissingNotice'))
-      return true
-    }
-    item.closeFailed = true
-    return false
-  } finally {
-    item.closing = false
-  }
-}
-
-async function detachSession(id: string): Promise<void> {
-  const item = sessions.value.find(session => session.id === id)
-  if (!item || item.closing || !item.closeFailed || !window.confirm(t('terminal.detachConfirm'))) return
-  item.closing = true
-  try {
-    const result = await api.terminals.detach(id)
-    if (!result.detached) throw new Error('Terminal detach was not confirmed')
-    terminalRefs.get(id)?.markDetached?.()
+  } catch {
     removeSession(id)
-    toast.show(t('terminal.detachedNotice'))
-  } catch (reason) {
-    if (reason instanceof ApiError && reason.code === 'terminal_not_found') {
-      terminalRefs.get(id)?.markDetached?.()
-      removeSession(id)
-      toast.show(t('terminal.detachMissingNotice'))
-    } else {
-      toast.danger(t('terminal.detachFailed'))
-    }
+    return true
   } finally {
     item.closing = false
   }
@@ -526,6 +506,7 @@ watch(() => route.query.hostId, () => {
 })
 
 onMounted(() => {
+  retryPendingTerminalCloses()
 	window.addEventListener(clusterRemoteAccessChanged, loadHosts)
   unsubscribeClusterHostOrder = subscribeClusterHostOrder(() => {
     clusterHostOrderRevision.value += 1
@@ -543,8 +524,6 @@ onMounted(() => {
       // Wait for a pending open so closing the window cannot orphan its PTY.
       await openingRequest?.catch(() => undefined)
       await nextTick()
-      const activeCount = activeInteractiveSessionCount.value
-      if (activeCount && !window.confirm(t('terminal.closeSessionsConfirm', { count: activeCount }))) return false
       const results = await Promise.all(sessions.value.map(item => closeSession(item.id)))
       return results.every(Boolean)
     } finally {
@@ -576,11 +555,6 @@ onBeforeUnmount(() => {
       <strong>{{ sessionLabel(item) }}</strong>：{{ t('terminal.launchUncertain') }}
     </div>
     <div v-if="limitReached" class="terminal-alert" role="alert">{{ t('terminal.sessionLimitReached') }}</div>
-    <div v-for="item in sessions.filter((session) => session.closeFailed)" :key="item.id" class="terminal-alert" role="alert">
-      <strong>{{ sessionLabel(item) }}</strong>：<span>关闭未确认，会话已保留。请检查目标主机连接后重试。</span>
-      <button type="button" :disabled="item.closing" @click="closeSession(item.id)">重试关闭</button>
-      <button v-if="item.canDetach" type="button" :disabled="item.closing" @click="detachSession(item.id)">{{ t('terminal.detachTab') }}</button>
-    </div>
 
     <section
       class="terminal-workspace terminal-theme-scope"

@@ -4,6 +4,7 @@ import { LoaderCircle } from '@lucide/vue'
 import { desktopWindowCloseGuardKey } from '@/lib/desktopRouteKeys'
 import HostTerminal from '@/components/terminal/HostTerminal.vue'
 import { api, ApiError } from '@/lib/api'
+import { closeTerminalQuietly } from '@/lib/terminalClose'
 import { useI18n } from '@/i18n'
 import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
 import type { TerminalSession } from '@/types/api'
@@ -67,7 +68,7 @@ async function open(): Promise<void> {
       })
       : api.terminals.open(hostId, 30, 120))
     if (disposed) {
-      if (!opened.retained) await reclaim(opened).catch(() => api.terminals.closeOnUnload(opened.sessionId))
+      if (!opened.retained) await closeTerminalQuietly(opened.sessionId, () => reclaim(opened))
       return
     }
     session.value = opened
@@ -105,8 +106,8 @@ async function close(): Promise<boolean> {
     }
     if (target) {
       try {
-        if (session.value && terminal.value) await terminal.value.closeSession()
-        else await reclaim(target)
+        const outcome = await closeTerminalQuietly(target.sessionId, () => session.value && terminal.value ? terminal.value.closeSession() : reclaim(target))
+        if (outcome !== 'closed') terminal.value?.markDetached?.()
       } catch (reason) {
         session.value = target
         throw reason
@@ -117,8 +118,9 @@ async function close(): Promise<boolean> {
     emit('close')
     return true
   } catch {
-    error.value = phrase('终端关闭失败，请重试关闭。')
-    return false
+    disposed = true
+    emit('close')
+    return true
   } finally {
     closing.value = false
   }
@@ -136,7 +138,7 @@ onBeforeUnmount(() => {
   // HostTerminal owns mounted sessions, including page-hide cleanup.
   if (session.value && !session.value.retained && !terminal.value) {
     const opened = session.value
-    void reclaim(opened).catch(() => api.terminals.closeOnUnload(opened.sessionId))
+    void closeTerminalQuietly(opened.sessionId, () => reclaim(opened))
   }
 })
 </script>

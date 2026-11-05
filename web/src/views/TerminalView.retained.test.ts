@@ -5,9 +5,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import TerminalView from './TerminalView.vue'
 import { ApiError } from '@/lib/api'
 
-const mocks = vi.hoisted(() => ({ list: vi.fn(), open: vi.fn(), hosts: vi.fn(), close: vi.fn(), closeOnUnload: vi.fn() }))
+const mocks = vi.hoisted(() => ({ list: vi.fn(), open: vi.fn(), hosts: vi.fn(), close: vi.fn(), detach: vi.fn(), closeOnUnload: vi.fn() }))
 vi.mock('vue-router', async (original) => ({ ...await original<typeof import('vue-router')>(), useRoute: () => ({ path: '/terminal', query: {} }) }))
-vi.mock('@/lib/api', () => ({ api: { cluster: { hosts: mocks.hosts }, terminals: { batches: () => Promise.resolve({ available: true, items: [] }), list: mocks.list, open: mocks.open, close: mocks.close, closeOnUnload: mocks.closeOnUnload } }, ApiError: class extends Error { code = '' } }))
+vi.mock('@/lib/api', () => ({ api: { cluster: { hosts: mocks.hosts }, terminals: { batches: () => Promise.resolve({ available: true, items: [] }), list: mocks.list, open: mocks.open, close: mocks.close, detach: mocks.detach, closeOnUnload: mocks.closeOnUnload } }, ApiError: class extends Error { code = '' } }))
 vi.mock('@/components/terminal/HostTerminal.vue', () => ({ default: defineComponent({
   name: 'HostTerminalStub', props: ['sessionId', 'retained', 'initialOffset'],
   setup(_, { expose }) { expose({ closeSession: async () => {}, focusTerminal() {}, executeCommand() { return true }, scheduleResize() {} }); return () => null },
@@ -16,6 +16,7 @@ vi.mock('@/components/terminal/HostTerminal.vue', () => ({ default: defineCompon
 beforeEach(() => {
   vi.clearAllMocks()
   mocks.hosts.mockResolvedValue({ items: [{ id: 'local', name: 'Local', isLocal: true, terminalAvailable: true }] })
+  mocks.detach.mockResolvedValue({ detached: true })
   mocks.open.mockResolvedValue({ sessionId: 'new', hostId: 'local', retained: true, offset: 0 })
 })
 
@@ -33,7 +34,7 @@ describe('retained terminal restoration', () => {
     resolve({ sessionId: 'late', retained: false })
     await flushPromises()
     expect(mocks.close).toHaveBeenCalledWith('late')
-    expect(mocks.closeOnUnload).toHaveBeenCalledWith('late')
+    expect(mocks.detach).toHaveBeenCalledWith('late')
   })
   it.each(['terminal_retention_unavailable'])('automatically falls back once after %s', async (code) => {
     mocks.list.mockResolvedValue({ items: [] })
@@ -91,27 +92,26 @@ describe('retained terminal restoration', () => {
   })
   it('restores the same local and remote shortcut sessions without replay or new opens', async () => {
     mocks.list.mockResolvedValue({ items: [
-      { sessionId: 'original', hostId: 'local', offset: 123, retained: true, detachable: true },
-      { sessionId: 'remote', hostId: 'offline-node', offset: 456, retained: true, title: 'Saved command', shortcutId: 'a'.repeat(32), closeRequested: true },
+      { sessionId: 'original', hostId: 'local', offset: 123, retained: true, detachable: true, workspaceVisible: true },
+      { sessionId: 'remote', hostId: 'offline-node', offset: 456, retained: true, detachable: true, workspaceVisible: true, title: 'Saved command', shortcutId: 'a'.repeat(32), closeRequested: true },
     ] })
     const wrapper = mount(TerminalView)
     await flushPromises()
     expect(mocks.open).not.toHaveBeenCalled()
-    expect(wrapper.findAll('.terminal-tab')).toHaveLength(2)
-    expect(wrapper.text()).toContain('Saved command')
+    expect(wrapper.findAll('.terminal-tab')).toHaveLength(1)
+    expect(mocks.detach).toHaveBeenCalledWith('remote')
     expect(wrapper.findComponent({ name: 'HostTerminalStub' }).props()).toMatchObject({ sessionId: 'original', retained: true, initialOffset: 0 })
-    expect(wrapper.text()).toContain('会话已保留')
-    expect(wrapper.get('[role="alert"]').text()).not.toContain('移除本地页签')
+    expect(wrapper.text()).not.toContain('关闭未确认')
     wrapper.unmount()
   })
-  it('restores a temporary session whose close was not confirmed', async () => {
-    mocks.list.mockResolvedValue({ items: [{ sessionId: 'pending-temporary', hostId: 'local', retained: false, closeRequested: true, detachable: true }] })
+  it('dismisses a previously closed temporary session and retries background cleanup', async () => {
+    mocks.list.mockResolvedValue({ items: [{ sessionId: 'pending-temporary', hostId: 'local', retained: false, closeRequested: true, detachable: true, workspaceVisible: true }] })
     const wrapper = mount(TerminalView)
     await flushPromises()
-    expect(mocks.open).not.toHaveBeenCalled()
     expect(wrapper.findAll('.terminal-tab')).toHaveLength(1)
-    expect(wrapper.findComponent({ name: 'HostTerminalStub' }).props()).toMatchObject({ sessionId: 'pending-temporary', retained: false })
-    expect(wrapper.get('[role="alert"]').text()).toContain('移除本地页签')
+    expect(mocks.detach).toHaveBeenCalledWith('pending-temporary')
+    expect(wrapper.findComponent({ name: 'HostTerminalStub' }).props('sessionId')).toBe('new')
+    expect(wrapper.text()).not.toContain('关闭未确认')
     wrapper.unmount()
   })
   it('does not restore container or unclassified cleanup records into the host workspace', async () => {
@@ -133,7 +133,7 @@ describe('retained terminal restoration', () => {
     expect(wrapper.find('[role="alert"]').exists()).toBe(true)
     await wrapper.get('.terminal-host').trigger('click')
     expect(mocks.open).not.toHaveBeenCalled()
-    mocks.list.mockResolvedValue({ items: [{ sessionId: 'original', hostId: 'local', offset: 0, retained: true, detachable: true }] })
+    mocks.list.mockResolvedValue({ items: [{ sessionId: 'original', hostId: 'local', offset: 0, retained: true, detachable: true, workspaceVisible: true }] })
     await wrapper.get('[aria-label="刷新连接"]').trigger('click')
     await flushPromises()
     expect(mocks.open).not.toHaveBeenCalled()

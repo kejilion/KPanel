@@ -31,7 +31,7 @@ vi.mock('@/components/terminal/HostTerminal.vue', () => ({ default: defineCompon
 describe('explicit terminal tab close', () => {
   beforeEach(() => {
     mocks.close.mockReset()
-    mocks.detach.mockReset()
+    mocks.detach.mockReset().mockResolvedValue({ detached: true })
     mocks.markDetached.mockReset()
     mocks.list.mockResolvedValue({ items: [] })
     vi.spyOn(window, 'confirm').mockReturnValue(true)
@@ -39,19 +39,14 @@ describe('explicit terminal tab close', () => {
     mocks.open.mockResolvedValue({ sessionId: 'same-session', offset: 0 })
   })
 
-  it('removes only the local tab after explicit confirmation and a successful detach', async () => {
+  it('automatically detaches and removes the local tab when close fails', async () => {
     mocks.close.mockRejectedValue(new Error('offline'))
     mocks.detach.mockResolvedValue({ detached: true })
     const wrapper = create()
     await flushPromises()
     await wrapper.get('[aria-label="关闭终端"]').trigger('click')
     await flushPromises()
-    vi.mocked(window.confirm).mockReturnValueOnce(false)
-    await wrapper.get('[role="alert"] button:last-child').trigger('click')
-    expect(mocks.detach).not.toHaveBeenCalled()
-    expect(wrapper.findAll('.terminal-tab')).toHaveLength(1)
-    await wrapper.get('[role="alert"] button:last-child').trigger('click')
-    await flushPromises()
+    expect(window.confirm).not.toHaveBeenCalled()
     expect(mocks.detach).toHaveBeenCalledWith('same-session')
     expect(mocks.markDetached).toHaveBeenCalledOnce()
     expect(wrapper.findAll('.terminal-tab')).toHaveLength(0)
@@ -60,23 +55,22 @@ describe('explicit terminal tab close', () => {
 
   it.each([
     ['terminal_not_found', 0],
-    ['route_not_found', 1],
-  ])('only dismisses a missing session for the specific error %s', async (code, remaining) => {
+    ['route_not_found', 0],
+  ])('only dismisses an already missing session for the specific error %s', async (code, remaining) => {
     mocks.close.mockRejectedValue(new Error('offline'))
     mocks.detach.mockRejectedValue(new ApiError('missing', 404, code))
     const wrapper = create()
     await flushPromises()
     await wrapper.get('[aria-label="关闭终端"]').trigger('click')
     await flushPromises()
-    await wrapper.get('[role="alert"] button:last-child').trigger('click')
-    await flushPromises()
     expect(wrapper.findAll('.terminal-tab')).toHaveLength(remaining)
-    expect(mocks.markDetached).toHaveBeenCalledTimes(remaining === 0 ? 1 : 0)
+    expect(mocks.markDetached).toHaveBeenCalledOnce()
     wrapper.unmount()
   })
 
-  it.each([['terminal_not_found', 0], ['route_not_found', 1]])('handles close error %s without mistaking generic 404 for a missing session', async (code, remaining) => {
+  it.each([['terminal_not_found', 0], ['route_not_found', 0]])('closes locally after close error %s without mistaking generic 404 for a missing session', async (code, remaining) => {
     mocks.close.mockRejectedValue(new ApiError('missing', 404, code))
+    mocks.detach.mockRejectedValue(new Error('unavailable'))
     const wrapper = create()
     await flushPromises()
     await wrapper.get('[aria-label="关闭终端"]').trigger('click')
@@ -85,7 +79,8 @@ describe('explicit terminal tab close', () => {
     wrapper.unmount()
   })
 
-  it('keeps the tab on failure, deduplicates clicks and removes only after retry confirms close', async () => {
+  it('deduplicates clicks and closes locally even if background registration fails', async () => {
+    mocks.detach.mockRejectedValueOnce(new Error('unavailable'))
     let reject!: (reason: Error) => void
     mocks.close.mockReturnValueOnce(new Promise((_, fail) => { reject = fail }))
     const wrapper = create()
@@ -98,12 +93,6 @@ describe('explicit terminal tab close', () => {
     expect(wrapper.find('[aria-label="正在关闭终端"]').exists()).toBe(true)
     reject(new Error('Agent disconnected'))
     await flushPromises()
-    expect(wrapper.get('[role="alert"]').text()).toContain('会话已保留')
-    expect(wrapper.findAll('.terminal-tab')).toHaveLength(1)
-    mocks.close.mockResolvedValueOnce(undefined)
-    await wrapper.get('[role="alert"] button').trigger('click')
-    await flushPromises()
-    expect(mocks.close).toHaveBeenCalledTimes(2)
     expect(wrapper.findAll('.terminal-tab')).toHaveLength(0)
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     wrapper.unmount()
@@ -120,7 +109,8 @@ describe('explicit terminal tab close', () => {
     wrapper.unmount()
   })
 
-  it('closes every terminal on explicit window close and preserves a failed one for retry', async () => {
+  it('closes every terminal window even when one cleanup request fails', async () => {
+    mocks.detach.mockRejectedValueOnce(new Error('unavailable'))
     mocks.open.mockResolvedValueOnce({ sessionId: 'first', offset: 0, retained: true })
       .mockResolvedValueOnce({ sessionId: 'second', offset: 0, retained: true })
     const wrapper = create()
@@ -128,24 +118,22 @@ describe('explicit terminal tab close', () => {
     await wrapper.get('[aria-label="在 Local host 上新建终端"]').trigger('click')
     await flushPromises()
     mocks.close.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('offline'))
-    expect(await closeGuard()).toBe(false)
+    expect(await closeGuard()).toBe(true)
     await flushPromises()
     expect(mocks.close).toHaveBeenCalledTimes(2)
-    expect(wrapper.findAll('.terminal-tab')).toHaveLength(1)
-    expect(wrapper.text()).toContain('关闭未确认')
-    mocks.close.mockResolvedValueOnce(undefined)
-    expect(await closeGuard()).toBe(true)
-    expect(mocks.close).toHaveBeenCalledTimes(3)
+    expect(wrapper.findAll('.terminal-tab')).toHaveLength(0)
+    expect(wrapper.text()).not.toContain('关闭未确认')
     wrapper.unmount()
   })
 
-  it('keeps the 1.26 window confirmation and does not stop a cancelled close', async () => {
+  it('closes the window without a confirmation prompt', async () => {
     const wrapper = create()
     await flushPromises()
     vi.mocked(window.confirm).mockReturnValue(false)
-    expect(await closeGuard()).toBe(false)
-    expect(mocks.close).not.toHaveBeenCalled()
-    expect(wrapper.findAll('.terminal-tab')).toHaveLength(1)
+    mocks.close.mockResolvedValue(undefined)
+    expect(await closeGuard()).toBe(true)
+    expect(window.confirm).not.toHaveBeenCalled()
+    expect(mocks.close).toHaveBeenCalledOnce()
     wrapper.unmount()
   })
 
@@ -171,7 +159,7 @@ describe('explicit terminal tab close', () => {
     const wrapper = create()
     await flushPromises()
     const closing = closeGuard()
-    resolve({ items: [{ sessionId: 'original', hostId: 'local', retained: true, detachable: true, offset: 0 }] })
+    resolve({ items: [{ sessionId: 'original', hostId: 'local', retained: true, detachable: true, workspaceVisible: true, offset: 0 }] })
     expect(await closing).toBe(true)
     expect(mocks.open).not.toHaveBeenCalled()
     expect(mocks.close).toHaveBeenCalledOnce()

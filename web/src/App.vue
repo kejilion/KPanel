@@ -12,6 +12,8 @@ import { useSession } from '@/stores/session'
 import { useSiteBranding } from '@/stores/branding'
 import { useLiveNotifications } from '@/composables/useLiveNotifications'
 import { stopPreferencesSync } from '@/lib/preferencesSync'
+import { retryPendingTerminalCloses } from '@/lib/terminalClose'
+import { retryPendingAppJobStops } from '@/lib/appJobQuietStop'
 
 const route = useRoute()
 const i18n = useI18n()
@@ -21,6 +23,10 @@ const music = useMusicPlayer()
 // Navigation does not own audio. Authentication and app teardown do.
 watch(() => session.state.authenticated ? session.state.user?.id : undefined, (id, previous) => {
   if ((!id || (previous && id !== previous)) && music.state.current) { stopPreferencesSync(); music.stop() }
+  if (id) {
+    retryPendingTerminalCloses()
+    retryPendingAppJobStops(id, () => session.state.authenticated ? session.state.user?.id || '' : '')
+  }
 }, { flush: 'sync', immediate: true })
 onBeforeUnmount(() => { stopPreferencesSync(); music.stop() })
 const branding = useSiteBranding()

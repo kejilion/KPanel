@@ -5,14 +5,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import FileExecutionTerminal from './FileExecutionTerminal.vue'
 import type { FileEntry, TerminalSession } from '@/types/api'
 
-const mocks = vi.hoisted(() => ({ entry: vi.fn(), open: vi.fn(), close: vi.fn(), closeOnUnload: vi.fn(), execute: vi.fn(), childClose: vi.fn() }))
+const mocks = vi.hoisted(() => ({ entry: vi.fn(), open: vi.fn(), close: vi.fn(), detach: vi.fn(), markDetached: vi.fn(), closeOnUnload: vi.fn(), execute: vi.fn(), childClose: vi.fn() }))
 vi.mock('@/lib/api', () => ({
   ApiError: class extends Error { code = '' },
-  api: { files: { entry: mocks.entry }, terminals: { open: mocks.open, close: mocks.close, closeOnUnload: mocks.closeOnUnload } },
+  api: { files: { entry: mocks.entry }, terminals: { open: mocks.open, close: mocks.close, detach: mocks.detach, closeOnUnload: mocks.closeOnUnload } },
 }))
 const HostTerminal = defineComponent({
   name: 'HostTerminal', props: ['sessionId', 'hostName', 'initialOffset'], emits: ['stateChange'],
-  setup(_, { expose }) { expose({ executePresentedCommand: mocks.execute, closeSession: mocks.childClose }); return () => null },
+  setup(_, { expose }) { expose({ executePresentedCommand: mocks.execute, closeSession: mocks.childClose, markDetached: mocks.markDetached }); return () => null },
 })
 const file: FileEntry = { path: '/home/script.sh', name: 'script.sh', kind: 'file', mode: '-rw-r--r--', resourceVersion: 'v1', sizeBytes: 5, owner: 'root', group: 'root', modifiedAt: '', editable: true, previewable: true }
 const opened: TerminalSession = { sessionId: 'session-1', hostId: 'remote-1', offset: 0, createdAt: '' }
@@ -30,12 +30,23 @@ beforeEach(() => {
   mocks.entry.mockResolvedValue(file)
   mocks.open.mockResolvedValue(opened)
   mocks.close.mockResolvedValue({ closed: true })
+  mocks.detach.mockResolvedValue({ detached: true })
   mocks.execute.mockReturnValue(true)
   mocks.childClose.mockResolvedValue(undefined)
 })
 afterEach(() => { for (const wrapper of wrappers.splice(0)) wrapper.unmount() })
 
 describe('file execution terminal lifecycle', () => {
+  it('closes silently after recording an unconfirmed terminal for cleanup', async () => {
+    mocks.childClose.mockRejectedValueOnce(new Error('offline'))
+    const wrapper = create()
+    await flushPromises()
+    wrapper.findComponent({ name: 'ModalDialog' }).vm.$emit('close')
+    await flushPromises()
+    expect(mocks.detach).toHaveBeenCalledWith('session-1')
+    expect(mocks.markDetached).toHaveBeenCalledOnce()
+    expect(wrapper.emitted('close')).toHaveLength(1)
+  })
   it('reads and opens the exact host, submits once after connection, and never replays on reconnect', async () => {
     const wrapper = create()
     await flushPromises()
@@ -105,17 +116,15 @@ describe('file execution terminal lifecycle', () => {
     expect(mocks.execute).not.toHaveBeenCalled()
   })
 
-  it('keeps a failed close visible and allows retry through the existing terminal', async () => {
+  it('closes locally when both close and cleanup registration fail', async () => {
     const wrapper = create()
     await flushPromises()
     mocks.childClose.mockRejectedValueOnce(new Error('offline'))
+    mocks.detach.mockRejectedValueOnce(new Error('offline'))
     const modal = wrapper.findComponent({ name: 'ModalDialog' })
     modal.vm.$emit('close')
     await flushPromises()
-    expect(wrapper.emitted('close')).toBeUndefined()
-    expect(wrapper.text()).toContain('终端关闭失败')
-    modal.vm.$emit('close')
-    await flushPromises()
     expect(wrapper.emitted('close')).toHaveLength(1)
+    expect(wrapper.text()).not.toContain('终端关闭失败')
   })
 })

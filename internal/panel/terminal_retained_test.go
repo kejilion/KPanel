@@ -379,6 +379,9 @@ func TestRetainedShortcutValidationAndUncertainLaunchNeverReplay(t *testing.T) {
 	if got.Code != 201 || !item.LaunchUncertain {
 		t.Fatalf("uncertain: %d %s", got.Code, got.Body)
 	}
+	if !item.Detachable || !item.WorkspaceVisible {
+		t.Fatal("named terminal must support cleanup without losing its workspace identity")
+	}
 	stub.failInput = false
 	retry := authenticatedRequest(s, http.MethodPost, "/api/v1/terminal-sessions", retainedShortcutBody(version), cookie, csrf, retainedHeaders(csrf))
 	if retry.Code != 200 || stub.opened != 1 || len(stub.inputs) != 0 {
@@ -393,9 +396,19 @@ func TestRetainedShortcutValidationAndUncertainLaunchNeverReplay(t *testing.T) {
 	if closed.Code != 502 {
 		t.Fatalf("close: %d", closed.Code)
 	}
+	detached := authenticatedRequest(s, http.MethodPost, "/api/v1/terminal-sessions/"+item.SessionID+"/detach", []byte(`{}`), cookie, csrf, retainedHeaders(csrf))
+	if detached.Code != 200 {
+		t.Fatalf("detach: %d %s", detached.Code, detached.Body.String())
+	}
 	retry = authenticatedRequest(s, http.MethodPost, "/api/v1/terminal-sessions", retainedShortcutBody(version), cookie, csrf, retainedHeaders(csrf))
 	if retry.Code != 409 || stub.opened != 1 {
 		t.Fatal("failed close replaced a live session")
+	}
+	s.terminalMu.Lock()
+	done := s.terminalCleanupDone
+	s.terminalMu.Unlock()
+	if done != nil {
+		<-done
 	}
 }
 func TestRetainedAgentNegotiationRejectsOldAgent(t *testing.T) {

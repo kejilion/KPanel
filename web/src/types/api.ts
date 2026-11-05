@@ -464,6 +464,7 @@ export interface ClusterPairingCode {
 
 export interface TerminalSession {
   detachable?: boolean
+  workspaceVisible?: boolean
   retained?: boolean
   purpose?: 'site-management'
   shortcutId?: string

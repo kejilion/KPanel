@@ -194,20 +194,19 @@ const settle = (page) => page.waitForFunction(() => [...document.querySelectorAl
         assert(metrics.minimumFont >= 12, JSON.stringify(metrics));
         assert(metrics.panes.every((pane) => pane.screen > 30 && pane.composer), JSON.stringify(metrics));
         await page.screenshot({ path: path.join(out, `${width}-${theme}-${zoom}-${language}-${mode}.png`), fullPage: true });
-        // Exercise a real failing API response and its existing retry affordance.
-        let failClose = true;
+        // A failed close should move directly to cleanup and dismiss the tab.
         await page.route('**/terminal-sessions/*/close', async (route) => {
-          if (failClose) { failClose = false; await route.fulfill({ status: 502, json: { code: 'terminal_close_failed', title: 'Mock offline' } }); }
-          else await route.continue();
+          await route.fulfill({ status: 502, json: { code: 'terminal_close_failed', title: 'Mock offline' } });
         });
+        await page.route('**/terminal-sessions/*/detach', route => route.fulfill({ status: 200, json: { detached: true } }));
         const before = await page.locator('.terminal-tab').count();
+        const detached = page.waitForResponse((response) => response.url().endsWith('/detach') && response.ok());
         await page.locator('.terminal-tab__close').last().click();
-        await page.locator('.terminal-alert button').waitFor();
-        assert.equal(await page.locator('.terminal-tab').count(), before);
-        const retried = page.waitForResponse((response) => response.url().endsWith('/close') && response.ok());
-        await page.locator('.terminal-alert button').click();
-        await retried;
+        await detached;
         await page.waitForFunction((n) => document.querySelectorAll('.terminal-tab').length === n, before - 1);
+        assert.equal(await page.locator('.terminal-alert').count(), 0);
+        await page.unroute('**/terminal-sessions/*/close');
+        await page.unroute('**/terminal-sessions/*/detach');
         result.cases.push({ width, theme, zoom, language, mode, count, ...metrics });
       } catch (error) {
         await page.screenshot({ path: path.join(out, 'failure.png'), fullPage: true });

@@ -2049,13 +2049,13 @@ export const api = {
       request<{ accepted: boolean }>(`/terminal-sessions/${encodeURIComponent(sessionId)}/resize`, {
         method: 'POST', body: { rows, columns },
       }),
-    close: (sessionId: string): Promise<{ closed: boolean }> =>
+    close: (sessionId: string, signal: AbortSignal = AbortSignal.timeout(12_000)): Promise<{ closed: boolean }> =>
       request<{ closed: boolean }>(`/terminal-sessions/${encodeURIComponent(sessionId)}/close`, {
-        method: 'POST', body: {},
+        method: 'POST', body: {}, signal,
       }),
-    detach: (sessionId: string): Promise<{ detached: boolean }> =>
+    detach: (sessionId: string, signal: AbortSignal = AbortSignal.timeout(5_000)): Promise<{ detached: boolean }> =>
       request<{ detached: boolean }>(`/terminal-sessions/${encodeURIComponent(sessionId)}/detach`, {
-        method: 'POST', body: {},
+        method: 'POST', body: {}, signal,
       }),
     // For a page that is going away: nothing can read the answer, and a
     // keepalive request is the only kind the browser lets finish afterwards.
@@ -2307,9 +2307,9 @@ export const api = {
         body: { data },
       }),
     terminalResize: resizeAppTerminal,
-    cancelJob: (id: string): Promise<AppInstallJob> =>
+    cancelJob: (id: string, signal?: AbortSignal): Promise<AppInstallJob> =>
       request<AppInstallJob>(`/app-jobs/${encodeURIComponent(id)}/cancel`, {
-        method: 'POST',
+        method: 'POST', signal,
       }),
     action: (
       id: string,

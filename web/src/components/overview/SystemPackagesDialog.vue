@@ -8,6 +8,7 @@ import HostTerminal from '@/components/terminal/HostTerminal.vue'
 import { usePollingRequest } from '@/composables/usePollingRequest'
 import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
 import { ApiError, api } from '@/lib/api'
+import { closeTerminalQuietly } from '@/lib/terminalClose'
 import { systemPackageLaunchCommand } from '@/lib/systemPackageLaunch'
 import { useToast } from '@/stores/toast'
 import type { SystemPackageID, SystemPackageItem, SystemPackagesSnapshot, TerminalSession } from '@/types/api'
@@ -154,6 +155,12 @@ function closePackageTerminal(): void {
   terminalPackage.value = undefined
 }
 
+async function cleanupPackageTerminal(id: string): Promise<void> {
+  await closeTerminalQuietly(id, async () => {
+    if (!(await api.terminals.close(id)).closed) throw new Error('Terminal close was not confirmed')
+  })
+}
+
 async function launch(item: SystemPackageItem): Promise<void> {
   const command = systemPackageLaunchCommand(item.id)
   if (!item.installed || !item.launchable || !command || terminalOpening.value) return
@@ -167,17 +174,17 @@ async function launch(item: SystemPackageItem): Promise<void> {
   try {
     opened = await api.terminals.open('local', 30, 120)
     if (generation !== terminalGeneration || !terminalOpen.value) {
-      await api.terminals.close(opened.sessionId).catch(() => undefined)
+      await cleanupPackageTerminal(opened.sessionId)
       return
     }
     await api.terminals.input(opened.sessionId, encodeTerminalInput(`${command}\r`))
     if (generation !== terminalGeneration || !terminalOpen.value) {
-      await api.terminals.close(opened.sessionId).catch(() => undefined)
+      await cleanupPackageTerminal(opened.sessionId)
       return
     }
     terminalSession.value = opened
   } catch (reason) {
-    if (opened) await api.terminals.close(opened.sessionId).catch(() => undefined)
+    if (opened) await cleanupPackageTerminal(opened.sessionId)
     if (generation === terminalGeneration && terminalOpen.value) {
       terminalError.value = reason instanceof ApiError && reason.code === 'terminal_limit'
         ? '已达到终端会话上限，请先关闭不用的终端。'

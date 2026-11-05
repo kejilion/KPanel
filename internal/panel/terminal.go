@@ -49,6 +49,7 @@ type panelTerminalSession struct {
 	CloseRequested   bool
 	Detached         bool
 	Detachable       bool
+	WorkspaceVisible bool
 	ReliableInput    bool
 	InputClaimed     bool
 	InputConnection  *terminalInputConnection
@@ -87,18 +88,19 @@ func (intent panelTerminalLaunchIntent) matches(userID string, input terminalOpe
 }
 
 type terminalOpenResponse struct {
-	Retained        bool       `json:"retained,omitempty"`
-	Detachable      bool       `json:"detachable,omitempty"`
-	ShortcutID      string     `json:"shortcutId,omitempty"`
-	Purpose         string     `json:"purpose,omitempty"`
-	Title           string     `json:"title,omitempty"`
-	CloseRequested  bool       `json:"closeRequested,omitempty"`
-	LaunchUncertain bool       `json:"launchUncertain,omitempty"`
-	ExpiresAt       *time.Time `json:"expiresAt,omitempty"`
-	SessionID       string     `json:"sessionId"`
-	HostID          string     `json:"hostId"`
-	Offset          int64      `json:"offset"`
-	CreatedAt       time.Time  `json:"createdAt"`
+	Retained         bool       `json:"retained,omitempty"`
+	Detachable       bool       `json:"detachable,omitempty"`
+	WorkspaceVisible bool       `json:"workspaceVisible,omitempty"`
+	ShortcutID       string     `json:"shortcutId,omitempty"`
+	Purpose          string     `json:"purpose,omitempty"`
+	Title            string     `json:"title,omitempty"`
+	CloseRequested   bool       `json:"closeRequested,omitempty"`
+	LaunchUncertain  bool       `json:"launchUncertain,omitempty"`
+	ExpiresAt        *time.Time `json:"expiresAt,omitempty"`
+	SessionID        string     `json:"sessionId"`
+	HostID           string     `json:"hostId"`
+	Offset           int64      `json:"offset"`
+	CreatedAt        time.Time  `json:"createdAt"`
 }
 
 func (s clusterTerminalSource) Open(ctx context.Context, owner string, rows, columns uint16) (terminal.Snapshot, error) {
@@ -485,7 +487,7 @@ func (s *Server) openTerminalSession(w http.ResponseWriter, r *http.Request, use
 		return
 	}
 	now := time.Now().UTC()
-	item := panelTerminalSession{ID: publicID, BackendSessionID: opened.SessionID, HostID: host.ID, UserID: userID, Owner: owner, CreatedAt: now, UpdatedAt: now, Retained: input.Retained, ShortcutID: input.ShortcutID, Purpose: input.Purpose, Title: launchTitle, LaunchUncertain: launchCommand != "", Detachable: input.ContainerID == "" && input.ShortcutID == "" && input.Purpose == ""}
+	item := panelTerminalSession{ID: publicID, BackendSessionID: opened.SessionID, HostID: host.ID, UserID: userID, Owner: owner, CreatedAt: now, UpdatedAt: now, Retained: input.Retained, ShortcutID: input.ShortcutID, Purpose: input.Purpose, Title: launchTitle, LaunchUncertain: launchCommand != "", Detachable: true, WorkspaceVisible: input.ContainerID == ""}
 	if host.IsLocal {
 		item.ReliableInput = localReliable
 	} else {
@@ -981,7 +983,7 @@ func randomTerminalSessionID() (string, error) {
 // Lists metadata only. A network failure is not evidence that the process ended.
 // Neither listing nor reattaching extends the target's fixed lifetime.
 func terminalSessionResponse(item panelTerminalSession) terminalOpenResponse {
-	result := terminalOpenResponse{SessionID: item.ID, HostID: item.HostID, Offset: 0, CreatedAt: item.CreatedAt, Retained: item.Retained, Detachable: item.Detachable, ShortcutID: item.ShortcutID, Purpose: item.Purpose, Title: item.Title, CloseRequested: item.CloseRequested, LaunchUncertain: item.LaunchUncertain}
+	result := terminalOpenResponse{SessionID: item.ID, HostID: item.HostID, Offset: 0, CreatedAt: item.CreatedAt, Retained: item.Retained, Detachable: item.Detachable, WorkspaceVisible: item.WorkspaceVisible, ShortcutID: item.ShortcutID, Purpose: item.Purpose, Title: item.Title, CloseRequested: item.CloseRequested, LaunchUncertain: item.LaunchUncertain}
 	if item.Retained {
 		expiry := item.CreatedAt.Add(terminal.DefaultLifetime)
 		result.ExpiresAt = &expiry
@@ -1036,6 +1038,7 @@ func (s *Server) resumeShortcut(w http.ResponseWriter, r *http.Request, userID s
 	}
 	// A failed close is still a real tracked process; do not start its replacement.
 	if item.CloseRequested || !time.Now().Before(item.CreatedAt.Add(terminal.DefaultLifetime)) {
+		s.scheduleTerminalCleanup()
 		s.writeProblem(w, r, 409, "terminal_close_pending", "End the previous session before restarting", "")
 		return true
 	}

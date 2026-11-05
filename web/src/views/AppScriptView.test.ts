@@ -219,10 +219,9 @@ describe('dedicated desktop app script terminal', () => {
     expect(wrapper.text()).not.toContain('关闭窗口或刷新不会结束任务')
     expect(wrapper.element.children).toHaveLength(1)
     await expect(Promise.resolve(guard?.())).resolves.toBe(true)
-    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('释放应用管理锁'))
-    expect(mocks.cancelJob).toHaveBeenCalledWith('job-1')
-    expect(mocks.job).toHaveBeenCalledWith('job-1')
-    expect(window.localStorage.getItem('kpanel:active-app-job')).toBeNull()
+    expect(confirm).not.toHaveBeenCalled()
+    expect(mocks.cancelJob).toHaveBeenCalledWith('job-1', expect.any(AbortSignal))
+    expect(window.localStorage.getItem('kpanel:active-app-job')).toBe('job-1')
 
     wrapper.unmount()
     expect(unregister).toHaveBeenCalledOnce()
@@ -252,8 +251,8 @@ describe('dedicated desktop app script terminal', () => {
     complete()
     await expect(closing).resolves.toBe(true)
     expect(mocks.action).not.toHaveBeenCalled()
-    expect(mocks.cancelJob).toHaveBeenCalledExactlyOnceWith('job-1')
-    expect(window.localStorage.getItem('kpanel:active-app-job')).toBeNull()
+    expect(mocks.cancelJob).toHaveBeenCalledExactlyOnceWith('job-1', expect.any(AbortSignal))
+    expect(window.localStorage.getItem('kpanel:active-app-job')).toBe('job-1')
     wrapper.unmount()
   })
 
@@ -270,11 +269,11 @@ describe('dedicated desktop app script terminal', () => {
     complete(job)
     await expect(closing).resolves.toBe(true)
     expect(mocks.action).toHaveBeenCalledOnce()
-    expect(mocks.cancelJob).toHaveBeenCalledExactlyOnceWith('job-1')
+    expect(mocks.cancelJob).toHaveBeenCalledExactlyOnceWith('job-1', expect.any(AbortSignal))
     wrapper.unmount()
   })
 
-  it('keeps the task visible when the Agent cannot confirm process shutdown', async () => {
+  it('closes silently but preserves the task identity when shutdown cannot be confirmed', async () => {
     let guard: (() => boolean | Promise<boolean>) | undefined
     const closeGuards: DesktopWindowCloseGuardRegistry = {
       register: (candidate) => {
@@ -286,13 +285,13 @@ describe('dedicated desktop app script terminal', () => {
     mocks.cancelJob.mockRejectedValue(new Error('Agent offline'))
     const wrapper = await mountView(closeGuards)
 
-    expect(await guard?.()).toBe(false)
-    expect(wrapper.find('[role="alert"]').text()).toContain('Agent offline')
+    expect(await guard?.()).toBe(true)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     expect(window.localStorage.getItem('kpanel:active-app-job')).toBe('job-1')
     wrapper.unmount()
   })
 
-  it('keeps the process running when ending the task is cancelled', async () => {
+  it('does not ask for confirmation when ending the task', async () => {
     let guard: (() => boolean | Promise<boolean>) | undefined
     const closeGuards: DesktopWindowCloseGuardRegistry = {
       register: (candidate) => {
@@ -303,8 +302,9 @@ describe('dedicated desktop app script terminal', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(false)
     const wrapper = await mountView(closeGuards)
 
-    expect(await guard?.()).toBe(false)
-    expect(mocks.cancelJob).not.toHaveBeenCalled()
+    expect(await guard?.()).toBe(true)
+    expect(window.confirm).not.toHaveBeenCalled()
+    expect(mocks.cancelJob).toHaveBeenCalledOnce()
     wrapper.unmount()
   })
 
