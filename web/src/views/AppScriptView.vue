@@ -41,7 +41,8 @@ const launchJobIDs = new Set<string>()
 
 const activeJobStorageKey = 'kpanel:active-app-job'
 const appID = computed(() => String(route.params.appId || ''))
-const identityKey = windowIdentityKey('app', owner, windowId, appID.value)
+let identityKey = ''
+let identityReady: Promise<void> = Promise.resolve()
 function trackJob(id: string): void {
   if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id)) return
   launchJobIDs.add(id)
@@ -155,6 +156,7 @@ async function stopActiveJobBeforeClose(): Promise<boolean> {
   userClosed = true
   closingOwner = owner
   if (!launchJobID) controller?.abort()
+  await identityReady
   for (const id of launchJobIDs) requestQuietAppJobStop(id, closingOwner, currentOwner)
   const active = job.value
   if (!active || !isActiveJob(active)) return true
@@ -176,9 +178,12 @@ onMounted(() => {
   retryPendingAppJobStops(currentOwner(), currentOwner)
   unregisterWindowCloseGuard = windowCloseGuards?.register(guardWindowClose)
   const fresh = consumeWindowLaunch()
-  if (fresh) writeWindowIdentities(identityKey, [])
-  else for (const id of readWindowIdentities(identityKey, /^[a-zA-Z0-9_-]{1,128}$/, 64)) launchJobIDs.add(id)
-  startLoad(fresh)
+  identityReady = (async () => {
+    identityKey = await windowIdentityKey('app', owner, windowId, appID.value)
+    if (fresh) writeWindowIdentities(identityKey, [])
+    else for (const id of readWindowIdentities(identityKey, /^[a-zA-Z0-9_-]{1,128}$/, 64)) launchJobIDs.add(id)
+    if (!userClosed && !disposed) startLoad(fresh)
+  })()
 })
 onBeforeUnmount(() => {
   disposed = true

@@ -45,6 +45,31 @@ beforeEach(() => {
 afterEach(() => { for (const wrapper of wrappers.splice(0)) wrapper.unmount() })
 
 describe('shortcut command terminal lifecycle', () => {
+  it('releases pending launch acknowledgements before reopening a named session', async () => {
+    let confirm!: (value: { acknowledged: boolean }) => void
+    mocks.acknowledgeLaunch.mockReturnValueOnce(new Promise(done => { confirm = done }))
+    window.localStorage.setItem(`kpanel:pending-terminal-launch-acks:test-owner:${'c'.repeat(64)}:${'d'.repeat(64)}`, '1')
+    create('remote-1', 'Remote', { shortcutId: 'a'.repeat(32) })
+    await flushPromises()
+    expect(mocks.prepareShortcut).not.toHaveBeenCalled()
+    confirm({ acknowledged: true })
+    await flushPromises()
+    expect(mocks.prepareShortcut).toHaveBeenCalledOnce()
+    expect(mocks.open).toHaveBeenCalledOnce()
+  })
+  it('does not start a command when closed while acknowledgement recovery is pending', async () => {
+    let confirm!: (value: { acknowledged: boolean }) => void
+    mocks.acknowledgeLaunch.mockReturnValueOnce(new Promise(done => { confirm = done }))
+    window.localStorage.setItem(`kpanel:pending-terminal-launch-acks:test-owner:${'e'.repeat(64)}:${'f'.repeat(64)}`, '1')
+    const wrapper = create('remote-1', 'Remote', { shortcutId: 'a'.repeat(32) })
+    await flushPromises()
+    expect(await closeGuard()).toBe(true)
+    expect(wrapper.emitted('close')).toHaveLength(1)
+    confirm({ acknowledged: true })
+    await flushPromises()
+    expect(mocks.prepareShortcut).not.toHaveBeenCalled()
+    expect(mocks.open).not.toHaveBeenCalled()
+  })
   it('closes the window immediately while slow cleanup continues', async () => {
     let reject!: (reason: Error) => void
     mocks.childClose.mockReturnValueOnce(new Promise((_, fail) => { reject = fail }))

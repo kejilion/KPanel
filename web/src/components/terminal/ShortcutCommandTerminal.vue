@@ -4,7 +4,7 @@ import { LoaderCircle } from '@lucide/vue'
 import { desktopWindowCloseGuardKey } from '@/lib/desktopRouteKeys'
 import HostTerminal from '@/components/terminal/HostTerminal.vue'
 import { api, ApiError } from '@/lib/api'
-import { closeTerminalForOwner, closeTerminalQuietly, deferTerminalClose, queueTerminalLaunchAck, queueTerminalLaunchClose, retryPendingTerminalCloses } from '@/lib/terminalClose'
+import { closeTerminalForOwner, closeTerminalQuietly, deferTerminalClose, flushPendingTerminalLaunchAcks, queueTerminalLaunchAck, queueTerminalLaunchClose, retryPendingTerminalCloses } from '@/lib/terminalClose'
 import { useSession } from '@/stores/session'
 import { useI18n } from '@/i18n'
 import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
@@ -57,8 +57,12 @@ async function reclaim(opened: TerminalSession): Promise<void> {
 async function open(): Promise<void> {
   opening.value = true
   error.value = ''
-  retryPendingTerminalCloses()
   try {
+    if (namedLaunch && !props.existingSession) {
+      await flushPendingTerminalLaunchAcks(owner, launchTarget)
+      if (disposed || closing.value) return
+    }
+    retryPendingTerminalCloses()
     if (namedLaunch && !props.existingSession && !launchId) {
       launchId = (await (launchTarget.purpose ? api.terminals.preparePurpose(launchTarget.purpose) : api.terminals.prepareShortcut(hostId, launchTarget.shortcutId!))).launchId
       if (!launchId) throw new Error('Terminal launch identity is missing')
@@ -88,7 +92,7 @@ async function open(): Promise<void> {
       return
     }
     session.value = opened
-    if (launchId) queueTerminalLaunchAck(opened.sessionId, launchId, owner)
+    if (launchId) queueTerminalLaunchAck(opened.sessionId, launchId, owner, launchTarget)
     if (opened.launchUncertain) error.value = t('terminal.launchUncertain')
   } catch (reason) {
     if (!disposed) error.value = reason instanceof ApiError && reason.code === 'terminal_limit'

@@ -97,7 +97,8 @@ export function retryPendingTerminalCloses(): void {
   batch()
 }
 
-type LaunchAck = { sessionId: string; launchId: string }
+type AckTarget = { shortcutId?: string; purpose?: 'site-management' }
+type LaunchAck = { sessionId: string; launchId: string; target: AckTarget }
 const ackKey = 'kpanel:pending-terminal-launch-acks'
 const scanningAcks = new Set<string>()
 function readLaunchAcks(owner: string): LaunchAck[] {
@@ -109,13 +110,44 @@ function readLaunchAcks(owner: string): LaunchAck[] {
       const key = window.localStorage.key(index)
       if (!key?.startsWith(prefix)) continue
       const [sessionId, launchId, extra] = key.slice(prefix.length).split(':')
-      if (!extra && /^[a-f0-9]{64}$/.test(sessionId || '') && /^[a-f0-9]{64}$/.test(launchId || '')) result.push({ sessionId: sessionId!, launchId: launchId! })
+      if (!extra && /^[a-f0-9]{64}$/.test(sessionId || '') && /^[a-f0-9]{64}$/.test(launchId || '')) {
+        let target: AckTarget = {}
+        try {
+          const value: unknown = JSON.parse(window.localStorage.getItem(key) || '{}')
+          if (value && typeof value === 'object') {
+            const saved = value as AckTarget
+            if (saved.purpose === 'site-management') target = { purpose: saved.purpose }
+            else if (typeof saved.shortcutId === 'string' && /^[a-f0-9]{32}$/.test(saved.shortcutId)) target = { shortcutId: saved.shortcutId }
+          }
+        } catch { /* An older acknowledgement has no target metadata. */ }
+        result.push({ sessionId: sessionId!, launchId: launchId!, target })
+      }
     }
     return result
   } catch { return [] }
 }
 function launchAckStorageKey(owner: string, sessionId: string, launchId: string): string {
   return `${ackKey}:${encodeURIComponent(owner)}:${sessionId}:${launchId}`
+}
+// Release known acknowledgement slots before opening another named session.
+// Requests are idempotent; failures stay queued and do not replay a command.
+export async function flushPendingTerminalLaunchAcks(owner: string, target?: AckTarget): Promise<void> {
+  if (!owner || currentOwner() !== owner) return
+  const pending = readLaunchAcks(owner).sort((a, b) => {
+    const matches = (item: LaunchAck) => target && (target.purpose ? item.target.purpose === target.purpose : target.shortcutId && item.target.shortcutId === target.shortcutId) ? 1 : 0
+    return matches(b) - matches(a)
+  }).slice(0, 64)
+  await Promise.all(pending.map(async ({ sessionId, launchId }) => {
+    if (currentOwner() !== owner) return
+    try {
+      const result = await api.terminals.acknowledgeLaunch(sessionId, launchId)
+      if (currentOwner() === owner && result.acknowledged) window.localStorage.removeItem(launchAckStorageKey(owner, sessionId, launchId))
+    } catch (reason) {
+      if (currentOwner() === owner && reason instanceof ApiError && reason.code === 'terminal_not_found') {
+        try { window.localStorage.removeItem(launchAckStorageKey(owner, sessionId, launchId)) } catch { /* best effort */ }
+      }
+    }
+  }))
 }
 function retryLaunchAcks(owner: string): void {
   if (!owner || scanningAcks.has(owner)) return
@@ -125,7 +157,7 @@ function retryLaunchAcks(owner: string): void {
   let index = 0
   const batch = () => {
     if (currentOwner() !== owner) { scanningAcks.delete(owner); return }
-    for (const ack of pending.slice(index, index + 64)) queueTerminalLaunchAck(ack.sessionId, ack.launchId, owner)
+    for (const ack of pending.slice(index, index + 64)) queueTerminalLaunchAck(ack.sessionId, ack.launchId, owner, ack.target)
     index += 64
     if (index < pending.length) window.setTimeout(batch, 2000)
     else scanningAcks.delete(owner)
@@ -135,14 +167,16 @@ function retryLaunchAcks(owner: string): void {
 
 // The server keeps a launch identity until the browser confirms receipt.
 // Keep failed acknowledgements so reconnecting can release that bounded slot.
-export function queueTerminalLaunchAck(sessionId: string, launchId: string, owner: string): void {
+export function queueTerminalLaunchAck(sessionId: string, launchId: string, owner: string, target: AckTarget = {}): void {
   if (!owner || !/^[a-f0-9]{64}$/.test(sessionId) || !/^[a-f0-9]{64}$/.test(launchId)) {
     void api.terminals.acknowledgeLaunch(sessionId, launchId).catch(() => undefined)
     return
   }
   const key = `ack\0${owner}\0${sessionId}\0${launchId}`
   const storageKey = launchAckStorageKey(owner, sessionId, launchId)
-  try { window.localStorage.setItem(storageKey, '1') } catch { /* best effort */ }
+  const saved: AckTarget = target.purpose === 'site-management' ? { purpose: target.purpose }
+    : typeof target.shortcutId === 'string' && /^[a-f0-9]{32}$/.test(target.shortcutId) ? { shortcutId: target.shortcutId } : {}
+  try { window.localStorage.setItem(storageKey, JSON.stringify(saved)) } catch { /* best effort */ }
   if (active.has(key)) return
   active.add(key)
   const attempt = async (remaining: number): Promise<void> => {

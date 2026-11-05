@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/lib/api'
-import { closeTerminalForOwner, closeTerminalQuietly, deferTerminalClose, queueTerminalLaunchAck, queueTerminalLaunchClose, retryPendingTerminalCloses } from './terminalClose'
+import { closeTerminalForOwner, closeTerminalQuietly, deferTerminalClose, flushPendingTerminalLaunchAcks, queueTerminalLaunchAck, queueTerminalLaunchClose, retryPendingTerminalCloses } from './terminalClose'
 
 const mocks = vi.hoisted(() => ({ detach: vi.fn(), close: vi.fn(), resolveShortcut: vi.fn(), acknowledgeLaunch: vi.fn(), owner: { authenticated: false, user: { id: 'owner' } } }))
 vi.mock('@/lib/api', () => ({
@@ -102,7 +102,7 @@ describe('quiet terminal close', () => {
     await vi.advanceTimersByTimeAsync(4000)
     expect(mocks.acknowledgeLaunch).toHaveBeenCalledTimes(3)
     const key = `kpanel:pending-terminal-launch-acks:owner:${sessionId}:${launchId}`
-    expect(window.localStorage.getItem(key)).toBe('1')
+    expect(window.localStorage.getItem(key)).toBe('{}')
     mocks.owner.user.id = 'other'
     retryPendingTerminalCloses()
     expect(mocks.acknowledgeLaunch).toHaveBeenCalledTimes(3)
@@ -125,6 +125,21 @@ describe('quiet terminal close', () => {
     await vi.advanceTimersByTimeAsync(0)
     expect(mocks.acknowledgeLaunch).toHaveBeenCalledTimes(64)
     expect([...Array(window.localStorage.length)].map((_, index) => window.localStorage.key(index)).filter(key => key?.startsWith('kpanel:pending-terminal-launch-acks:owner:'))).toEqual([])
+  })
+  it('prioritizes this shortcut’s acknowledgements when many others are pending', async () => {
+    mocks.owner.authenticated = true
+    const sessionId = '4'.repeat(64), target = 'a'.repeat(32)
+    const own: string[] = []
+    for (let index = 0; index < 80; index++) {
+      const id = index.toString(16).padStart(64, '0')
+      const shortcutId = index >= 64 ? target : 'b'.repeat(32)
+      window.localStorage.setItem(`kpanel:pending-terminal-launch-acks:owner:${sessionId}:${id}`, JSON.stringify({ shortcutId }))
+      if (index >= 64) own.push(id)
+    }
+    mocks.acknowledgeLaunch.mockResolvedValue({ acknowledged: true })
+    await flushPendingTerminalLaunchAcks('owner', { shortcutId: target })
+    expect(mocks.acknowledgeLaunch).toHaveBeenCalledTimes(64)
+    for (const id of own) expect(mocks.acknowledgeLaunch).toHaveBeenCalledWith(sessionId, id)
   })
   it('keeps every pending session identity when more than 32 are deferred', () => {
     mocks.owner.authenticated = true

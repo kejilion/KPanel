@@ -99,7 +99,8 @@ let disposed = false
 let userClosed = false
 const account = useSession()
 const owner = account.state.authenticated ? account.state.user?.id || '' : ''
-const identityKey = windowIdentityKey('terminal', owner, windowId || 'classic')
+let identityKey = ''
+let identityReady: Promise<void> = Promise.resolve()
 let restoredSessionIDs: string[] = []
 function rememberSessions(): void {
   writeWindowIdentities(identityKey, sessions.value.map(item => item.id).filter(id => /^[a-f0-9]{64}$/.test(id)))
@@ -527,8 +528,14 @@ watch(() => route.query.hostId, () => {
 
 onMounted(() => {
   retryPendingTerminalCloses()
-  if (consumeWindowLaunch()) writeWindowIdentities(identityKey, [])
-  else restoredSessionIDs = readWindowIdentities(identityKey, /^[a-f0-9]{64}$/, 16)
+
+  const fresh = consumeWindowLaunch()
+  identityReady = (async () => {
+    identityKey = await windowIdentityKey('terminal', owner, windowId || 'classic')
+    if (fresh) writeWindowIdentities(identityKey, [])
+    else restoredSessionIDs = readWindowIdentities(identityKey, /^[a-f0-9]{64}$/, 16)
+    if (!disposed) void loadHosts()
+  })()
 	window.addEventListener(clusterRemoteAccessChanged, loadHosts)
   unsubscribeClusterHostOrder = subscribeClusterHostOrder(() => {
     clusterHostOrderRevision.value += 1
@@ -538,12 +545,13 @@ onMounted(() => {
   } catch {
     connectionsCollapsed.value = false
   }
-  const guard = () => {
+  const guard = async () => {
     if (checkingWindowClose) return false
     checkingWindowClose = true
     userClosed = true
     disposed = true
     controller?.abort()
+    await identityReady
     if (initialHostLoad) for (const id of restoredSessionIDs) cleanupLateSession(id)
     for (const item of [...sessions.value]) void closeSession(item.id)
     return true
@@ -551,7 +559,6 @@ onMounted(() => {
   unregisterWindowCloseGuard = desktopWindowCloseGuards
     ? desktopWindowCloseGuards.register(guard)
     : desktopCloseGuardCoordinator.register('classic-terminal', guard)
-  void loadHosts()
 })
 onBeforeUnmount(() => {
 	window.removeEventListener(clusterRemoteAccessChanged, loadHosts)

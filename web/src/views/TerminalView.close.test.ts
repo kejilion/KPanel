@@ -3,6 +3,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { desktopWindowCloseGuardKey, desktopWindowIdentityKey, desktopWindowLaunchKey } from '@/lib/desktopRouteKeys'
+import { resetWindowIdentityForTest } from '@/lib/windowSessionIdentities'
 import TerminalView from './TerminalView.vue'
 import { ApiError } from '@/lib/api'
 
@@ -14,7 +15,7 @@ function create(windowId?: string, fresh = true) {
     ...(windowId ? { [desktopWindowIdentityKey as symbol]: windowId, [desktopWindowLaunchKey as symbol]: () => fresh } : {}),
   } } })
 }
-afterEach(() => vi.restoreAllMocks())
+afterEach(() => { resetWindowIdentityForTest(); Reflect.deleteProperty(navigator, 'locks'); vi.restoreAllMocks() })
 vi.mock('vue-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('vue-router')>()),
   useRoute: () => ({ query: {} }),
@@ -32,6 +33,8 @@ vi.mock('@/components/terminal/HostTerminal.vue', () => ({ default: defineCompon
 
 describe('explicit terminal tab close', () => {
   beforeEach(() => {
+    resetWindowIdentityForTest()
+    Object.defineProperty(navigator, 'locks', { configurable: true, value: { request: (_name: string, _options: unknown, callback: (lock: Lock) => unknown) => Promise.resolve(callback({ name: 'test', mode: 'exclusive' } as Lock)) } })
     window.localStorage.clear()
     window.sessionStorage.clear()
     mocks.close.mockReset()

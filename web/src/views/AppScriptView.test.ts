@@ -4,6 +4,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { resetLocaleForTest, setLocale } from '@/i18n'
 import { desktopWindowCloseGuardKey, desktopWindowIdentityKey, desktopWindowLaunchKey, type DesktopWindowCloseGuardRegistry } from '@/lib/desktopRouteKeys'
+import { resetWindowIdentityForTest } from '@/lib/windowSessionIdentities'
 import { resetDesktopModeForTest, useDesktopMode } from '@/stores/desktopMode'
 import AppScriptView from './AppScriptView.vue'
 
@@ -86,6 +87,8 @@ async function mountView(closeGuards?: DesktopWindowCloseGuardRegistry, consumeL
 
 describe('dedicated desktop app script terminal', () => {
   beforeEach(() => {
+    resetWindowIdentityForTest()
+    Object.defineProperty(navigator, 'locks', { configurable: true, value: { request: (_name: string, _options: unknown, callback: (lock: Lock) => unknown) => Promise.resolve(callback({ name: 'test', mode: 'exclusive' } as Lock)) } })
     vi.clearAllMocks()
     mocks.owner.user.id = `app-test-${crypto.randomUUID()}`
     resetDesktopModeForTest()
@@ -99,6 +102,8 @@ describe('dedicated desktop app script terminal', () => {
   })
 
   afterEach(() => {
+    resetWindowIdentityForTest()
+    Reflect.deleteProperty(navigator, 'locks')
     vi.restoreAllMocks()
     resetLocaleForTest()
   })
