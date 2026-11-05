@@ -964,7 +964,7 @@ func (s *Server) scheduleTerminalCleanup() {
 			s.terminalMu.Lock()
 			pendingDetached := false
 			for _, item := range s.terminalSessions {
-				if item.Detached && item.CloseRequested {
+				if item.CloseRequested && (item.Detached || item.HostID != cluster.LocalHostID && !s.cluster.HostRemoteAccess(item.HostID).EffectiveTerminalEnabled) {
 					pendingDetached = true
 					break
 				}
@@ -1094,10 +1094,12 @@ func (s *Server) resumeShortcut(w http.ResponseWriter, r *http.Request, userID s
 		}
 		s.terminalMu.Lock()
 		if current, ok := s.terminalSessions[item.ID]; ok {
-			current.LaunchIDs = append(current.LaunchIDs, input.LaunchID)
-			if len(current.LaunchIDs) > maxPanelTerminals {
-				current.LaunchIDs = current.LaunchIDs[len(current.LaunchIDs)-maxPanelTerminals:]
+			if len(current.LaunchIDs) >= maxPanelTerminals {
+				s.terminalMu.Unlock()
+				s.writeProblem(w, r, 429, "terminal_limit", "Terminal launch identity limit reached", "Close the existing session before reopening it")
+				return true
 			}
+			current.LaunchIDs = append(current.LaunchIDs, input.LaunchID)
 			s.terminalSessions[item.ID] = current
 		}
 		s.terminalMu.Unlock()

@@ -176,10 +176,6 @@ async function performLoadHosts(): Promise<void> {
       for (const session of retained.items) {
         const visible = session.workspaceVisible && (session.retained || session.closeRequested)
         if (!visible || sessions.value.some(item => item.id === session.sessionId)) continue
-        if (userClosed) {
-          cleanupLateSession(session.sessionId)
-          continue
-        }
         if (session.closeRequested && session.detachable) {
           // The user already closed this session before a reload. Finish the
           // local dismissal without restoring a prompt or replaying input.
@@ -540,6 +536,7 @@ onMounted(() => {
     checkingWindowClose = true
     userClosed = true
     disposed = true
+    controller?.abort()
     for (const item of [...sessions.value]) void closeSession(item.id)
     return true
   }
@@ -553,7 +550,7 @@ onBeforeUnmount(() => {
   disposed = true
   unsubscribeClusterHostOrder?.()
   unregisterWindowCloseGuard?.()
-  if (!userClosed) controller?.abort()
+  controller?.abort()
 })
 </script>
 

@@ -7,6 +7,7 @@ const currentOwner = () => {
   const state = useSession().state
   return state.authenticated ? state.user?.id || '' : ''
 }
+export const terminalCleanupOwner = currentOwner
 function readPending(owner: string): string[] {
   if (!owner) return []
   try {
@@ -46,6 +47,14 @@ function queuePending(id: string, owner: string): void {
 
 export function deferTerminalClose(id: string, owner: string): void {
   queuePending(id, owner)
+}
+
+export async function closeTerminalForOwner(id: string, owner: string, close: () => Promise<void>): Promise<'closed' | 'detached' | 'missing' | 'pending'> {
+  if (owner && currentOwner() !== owner) {
+    queuePending(id, owner)
+    return 'pending'
+  }
+  return closeTerminalQuietly(id, close)
 }
 
 export function retryPendingTerminalCloses(): void {

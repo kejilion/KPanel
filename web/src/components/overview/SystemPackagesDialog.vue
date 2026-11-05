@@ -8,7 +8,7 @@ import HostTerminal from '@/components/terminal/HostTerminal.vue'
 import { usePollingRequest } from '@/composables/usePollingRequest'
 import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
 import { ApiError, api } from '@/lib/api'
-import { closeTerminalQuietly } from '@/lib/terminalClose'
+import { closeTerminalForOwner, terminalCleanupOwner } from '@/lib/terminalClose'
 import { systemPackageLaunchCommand } from '@/lib/systemPackageLaunch'
 import { useToast } from '@/stores/toast'
 import type { SystemPackageID, SystemPackageItem, SystemPackagesSnapshot, TerminalSession } from '@/types/api'
@@ -155,8 +155,8 @@ function closePackageTerminal(): void {
   terminalPackage.value = undefined
 }
 
-async function cleanupPackageTerminal(id: string): Promise<void> {
-  await closeTerminalQuietly(id, async () => {
+async function cleanupPackageTerminal(id: string, owner: string): Promise<void> {
+  await closeTerminalForOwner(id, owner, async () => {
     if (!(await api.terminals.close(id)).closed) throw new Error('Terminal close was not confirmed')
   })
 }
@@ -170,21 +170,22 @@ async function launch(item: SystemPackageItem): Promise<void> {
   terminalPackage.value = item
   terminalSession.value = undefined
   const generation = ++terminalGeneration
+  const owner = terminalCleanupOwner()
   let opened: TerminalSession | undefined
   try {
     opened = await api.terminals.open('local', 30, 120)
-    if (generation !== terminalGeneration || !terminalOpen.value) {
-      await cleanupPackageTerminal(opened.sessionId)
+    if (generation !== terminalGeneration || !terminalOpen.value || owner && terminalCleanupOwner() !== owner) {
+      await cleanupPackageTerminal(opened.sessionId, owner)
       return
     }
     await api.terminals.input(opened.sessionId, encodeTerminalInput(`${command}\r`))
-    if (generation !== terminalGeneration || !terminalOpen.value) {
-      await cleanupPackageTerminal(opened.sessionId)
+    if (generation !== terminalGeneration || !terminalOpen.value || owner && terminalCleanupOwner() !== owner) {
+      await cleanupPackageTerminal(opened.sessionId, owner)
       return
     }
     terminalSession.value = opened
   } catch (reason) {
-    if (opened) await cleanupPackageTerminal(opened.sessionId)
+    if (opened) await cleanupPackageTerminal(opened.sessionId, owner)
     if (generation === terminalGeneration && terminalOpen.value) {
       terminalError.value = reason instanceof ApiError && reason.code === 'terminal_limit'
         ? '已达到终端会话上限，请先关闭不用的终端。'

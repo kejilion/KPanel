@@ -2891,7 +2891,9 @@ createServer(async (request, response) => {
     const input = await readJSON(request)
     if (!app?.capabilities.manage.enabled) return send(response, 409, { title: '应用没有可用的脚本管理入口' })
     if (input.resourceVersion !== app.runtime.resourceVersion) return send(response, 409, { title: '应用状态已变化，请刷新后重试' })
-    const id = `${Date.now().toString(16).padStart(16, '0')}${'b'.repeat(16)}`
+    if (input.jobId !== undefined && !/^[a-f0-9]{32}$/.test(input.jobId)) return send(response, 422, { title: '模拟任务身份无效' })
+    const id = input.jobId || `${Date.now().toString(16).padStart(16, '0')}${'b'.repeat(16)}`
+    if (appJobs.has(id)) return send(response, 409, { title: '模拟任务身份已存在' })
     const native = { id, appId: app.id, appName: app.name_zh, action: 'manage', interactive: true, inputOpen: true,
       status: 'running', stage: 'interactive', progress: 5, logs: ['模拟终端：未执行宿主机脚本'], createdAt: new Date().toISOString() }
     appJobs.set(id, { native, terminalOutput: `模拟数据 · ${app.name_zh}\r\n脚本管理终端已打开（未执行宿主机命令）\r\n1. 安装  2. 更新  3. 卸载  0. 返回\r\n请输入你的选择: ` })

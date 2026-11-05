@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/lib/api'
-import { closeTerminalQuietly, queueTerminalLaunchClose, retryPendingTerminalCloses } from './terminalClose'
+import { closeTerminalForOwner, closeTerminalQuietly, queueTerminalLaunchClose, retryPendingTerminalCloses } from './terminalClose'
 
 const mocks = vi.hoisted(() => ({ detach: vi.fn(), close: vi.fn(), resolveShortcut: vi.fn(), owner: { authenticated: false, user: { id: 'owner' } } }))
 vi.mock('@/lib/api', () => ({
@@ -65,6 +65,15 @@ describe('quiet terminal close', () => {
     expect(mocks.detach).not.toHaveBeenCalled()
     expect(JSON.parse(window.localStorage.getItem('kpanel:pending-terminal-closes:owner')!)).toEqual([id])
     expect(window.localStorage.getItem('kpanel:pending-terminal-closes:other')).toBeNull()
+  })
+  it('defers a late session to its original owner without using another account', async () => {
+    mocks.owner.authenticated = true
+    mocks.owner.user.id = 'other'
+    const close = vi.fn()
+    const id = 'f'.repeat(64)
+    await expect(closeTerminalForOwner(id, 'owner', close)).resolves.toBe('pending')
+    expect(close).not.toHaveBeenCalled()
+    expect(JSON.parse(window.localStorage.getItem('kpanel:pending-terminal-closes:owner')!)).toContain(id)
   })
   it('retries a lost launch lookup only for its owner without launching again', async () => {
     mocks.owner.authenticated = true

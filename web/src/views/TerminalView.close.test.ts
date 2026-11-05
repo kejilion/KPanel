@@ -154,7 +154,7 @@ describe('explicit terminal tab close', () => {
     wrapper.unmount()
   })
 
-  it('closes immediately and cleans up a late restored session without opening a replacement', async () => {
+  it('does not close sessions returned by a restoration request after the window closes', async () => {
     let resolve!: (value: unknown) => void
     mocks.list.mockReturnValue(new Promise(done => { resolve = done }))
     mocks.close.mockResolvedValue(undefined)
@@ -165,7 +165,20 @@ describe('explicit terminal tab close', () => {
     expect(await closing).toBe(true)
     await flushPromises()
     expect(mocks.open).not.toHaveBeenCalled()
-    expect(mocks.closeApi).toHaveBeenCalledOnce()
+    expect(mocks.closeApi).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('does not request a global session list after closing during host loading', async () => {
+    let resolve!: (value: unknown) => void
+    mocks.hosts.mockReturnValue(new Promise(done => { resolve = done }))
+    const wrapper = create()
+    await flushPromises()
+    expect(await closeGuard()).toBe(true)
+    resolve({ items: [{ id: 'local', name: 'Local host', isLocal: true, terminalAvailable: true }] })
+    await flushPromises()
+    expect(mocks.list).not.toHaveBeenCalled()
+    expect(mocks.closeApi).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 })

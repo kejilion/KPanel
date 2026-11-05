@@ -230,7 +230,7 @@ describe('dedicated desktop app script terminal', () => {
     expect(unregister).toHaveBeenCalledOnce()
   })
 
-  it.each(['inventory', 'jobs'] as const)('closes during pending %s and stops the discovered task', async stage => {
+  it.each(['inventory', 'jobs'] as const)('closes during pending %s without stopping an unrelated later task', async stage => {
     let guard: (() => boolean | Promise<boolean>) | undefined
     const closeGuards: DesktopWindowCloseGuardRegistry = {
       register: candidate => { guard = candidate; return vi.fn() },
@@ -249,14 +249,14 @@ describe('dedicated desktop app script terminal', () => {
     const closing = Promise.resolve(guard?.()).then(result => { settled = true; return result })
     await flushPromises()
     expect(settled).toBe(true)
-    expect(pendingSignal?.aborted).toBe(false)
+    expect(pendingSignal?.aborted).toBe(true)
     expect(mocks.cancelJob).not.toHaveBeenCalled()
     complete()
     await expect(closing).resolves.toBe(true)
     await flushPromises()
     expect(mocks.action).not.toHaveBeenCalled()
-    expect(mocks.cancelJob).toHaveBeenCalledWith('job-1', expect.any(AbortSignal))
-    expect(window.localStorage.getItem('kpanel:active-app-job')).toBe('job-1')
+    expect(mocks.cancelJob).not.toHaveBeenCalled()
+    expect(window.localStorage.getItem('kpanel:active-app-job')).toBeNull()
     wrapper.unmount()
   })
 

@@ -5,11 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import FileExecutionTerminal from './FileExecutionTerminal.vue'
 import type { FileEntry, TerminalSession } from '@/types/api'
 
-const mocks = vi.hoisted(() => ({ entry: vi.fn(), open: vi.fn(), close: vi.fn(), detach: vi.fn(), markDetached: vi.fn(), closeOnUnload: vi.fn(), execute: vi.fn(), childClose: vi.fn() }))
+const mocks = vi.hoisted(() => ({ entry: vi.fn(), open: vi.fn(), close: vi.fn(), detach: vi.fn(), markDetached: vi.fn(), closeOnUnload: vi.fn(), execute: vi.fn(), childClose: vi.fn(), owner: { authenticated: true, user: { id: 'owner-a' } } }))
 vi.mock('@/lib/api', () => ({
   ApiError: class extends Error { code = '' },
   api: { files: { entry: mocks.entry }, terminals: { open: mocks.open, close: mocks.close, detach: mocks.detach, closeOnUnload: mocks.closeOnUnload } },
 }))
+vi.mock('@/stores/session', () => ({ useSession: () => ({ state: mocks.owner }) }))
 const HostTerminal = defineComponent({
   name: 'HostTerminal', props: ['sessionId', 'hostName', 'initialOffset'], emits: ['stateChange'],
   setup(_, { expose }) { expose({ executePresentedCommand: mocks.execute, closeSession: mocks.childClose, markDetached: mocks.markDetached }); return () => null },
@@ -27,6 +28,8 @@ function create() {
 }
 beforeEach(() => {
   vi.clearAllMocks()
+  mocks.owner.user.id = 'owner-a'
+  window.localStorage.clear()
   mocks.entry.mockResolvedValue(file)
   mocks.open.mockResolvedValue(opened)
   mocks.close.mockResolvedValue({ closed: true })
@@ -37,6 +40,20 @@ beforeEach(() => {
 afterEach(() => { for (const wrapper of wrappers.splice(0)) wrapper.unmount() })
 
 describe('file execution terminal lifecycle', () => {
+  it('keeps late cleanup with the original account after switching users', async () => {
+    let resolve!: (value: TerminalSession) => void
+    mocks.open.mockReturnValueOnce(new Promise(done => { resolve = done }))
+    const wrapper = create()
+    await flushPromises()
+    wrapper.unmount()
+    mocks.owner.user.id = 'owner-b'
+    const id = 'a'.repeat(64)
+    resolve({ ...opened, sessionId: id })
+    await flushPromises()
+    expect(mocks.close).not.toHaveBeenCalled()
+    expect(JSON.parse(window.localStorage.getItem('kpanel:pending-terminal-closes:owner-a')!)).toEqual([id])
+    expect(window.localStorage.getItem('kpanel:pending-terminal-closes:owner-b')).toBeNull()
+  })
   it('closes silently after recording an unconfirmed terminal for cleanup', async () => {
     mocks.childClose.mockRejectedValueOnce(new Error('offline'))
     const wrapper = create()

@@ -101,7 +101,7 @@ async function load(allowLaunch = false): Promise<void> {
   try {
     if (!/^[A-Za-z0-9_-]{1,128}$/.test(appID.value)) throw new Error(i18n.t('appScript.invalidAppId'))
     const inventory = await api.apps.inventory(requestController.signal)
-    if (controller !== requestController) return
+    if (controller !== requestController || userClosed) return
     const target = inventory.items.find((candidate) => candidate.id === appID.value)
     if (!target) throw new Error(i18n.t('appScript.appNotFound'))
     item.value = target
@@ -113,7 +113,7 @@ async function load(allowLaunch = false): Promise<void> {
       throw new Error(target.capabilities.manage?.reason || i18n.t('appScript.manageUnavailable'))
     }
     const existing = await existingInteractiveJob(target.id, requestController.signal)
-    if (controller !== requestController) return
+    if (controller !== requestController || userClosed) return
     job.value = existing || (allowLaunch && !userClosed && currentOwner() === owner ? await launchManage(target) : undefined)
     if (job.value) rememberJob(job.value.id)
     if (userClosed && isActiveJob(job.value)) requestQuietAppJobStop(job.value!.id, closingOwner, currentOwner)
@@ -136,6 +136,7 @@ function startLoad(allowLaunch = false): void {
 async function stopActiveJobBeforeClose(): Promise<boolean> {
   userClosed = true
   closingOwner = owner
+  if (!launchJobID) controller?.abort()
   if (!job.value && launchJobID) requestQuietAppJobStop(launchJobID, closingOwner, currentOwner)
   const active = job.value
   if (!active || !isActiveJob(active)) return true
@@ -160,7 +161,7 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   unregisterWindowCloseGuard?.()
-  if (!userClosed) controller?.abort()
+  if (!userClosed || !launchJobID) controller?.abort()
 })
 </script>
 

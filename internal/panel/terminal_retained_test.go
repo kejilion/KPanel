@@ -144,6 +144,18 @@ func TestShortcutOldCloseIdentityCannotResolveReplacement(t *testing.T) {
 	if opened.Code != 201 || json.Unmarshal(opened.Body.Bytes(), &old) != nil {
 		t.Fatal(opened.Body.String())
 	}
+	for index := 1; index <= maxPanelTerminals; index++ {
+		request.LaunchID = prepare()
+		resumed := call(request)
+		if index < maxPanelTerminals && resumed.Code != 200 || index == maxPanelTerminals && resumed.Code != 429 {
+			t.Fatalf("resume %d: %d %s", index, resumed.Code, resumed.Body)
+		}
+	}
+	request.LookupOnly, request.LaunchID = true, oldID
+	if response := call(request); response.Code != 200 {
+		t.Fatalf("old identity was evicted: %d %s", response.Code, response.Body)
+	}
+	request.LookupOnly = false
 	closed := authenticatedRequest(s, http.MethodPost, "/api/v1/terminal-sessions/"+old.SessionID+"/close", []byte(`{}`), cookie, csrf, retainedHeaders(csrf))
 	if closed.Code != 200 {
 		t.Fatal(closed.Body.String())

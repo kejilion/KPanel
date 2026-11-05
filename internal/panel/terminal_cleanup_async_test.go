@@ -22,6 +22,43 @@ type shutdownTerminalCleanupAgent struct {
 	calls   atomic.Int32
 }
 
+type recoveringTerminalCleanupAgent struct {
+	terminalAgentStub
+	calls atomic.Int32
+}
+
+func (a *recoveringTerminalCleanupAgent) Do(ctx context.Context, method, path, query, requestID string, body []byte) (AgentResponse, error) {
+	if strings.HasSuffix(path, "/close") {
+		if a.calls.Add(1) == 1 {
+			return AgentResponse{}, errors.New("offline")
+		}
+		return AgentResponse{StatusCode: http.StatusOK, Body: []byte(`{"closed":true}`)}, nil
+	}
+	return a.terminalAgentStub.Do(ctx, method, path, query, requestID, body)
+}
+
+func TestTerminalCleanupRetriesDetachedSessionAfterRecovery(t *testing.T) {
+	s, _ := newTestServer(t)
+	agent := &recoveringTerminalCleanupAgent{}
+	s.agent = agent
+	s.terminalSessions["pending"] = panelTerminalSession{ID: "pending", HostID: "local", BackendSessionID: "old", CloseRequested: true, Detached: true}
+	s.scheduleTerminalCleanup()
+	s.terminalMu.Lock()
+	done := s.terminalCleanupDone
+	s.terminalMu.Unlock()
+	select {
+	case <-done:
+	case <-time.After(8 * time.Second):
+		t.Fatal("cleanup did not retry")
+	}
+	s.terminalMu.Lock()
+	_, exists := s.terminalSessions["pending"]
+	s.terminalMu.Unlock()
+	if exists || agent.calls.Load() != 2 {
+		t.Fatalf("pending=%v calls=%d", exists, agent.calls.Load())
+	}
+}
+
 func (a *shutdownTerminalCleanupAgent) Do(ctx context.Context, method, path, query, requestID string, body []byte) (AgentResponse, error) {
 	if strings.HasSuffix(path, "/close") {
 		if a.calls.Add(1) == 1 {

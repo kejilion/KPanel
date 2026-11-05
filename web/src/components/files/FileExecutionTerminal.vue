@@ -4,7 +4,7 @@ import { LoaderCircle } from '@lucide/vue'
 import ModalDialog from '@/components/common/ModalDialog.vue'
 import HostTerminal from '@/components/terminal/HostTerminal.vue'
 import { api, ApiError } from '@/lib/api'
-import { closeTerminalQuietly } from '@/lib/terminalClose'
+import { closeTerminalForOwner, terminalCleanupOwner } from '@/lib/terminalClose'
 import { fileAPIForHost } from '@/lib/fileHostContext'
 import { fileExecutionCommand, fileExecutionDisplayCommand } from '@/lib/fileExecution'
 import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
@@ -21,6 +21,7 @@ const controller = new AbortController()
 // Snapshot the target: changing the file pane's host must never retarget a pending launch.
 const entry = { ...props.entry }
 const hostId = props.hostId
+const owner = terminalCleanupOwner()
 let disposed = false
 let submitted = false
 let command: string | undefined
@@ -39,7 +40,7 @@ async function reclaim(opened: TerminalSession): Promise<void> {
 async function open(): Promise<void> {
   try {
     const fresh = await fileAPIForHost(hostId).entry(entry.path, controller.signal)
-    if (disposed) return
+    if (disposed || owner && terminalCleanupOwner() !== owner) return
     if (!entry.resourceVersion || fresh.resourceVersion !== entry.resourceVersion || fresh.path !== entry.path) {
       error.value = phrase('文件已变化，请刷新列表后重新执行。')
       return
@@ -56,8 +57,8 @@ async function open(): Promise<void> {
       return
     }
     const opened = await api.terminals.open(hostId || 'local', 30, 120)
-    if (disposed) {
-      await closeTerminalQuietly(opened.sessionId, () => reclaim(opened))
+    if (disposed || owner && terminalCleanupOwner() !== owner) {
+      await closeTerminalForOwner(opened.sessionId, owner, () => reclaim(opened))
       return
     }
     session.value = opened
@@ -71,11 +72,11 @@ async function open(): Promise<void> {
 }
 
 async function onStateChange(state: string): Promise<void> {
-  if (state !== 'connected' || submitted || disposed || closing.value || !command || !displayCommand) return
+  if (state !== 'connected' || submitted || disposed || closing.value || owner && terminalCleanupOwner() !== owner || !command || !displayCommand) return
   // A reconnect must never repeat a script or installation. Mark before awaiting Vue's ref update.
   submitted = true
   await nextTick()
-  if (disposed || closing.value) return
+  if (disposed || closing.value || owner && terminalCleanupOwner() !== owner) return
   const sent = await terminal.value?.executePresentedCommand(command, displayCommand)
   if (!sent && !disposed && !closing.value) error.value = phrase('命令未发送，请关闭窗口后重新执行。')
 }
@@ -86,7 +87,7 @@ async function close(): Promise<void> {
   try {
     if (session.value) {
       const target = session.value
-      const outcome = await closeTerminalQuietly(target.sessionId, () => terminal.value ? terminal.value.closeSession() : reclaim(target))
+      const outcome = await closeTerminalForOwner(target.sessionId, owner, () => terminal.value ? terminal.value.closeSession() : reclaim(target))
       if (outcome !== 'closed') terminal.value?.markDetached?.()
       session.value = undefined
     }
@@ -109,7 +110,7 @@ onBeforeUnmount(() => {
   // HostTerminal owns mounted sessions, including page-hide cleanup.
   if (session.value && !terminal.value) {
     const opened = session.value
-    void closeTerminalQuietly(opened.sessionId, () => reclaim(opened))
+    void closeTerminalForOwner(opened.sessionId, owner, () => reclaim(opened))
   }
 })
 </script>

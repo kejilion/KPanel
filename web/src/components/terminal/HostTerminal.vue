@@ -2,7 +2,7 @@
 import { nextTick, computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import TerminalContextMenu from '@/components/terminal/TerminalContextMenu.vue'
 import { api, ApiError } from '@/lib/api'
-import { closeTerminalQuietly } from '@/lib/terminalClose'
+import { closeTerminalForOwner, terminalCleanupOwner } from '@/lib/terminalClose'
 import { closeTerminalsOnPageHide } from '@/lib/terminalPageHide'
 import { hostTerminalAdapter } from '@/lib/terminalAdapters'
 import { useTerminalController } from '@/composables/useTerminalController'
@@ -27,6 +27,7 @@ const host = ref<HTMLElement>()
 const clipboardMenu = ref<InstanceType<typeof TerminalContextMenu>>()
 const composerInput = ref<HTMLInputElement>()
 const terminalHistory = useTerminalHistory()
+let sessionOwner = terminalCleanupOwner()
 const mobileTerminalKeys = [
   ['Esc', '\x1b'], ['Tab', '\t'], ['↑', '\x1b[A'], ['↓', '\x1b[B'], ['←', '\x1b[D'], ['→', '\x1b[C'],
   ['Space', ' '], ['Ctrl+C', '\x03'], ['Ctrl+D', '\x04'], ['Ctrl+Z', '\x1a'], ['Ctrl+L', '\x0c'], ['Enter', '\r'],
@@ -135,10 +136,11 @@ watch(() => props.sessionId, (_id, previous) => {
   detached = false
   closeRequest = undefined
   // A reused temporary viewer must not leave its previous PTY behind.
-  if (previous && !previousRetained) void closeTerminalQuietly(previous, async () => {
+  if (previous && !previousRetained) void closeTerminalForOwner(previous, sessionOwner, async () => {
     if (!(await api.terminals.close(previous)).closed) throw new Error('Terminal close was not confirmed')
   })
   previousRetained = props.retained
+  sessionOwner = terminalCleanupOwner()
 }, { flush: 'sync' })
 let previousRetained = props.retained
 watch(() => props.retained, value => { previousRetained = value })
@@ -148,7 +150,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   stopPageHideClose?.()
   commandCapture?.dispose()
-  if (!props.retained && !detached) void closeTerminalQuietly(props.sessionId, closeSession)
+  if (!props.retained && !detached) void closeTerminalForOwner(props.sessionId, sessionOwner, closeSession)
 })
 defineExpose({ focusTerminal, executeCommand, executePresentedCommand, fillCommand, scheduleResize, closeSession, markDetached })
 </script>
