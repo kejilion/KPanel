@@ -2007,6 +2007,19 @@ createServer(async (request, response) => {
     if (['zh-CN', 'zh-TW', 'en-US'].includes(input.locale)) changes.locale = input.locale
     if (input.desktop && Array.isArray(input.desktop.windows) && input.desktop.windows.length <= 8
       && Array.isArray(input.desktop.windowSizes) && input.desktop.windowSizes.length <= 32) changes.desktop = input.desktop
+    for (const key of ['galleryLocation', 'musicLocation', 'cinemaLocation']) {
+      const location = input[key]
+      if (!location) continue
+      const path = location.path
+      const host = location.hostId
+      const validPath = typeof path === 'string' && path.length <= 1024 && path === path.trim() && path.startsWith('/')
+        && !/[\u0000-\u001f\u007f\\]/u.test(path) && (path === '/' ? key !== 'galleryLocation' : path.slice(1).split('/').every(part => part && part !== '.' && part !== '..'))
+      if (!validPath || typeof host !== 'string' || !/^[A-Za-z0-9_-]{0,128}$/.test(host) || (key === 'galleryLocation' && host)) {
+        send(response, 422, { title: 'Preferences are invalid', code: 'preferences_invalid' })
+        return
+      }
+      changes[key] = { path, hostId: host }
+    }
     if (!Object.keys(changes).length) {
       send(response, 422, { title: 'Preferences are invalid', code: 'preferences_invalid' })
       return
