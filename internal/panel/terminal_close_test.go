@@ -283,6 +283,33 @@ func TestRemoteTerminalCloseConfirmsTargetAbsenceAndRetainsTransportFailures(t *
 			t.Fatal("confirmed remote close retained index")
 		}
 	}
+	// A disconnected node can later return authenticated confirmation that the
+	// old PTY no longer exists, as after a target process restart.
+	server.terminalSessions["detached-remote"] = panelTerminalSession{ID: "detached-remote", UserID: "owner", BackendSessionID: "backend", HostID: host.ID, Detachable: true}
+	transportFailure = true
+	failed := httptest.NewRecorder()
+	server.handleTerminalOperation(failed, httptest.NewRequest(http.MethodPost, "/", nil), "owner", "detached-remote", "close")
+	if failed.Code != http.StatusBadGateway {
+		t.Fatalf("offline close = %d", failed.Code)
+	}
+	detached := httptest.NewRecorder()
+	server.handleTerminalOperation(detached, httptest.NewRequest(http.MethodPost, "/", nil), "owner", "detached-remote", "detach")
+	if detached.Code != http.StatusOK {
+		t.Fatalf("detach = %d %s", detached.Code, detached.Body.String())
+	}
+	transportFailure = false
+	stub.code, stub.status = "terminal_not_found", http.StatusNotFound
+	server.scheduleTerminalCleanup()
+	server.terminalMu.Lock()
+	done := server.terminalCleanupDone
+	server.terminalMu.Unlock()
+	<-done
+	server.terminalMu.Lock()
+	_, retained := server.terminalSessions["detached-remote"]
+	server.terminalMu.Unlock()
+	if retained {
+		t.Fatal("authenticated missing-session response did not clear detached identity")
+	}
 }
 
 func TestTerminalCloseAcceptsOnlyConfirmedAbsence(t *testing.T) {
