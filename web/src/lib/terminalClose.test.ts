@@ -17,6 +17,17 @@ describe('quiet terminal close', () => {
     await expect(closeTerminalQuietly('id', async () => undefined)).resolves.toBe('closed')
     expect(mocks.detach).not.toHaveBeenCalled()
   })
+  it('persists a close before a stalled request so a reloaded page can retry it', async () => {
+    const id = '6'.repeat(64)
+    mocks.owner.authenticated = true
+    void closeTerminalQuietly(id, () => new Promise(() => undefined))
+    expect(window.localStorage.getItem(`kpanel:pending-terminal-closes:owner:${id}`)).toBe('1')
+    mocks.close.mockResolvedValue({ closed: true })
+    retryPendingTerminalCloses()
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(mocks.close).toHaveBeenCalledWith(id)
+    expect(window.localStorage.getItem(`kpanel:pending-terminal-closes:owner:${id}`)).toBeNull()
+  })
   it('records pending cleanup after an unconfirmed close', async () => {
     mocks.detach.mockResolvedValue({ detached: true })
     await expect(closeTerminalQuietly('id', async () => { throw new Error('offline') })).resolves.toBe('detached')

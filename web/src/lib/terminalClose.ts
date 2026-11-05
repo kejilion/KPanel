@@ -280,15 +280,22 @@ export function queueTerminalLaunchClose(launch: PendingLaunch, owner: string): 
 // server-side cleanup identity and queue another attempt if it is unavailable.
 export async function closeTerminalQuietly(id: string, close: () => Promise<void>, queueOnFailure = true): Promise<'closed' | 'detached' | 'missing' | 'pending'> {
   const owner = currentOwner()
+  // Persist before the first request: the page can disappear while that
+  // request is still in flight, before a failure handler has a chance to run.
+  if (owner && /^[a-f0-9]{64}$/.test(id)) writePending(owner, id)
   try {
     await close()
+    forgetPending(owner, id)
     return 'closed'
   } catch (reason) {
     if (owner && currentOwner() !== owner) {
       if (queueOnFailure) queuePending(id, owner)
       return 'pending'
     }
-    if (reason instanceof ApiError && reason.code === 'terminal_not_found') return 'missing'
+    if (reason instanceof ApiError && reason.code === 'terminal_not_found') {
+      forgetPending(owner, id)
+      return 'missing'
+    }
   }
   if (owner && currentOwner() !== owner) {
     if (queueOnFailure) queuePending(id, owner)
@@ -297,13 +304,17 @@ export async function closeTerminalQuietly(id: string, close: () => Promise<void
   try {
     const result = await api.terminals.detach(id)
     if (!result.detached) throw new Error('Terminal cleanup was not recorded')
+    forgetPending(owner, id)
     return 'detached'
   } catch (reason) {
     if (owner && currentOwner() !== owner) {
       if (queueOnFailure) queuePending(id, owner)
       return 'pending'
     }
-    if (reason instanceof ApiError && reason.code === 'terminal_not_found') return 'missing'
+    if (reason instanceof ApiError && reason.code === 'terminal_not_found') {
+      forgetPending(owner, id)
+      return 'missing'
+    }
     // The server may itself be unreachable or its bounded cleanup queue full.
     // Do not claim termination: its existing session remains eligible for retry.
     if (queueOnFailure) queuePending(id, owner)
