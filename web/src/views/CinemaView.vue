@@ -423,7 +423,7 @@ onBeforeUnmount(() => {
 .cinema-page { container-type: inline-size; padding: clamp(14px, 2vw, 24px); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); color: var(--text); }
 .cinema-heading, .cinema-feature__actions, .cinema-source, .cinema-folders, .cinema-toolbar, .cinema-toolbar__controls, .cinema-layout, .cinema-card__footer { display: flex; align-items: center; gap: 10px; }
 .cinema-heading { flex-wrap: wrap; margin-bottom: 20px; }
-.cinema-heading__icon { width: 52px; height: 52px; }
+.cinema-heading__icon { width: 52px; height: 52px; border-radius: 22%; }
 .cinema-heading__files { margin-inline-start: auto; }
 h1, h2, h3, p { margin: 0; }
 h1 { font-size: 26px; }

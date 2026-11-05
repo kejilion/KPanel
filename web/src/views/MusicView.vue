@@ -174,7 +174,7 @@ onBeforeUnmount(() => { destroyed = true; listing?.abort(); if (visible.value) s
 .music-page:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
 .music-header,.music-brand,.music-tabs,.music-location,.music-section-heading,.music-search,.music-transport,.music-progress { display:flex; align-items:center; gap:12px; }
 .music-header { justify-content:space-between; flex-wrap:wrap; margin-bottom:16px; }
-.music-brand img { width:52px; height:52px; } h1 { font-size:26px; margin:0; } h2 { font-size:22px; line-height:1.35; margin:8px 0; overflow-wrap:anywhere; } h3 { font-size:16px; margin:0; }
+.music-brand img { width:52px; height:52px; border-radius:22%; } h1 { font-size:26px; margin:0; } h2 { font-size:22px; line-height:1.35; margin:8px 0; overflow-wrap:anywhere; } h3 { font-size:16px; margin:0; }
 p { font-size:14px; line-height:1.65; overflow-wrap:anywhere; } .music-brand p { margin:4px 0 0; color:var(--muted); }
 button,input,select { font:inherit; font-size:14px; } button { cursor:pointer; } button:disabled { opacity:.45; cursor:default; }
 button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible { outline:3px solid var(--brand); outline-offset:3px; }
