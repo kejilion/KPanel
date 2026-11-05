@@ -3,7 +3,10 @@ package panel
 import (
 	"encoding/json"
 	"net/http"
+	"reflect"
 	"testing"
+
+	"github.com/kejilion/kejilion-panel/internal/store"
 )
 
 func TestPreferencesAuthenticatedSharedStateAndFailureBoundaries(t *testing.T) {
@@ -119,5 +122,50 @@ func TestMusicPlaybackPreferencesAPI(t *testing.T) {
 	}
 	if reread.MusicPlayback == nil || reread.MusicPlayback.Path != "/music/song.mp3" || reread.ResourceVersion != state.ResourceVersion {
 		t.Fatal("invalid write changed checkpoint")
+	}
+}
+
+func TestMediaDesktopWindowsSharedBetweenSessions(t *testing.T) {
+	s, tokenPath := newTestServer(t)
+	sessionA, csrfA := bootstrapCookies(t, s, tokenPath)
+	login := loginRequest(s, "a-strong-password-1")
+	if login.Code != http.StatusOK {
+		t.Fatalf("second login: %d %s", login.Code, login.Body.String())
+	}
+	sessionB, csrfB := authCookies(t, login)
+	read := authenticatedSiteRequest(s, sessionA, csrfA, http.MethodGet, preferencesPath, nil, false)
+	var initial preferencesResponse
+	if err := json.Unmarshal(read.Body.Bytes(), &initial); err != nil || read.Code != http.StatusOK {
+		t.Fatalf("read: %d %v", read.Code, err)
+	}
+	geometry := store.DesktopGeometry{Left: 20, Top: 30, Width: 900, Height: 600}
+	desktop := store.DesktopPreferences{Mode: "desktop", SideSplitRatio: .5, FocusedID: 2,
+		Windows: []store.DesktopWindow{
+			{ID: 1, Path: "/music?path=%2Fhome%2Fmusic", Geometry: geometry, Z: 101},
+			{ID: 2, Path: "/cinema?hostId=edge&path=%2Fhome%2Fvideos", Geometry: geometry, Z: 102},
+			{ID: 3, Path: "/files?path=%2Fhome", Geometry: geometry, Minimized: true, Z: 100},
+		},
+		WindowSizes: []store.DesktopWindowSize{{Path: "/music", Width: 900, Height: 600}, {Path: "/cinema", Width: 1000, Height: 700}},
+	}
+	body, _ := json.Marshal(map[string]any{"desktop": desktop, "expectedResourceVersion": initial.ResourceVersion})
+	saved := authenticatedSiteRequest(s, sessionA, csrfA, http.MethodPut, preferencesPath, body, true)
+	if saved.Code != http.StatusOK {
+		t.Fatalf("save: %d %s", saved.Code, saved.Body.String())
+	}
+	read = authenticatedSiteRequest(s, sessionB, csrfB, http.MethodGet, preferencesPath, nil, false)
+	var restored preferencesResponse
+	if err := json.Unmarshal(read.Body.Bytes(), &restored); err != nil || read.Code != http.StatusOK {
+		t.Fatalf("second session read: %d %v", read.Code, err)
+	}
+	if restored.Desktop == nil || !reflect.DeepEqual(*restored.Desktop, desktop) {
+		t.Fatalf("desktop state not shared: %+v", restored.Desktop)
+	}
+	if r := authenticatedSiteRequest(s, sessionB, csrfB, http.MethodPut, preferencesPath, body, true); r.Code != http.StatusConflict {
+		t.Fatalf("stale update: %d", r.Code)
+	}
+	desktop.Windows[0].Path = "/music/../settings"
+	bad, _ := json.Marshal(map[string]any{"desktop": desktop, "expectedResourceVersion": restored.ResourceVersion})
+	if r := authenticatedSiteRequest(s, sessionB, csrfB, http.MethodPut, preferencesPath, bad, true); r.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("invalid route: %d", r.Code)
 	}
 }

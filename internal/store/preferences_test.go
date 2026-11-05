@@ -3,8 +3,10 @@ package store
 import (
 	"errors"
 	"math"
+	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -244,7 +246,7 @@ func TestPreferencesRejectInvalidAndUnboundedState(t *testing.T) {
 
 // Desktop routes accepted by the shipped catalogue must round-trip as UI state.
 func TestPreferencesAcceptCatalogueWindowRoutes(t *testing.T) {
-	for _, path := range []string{"/virtual-machines", "/virtual-machines?tab=instances", "/sites/monitor", "/browser", "/browser?tab=history"} {
+	for _, path := range []string{"/virtual-machines", "/virtual-machines?tab=instances", "/sites/monitor", "/browser", "/browser?tab=history", "/music", "/music?path=%2Fhome%2Fmusic", "/cinema", "/cinema?hostId=edge&path=%2Fhome%2Fvideos"} {
 		p := Preferences{Desktop: sampleDesktop()}
 		p.Desktop.Windows[0].Path = path
 		p.Desktop.WindowSizes[0].Path = strings.SplitN(path, "?", 2)[0]
@@ -252,7 +254,7 @@ func TestPreferencesAcceptCatalogueWindowRoutes(t *testing.T) {
 			t.Errorf("catalogue route %q: %v", path, err)
 		}
 	}
-	for _, path := range []string{"/virtual-machines/../settings", "/virtual-machines-extra", "/sites/monitor/other", "//virtual-machines", "/browser/child", "/browser-extra", "/browser/../settings", "//browser"} {
+	for _, path := range []string{"/virtual-machines/../settings", "/virtual-machines-extra", "/sites/monitor/other", "//virtual-machines", "/browser/child", "/browser-extra", "/browser/../settings", "//browser", "/music/../settings", "/cinema-extra", "//music"} {
 		p := Preferences{Desktop: sampleDesktop()}
 		p.Desktop.Windows[0].Path = path
 		if ValidatePreferences(p) == nil {
@@ -327,5 +329,32 @@ func TestMusicCheckpointPersistsAndRejectsInvalidInput(t *testing.T) {
 	}
 	if err = s.PatchPreferences(version, Preferences{MusicPlayback: &MusicPlaybackPreference{Repeat: "off"}}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestPreferencesAcceptEveryDesktopApp(t *testing.T) {
+	source, err := os.ReadFile(filepath.Join("..", "..", "web", "src", "lib", "desktopApps.ts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, catalogue, ok := strings.Cut(string(source), "export const desktopApps: DesktopApp[] = [")
+	if !ok {
+		t.Fatal("desktop app catalogue not found")
+	}
+	catalogue, _, ok = strings.Cut(catalogue, "/** Workspace keys")
+	if !ok {
+		t.Fatal("desktop app catalogue end not found")
+	}
+	paths := regexp.MustCompile(`(?m)^\s*(?:\{\s*)?path:\s*['"](/[^'"]+)['"]`).FindAllStringSubmatch(catalogue, -1)
+	if len(paths) < 20 {
+		t.Fatalf("desktop app catalogue unexpectedly short: %d", len(paths))
+	}
+	for _, match := range paths {
+		p := Preferences{Desktop: sampleDesktop()}
+		p.Desktop.Windows[0].Path = match[1]
+		p.Desktop.WindowSizes[0].Path = match[1]
+		if err := ValidatePreferences(p); err != nil {
+			t.Errorf("desktop app %q cannot sync: %v", match[1], err)
+		}
 	}
 }

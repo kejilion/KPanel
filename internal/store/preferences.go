@@ -182,7 +182,7 @@ type DesktopWindowSize struct {
 	Height float64 `json:"height"`
 }
 
-var desktopRoutePattern = regexp.MustCompile(`^/(overview|monitoring|processes|browser|ai|ai/s/[A-Za-z0-9_-]{1,128}|sites|sites/environment|sites/monitor|apps|docker|files|gallery|terminal|diagnostics|cluster|system|activity|settings|settings/guides|guides|offers|virtual-machines|jobs|audit|app-script/[A-Za-z0-9_-]{1,128}|command-shortcut/[a-f0-9]{32})$`)
+var desktopRoutePattern = regexp.MustCompile(`^/(overview|monitoring|processes|browser|ai|ai/s/[A-Za-z0-9_-]{1,128}|sites|sites/environment|sites/monitor|apps|docker|files|gallery|music|cinema|terminal|diagnostics|cluster|system|activity|settings|settings/guides|guides|offers|virtual-machines|jobs|audit|app-script/[A-Za-z0-9_-]{1,128}|command-shortcut/[a-f0-9]{32})$`)
 
 func validDesktopPath(path string) bool {
 	return len(path) <= 768 && utf8.ValidString(path) && !strings.Contains(path, "\\") && strings.IndexFunc(path, func(r rune) bool { return r < 32 || r == 127 }) < 0 && desktopRoutePattern.MatchString(strings.SplitN(strings.SplitN(path, "?", 2)[0], "#", 2)[0])

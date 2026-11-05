@@ -112,6 +112,42 @@ it('migrates an unconfigured server once; a clean browser then restores it', asy
   expect(useDesktopMode().consumeWindowLaunch(useDesktopMode().windows.value[0]!.id)).toBe(false)
 })
 
+it('restores music, cinema and other windows in a second browser without replaying launch actions', async () => {
+  await startPreferencesSync('admin')
+  const first = useDesktopMode()
+  first.openWindow('/music?path=%2Fhome%2Fmusic', 'route.music', false)
+  const cinema = first.openWindow('/cinema?hostId=edge&path=%2Fhome%2Fvideos', 'route.cinema', false)
+  first.openWindow('/files?path=%2Fhome', 'route.files', true)
+  first.minimizeWindow(cinema)
+  await flush()
+  const saved = mocks.update.mock.calls.at(-1)![0].desktop as DesktopSessionPreferences
+  expect(saved.windows.map(item => item.path)).toEqual(['/music?path=%2Fhome%2Fmusic', '/cinema?hostId=edge&path=%2Fhome%2Fvideos', '/files?path=%2Fhome'])
+  expect(saved.windows.find(item => item.id === cinema)?.minimized).toBe(true)
+  stopPreferencesSync(); localStorage.clear(); sessionStorage.clear(); resetDesktopModeForTest()
+  mocks.get.mockResolvedValue({ ...remote(), desktop: saved, resourceVersion: 'v2' })
+  await startPreferencesSync('admin')
+  const restored = useDesktopMode()
+  expect(restored.windows.value.map(item => item.path)).toEqual(saved.windows.map(item => item.path))
+  expect(restored.windows.value.find(item => item.id === cinema)?.minimized).toBe(true)
+  for (const item of restored.windows.value) expect(restored.consumeWindowLaunch(item.id)).toBe(false)
+})
+
+it('retries a rejected media window snapshot after reconnecting to an updated server', async () => {
+  await startPreferencesSync('admin')
+  mocks.update.mockRejectedValueOnce(new ApiError('old server rejects media paths', 422))
+  const first = useDesktopMode()
+  first.openWindow('/music', 'route.music', false)
+  first.openWindow('/cinema', 'route.cinema', false)
+  await flush()
+  expect(mocks.danger).toHaveBeenCalled()
+  expect(sessionStorage.getItem('kpanel:preferences-pending:v1')).toContain('/music')
+  stopPreferencesSync(); resetDesktopModeForTest()
+  mocks.update.mockClear()
+  await startPreferencesSync('admin'); await flush()
+  expect(mocks.update.mock.calls.at(-1)?.[0].desktop.windows.map((item: { path: string }) => item.path)).toEqual(['/music', '/cinema'])
+  expect(sessionStorage.getItem('kpanel:preferences-pending:v1')).toBeNull()
+})
+
 it('debounces window and language changes into one bounded update', async () => {
   await startPreferencesSync('admin')
   const store = useDesktopMode()
