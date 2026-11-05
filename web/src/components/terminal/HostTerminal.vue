@@ -2,6 +2,7 @@
 import { nextTick, computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import TerminalContextMenu from '@/components/terminal/TerminalContextMenu.vue'
 import { api, ApiError } from '@/lib/api'
+import { closeTerminalForOwner, terminalCleanupOwner } from '@/lib/terminalClose'
 import { closeTerminalsOnPageHide } from '@/lib/terminalPageHide'
 import { hostTerminalAdapter } from '@/lib/terminalAdapters'
 import { useTerminalController } from '@/composables/useTerminalController'
@@ -19,6 +20,7 @@ const props = withDefaults(defineProps<{
   visible?: boolean
   autoFocus?: boolean
   retained?: boolean
+  closePending?: boolean
   historyHostId?: string
 }>(), { visible: true, autoFocus: true, retained: false, historyHostId: '' })
 const emit = defineEmits<{ stateChange: [state: 'connecting' | 'connected' | 'reconnecting' | 'finished'] }>()
@@ -27,6 +29,7 @@ const host = ref<HTMLElement>()
 const clipboardMenu = ref<InstanceType<typeof TerminalContextMenu>>()
 const composerInput = ref<HTMLInputElement>()
 const terminalHistory = useTerminalHistory()
+let sessionOwner = terminalCleanupOwner()
 const mobileTerminalKeys = [
   ['Esc', '\x1b'], ['Tab', '\t'], ['↑', '\x1b[A'], ['↓', '\x1b[B'], ['←', '\x1b[D'], ['→', '\x1b[C'],
   ['Space', ' '], ['Ctrl+C', '\x03'], ['Ctrl+D', '\x04'], ['Ctrl+Z', '\x1a'], ['Ctrl+L', '\x0c'],
@@ -37,7 +40,7 @@ let historyDraft = ''
 const adapter = computed(() => hostTerminalAdapter(props.sessionId))
 const {
   terminal, state, pendingLine, canInput,
-  focusTerminal, executeCommand, executePresentedCommand, scheduleResize, blockInput, queueInput,
+  focusTerminal, executeCommand, executePresentedCommand, scheduleResize, stopForClose, queueInput,
   containTerminalWheel, terminalTouchScroll, submitPendingLine,
 } = useTerminalController({
   adapter: () => adapter.value, host, clipboardMenu,
@@ -114,10 +117,12 @@ function sendMobileTerminalKey(sequence: string): void {
 }
 let closeRequest: Promise<void> | undefined
 let closeConfirmed = false
+let detached = false
 let stopPageHideClose: (() => void) | undefined
+function markDetached(): void { detached = true }
 
 function closeSession(): Promise<void> {
-  blockInput()
+  stopForClose()
   if (closeConfirmed) return Promise.resolve()
   if (closeRequest) return closeRequest
   const id = props.sessionId
@@ -135,25 +140,30 @@ function closeSession(): Promise<void> {
   return request
 }
 watch(state, value => emit('stateChange', value === 'error' ? 'reconnecting' : value), { immediate: true })
+watch(() => props.closePending, pending => { if (pending) stopForClose() }, { immediate: true })
 watch(() => props.sessionId, (_id, previous) => {
   ctrlActive.value = false
   closeConfirmed = false
+  detached = false
   closeRequest = undefined
   // A reused temporary viewer must not leave its previous PTY behind.
-  if (previous && !previousRetained) void api.terminals.close(previous).catch(() => api.terminals.closeOnUnload(previous))
+  if (previous && !previousRetained) void closeTerminalForOwner(previous, sessionOwner, async () => {
+    if (!(await api.terminals.close(previous)).closed) throw new Error('Terminal close was not confirmed')
+  })
   previousRetained = props.retained
+  sessionOwner = terminalCleanupOwner()
 }, { flush: 'sync' })
 let previousRetained = props.retained
 watch(() => props.retained, value => { previousRetained = value })
 onMounted(() => {
-  stopPageHideClose = closeTerminalsOnPageHide(() => closeConfirmed || props.retained ? [] : [props.sessionId])
+  stopPageHideClose = closeTerminalsOnPageHide(() => closeConfirmed || detached || props.retained ? [] : [props.sessionId])
 })
 onBeforeUnmount(() => {
   stopPageHideClose?.()
   commandCapture?.dispose()
-  if (!props.retained) void closeSession().catch(() => undefined)
+  if (!props.retained && !detached) void closeTerminalForOwner(props.sessionId, sessionOwner, closeSession)
 })
-defineExpose({ focusTerminal, executeCommand, executePresentedCommand, fillCommand, scheduleResize, closeSession })
+defineExpose({ focusTerminal, executeCommand, executePresentedCommand, fillCommand, scheduleResize, closeSession, markDetached })
 </script>
 
 <template>

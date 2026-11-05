@@ -116,6 +116,11 @@ type Server struct {
 	terminalLaunchMu        sync.Mutex
 	terminalLaunchIntents   map[string]panelTerminalLaunchIntent
 	terminalSessions        map[string]panelTerminalSession
+	terminalCleanupRunning  bool
+	terminalCleanupAgain    bool
+	terminalCleanupStopped  bool
+	terminalCleanupCancel   context.CancelFunc
+	terminalCleanupDone     chan struct{}
 	terminalOpening         int
 	terminalOpeningUser     map[string]int
 	terminalStreams         *terminalStreamHub

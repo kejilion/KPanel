@@ -96,6 +96,18 @@ func TestContainerTerminalPanelBindsTargetAndPreservesGuards(t *testing.T) {
 	if public.SessionID == "backend-terminal" || public.SessionID == "" {
 		t.Fatal("backend ID escaped public session ownership")
 	}
+	if !public.Detachable || public.WorkspaceVisible {
+		t.Fatalf("container classification = %+v", public)
+	}
+	s.terminalMu.Lock()
+	item := s.terminalSessions[public.SessionID]
+	item.CloseRequested = true
+	s.terminalSessions[public.SessionID] = item
+	s.terminalMu.Unlock()
+	detached := authenticatedRequest(s, http.MethodPost, "/api/v1/terminal-sessions/"+public.SessionID+"/detach", []byte(`{}`), sessionCookie, csrfCookie, headers)
+	if detached.Code != http.StatusOK {
+		t.Fatalf("container cleanup registration = %d %s", detached.Code, detached.Body.String())
+	}
 }
 
 func TestContainerTerminalPanelRejectsPartialTargetsAndMapsAdmissionErrors(t *testing.T) {

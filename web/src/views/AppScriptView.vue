@@ -6,7 +6,10 @@ import AppInteractiveTerminal from '@/components/apps/AppInteractiveTerminal.vue
 import { useI18n } from '@/i18n'
 import { localizeError } from '@/i18n/errors'
 import { ApiError, api } from '@/lib/api'
-import { desktopWindowCloseGuardKey, desktopWindowLaunchKey } from '@/lib/desktopRouteKeys'
+import { requestQuietAppJobStop, retryPendingAppJobStops } from '@/lib/appJobQuietStop'
+import { useSession } from '@/stores/session'
+import { desktopWindowCloseGuardKey, desktopWindowIdentityKey, desktopWindowLaunchKey } from '@/lib/desktopRouteKeys'
+import { readWindowIdentities, windowIdentityKey, writeWindowIdentities } from '@/lib/windowSessionIdentities'
 import { usePhraseCatalog } from '@/i18n/phrase'
 import type { AppInstallJob, AppMarketItem } from '@/types/api'
 
@@ -16,23 +19,35 @@ usePhraseCatalog((locale) => locale === 'en-US'
 
 const route = useRoute()
 const i18n = useI18n()
+const session = useSession()
+const currentOwner = () => session.state.authenticated ? session.state.user?.id || '' : ''
+const owner = currentOwner()
 const windowCloseGuards = inject(desktopWindowCloseGuardKey, undefined)
 const consumeWindowLaunch = inject(desktopWindowLaunchKey, () => false)
+const windowId = inject(desktopWindowIdentityKey, undefined)
 const loading = ref(true)
 const error = ref('')
-const closeError = ref('')
-const closingJob = ref(false)
 const item = ref<AppMarketItem>()
 const job = ref<AppInstallJob>()
 let controller: AbortController | undefined
 let loadRequest: Promise<void> | undefined
 let closeRequest: Promise<boolean> | undefined
 let unregisterWindowCloseGuard: (() => void) | undefined
+let userClosed = false
+let disposed = false
+let closingOwner = ''
+let launchJobID = ''
+const launchJobIDs = new Set<string>()
 
 const activeJobStorageKey = 'kpanel:active-app-job'
-const closePollDelay = 500
-const closePollAttempts = 25
 const appID = computed(() => String(route.params.appId || ''))
+let identityKey = ''
+let identityReady: Promise<void> = Promise.resolve()
+function trackJob(id: string): void {
+  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id)) return
+  launchJobIDs.add(id)
+  writeWindowIdentities(identityKey, [...launchJobIDs])
+}
 function isActiveJob(value?: AppInstallJob): boolean {
   return value?.status === 'queued' || value?.status === 'running'
 }
@@ -55,20 +70,6 @@ function rememberJob(id: string): void {
   }
 }
 
-function forgetJob(id: string): void {
-  try {
-    if (window.localStorage.getItem(activeJobStorageKey) === id) {
-      window.localStorage.removeItem(activeJobStorageKey)
-    }
-  } catch {
-    // Closing the process must not depend on browser storage availability.
-  }
-}
-
-function waitForClosePoll(): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, closePollDelay))
-}
-
 async function existingInteractiveJob(appId: string, signal: AbortSignal): Promise<AppInstallJob | undefined> {
   const jobs = await api.apps.jobs(signal)
   const active = jobs.items.find((candidate) => candidate.appId === appId && isActiveJob(candidate))
@@ -78,10 +79,15 @@ async function existingInteractiveJob(appId: string, signal: AbortSignal): Promi
 }
 
 async function launchManage(target: AppMarketItem): Promise<AppInstallJob> {
+  if (launchJobIDs.size >= 32) throw new Error('Task launch limit reached')
+  launchJobID = Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('')
+  trackJob(launchJobID)
+  const jobId = launchJobID
   const start = async (candidate: AppMarketItem): Promise<AppInstallJob> => {
+    if (userClosed || currentOwner() !== owner) throw new Error('Task launch cancelled')
     const resourceVersion = candidate.runtime.resourceVersion
     if (!resourceVersion) throw new Error(i18n.t('appScript.resourceVersionMissing'))
-    const result = await api.apps.action(candidate.id, 'manage', { resourceVersion })
+    const result = await api.apps.action(candidate.id, 'manage', { resourceVersion, jobId }, AbortSignal.timeout(120_000))
     if (!isInteractiveJob(result) || !result.interactive) {
       throw new Error(i18n.t('appScript.interactiveTaskMissing'))
     }
@@ -109,7 +115,7 @@ async function load(allowLaunch = false): Promise<void> {
   try {
     if (!/^[A-Za-z0-9_-]{1,128}$/.test(appID.value)) throw new Error(i18n.t('appScript.invalidAppId'))
     const inventory = await api.apps.inventory(requestController.signal)
-    if (controller !== requestController) return
+    if (controller !== requestController || userClosed) return
     const target = inventory.items.find((candidate) => candidate.id === appID.value)
     if (!target) throw new Error(i18n.t('appScript.appNotFound'))
     item.value = target
@@ -121,9 +127,15 @@ async function load(allowLaunch = false): Promise<void> {
       throw new Error(target.capabilities.manage?.reason || i18n.t('appScript.manageUnavailable'))
     }
     const existing = await existingInteractiveJob(target.id, requestController.signal)
-    if (controller !== requestController) return
-    job.value = existing || (allowLaunch ? await launchManage(target) : undefined)
-    if (job.value) rememberJob(job.value.id)
+    if (controller !== requestController || userClosed) return
+    const active = existing || (allowLaunch && !userClosed && currentOwner() === owner ? await launchManage(target) : undefined)
+    if (disposed && !userClosed) return
+    job.value = active
+    if (job.value && !userClosed && currentOwner() === owner) {
+      trackJob(job.value.id)
+      rememberJob(job.value.id)
+    }
+    if (userClosed && isActiveJob(job.value)) requestQuietAppJobStop(job.value!.id, closingOwner, currentOwner)
   } catch (reason) {
     if (reason instanceof DOMException && reason.name === 'AbortError') return
     error.value = localizeError(reason, 'appScript.openFailed')
@@ -140,47 +152,16 @@ function startLoad(allowLaunch = false): void {
   })
 }
 
-async function waitForJobToStop(current: AppInstallJob): Promise<boolean> {
-  for (let attempt = 0; attempt < closePollAttempts && isActiveJob(current); attempt += 1) {
-    if (attempt > 0) await waitForClosePoll()
-    current = await api.apps.job(current.id)
-    job.value = current
-  }
-  return !isActiveJob(current)
-}
-
 async function stopActiveJobBeforeClose(): Promise<boolean> {
-  closeError.value = ''
-  // Discover or finish launching the task before deciding whether the window can close.
-  await loadRequest
-  controller?.abort()
-
+  userClosed = true
+  closingOwner = owner
+  if (!launchJobID) controller?.abort()
+  await identityReady
+  for (const id of launchJobIDs) requestQuietAppJobStop(id, closingOwner, currentOwner)
   const active = job.value
   if (!active || !isActiveJob(active)) return true
-  if (!window.confirm(i18n.t('appScript.closeConfirm'))) return false
-
-  closingJob.value = true
-  try {
-    let current: AppInstallJob
-    try {
-      current = await api.apps.cancelJob(active.id)
-    } catch (reason) {
-      if (!(reason instanceof ApiError) || reason.code !== 'app_job_not_active') throw reason
-      current = await api.apps.job(active.id)
-    }
-    job.value = current
-    if (!(await waitForJobToStop(current))) {
-      closeError.value = i18n.t('appScript.closePending')
-      return false
-    }
-    forgetJob(active.id)
-    return true
-  } catch (reason) {
-    closeError.value = localizeError(reason, 'appScript.closeFailed')
-    return false
-  } finally {
-    closingJob.value = false
-  }
+  requestQuietAppJobStop(active.id, closingOwner, currentOwner)
+  return true
 }
 
 function guardWindowClose(): Promise<boolean> {
@@ -194,22 +175,25 @@ function guardWindowClose(): Promise<boolean> {
 }
 
 onMounted(() => {
+  retryPendingAppJobStops(currentOwner(), currentOwner)
   unregisterWindowCloseGuard = windowCloseGuards?.register(guardWindowClose)
-  startLoad(consumeWindowLaunch())
+  const fresh = consumeWindowLaunch()
+  identityReady = (async () => {
+    identityKey = await windowIdentityKey('app', owner, windowId, appID.value)
+    if (fresh) writeWindowIdentities(identityKey, [])
+    else for (const id of readWindowIdentities(identityKey, /^[a-zA-Z0-9_-]{1,128}$/, 64)) launchJobIDs.add(id)
+    if (!userClosed && !disposed) startLoad(fresh)
+  })()
 })
 onBeforeUnmount(() => {
+  disposed = true
   unregisterWindowCloseGuard?.()
-  controller?.abort()
+  if (!userClosed || !launchJobID) controller?.abort()
 })
 </script>
 
 <template>
   <section class="app-script-page terminal-theme-scope">
-    <div v-if="closeError" class="app-script-page__close-error" role="alert">
-      <TriangleAlert :size="16" />
-      <span>{{ closeError }}</span>
-      <button type="button" @click="closeError = ''">{{ i18n.t('common.closeNotification') }}</button>
-    </div>
 
     <div v-if="loading" class="app-script-page__state" role="status">
       <LoaderCircle class="spin" :size="24" />
@@ -224,12 +208,6 @@ onBeforeUnmount(() => {
       <button class="button button--small" type="button" @click="startLoad()">
         <RefreshCw :size="14" /><span>重新尝试</span>
       </button>
-    </div>
-
-    <div v-else-if="closingJob" class="app-script-page__state" role="status">
-      <LoaderCircle class="spin" :size="24" />
-      <strong>{{ i18n.t('appScript.closingTitle') }}</strong>
-      <small>{{ i18n.t('appScript.closingDescription') }}</small>
     </div>
 
     <!-- The window title bar already names the app and owns maximize, so the
@@ -274,30 +252,6 @@ onBeforeUnmount(() => {
 .app-script-page__terminal :deep(.interactive-terminal__screen) {
   height: auto;
   min-height: 0;
-}
-
-.app-script-page__close-error {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-bottom: 1px solid color-mix(in srgb, var(--danger) 24%, var(--border));
-  background: var(--danger-soft);
-  color: var(--danger);
-  font-size: 12px;
-}
-
-.app-script-page__close-error span {
-  min-width: 0;
-  flex: 1;
-}
-
-.app-script-page__close-error button {
-  border: 0;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  font: inherit;
 }
 
 .app-script-page__state {

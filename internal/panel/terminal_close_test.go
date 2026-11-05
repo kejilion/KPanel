@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -57,6 +58,104 @@ func TestTerminalCloseRejectsUnconfirmedSuccessBody(t *testing.T) {
 		if err := (clusterTerminalSource{agent: stub}).Close(context.Background(), "owner", "id"); err == nil {
 			t.Fatalf("unconfirmed body accepted: %s", body)
 		}
+	}
+}
+
+func TestDetachRetainsUnconfirmedIdentityButFreesInteractiveSlot(t *testing.T) {
+	server, tokenPath := newTestServer(t)
+	stub := &terminalCloseAgent{err: errors.New("offline")}
+	server.agent = stub
+	cookie, csrf := bootstrapCookies(t, server, tokenPath)
+	headers := map[string]string{"Content-Type": "application/json", "Origin": "http://panel.test", "X-CSRF-Token": csrf.Value}
+	opened := authenticatedRequest(server, http.MethodPost, "/api/v1/terminal-sessions", []byte(`{"hostId":"local","rows":30,"columns":120}`), cookie, csrf, headers)
+	var session terminalOpenResponse
+	if opened.Code != http.StatusCreated || json.Unmarshal(opened.Body.Bytes(), &session) != nil {
+		t.Fatal(opened.Body.String())
+	}
+	if !session.Detachable {
+		t.Fatal("interactive session missing detachable classification")
+	}
+	path := "/api/v1/terminal-sessions/" + session.SessionID
+	if got := authenticatedRequest(server, http.MethodPost, path+"/detach", []byte(`{}`), cookie, csrf, headers); got.Code != http.StatusConflict {
+		t.Fatalf("detached active session: %d", got.Code)
+	}
+	if got := authenticatedRequest(server, http.MethodPost, path+"/close", []byte(`{}`), cookie, csrf, headers); got.Code != http.StatusBadGateway {
+		t.Fatal(got.Body.String())
+	}
+	if got := authenticatedRequest(server, http.MethodPost, path+"/detach", []byte(`{}`), cookie, csrf, headers); got.Code != http.StatusOK {
+		t.Fatal(got.Body.String())
+	}
+	item, ok := server.terminalSessions[session.SessionID]
+	if !ok || !item.CloseRequested || !item.Detached || item.BackendSessionID != "backend-terminal" {
+		t.Fatalf("identity lost: %+v", item)
+	}
+	listed := authenticatedRequest(server, http.MethodGet, "/api/v1/terminal-sessions", nil, cookie, csrf, nil)
+	if strings.Contains(listed.Body.String(), session.SessionID) {
+		t.Fatal("detached session restored to list")
+	}
+	for i := 0; i < maxPanelTerminalsByUser; i++ {
+		if !server.reserveTerminalOpen(item.UserID) {
+			t.Fatal("detached session consumed an interactive slot")
+		}
+	}
+	if server.reserveTerminalOpen(item.UserID) {
+		t.Fatal("interactive limit not enforced")
+	}
+	for i := 0; i < maxPanelTerminalsByUser; i++ {
+		server.releaseTerminalOpen(item.UserID)
+	}
+	stub.err = nil
+	server.scheduleTerminalCleanup()
+	server.terminalMu.Lock()
+	done := server.terminalCleanupDone
+	server.terminalMu.Unlock()
+	<-done
+	server.terminalMu.Lock()
+	_, ok = server.terminalSessions[session.SessionID]
+	server.terminalMu.Unlock()
+	if ok {
+		t.Fatal("confirmed cleanup did not remove identity")
+	}
+}
+
+func TestDetachEnforcesOwnershipAndBoundedCleanupRecords(t *testing.T) {
+	server, tokenPath := newTestServer(t)
+	server.agent = &terminalCloseAgent{}
+	cookie, csrf := bootstrapCookies(t, server, tokenPath)
+	headers := map[string]string{"Content-Type": "application/json", "Origin": "http://panel.test", "X-CSRF-Token": csrf.Value}
+	opened := authenticatedRequest(server, http.MethodPost, "/api/v1/terminal-sessions", []byte(`{"hostId":"local","rows":30,"columns":120}`), cookie, csrf, headers)
+	var session terminalOpenResponse
+	if opened.Code != http.StatusCreated || json.Unmarshal(opened.Body.Bytes(), &session) != nil {
+		t.Fatal(opened.Body.String())
+	}
+	item := server.terminalSessions[session.SessionID]
+	item.CloseRequested = true
+	server.terminalSessions[session.SessionID] = item
+	foreign := item
+	foreign.ID = "foreign"
+	foreign.UserID = "another-user"
+	server.terminalSessions[foreign.ID] = foreign
+	if got := authenticatedRequest(server, http.MethodPost, "/api/v1/terminal-sessions/foreign/detach", []byte(`{}`), cookie, csrf, headers); got.Code != http.StatusNotFound {
+		t.Fatalf("foreign detach = %d", got.Code)
+	}
+	protected := item
+	protected.ID, protected.Detachable = "protected", false
+	server.terminalSessions[protected.ID] = protected
+	if terminalSessionResponse(protected).Detachable {
+		t.Fatal("protected session incorrectly classified as detachable")
+	}
+	if got := authenticatedRequest(server, http.MethodPost, "/api/v1/terminal-sessions/protected/detach", []byte(`{}`), cookie, csrf, headers); got.Code != http.StatusConflict {
+		t.Fatalf("non-interactive detach = %d", got.Code)
+	}
+	for n := 0; n < maxPanelTerminalsByUser; n++ {
+		copy := item
+		copy.ID = fmt.Sprintf("detached-%d", n)
+		copy.Detached = true
+		server.terminalSessions[copy.ID] = copy
+	}
+	got := authenticatedRequest(server, http.MethodPost, "/api/v1/terminal-sessions/"+session.SessionID+"/detach", []byte(`{}`), cookie, csrf, headers)
+	if got.Code != http.StatusConflict || server.terminalSessions[session.SessionID].Detached {
+		t.Fatalf("detach beyond cap = %d", got.Code)
 	}
 }
 
@@ -189,6 +288,33 @@ func TestRemoteTerminalCloseConfirmsTargetAbsenceAndRetainsTransportFailures(t *
 		if _, ok := server.terminalSessions["remote"]; ok {
 			t.Fatal("confirmed remote close retained index")
 		}
+	}
+	// A disconnected node can later return authenticated confirmation that the
+	// old PTY no longer exists, as after a target process restart.
+	server.terminalSessions["detached-remote"] = panelTerminalSession{ID: "detached-remote", UserID: "owner", BackendSessionID: "backend", HostID: host.ID, Detachable: true}
+	transportFailure = true
+	failed := httptest.NewRecorder()
+	server.handleTerminalOperation(failed, httptest.NewRequest(http.MethodPost, "/", nil), "owner", "detached-remote", "close")
+	if failed.Code != http.StatusBadGateway {
+		t.Fatalf("offline close = %d", failed.Code)
+	}
+	detached := httptest.NewRecorder()
+	server.handleTerminalOperation(detached, httptest.NewRequest(http.MethodPost, "/", nil), "owner", "detached-remote", "detach")
+	if detached.Code != http.StatusOK {
+		t.Fatalf("detach = %d %s", detached.Code, detached.Body.String())
+	}
+	transportFailure = false
+	stub.code, stub.status = "terminal_not_found", http.StatusNotFound
+	server.scheduleTerminalCleanup()
+	server.terminalMu.Lock()
+	done := server.terminalCleanupDone
+	server.terminalMu.Unlock()
+	<-done
+	server.terminalMu.Lock()
+	_, retained := server.terminalSessions["detached-remote"]
+	server.terminalMu.Unlock()
+	if retained {
+		t.Fatal("authenticated missing-session response did not clear detached identity")
 	}
 }
 

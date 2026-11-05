@@ -116,6 +116,104 @@ func TestShortcutCloseFencesLaunchThatArrivesAfterLookup(t *testing.T) {
 	}
 }
 
+func TestShortcutOldCloseIdentityCannotResolveReplacement(t *testing.T) {
+	s, path := newTestServer(t)
+	s.agent = &retainedAgentStub{}
+	cookie, csrf := bootstrapCookies(t, s, path)
+	version := saveRetainedShortcut(t, s)
+	call := func(input terminalOpenRequest) *httptest.ResponseRecorder {
+		body, _ := json.Marshal(input)
+		return authenticatedRequest(s, http.MethodPost, "/api/v1/terminal-sessions", body, cookie, csrf, retainedHeaders(csrf))
+	}
+	input := terminalOpenRequest{HostID: "local", Rows: 24, Columns: 80, ShortcutID: panelTestShortcutID, PrepareOnly: true}
+	prepare := func() string {
+		var intent struct {
+			LaunchID string `json:"launchId"`
+		}
+		response := call(input)
+		if response.Code != 201 || json.Unmarshal(response.Body.Bytes(), &intent) != nil {
+			t.Fatal(response.Body.String())
+		}
+		return intent.LaunchID
+	}
+	oldID := prepare()
+	request := input
+	request.PrepareOnly, request.Retained, request.ShortcutVersion, request.LaunchID = false, true, version, oldID
+	opened := call(request)
+	var old terminalOpenResponse
+	if opened.Code != 201 || json.Unmarshal(opened.Body.Bytes(), &old) != nil {
+		t.Fatal(opened.Body.String())
+	}
+	var lastAcknowledged string
+	for index := 1; index <= maxPanelTerminals; index++ {
+		request.LaunchID = prepare()
+		resumed := call(request)
+		if index < maxPanelTerminals && resumed.Code != 200 || index == maxPanelTerminals && resumed.Code != 429 {
+			t.Fatalf("resume %d: %d %s", index, resumed.Code, resumed.Body)
+		}
+		if index == maxPanelTerminals && !strings.Contains(resumed.Body.String(), "terminal_launch_ack_pending") {
+			t.Fatalf("identity limit was not distinguishable from a general launch failure: %s", resumed.Body)
+		}
+		if index == maxPanelTerminals {
+			var problem struct {
+				Details map[string]string `json:"details"`
+			}
+			if json.Unmarshal(resumed.Body.Bytes(), &problem) != nil || problem.Details["sessionId"] != old.SessionID {
+				t.Fatalf("identity limit did not bind the existing session: %s", resumed.Body)
+			}
+		}
+		if index < maxPanelTerminals {
+			lastAcknowledged = request.LaunchID
+		}
+	}
+	request.LaunchID = oldID
+	if response := call(request); response.Code != http.StatusOK {
+		t.Fatalf("registered launch retry at capacity: %d %s", response.Code, response.Body)
+	}
+	body, _ := json.Marshal(map[string]string{"launchId": lastAcknowledged})
+	ack := authenticatedRequest(s, http.MethodPost, "/api/v1/terminal-sessions/"+old.SessionID+"/launch-ack", body, cookie, csrf, retainedHeaders(csrf))
+	if ack.Code != 200 {
+		t.Fatalf("ack: %d %s", ack.Code, ack.Body)
+	}
+	request.LaunchID = prepare()
+	if response := call(request); response.Code != 200 {
+		t.Fatalf("ack did not free an identity: %d %s", response.Code, response.Body)
+	}
+	for index := 0; index < 32; index++ {
+		body, _ = json.Marshal(map[string]string{"launchId": request.LaunchID})
+		ack = authenticatedRequest(s, http.MethodPost, "/api/v1/terminal-sessions/"+old.SessionID+"/launch-ack", body, cookie, csrf, retainedHeaders(csrf))
+		if ack.Code != 200 {
+			t.Fatalf("ack %d: %d", index, ack.Code)
+		}
+		request.LaunchID = prepare()
+		if response := call(request); response.Code != 200 {
+			t.Fatalf("reopen %d: %d %s", index, response.Code, response.Body)
+		}
+	}
+	request.LookupOnly, request.LaunchID = true, oldID
+	if response := call(request); response.Code != 200 {
+		t.Fatalf("old identity was evicted: %d %s", response.Code, response.Body)
+	}
+	request.LookupOnly = false
+	closed := authenticatedRequest(s, http.MethodPost, "/api/v1/terminal-sessions/"+old.SessionID+"/close", []byte(`{}`), cookie, csrf, retainedHeaders(csrf))
+	if closed.Code != 200 {
+		t.Fatal(closed.Body.String())
+	}
+	newID := prepare()
+	request.LaunchID = newID
+	if opened = call(request); opened.Code != 201 {
+		t.Fatal(opened.Body.String())
+	}
+	request.LookupOnly, request.LaunchID = true, oldID
+	if response := call(request); response.Code != 404 {
+		t.Fatalf("old identity resolved replacement: %d %s", response.Code, response.Body)
+	}
+	request.LaunchID = newID
+	if response := call(request); response.Code != 200 {
+		t.Fatalf("new identity did not resolve: %d %s", response.Code, response.Body)
+	}
+}
+
 func TestShortcutLaunchIntentsAreBoundedExpireAndCancel(t *testing.T) {
 	s, path := newTestServer(t)
 	cookie, csrf := bootstrapCookies(t, s, path)
@@ -379,6 +477,9 @@ func TestRetainedShortcutValidationAndUncertainLaunchNeverReplay(t *testing.T) {
 	if got.Code != 201 || !item.LaunchUncertain {
 		t.Fatalf("uncertain: %d %s", got.Code, got.Body)
 	}
+	if !item.Detachable || !item.WorkspaceVisible {
+		t.Fatal("named terminal must support cleanup without losing its workspace identity")
+	}
 	stub.failInput = false
 	retry := authenticatedRequest(s, http.MethodPost, "/api/v1/terminal-sessions", retainedShortcutBody(version), cookie, csrf, retainedHeaders(csrf))
 	if retry.Code != 200 || stub.opened != 1 || len(stub.inputs) != 0 {
@@ -393,9 +494,19 @@ func TestRetainedShortcutValidationAndUncertainLaunchNeverReplay(t *testing.T) {
 	if closed.Code != 502 {
 		t.Fatalf("close: %d", closed.Code)
 	}
+	detached := authenticatedRequest(s, http.MethodPost, "/api/v1/terminal-sessions/"+item.SessionID+"/detach", []byte(`{}`), cookie, csrf, retainedHeaders(csrf))
+	if detached.Code != 200 {
+		t.Fatalf("detach: %d %s", detached.Code, detached.Body.String())
+	}
 	retry = authenticatedRequest(s, http.MethodPost, "/api/v1/terminal-sessions", retainedShortcutBody(version), cookie, csrf, retainedHeaders(csrf))
 	if retry.Code != 409 || stub.opened != 1 {
 		t.Fatal("failed close replaced a live session")
+	}
+	s.terminalMu.Lock()
+	done := s.terminalCleanupDone
+	s.terminalMu.Unlock()
+	if done != nil {
+		<-done
 	}
 }
 func TestRetainedAgentNegotiationRejectsOldAgent(t *testing.T) {

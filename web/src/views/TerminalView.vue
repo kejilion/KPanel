@@ -14,6 +14,8 @@ import PageHeader from '@/components/common/PageHeader.vue'
 import OperatingSystemIcon from '@/components/overview/OperatingSystemIcon.vue'
 import { useTerminalFullscreen } from '@/composables/useTerminalFullscreen'
 import { api, ApiError } from '@/lib/api'
+import { closeTerminalQuietly, deferTerminalClose, retryPendingTerminalCloses } from '@/lib/terminalClose'
+import { useSession } from '@/stores/session'
 import {
   applyClusterHostOrderPreference,
   readClusterHostOrder,
@@ -26,7 +28,8 @@ import type { ClusterHost, ClusterHostList } from '@/types/api'
 import { usePhraseCatalog } from '@/i18n/phrase'
 import { useI18n } from '@/i18n'
 import { useToast } from '@/stores/toast'
-import { desktopCloseGuardCoordinator, desktopWindowCloseGuardKey } from '@/lib/desktopRouteKeys'
+import { desktopCloseGuardCoordinator, desktopWindowCloseGuardKey, desktopWindowIdentityKey, desktopWindowLaunchKey } from '@/lib/desktopRouteKeys'
+import { readWindowIdentities, windowIdentityKey, writeWindowIdentities } from '@/lib/windowSessionIdentities'
 
 usePhraseCatalog((locale) => locale === 'en-US'
   ? import('@/i18n/pages/TerminalView/en-US').then((module) => module.default)
@@ -34,6 +37,8 @@ usePhraseCatalog((locale) => locale === 'en-US'
 const { locale, t } = useI18n()
 const toast = useToast()
 const desktopWindowCloseGuards = inject(desktopWindowCloseGuardKey, undefined)
+const windowId = inject(desktopWindowIdentityKey, undefined)
+const consumeWindowLaunch = inject(desktopWindowLaunchKey, () => false)
 let unregisterWindowCloseGuard: (() => void) | undefined
 
 interface OpenTerminal {
@@ -58,6 +63,7 @@ interface HostTerminalHandle {
   fillCommand: (command: string) => boolean
   scheduleResize: () => void
   closeSession: () => Promise<void>
+  markDetached: () => void
 }
 
 const inventory = ref<ClusterHostList>()
@@ -90,6 +96,24 @@ let hostsRequest: Promise<void> | undefined
 let openingRequest: ReturnType<typeof api.terminals.open> | undefined
 let checkingWindowClose = false
 let disposed = false
+let userClosed = false
+const account = useSession()
+const owner = account.state.authenticated ? account.state.user?.id || '' : ''
+let identityKey = ''
+let identityReady: Promise<void> = Promise.resolve()
+let restoredSessionIDs: string[] = []
+function rememberSessions(): void {
+  writeWindowIdentities(identityKey, sessions.value.map(item => item.id).filter(id => /^[a-f0-9]{64}$/.test(id)))
+}
+function cleanupLateSession(id: string): void {
+  if (owner && (!account.state.authenticated || account.state.user?.id !== owner)) {
+    deferTerminalClose(id, owner)
+    return
+  }
+  void closeTerminalQuietly(id, async () => {
+    if (!(await api.terminals.close(id)).closed) throw new Error('Terminal close was not confirmed')
+  })
+}
 let unsubscribeClusterHostOrder: (() => void) | undefined
 const connectionsCollapsedStorageKey = 'kpanel:terminal:connections-collapsed'
 
@@ -159,14 +183,23 @@ async function performLoadHosts(): Promise<void> {
       const retained = await api.terminals.list(request.signal)
       if (request.signal.aborted || controller !== request) return
       for (const session of retained.items) {
-        if (!session.retained || sessions.value.some(item => item.id === session.sessionId)) continue
+        const visible = session.workspaceVisible && (session.retained || session.closeRequested)
+        if (!visible || sessions.value.some(item => item.id === session.sessionId)) continue
+        if (session.closeRequested && session.detachable) {
+          // The user already closed this session before a reload. Finish the
+          // local dismissal without restoring a prompt or replaying input.
+          void api.terminals.detach(session.sessionId).catch(() => undefined)
+          continue
+        }
         sessions.value.push({ id: session.sessionId, hostId: session.hostId,
           hostName: names.get(session.hostId) || session.hostId, title: session.title,
-          retained: true, ordinal: nextOrdinal(session.hostId), offset: 0,
+          retained: session.retained, ordinal: nextOrdinal(session.hostId), offset: 0,
           state: 'connecting', closeFailed: session.closeRequested, launchUncertain: session.launchUncertain })
       }
       activeSessionId.value = sessions.value[0]?.id || ''
+      rememberSessions()
       initialHostLoad = false
+      if (userClosed) return
       const startHost = requestedTerminalHost() || inventory.value.items.find((host) => host.isLocal && host.terminalAvailable)
       if (startHost && (requestedTerminalHost() || !sessions.value.length)) await openHost(startHost)
     }
@@ -224,15 +257,12 @@ async function openSession(host: ClusterHost, retained = true): Promise<void> {
     })
 	const opened = await openingRequest
 	if (disposed) {
-      if (!opened.retained) {
-        try {
-          if (!(await api.terminals.close(opened.sessionId)).closed) api.terminals.closeOnUnload(opened.sessionId)
-        } catch { api.terminals.closeOnUnload(opened.sessionId) }
-      }
+      if (userClosed || !opened.retained) cleanupLateSession(opened.sessionId)
       return
     }
 	const item: OpenTerminal = { id: opened.sessionId, hostId: host.id, hostName: host.name, retained: opened.retained, ordinal: nextOrdinal(host.id), offset: opened.offset, state: 'connecting' }
     sessions.value.push(item)
+    rememberSessions()
     activeSessionId.value = item.id
     void nextTick(() => {
       workspaceRef.value?.selectSession(item.id)
@@ -255,26 +285,29 @@ async function closeSession(id: string): Promise<boolean> {
   if (item.closing) return false
   item.closing = true
   item.closeFailed = false
-  try {
+  handle?.markDetached?.()
+  if (owner && (!account.state.authenticated || account.state.user?.id !== owner)) {
+    deferTerminalClose(id, owner)
+    removeSession(id)
+    return true
+  }
+  const cleanup = closeTerminalQuietly(id, async () => {
     if (handle) await handle.closeSession()
     else {
       const result = await api.terminals.close(id)
       if (!result.closed) throw new Error('Terminal close was not confirmed')
     }
-    removeSession(id)
-    return true
-  } catch {
-    item.closeFailed = true
-    return false
-  } finally {
-    item.closing = false
-  }
+  })
+  removeSession(id)
+  void cleanup.catch(() => undefined)
+  return true
 }
 
 function removeSession(id: string): void {
   const index = sessions.value.findIndex((item) => item.id === id)
   if (index < 0) return
   sessions.value.splice(index, 1)
+  rememberSessions()
   terminalRefs.delete(id)
   // A closed terminal frees a slot, so the limit notice no longer holds.
   limitReached.value = false
@@ -493,8 +526,21 @@ watch(() => route.query.hostId, () => {
   if (host) void openHost(host)
 })
 
+function reloadHostsAfterIdentity(): void {
+  void identityReady.then(() => { if (!disposed) void loadHosts() })
+}
+
 onMounted(() => {
-	window.addEventListener(clusterRemoteAccessChanged, loadHosts)
+  retryPendingTerminalCloses()
+
+  const fresh = consumeWindowLaunch()
+  identityReady = (async () => {
+    identityKey = await windowIdentityKey('terminal', owner, windowId || 'classic')
+    if (fresh) writeWindowIdentities(identityKey, [])
+    else restoredSessionIDs = readWindowIdentities(identityKey, /^[a-f0-9]{64}$/, 16)
+    if (!disposed) void loadHosts()
+  })()
+	window.addEventListener(clusterRemoteAccessChanged, reloadHostsAfterIdentity)
   unsubscribeClusterHostOrder = subscribeClusterHostOrder(() => {
     clusterHostOrderRevision.value += 1
   })
@@ -506,26 +552,20 @@ onMounted(() => {
   const guard = async () => {
     if (checkingWindowClose) return false
     checkingWindowClose = true
-    try {
-      await hostsRequest
-      // Wait for a pending open so closing the window cannot orphan its PTY.
-      await openingRequest?.catch(() => undefined)
-      await nextTick()
-      const activeCount = activeInteractiveSessionCount.value
-      if (activeCount && !window.confirm(t('terminal.closeSessionsConfirm', { count: activeCount }))) return false
-      const results = await Promise.all(sessions.value.map(item => closeSession(item.id)))
-      return results.every(Boolean)
-    } finally {
-      checkingWindowClose = false
-    }
+    userClosed = true
+    disposed = true
+    controller?.abort()
+    await identityReady
+    if (initialHostLoad) for (const id of restoredSessionIDs) cleanupLateSession(id)
+    for (const item of [...sessions.value]) void closeSession(item.id)
+    return true
   }
   unregisterWindowCloseGuard = desktopWindowCloseGuards
     ? desktopWindowCloseGuards.register(guard)
     : desktopCloseGuardCoordinator.register('classic-terminal', guard)
-  void loadHosts()
 })
 onBeforeUnmount(() => {
-	window.removeEventListener(clusterRemoteAccessChanged, loadHosts)
+	window.removeEventListener(clusterRemoteAccessChanged, reloadHostsAfterIdentity)
   disposed = true
   unsubscribeClusterHostOrder?.()
   unregisterWindowCloseGuard?.()
@@ -544,10 +584,6 @@ onBeforeUnmount(() => {
       <strong>{{ sessionLabel(item) }}</strong>：{{ t('terminal.launchUncertain') }}
     </div>
     <div v-if="limitReached" class="terminal-alert" role="alert">{{ t('terminal.sessionLimitReached') }}</div>
-    <div v-for="item in sessions.filter((session) => session.closeFailed)" :key="item.id" class="terminal-alert" role="alert">
-      <strong>{{ sessionLabel(item) }}</strong>：<span>关闭未确认，会话已保留。请检查目标主机连接后重试。</span>
-      <button type="button" :disabled="item.closing" @click="closeSession(item.id)">重试关闭</button>
-    </div>
 
     <section
       class="terminal-workspace terminal-theme-scope"
@@ -774,7 +810,7 @@ onBeforeUnmount(() => {
           @choose-host="connectionsCollapsed = false; mobileConnectionsOpen = true">
           <template #default="{ item, visible }">
             <HostTerminal :ref="(instance) => setTerminalRef(item.id, instance)" :session-id="item.id"
-              :retained="item.retained" :host-name="item.label" :history-host-id="item.hostId" :initial-offset="item.offset" :visible="visible && terminalMode === 'interactive'" :auto-focus="false"
+              :retained="item.retained" :close-pending="item.closeFailed || item.closing" :host-name="item.label" :history-host-id="item.hostId" :initial-offset="item.offset" :visible="visible && terminalMode === 'interactive'" :auto-focus="false"
               @state-change="updateWorkspaceSessionState(item.id, $event)" />
           </template>
         </TerminalWorkspace>

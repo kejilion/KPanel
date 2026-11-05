@@ -3,7 +3,8 @@ import { flushPromises, shallowMount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { resetLocaleForTest, setLocale } from '@/i18n'
-import { desktopWindowCloseGuardKey, desktopWindowLaunchKey, type DesktopWindowCloseGuardRegistry } from '@/lib/desktopRouteKeys'
+import { desktopWindowCloseGuardKey, desktopWindowIdentityKey, desktopWindowLaunchKey, type DesktopWindowCloseGuardRegistry } from '@/lib/desktopRouteKeys'
+import { resetWindowIdentityForTest } from '@/lib/windowSessionIdentities'
 import { resetDesktopModeForTest, useDesktopMode } from '@/stores/desktopMode'
 import AppScriptView from './AppScriptView.vue'
 
@@ -13,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   job: vi.fn(),
   cancelJob: vi.fn(),
   action: vi.fn(),
+  owner: { authenticated: true, user: { id: '' } },
 }))
 
 vi.mock('@/lib/api', () => ({
@@ -29,6 +31,7 @@ vi.mock('@/lib/api', () => ({
     },
   },
 }))
+vi.mock('@/stores/session', () => ({ useSession: () => ({ state: mocks.owner }) }))
 
 vi.mock('@/components/apps/AppInteractiveTerminal.vue', () => ({
   default: {
@@ -60,7 +63,7 @@ const job = {
   createdAt: '',
 }
 
-async function mountView(closeGuards?: DesktopWindowCloseGuardRegistry, consumeLaunch = () => true) {
+async function mountView(closeGuards?: DesktopWindowCloseGuardRegistry, consumeLaunch = () => true, windowId?: string) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [{ path: '/app-script/:appId', component: AppScriptView }],
@@ -72,6 +75,7 @@ async function mountView(closeGuards?: DesktopWindowCloseGuardRegistry, consumeL
       plugins: [router],
       provide: {
         [desktopWindowLaunchKey as symbol]: consumeLaunch,
+        ...(windowId ? { [desktopWindowIdentityKey as symbol]: windowId } : {}),
         ...(closeGuards ? { [desktopWindowCloseGuardKey as symbol]: closeGuards } : {}),
       },
       stubs: { AppInteractiveTerminal: true },
@@ -83,9 +87,13 @@ async function mountView(closeGuards?: DesktopWindowCloseGuardRegistry, consumeL
 
 describe('dedicated desktop app script terminal', () => {
   beforeEach(() => {
+    resetWindowIdentityForTest()
+    Object.defineProperty(navigator, 'locks', { configurable: true, value: { request: (_name: string, _options: unknown, callback: (lock: Lock) => unknown) => Promise.resolve(callback({ name: 'test', mode: 'exclusive' } as Lock)) } })
     vi.clearAllMocks()
+    mocks.owner.user.id = `app-test-${crypto.randomUUID()}`
     resetDesktopModeForTest()
     window.localStorage.clear()
+    window.sessionStorage.clear()
     mocks.inventory.mockResolvedValue({ items: [app] })
     mocks.jobs.mockResolvedValue({ items: [] })
     mocks.job.mockResolvedValue({ ...job, inputOpen: false, status: 'cancelled', stage: 'cancelled' })
@@ -94,6 +102,8 @@ describe('dedicated desktop app script terminal', () => {
   })
 
   afterEach(() => {
+    resetWindowIdentityForTest()
+    Reflect.deleteProperty(navigator, 'locks')
     vi.restoreAllMocks()
     resetLocaleForTest()
   })
@@ -101,7 +111,7 @@ describe('dedicated desktop app script terminal', () => {
   it('starts the structured manage action without mounting the app marketplace', async () => {
     const wrapper = await mountView()
 
-    expect(mocks.action).toHaveBeenCalledWith('openclaw', 'manage', { resourceVersion: 'rv-1' })
+    expect(mocks.action).toHaveBeenCalledWith('openclaw', 'manage', { resourceVersion: 'rv-1', jobId: expect.stringMatching(/^[a-f0-9]{32}$/) }, expect.any(AbortSignal))
     expect(wrapper.find('.app-script-page__header').exists()).toBe(false)
     expect(wrapper.findComponent({ name: 'AppInteractiveTerminal' }).props()).toMatchObject({
       jobId: 'job-1',
@@ -186,7 +196,7 @@ describe('dedicated desktop app script terminal', () => {
   it('starts this app while another application has an active shell', async () => {
     mocks.jobs.mockResolvedValue({ items: [{ ...job, id: 'other-job', appId: 'other-app' }] })
     const wrapper = await mountView()
-    expect(mocks.action).toHaveBeenCalledWith('openclaw', 'manage', { resourceVersion: 'rv-1' })
+    expect(mocks.action).toHaveBeenCalledWith('openclaw', 'manage', { resourceVersion: 'rv-1', jobId: expect.stringMatching(/^[a-f0-9]{32}$/) }, expect.any(AbortSignal))
     expect(wrapper.findComponent({ name: 'AppInteractiveTerminal' }).props('jobId')).toBe('job-1')
     wrapper.unmount()
   })
@@ -219,16 +229,15 @@ describe('dedicated desktop app script terminal', () => {
     expect(wrapper.text()).not.toContain('关闭窗口或刷新不会结束任务')
     expect(wrapper.element.children).toHaveLength(1)
     await expect(Promise.resolve(guard?.())).resolves.toBe(true)
-    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('释放应用管理锁'))
-    expect(mocks.cancelJob).toHaveBeenCalledWith('job-1')
-    expect(mocks.job).toHaveBeenCalledWith('job-1')
-    expect(window.localStorage.getItem('kpanel:active-app-job')).toBeNull()
+    expect(confirm).not.toHaveBeenCalled()
+    expect(mocks.cancelJob).toHaveBeenCalledWith('job-1', expect.any(AbortSignal))
+    expect(window.localStorage.getItem('kpanel:active-app-job')).toBe('job-1')
 
     wrapper.unmount()
     expect(unregister).toHaveBeenCalledOnce()
   })
 
-  it.each(['inventory', 'jobs'] as const)('waits for pending %s before stopping the existing task on close', async stage => {
+  it.each(['inventory', 'jobs'] as const)('closes during pending %s without stopping an unrelated later task', async stage => {
     let guard: (() => boolean | Promise<boolean>) | undefined
     const closeGuards: DesktopWindowCloseGuardRegistry = {
       register: candidate => { guard = candidate; return vi.fn() },
@@ -246,18 +255,20 @@ describe('dedicated desktop app script terminal', () => {
     let settled = false
     const closing = Promise.resolve(guard?.()).then(result => { settled = true; return result })
     await flushPromises()
-    expect(settled).toBe(false)
-    expect(pendingSignal?.aborted).toBe(false)
+    expect(settled).toBe(true)
+    expect(pendingSignal?.aborted).toBe(true)
     expect(mocks.cancelJob).not.toHaveBeenCalled()
     complete()
     await expect(closing).resolves.toBe(true)
+    await flushPromises()
     expect(mocks.action).not.toHaveBeenCalled()
-    expect(mocks.cancelJob).toHaveBeenCalledExactlyOnceWith('job-1')
+    expect(mocks.cancelJob).not.toHaveBeenCalled()
     expect(window.localStorage.getItem('kpanel:active-app-job')).toBeNull()
     wrapper.unmount()
   })
 
-  it('waits for an in-flight manage action before stopping its returned task', async () => {
+
+  it('closes during an in-flight manage action and stops its returned task', async () => {
     let guard: (() => boolean | Promise<boolean>) | undefined
     let complete!: (value: typeof job) => void
     mocks.action.mockReturnValueOnce(new Promise(resolve => { complete = resolve }))
@@ -266,15 +277,69 @@ describe('dedicated desktop app script terminal', () => {
     let settled = false
     const closing = Promise.resolve(guard?.()).then(result => { settled = true; return result })
     await flushPromises()
-    expect(settled).toBe(false)
+    expect(settled).toBe(true)
     complete(job)
     await expect(closing).resolves.toBe(true)
+    await flushPromises()
     expect(mocks.action).toHaveBeenCalledOnce()
-    expect(mocks.cancelJob).toHaveBeenCalledExactlyOnceWith('job-1')
+    expect(mocks.cancelJob).toHaveBeenCalledWith('job-1', expect.any(AbortSignal))
     wrapper.unmount()
   })
 
-  it('keeps the task visible when the Agent cannot confirm process shutdown', async () => {
+  it('keeps the exact pending job identity when a launch response is lost', async () => {
+    let guard: (() => boolean | Promise<boolean>) | undefined
+    mocks.action.mockReturnValueOnce(new Promise(() => undefined))
+    mocks.cancelJob.mockRejectedValue(new Error('offline'))
+    const wrapper = await mountView({ register: candidate => { guard = candidate; return vi.fn() } })
+    const jobId = mocks.action.mock.calls[0]![2].jobId as string
+    expect(await guard?.()).toBe(true)
+    expect(mocks.cancelJob).toHaveBeenCalledWith(jobId, expect.any(AbortSignal))
+    expect(window.localStorage.getItem(`kpanel:pending-app-job-stops:${mocks.owner.user.id}:${jobId}`)).toBe('1')
+    wrapper.unmount()
+  })
+
+  it('retains every uncertain launch identity when a user retries before closing', async () => {
+    let guard: (() => boolean | Promise<boolean>) | undefined
+    mocks.action.mockRejectedValueOnce(new Error('lost response')).mockReturnValueOnce(new Promise(() => undefined))
+    mocks.cancelJob.mockRejectedValue(new Error('offline'))
+    const wrapper = await mountView({ register: candidate => { guard = candidate; return vi.fn() } })
+    await wrapper.find('.app-script-page__state.is-error button').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-app-script-start]').trigger('click')
+    await flushPromises()
+    const first = mocks.action.mock.calls[0]![2].jobId as string
+    const second = mocks.action.mock.calls[1]![2].jobId as string
+    expect(first).not.toBe(second)
+    expect(await guard?.()).toBe(true)
+    expect(window.localStorage.getItem(`kpanel:pending-app-job-stops:${mocks.owner.user.id}:${first}`)).toBe('1')
+    expect(window.localStorage.getItem(`kpanel:pending-app-job-stops:${mocks.owner.user.id}:${second}`)).toBe('1')
+    wrapper.unmount()
+  })
+
+  it('persists an uncertain launch for its restored window without giving it to a different window', async () => {
+    let guard: (() => boolean | Promise<boolean>) | undefined
+    const guards: DesktopWindowCloseGuardRegistry = { register: candidate => { guard = candidate; return vi.fn() } }
+    mocks.action.mockRejectedValueOnce(new Error('lost response'))
+    const original = await mountView(guards, () => true, 'window-a')
+    const id = mocks.action.mock.calls[0]![2].jobId as string
+    original.unmount()
+    mocks.jobs.mockReturnValue(new Promise(() => undefined))
+    const other = await mountView(guards, () => true, 'window-b')
+    expect(await guard?.()).toBe(true)
+    expect(mocks.cancelJob).not.toHaveBeenCalled()
+    other.unmount()
+    const restored = await mountView(guards, () => false, 'window-a')
+    expect(await guard?.()).toBe(true)
+    expect(mocks.cancelJob).toHaveBeenCalledWith(id, expect.any(AbortSignal))
+    restored.unmount()
+    mocks.cancelJob.mockClear()
+    const reused = await mountView(guards, () => true, 'window-a')
+    expect(await guard?.()).toBe(true)
+    expect(mocks.cancelJob).not.toHaveBeenCalled()
+    reused.unmount()
+  })
+
+  it('closes silently but preserves the task identity when shutdown cannot be confirmed', async () => {
     let guard: (() => boolean | Promise<boolean>) | undefined
     const closeGuards: DesktopWindowCloseGuardRegistry = {
       register: (candidate) => {
@@ -286,13 +351,13 @@ describe('dedicated desktop app script terminal', () => {
     mocks.cancelJob.mockRejectedValue(new Error('Agent offline'))
     const wrapper = await mountView(closeGuards)
 
-    expect(await guard?.()).toBe(false)
-    expect(wrapper.find('[role="alert"]').text()).toContain('Agent offline')
+    expect(await guard?.()).toBe(true)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     expect(window.localStorage.getItem('kpanel:active-app-job')).toBe('job-1')
     wrapper.unmount()
   })
 
-  it('keeps the process running when ending the task is cancelled', async () => {
+  it('does not ask for confirmation when ending the task', async () => {
     let guard: (() => boolean | Promise<boolean>) | undefined
     const closeGuards: DesktopWindowCloseGuardRegistry = {
       register: (candidate) => {
@@ -303,8 +368,9 @@ describe('dedicated desktop app script terminal', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(false)
     const wrapper = await mountView(closeGuards)
 
-    expect(await guard?.()).toBe(false)
-    expect(mocks.cancelJob).not.toHaveBeenCalled()
+    expect(await guard?.()).toBe(true)
+    expect(window.confirm).not.toHaveBeenCalled()
+    expect(mocks.cancelJob).toHaveBeenCalledWith('job-1', expect.any(AbortSignal))
     wrapper.unmount()
   })
 

@@ -4,6 +4,8 @@ import { LoaderCircle } from '@lucide/vue'
 import { desktopWindowCloseGuardKey } from '@/lib/desktopRouteKeys'
 import HostTerminal from '@/components/terminal/HostTerminal.vue'
 import { api, ApiError } from '@/lib/api'
+import { closeTerminalForOwner, closeTerminalQuietly, deferTerminalClose, flushPendingTerminalLaunchAcks, queueTerminalLaunchAck, queueTerminalLaunchClose, retryPendingTerminalCloses } from '@/lib/terminalClose'
+import { useSession } from '@/stores/session'
 import { useI18n } from '@/i18n'
 import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
 import type { TerminalSession } from '@/types/api'
@@ -13,7 +15,6 @@ const { t } = useI18n()
 const emit = defineEmits<{ close: [] }>()
 const closeGuards = inject(desktopWindowCloseGuardKey, undefined)
 let unregisterCloseGuard: (() => void) | undefined
-let openingRequest: Promise<void> | undefined
 const terminal = ref<InstanceType<typeof HostTerminal>>()
 const session = ref<TerminalSession>()
 const opening = ref(true)
@@ -27,13 +28,21 @@ const hostId = props.hostId || 'local'
 const launchTarget = { shortcutId: props.shortcutId, shortcutVersion: props.shortcutVersion, purpose: props.purpose }
 const namedLaunch = Boolean(launchTarget.shortcutId || launchTarget.purpose)
 let disposed = false
+let userClosed = false
 let submitted = false
 let launchId: string | undefined
+let resolvingSessionId = ''
+const account = useSession()
+const owner = account.state.authenticated ? account.state.user?.id || '' : ''
 
-function resolveLaunch(): Promise<TerminalSession> {
+function queueLaunchClose(): void {
+  if (launchId && namedLaunch) queueTerminalLaunchClose({ launchId, hostId, ...launchTarget }, owner)
+}
+
+function resolveLaunch(signal?: AbortSignal): Promise<TerminalSession> {
   return launchTarget.purpose
-    ? api.terminals.resolvePurpose(launchTarget.purpose, launchId)
-    : api.terminals.resolveShortcut(hostId, launchTarget.shortcutId!, launchId)
+    ? api.terminals.resolvePurpose(launchTarget.purpose, launchId, signal)
+    : api.terminals.resolveShortcut(hostId, launchTarget.shortcutId!, launchId, signal)
 }
 
 function phrase(value: string): string {
@@ -46,31 +55,73 @@ async function reclaim(opened: TerminalSession): Promise<void> {
   if (!result.closed) throw new Error('Terminal close was not confirmed')
 }
 
+async function prepareLaunch(): Promise<boolean> {
+  launchId = (await (launchTarget.purpose ? api.terminals.preparePurpose(launchTarget.purpose) : api.terminals.prepareShortcut(hostId, launchTarget.shortcutId!))).launchId
+  if (!launchId) throw new Error('Terminal launch identity is missing')
+  if (disposed) {
+    if (userClosed) queueLaunchClose()
+    else void resolveLaunch().catch(() => undefined)
+    return false
+  }
+  return !closing.value
+}
+
+async function openNamed(): Promise<TerminalSession | undefined> {
+  try {
+    return await api.terminals.open(hostId, 30, 120, { ...launchTarget, retained: true, launchId }).catch(reason => {
+      if (disposed || closing.value || !(reason instanceof ApiError) || reason.code !== 'terminal_retention_unavailable') throw reason
+      // Explicit rejection happens before starting a command; reuse the identity.
+      return api.terminals.open(hostId, 30, 120, { ...launchTarget, retained: false, launchId })
+    })
+  } catch (reason) {
+    if (!(reason instanceof ApiError) || reason.code !== 'terminal_launch_ack_pending' || !reason.details || typeof reason.details !== 'object' || !('sessionId' in reason.details)) throw reason
+    const id = reason.details.sessionId
+    if (typeof id !== 'string' || !/^[a-f0-9]{64}$/.test(id)) throw reason
+    resolvingSessionId = id
+    launchId = undefined
+    if (disposed || closing.value || owner && (!account.state.authenticated || account.state.user?.id !== owner)) {
+      if (userClosed) deferTerminalClose(id, owner)
+      return undefined
+    }
+    // Lookup never creates a PTY. A replacement session must not be mistaken
+    // for the one that caused the capacity response.
+    const signal = AbortSignal.timeout(10_000)
+    const existing = launchTarget.purpose
+      ? await api.terminals.resolvePurpose(launchTarget.purpose, undefined, signal)
+      : await api.terminals.resolveShortcut(hostId, launchTarget.shortcutId!, undefined, signal)
+    if (existing.sessionId !== id) throw new Error('Terminal session changed during recovery')
+    return existing
+  }
+}
+
 async function open(): Promise<void> {
   opening.value = true
   error.value = ''
   try {
-    if (namedLaunch && !props.existingSession && !launchId) {
-      launchId = (await (launchTarget.purpose ? api.terminals.preparePurpose(launchTarget.purpose) : api.terminals.prepareShortcut(hostId, launchTarget.shortcutId!))).launchId
-      if (!launchId) throw new Error('Terminal launch identity is missing')
-      if (disposed) {
-        void resolveLaunch().catch(() => undefined)
-        return
-      }
-      if (closing.value) return
+    if (namedLaunch && !props.existingSession) {
+      await flushPendingTerminalLaunchAcks(owner, launchTarget)
+      if (disposed || closing.value) return
     }
-    const opened = props.existingSession || await (namedLaunch
-      ? api.terminals.open(hostId, 30, 120, { ...launchTarget, retained: true, launchId }).catch(reason => {
-        if (disposed || closing.value || !(reason instanceof ApiError) || reason.code !== 'terminal_retention_unavailable') throw reason
-        // The server rejected retention before launching the command. Reuse its identity; never retry an uncertain launch.
-        return api.terminals.open(hostId, 30, 120, { ...launchTarget, retained: false, launchId })
-      })
-      : api.terminals.open(hostId, 30, 120))
+    retryPendingTerminalCloses()
+    if (namedLaunch && !props.existingSession && !launchId) {
+      if (!(await prepareLaunch())) return
+    }
+    if (owner && (!account.state.authenticated || account.state.user?.id !== owner)) {
+      if (userClosed) queueLaunchClose()
+      return
+    }
+    const opened = props.existingSession || await (namedLaunch ? openNamed() : api.terminals.open(hostId, 30, 120))
+    if (!opened) return
     if (disposed) {
-      if (!opened.retained) await reclaim(opened).catch(() => api.terminals.closeOnUnload(opened.sessionId))
+      if (userClosed || !opened.retained) {
+        if (owner && (!account.state.authenticated || account.state.user?.id !== owner)) deferTerminalClose(opened.sessionId, owner)
+        else await closeTerminalQuietly(opened.sessionId, () => reclaim(opened))
+      }
       return
     }
     session.value = opened
+    resolvingSessionId = ''
+    if (launchId) queueTerminalLaunchAck(opened.sessionId, launchId, owner, launchTarget)
     if (opened.launchUncertain) error.value = t('terminal.launchUncertain')
   } catch (reason) {
     if (!disposed) error.value = reason instanceof ApiError && reason.code === 'terminal_limit'
@@ -94,41 +145,28 @@ async function onStateChange(state: string): Promise<void> {
 async function close(): Promise<boolean> {
   if (closing.value) return false
   closing.value = true
-  try {
-    await openingRequest
-    let target = session.value
-    if (!target && namedLaunch) {
-      try { target = await resolveLaunch() }
-      catch (reason) {
-        if (!(reason instanceof ApiError && reason.code === 'terminal_shortcut_session_not_found')) throw reason
-      }
-    }
-    if (target) {
-      try {
-        if (session.value && terminal.value) await terminal.value.closeSession()
-        else await reclaim(target)
-      } catch (reason) {
-        session.value = target
-        throw reason
-      }
-      session.value = undefined
-    }
-    disposed = true
-    emit('close')
-    return true
-  } catch {
-    error.value = phrase('终端关闭失败，请重试关闭。')
-    return false
-  } finally {
-    closing.value = false
+  userClosed = true
+  const target = session.value
+  const handle = terminal.value
+  if (target) {
+    handle?.markDetached?.()
+    void closeTerminalForOwner(target.sessionId, owner, () => handle ? handle.closeSession() : reclaim(target)).catch(() => undefined)
+    session.value = undefined
+  } else if (resolvingSessionId) {
+    deferTerminalClose(resolvingSessionId, owner)
+  } else if (namedLaunch) {
+    queueLaunchClose()
   }
+  disposed = true
+  emit('close')
+  return true
 }
 
 defineExpose({ close })
 
 onMounted(() => {
   unregisterCloseGuard = closeGuards?.register(close)
-  openingRequest = open()
+  void open()
 })
 onBeforeUnmount(() => {
   unregisterCloseGuard?.()
@@ -136,7 +174,7 @@ onBeforeUnmount(() => {
   // HostTerminal owns mounted sessions, including page-hide cleanup.
   if (session.value && !session.value.retained && !terminal.value) {
     const opened = session.value
-    void reclaim(opened).catch(() => api.terminals.closeOnUnload(opened.sessionId))
+    void closeTerminalQuietly(opened.sessionId, () => reclaim(opened))
   }
 })
 </script>

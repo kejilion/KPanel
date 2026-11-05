@@ -56,6 +56,17 @@ describe('HostTerminal close lifecycle', () => {
     await flushPromises()
     expect(mocks.close).toHaveBeenCalledTimes(1)
   })
+
+  it('does not resend close on unmount after the local tab was detached', async () => {
+    mocks.close.mockRejectedValue(new Error('offline'))
+    const wrapper = mount(HostTerminal, { props })
+    const handle = wrapper.vm as unknown as { closeSession(): Promise<void>; markDetached(): void }
+    await expect(handle.closeSession()).rejects.toThrow('offline')
+    handle.markDetached()
+    wrapper.unmount()
+    await flushPromises()
+    expect(mocks.close).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('HostTerminal reload', () => {

@@ -56,6 +56,7 @@ import DockerUsageMeter from '@/components/docker/DockerUsageMeter.vue'
 import ImageUpdateBadge from '@/components/docker/ImageUpdateBadge.vue'
 import { localizeError } from '@/i18n/errors'
 import { ApiError, api } from '@/lib/api'
+import { closeTerminalForOwner, terminalCleanupOwner } from '@/lib/terminalClose'
 import { useDockerImageUpdates } from '@/lib/dockerImageUpdate'
 import {
   contextMenuFocusOrigin,
@@ -282,6 +283,7 @@ const consoleOpen = ref(false)
 const consoleTarget = ref<DockerContainer>()
 const consoleOpening = ref(false)
 const consoleSession = ref<TerminalSession>()
+let consoleOwner = ''
 const consoleTerminal = ref<InstanceType<typeof HostTerminal>>()
 const consoleError = ref('')
 let consoleGeneration = 0
@@ -1668,6 +1670,12 @@ function closeStats(): void {
   selectedContainer.value = undefined
 }
 
+async function cleanupContainerTerminal(id: string, owner: string): Promise<void> {
+  await closeTerminalForOwner(id, owner, async () => {
+    if (!(await api.terminals.close(id)).closed) throw new Error('Terminal close was not confirmed')
+  })
+}
+
 async function openConsole(container: DockerContainer): Promise<void> {
   if (consoleOpen.value && consoleTarget.value?.id === container.id && (consoleOpening.value || consoleSession.value)) return
   closeConsole()
@@ -1675,6 +1683,8 @@ async function openConsole(container: DockerContainer): Promise<void> {
   consoleTarget.value = { ...container }
   consoleOpen.value = true
   const generation = ++consoleGeneration
+  const owner = terminalCleanupOwner()
+  consoleOwner = owner
   consoleOpening.value = true
   let opened: TerminalSession | undefined
   try {
@@ -1683,13 +1693,13 @@ async function openConsole(container: DockerContainer): Promise<void> {
       containerId: container.id,
       resourceVersion: container.resourceVersion,
     })
-    if (generation !== consoleGeneration || !consoleOpen.value) {
-      await api.terminals.close(opened.sessionId).catch(() => undefined)
+    if (generation !== consoleGeneration || !consoleOpen.value || owner && terminalCleanupOwner() !== owner) {
+      await cleanupContainerTerminal(opened.sessionId, owner)
       return
     }
     consoleSession.value = opened
   } catch (reason) {
-    if (opened) await api.terminals.close(opened.sessionId).catch(() => undefined)
+    if (opened) await cleanupContainerTerminal(opened.sessionId, owner)
     if (generation === consoleGeneration && consoleOpen.value) {
       consoleError.value = reason instanceof ApiError && reason.code === 'terminal_limit'
         ? '已达到终端会话上限，请先关闭不用的终端。'
@@ -1710,10 +1720,11 @@ function closeConsole(): void {
   if (session) {
     // Reuse the child's deduplicated close when mounted, but also reclaim a
     // session closed before Vue has rendered the terminal component.
-    const closing = mounted?.$props.sessionId === session.sessionId
-      ? mounted.closeSession()
-      : api.terminals.close(session.sessionId)
-    void closing.catch(() => undefined)
+    mounted?.markDetached?.()
+    void closeTerminalForOwner(session.sessionId, consoleOwner, async () => {
+      if (mounted?.$props.sessionId === session.sessionId) await mounted.closeSession()
+      else if (!(await api.terminals.close(session.sessionId)).closed) throw new Error('Terminal close was not confirmed')
+    }).catch(() => undefined)
   }
   consoleGeneration += 1
   consoleOpen.value = false

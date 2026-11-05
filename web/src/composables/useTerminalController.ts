@@ -295,6 +295,14 @@ export function useTerminalController(options: Options) {
     if (pollTimer) window.clearTimeout(pollTimer)
     pollTimer = undefined
   }
+  function stopForClose(): void {
+    blockInput()
+    state.value = 'error'
+    stopOutput()
+    resizeGeneration++
+    if (resizeTimer) window.clearTimeout(resizeTimer)
+    resizeTimer = undefined
+  }
   function schedulePoll(delay: number): void {
     if (!canReceiveOutput()) return
     if (pollTimer) window.clearTimeout(pollTimer)
@@ -458,6 +466,6 @@ export function useTerminalController(options: Options) {
   return {
     terminal, state, inputOpen, inputBlocked, presentingCommand, pendingLine, canInput,
     focusTerminal, fitTerminal, scheduleResize, resetResize, containTerminalWheel, terminalTouchScroll,
-    queueInput, submitPendingLine, handlePendingLineEnter, executeCommand, executePresentedCommand, blockInput,
+    queueInput, submitPendingLine, handlePendingLineEnter, executeCommand, executePresentedCommand, blockInput, stopForClose,
   }
 }

@@ -9,11 +9,13 @@ import (
 
 var appIDPattern = regexp.MustCompile(`^(?:builtin|thirdparty|local)-[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
 var markerResourceVersionPattern = regexp.MustCompile(`^marker:sha256:[a-f0-9]{64}$`)
+var appRequestedJobIDPattern = regexp.MustCompile(`^[a-f0-9]{32}$`)
 
 type appActionInput struct {
 	HostPort        optionalInt    `json:"hostPort"`
 	AccessMode      optionalString `json:"accessMode"`
 	ResourceVersion optionalString `json:"resourceVersion"`
+	JobID           optionalString `json:"jobId"`
 }
 
 func (s *Server) handleAppAction(w http.ResponseWriter, r *http.Request) {
@@ -51,6 +53,9 @@ func (s *Server) handleAppAction(w http.ResponseWriter, r *http.Request) {
 	if input.ResourceVersion.Set {
 		payload["resourceVersion"] = input.ResourceVersion.Value
 	}
+	if input.JobID.Set {
+		payload["jobId"] = input.JobID.Value
+	}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		s.writeProblem(w, r, http.StatusInternalServerError, "request_encoding_failed", "Request encoding failed", "")
@@ -83,6 +88,9 @@ func (s *Server) handleAppAction(w http.ResponseWriter, r *http.Request) {
 }
 
 func validateAppActionInput(action string, input appActionInput) (field, detail string) {
+	if input.JobID.Set && (action != "manage" || !appRequestedJobIDPattern.MatchString(input.JobID.Value)) {
+		return "jobId", "a valid job identity is allowed only for manage"
+	}
 	switch action {
 	case "install":
 		if input.ResourceVersion.Set {

@@ -13,6 +13,7 @@ import {
   desktopWindowActiveKey,
   desktopWindowCloseKey,
   desktopWindowLaunchKey,
+  desktopWindowIdentityKey,
   desktopWindowTitleKey,
   desktopWindowTitlebarTargetKey,
   desktopCloseGuardCoordinatorKey,
@@ -95,6 +96,7 @@ const isActive = computed(() => isFocused.value && isVisible.value)
 provide(desktopWindowActiveKey, isActive)
 provide(desktopWindowVisibleKey, isVisible)
 provide(desktopWindowLaunchKey, () => desktop.consumeWindowLaunch(props.windowState.id))
+provide(desktopWindowIdentityKey, String(props.windowState.id))
 const closeGuards = new Set<() => boolean | Promise<boolean>>()
 const windowElement = ref<HTMLElement>()
 const titlebarTarget = ref<HTMLElement>()

@@ -415,6 +415,9 @@ func (s *Service) StartScriptMutation(
 	id, action string,
 	input MutationInput,
 ) (AppJob, bool, error) {
+	if input.JobID != "" && (action != "manage" || !appJobIDPattern.MatchString(input.JobID)) {
+		return AppJob{}, true, ErrForbidden
+	}
 	if action != "update" && action != "uninstall" &&
 		action != "direct_access" && action != "manage" {
 		return AppJob{}, false, ErrUnsupported
@@ -474,6 +477,14 @@ func (s *Service) StartScriptMutation(
 	)
 	if err != nil {
 		return AppJob{}, true, err
+	}
+	if input.JobID != "" {
+		if _, err := os.Lstat(s.jobs.statePath(input.JobID)); err == nil {
+			return AppJob{}, true, ErrConflict
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return AppJob{}, true, err
+		}
+		record.ID = input.JobID
 	}
 	record.Interactive = true
 	record.ParallelSafe = s.parallelAppScript(scriptPath) && item.Token != "kpanel"

@@ -142,10 +142,7 @@ async function save(): Promise<void> {
       resourceVersion = value.resourceVersion; saved++
     }
     if (changed(desired, snapshot.value) || snapshot.value.pendingTerminalCleanup) await saveGlobal(desired)
-    const pending = snapshot.value.pendingTerminalCleanup || [...drafts.values()].some(draft => draft.snapshot?.pendingTerminalCleanup)
-    message.value = pending
-      ? '设置已保存，部分远端会话尚待关闭；远程输入与重连已禁用。可再次保存设置重试关闭。'
-      : '远程操作设置已保存。'
+    message.value = '远程操作设置已保存。'
   } catch (reason) {
     message.value = saved ? '部分设置已保存，尚未保存的选择已保留。' : ''
     error.value = reason instanceof ApiError && reason.status === 409

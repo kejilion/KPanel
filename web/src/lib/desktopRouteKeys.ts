@@ -30,6 +30,9 @@ export const desktopWindowVisibleKey = Symbol('desktop-window-visible') as Injec
 /** Consume the one-time launch intent of a newly opened window, never a restored window. */
 export const desktopWindowLaunchKey = Symbol('desktop-window-launch') as InjectionKey<() => boolean>
 
+/** Stable within a restored desktop window; sessionStorage keeps tabs separate. */
+export const desktopWindowIdentityKey = Symbol('desktop-window-identity') as InjectionKey<string>
+
 /** Title supplied by the mounted page and its resolved session target. */
 export const desktopWindowTitleKey = Symbol('desktop-window-title') as InjectionKey<(title?: string) => void>
 

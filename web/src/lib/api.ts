@@ -191,6 +191,7 @@ interface ProblemPayload {
   requestId?: string
   retryable?: boolean
   fieldErrors?: Record<string, string>
+  details?: unknown
 }
 
 interface RawAgentHealth {
@@ -863,7 +864,7 @@ async function request<T>(
       message,
       response.status,
       envelope?.error?.code || problem?.code || `http_${response.status}`,
-      envelope?.error?.details || problem?.fieldErrors,
+      envelope?.error?.details || problem?.details || problem?.fieldErrors,
       problem?.requestId || response.headers.get('x-request-id') || undefined,
     )
   }
@@ -2021,10 +2022,12 @@ export const api = {
       request('/terminal-sessions', { method: 'POST', body: { hostId, shortcutId, rows: 30, columns: 120, prepareOnly: true } }),
     preparePurpose: (purpose: 'site-management'): Promise<{ launchId: string; expiresAt: string }> =>
       request('/terminal-sessions', { method: 'POST', body: { hostId: 'local', purpose, rows: 30, columns: 120, prepareOnly: true } }),
-    resolvePurpose: (purpose: 'site-management', launchId?: string): Promise<TerminalSession> =>
-      request('/terminal-sessions', { method: 'POST', body: { hostId: 'local', purpose, launchId, rows: 30, columns: 120, lookupOnly: true } }),
-    resolveShortcut: (hostId: string, shortcutId: string, launchId?: string): Promise<TerminalSession> =>
-      request<TerminalSession>('/terminal-sessions', { method: 'POST', body: { hostId, shortcutId, launchId, rows: 30, columns: 120, lookupOnly: true } }),
+    resolvePurpose: (purpose: 'site-management', launchId?: string, signal?: AbortSignal): Promise<TerminalSession> =>
+      request('/terminal-sessions', { method: 'POST', signal, body: { hostId: 'local', purpose, launchId, rows: 30, columns: 120, lookupOnly: true } }),
+    resolveShortcut: (hostId: string, shortcutId: string, launchId?: string, signal?: AbortSignal): Promise<TerminalSession> =>
+      request<TerminalSession>('/terminal-sessions', { method: 'POST', signal, body: { hostId, shortcutId, launchId, rows: 30, columns: 120, lookupOnly: true } }),
+    acknowledgeLaunch: (sessionId: string, launchId: string): Promise<{ acknowledged: boolean }> =>
+      request(`/terminal-sessions/${encodeURIComponent(sessionId)}/launch-ack`, { method: 'POST', body: { launchId }, signal: AbortSignal.timeout(5_000) }),
     open: (hostId: string, rows: number, columns: number, options?: { containerId?: string; resourceVersion?: string; retained?: boolean; shortcutId?: string; shortcutVersion?: string; launchId?: string; purpose?: 'site-management' }): Promise<TerminalSession> =>
       request<TerminalSession>('/terminal-sessions', {
         method: 'POST',
@@ -2049,9 +2052,13 @@ export const api = {
       request<{ accepted: boolean }>(`/terminal-sessions/${encodeURIComponent(sessionId)}/resize`, {
         method: 'POST', body: { rows, columns },
       }),
-    close: (sessionId: string): Promise<{ closed: boolean }> =>
+    close: (sessionId: string, signal: AbortSignal = AbortSignal.timeout(12_000)): Promise<{ closed: boolean }> =>
       request<{ closed: boolean }>(`/terminal-sessions/${encodeURIComponent(sessionId)}/close`, {
-        method: 'POST', body: {},
+        method: 'POST', body: {}, signal,
+      }),
+    detach: (sessionId: string, signal: AbortSignal = AbortSignal.timeout(5_000)): Promise<{ detached: boolean }> =>
+      request<{ detached: boolean }>(`/terminal-sessions/${encodeURIComponent(sessionId)}/detach`, {
+        method: 'POST', body: {}, signal,
       }),
     // For a page that is going away: nothing can read the answer, and a
     // keepalive request is the only kind the browser lets finish afterwards.
@@ -2303,17 +2310,19 @@ export const api = {
         body: { data },
       }),
     terminalResize: resizeAppTerminal,
-    cancelJob: (id: string): Promise<AppInstallJob> =>
+    cancelJob: (id: string, signal?: AbortSignal): Promise<AppInstallJob> =>
       request<AppInstallJob>(`/app-jobs/${encodeURIComponent(id)}/cancel`, {
-        method: 'POST',
+        method: 'POST', signal,
       }),
     action: (
       id: string,
       action: 'start' | 'stop' | 'restart' | 'update' | 'uninstall' | 'direct_access' | 'manage',
-      body: { resourceVersion: string; accessMode?: 'direct' | 'domain_only' },
+      body: { resourceVersion: string; accessMode?: 'direct' | 'domain_only'; jobId?: string },
+      signal?: AbortSignal,
     ): Promise<AppMutationResult | AppInstallJob> =>
       request<AppMutationResult | AppInstallJob>(`/apps/${encodeURIComponent(id)}/${action}`, {
         method: 'POST',
+        signal,
         body,
       }),
     checkUpdate: (id: string, resourceVersion: string, signal?: AbortSignal): Promise<AppImageUpdateResult> =>

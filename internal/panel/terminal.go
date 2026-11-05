@@ -12,9 +12,11 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/kejilion/kejilion-panel/internal/cluster"
@@ -46,6 +48,9 @@ type panelTerminalSession struct {
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 	CloseRequested   bool
+	Detached         bool
+	Detachable       bool
+	WorkspaceVisible bool
 	ReliableInput    bool
 	InputClaimed     bool
 	InputConnection  *terminalInputConnection
@@ -53,6 +58,7 @@ type panelTerminalSession struct {
 	ShortcutID       string
 	Purpose          string
 	Title            string
+	LaunchIDs        []string
 	LaunchUncertain  bool
 }
 
@@ -84,17 +90,19 @@ func (intent panelTerminalLaunchIntent) matches(userID string, input terminalOpe
 }
 
 type terminalOpenResponse struct {
-	Retained        bool       `json:"retained,omitempty"`
-	ShortcutID      string     `json:"shortcutId,omitempty"`
-	Purpose         string     `json:"purpose,omitempty"`
-	Title           string     `json:"title,omitempty"`
-	CloseRequested  bool       `json:"closeRequested,omitempty"`
-	LaunchUncertain bool       `json:"launchUncertain,omitempty"`
-	ExpiresAt       *time.Time `json:"expiresAt,omitempty"`
-	SessionID       string     `json:"sessionId"`
-	HostID          string     `json:"hostId"`
-	Offset          int64      `json:"offset"`
-	CreatedAt       time.Time  `json:"createdAt"`
+	Retained         bool       `json:"retained,omitempty"`
+	Detachable       bool       `json:"detachable,omitempty"`
+	WorkspaceVisible bool       `json:"workspaceVisible,omitempty"`
+	ShortcutID       string     `json:"shortcutId,omitempty"`
+	Purpose          string     `json:"purpose,omitempty"`
+	Title            string     `json:"title,omitempty"`
+	CloseRequested   bool       `json:"closeRequested,omitempty"`
+	LaunchUncertain  bool       `json:"launchUncertain,omitempty"`
+	ExpiresAt        *time.Time `json:"expiresAt,omitempty"`
+	SessionID        string     `json:"sessionId"`
+	HostID           string     `json:"hostId"`
+	Offset           int64      `json:"offset"`
+	CreatedAt        time.Time  `json:"createdAt"`
 }
 
 func (s clusterTerminalSource) Open(ctx context.Context, owner string, rows, columns uint16) (terminal.Snapshot, error) {
@@ -408,12 +416,7 @@ func (s *Server) openTerminalSession(w http.ResponseWriter, r *http.Request, use
 		s.writeProblem(w, r, http.StatusConflict, "container_terminal_unavailable", "Container terminal unavailable", "Docker management targets the local Agent")
 		return
 	}
-	stale := s.pruneTerminalSessions(time.Now().UTC().Add(-panelTerminalIdleTTL))
-	for _, item := range stale {
-		if err := s.closeTerminalBackend(r.Context(), item); err == nil || errors.Is(err, terminal.ErrNotFound) || errors.Is(err, terminal.ErrClosed) {
-			s.deleteTerminalSession(item.ID)
-		}
-	}
+	s.scheduleTerminalCleanup()
 	if !s.reserveTerminalOpen(userID) {
 		s.writeProblem(w, r, http.StatusTooManyRequests, "terminal_limit", "Terminal session limit reached", "")
 		return
@@ -486,7 +489,10 @@ func (s *Server) openTerminalSession(w http.ResponseWriter, r *http.Request, use
 		return
 	}
 	now := time.Now().UTC()
-	item := panelTerminalSession{ID: publicID, BackendSessionID: opened.SessionID, HostID: host.ID, UserID: userID, Owner: owner, CreatedAt: now, UpdatedAt: now, Retained: input.Retained, ShortcutID: input.ShortcutID, Purpose: input.Purpose, Title: launchTitle, LaunchUncertain: launchCommand != ""}
+	item := panelTerminalSession{ID: publicID, BackendSessionID: opened.SessionID, HostID: host.ID, UserID: userID, Owner: owner, CreatedAt: now, UpdatedAt: now, Retained: input.Retained, ShortcutID: input.ShortcutID, Purpose: input.Purpose, Title: launchTitle, LaunchUncertain: launchCommand != "", Detachable: true, WorkspaceVisible: input.ContainerID == ""}
+	if input.LaunchID != "" {
+		item.LaunchIDs = []string{input.LaunchID}
+	}
 	if host.IsLocal {
 		item.ReliableInput = localReliable
 	} else {
@@ -565,12 +571,17 @@ func (s *Server) reserveTerminalOpen(userID string) bool {
 	s.terminalMu.Lock()
 	defer s.terminalMu.Unlock()
 	userCount := 0
+	activeCount := 0
 	for _, item := range s.terminalSessions {
+		if item.Detached {
+			continue
+		}
+		activeCount++
 		if item.UserID == userID {
 			userCount++
 		}
 	}
-	if len(s.terminalSessions)+s.terminalOpening >= maxPanelTerminals || userCount+s.terminalOpeningUser[userID] >= maxPanelTerminalsByUser {
+	if activeCount+s.terminalOpening >= maxPanelTerminals || userCount+s.terminalOpeningUser[userID] >= maxPanelTerminalsByUser {
 		return false
 	}
 	if s.terminalOpeningUser == nil {
@@ -619,7 +630,7 @@ func (s *Server) handleTerminalOperation(w http.ResponseWriter, r *http.Request,
 		item.InputConnection.cancel()
 	}
 
-	if item.CloseRequested && action != "close" && action != "output" {
+	if item.CloseRequested && action != "close" && action != "output" && action != "detach" {
 		s.writeProblem(w, r, http.StatusConflict, "terminal_close_pending", "Terminal is closing", "")
 		return
 	}
@@ -628,6 +639,68 @@ func (s *Server) handleTerminalOperation(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	switch action {
+	case "launch-ack":
+		if r.Method != http.MethodPost {
+			s.writeProblem(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "Request method not allowed", "")
+			return
+		}
+		var input struct {
+			LaunchID string `json:"launchId"`
+		}
+		if err := s.decodeJSON(w, r, &input); err != nil {
+			return
+		}
+		if !validTerminalLaunchID(input.LaunchID) {
+			s.writeValidationProblem(w, r, "launchId", "a valid launch identity is required")
+			return
+		}
+		s.terminalMu.Lock()
+		if current, exists := s.terminalSessions[id]; exists && current.UserID == userID {
+			current.LaunchIDs = slices.DeleteFunc(current.LaunchIDs, func(value string) bool { return value == input.LaunchID })
+			s.terminalSessions[id] = current
+		}
+		s.terminalMu.Unlock()
+		s.writeJSON(w, http.StatusOK, map[string]bool{"acknowledged": true})
+		return
+	case "detach":
+		if r.Method != http.MethodPost {
+			s.writeProblem(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "Request method not allowed", "")
+			return
+		}
+		if !item.CloseRequested || !item.Detachable {
+			s.writeProblem(w, r, http.StatusConflict, "terminal_detach_unavailable", "Terminal cannot be detached", "")
+			return
+		}
+		if err := s.audit(r, userID, "terminal.detach", "cluster_host", item.HostID, "intent", nil); err != nil {
+			s.writeProblem(w, r, http.StatusServiceUnavailable, "audit_unavailable", "Audit storage unavailable", "")
+			return
+		}
+		s.terminalMu.Lock()
+		current, exists := s.terminalSessions[id]
+		count, own := 0, 0
+		for _, session := range s.terminalSessions {
+			if session.Detached {
+				count++
+				if session.UserID == userID {
+					own++
+				}
+			}
+		}
+		allowed := exists && current.UserID == userID && current.CloseRequested && current.Detachable && (current.Detached || count < maxPanelTerminals && own < maxPanelTerminalsByUser)
+		if allowed {
+			current.Detached = true
+			s.terminalSessions[id] = current
+		}
+		s.terminalMu.Unlock()
+		if !allowed {
+			_ = s.audit(r, userID, "terminal.detach", "cluster_host", item.HostID, "failure", nil)
+			s.writeProblem(w, r, http.StatusConflict, "terminal_detach_unavailable", "Terminal cannot be detached", "")
+			return
+		}
+		_ = s.audit(r, userID, "terminal.detach", "cluster_host", item.HostID, "success", nil)
+		s.writeJSON(w, http.StatusOK, map[string]bool{"detached": true})
+		s.scheduleTerminalCleanup()
+		return
 	case "input-transport":
 		if r.Method != http.MethodPost {
 			s.writeProblem(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "Request method not allowed", "")
@@ -841,7 +914,103 @@ func (s *Server) pruneTerminalSessions(before time.Time) []panelTerminalSession 
 	return stale
 }
 
+// Cleanup must not put an unreachable node on the critical path of opening a
+// different terminal. Only one bounded cleanup pass can run at a time.
+func (s *Server) scheduleTerminalCleanup() {
+	s.terminalMu.Lock()
+	if s.terminalCleanupStopped {
+		s.terminalMu.Unlock()
+		return
+	}
+	if s.terminalCleanupRunning {
+		s.terminalCleanupAgain = true
+		s.terminalMu.Unlock()
+		return
+	}
+	s.terminalCleanupRunning = true
+	parent, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	s.terminalCleanupCancel = cancel
+	s.terminalCleanupDone = done
+	s.terminalMu.Unlock()
+	stale := s.pruneTerminalSessions(time.Now().UTC().Add(-panelTerminalIdleTTL))
+	go func() {
+		defer func() {
+			cancel()
+			s.terminalMu.Lock()
+			s.terminalCleanupRunning = false
+			s.terminalCleanupCancel = nil
+			again := s.terminalCleanupAgain
+			s.terminalCleanupAgain = false
+			s.terminalMu.Unlock()
+			close(done)
+			if again {
+				s.scheduleTerminalCleanup()
+			}
+		}()
+		for pass := 0; pass < 4; pass++ {
+			if pass > 0 {
+				select {
+				case <-parent.Done():
+					return
+				case <-time.After(5 * time.Second):
+				}
+				stale = s.pruneTerminalSessions(time.Now().UTC().Add(-panelTerminalIdleTTL))
+			}
+			if len(stale) == 0 {
+				return
+			}
+			queue := make(chan panelTerminalSession, len(stale))
+			for _, item := range stale {
+				queue <- item
+			}
+			close(queue)
+			var workers sync.WaitGroup
+			for n := 0; n < min(4, len(stale)); n++ {
+				workers.Add(1)
+				go func() {
+					defer workers.Done()
+					for item := range queue {
+						if parent.Err() != nil {
+							return
+						}
+						ctx, cancel := context.WithTimeout(parent, 5*time.Second)
+						err := s.closeTerminalBackend(ctx, item)
+						cancel()
+						if err == nil || errors.Is(err, terminal.ErrNotFound) || errors.Is(err, terminal.ErrClosed) {
+							s.deleteTerminalSession(item.ID)
+						}
+					}
+				}()
+			}
+			workers.Wait()
+			s.terminalMu.Lock()
+			pendingDetached := false
+			for _, item := range s.terminalSessions {
+				if item.CloseRequested && (item.Detached || item.HostID != cluster.LocalHostID && !s.cluster.HostRemoteAccess(item.HostID).EffectiveTerminalEnabled) {
+					pendingDetached = true
+					break
+				}
+			}
+			s.terminalMu.Unlock()
+			if !pendingDetached {
+				return
+			}
+		}
+	}()
+}
+
 func (s *Server) closeTerminalSessions() {
+	s.terminalMu.Lock()
+	s.terminalCleanupStopped = true
+	cancel, done := s.terminalCleanupCancel, s.terminalCleanupDone
+	if cancel != nil {
+		cancel()
+	}
+	s.terminalMu.Unlock()
+	if done != nil {
+		<-done
+	}
 	s.terminalMu.Lock()
 	items := make([]panelTerminalSession, 0, len(s.terminalSessions))
 	for _, item := range s.terminalSessions {
@@ -878,7 +1047,7 @@ func randomTerminalSessionID() (string, error) {
 // Lists metadata only. A network failure is not evidence that the process ended.
 // Neither listing nor reattaching extends the target's fixed lifetime.
 func terminalSessionResponse(item panelTerminalSession) terminalOpenResponse {
-	result := terminalOpenResponse{SessionID: item.ID, HostID: item.HostID, Offset: 0, CreatedAt: item.CreatedAt, Retained: item.Retained, ShortcutID: item.ShortcutID, Purpose: item.Purpose, Title: item.Title, CloseRequested: item.CloseRequested, LaunchUncertain: item.LaunchUncertain}
+	result := terminalOpenResponse{SessionID: item.ID, HostID: item.HostID, Offset: 0, CreatedAt: item.CreatedAt, Retained: item.Retained, Detachable: item.Detachable, WorkspaceVisible: item.WorkspaceVisible, ShortcutID: item.ShortcutID, Purpose: item.Purpose, Title: item.Title, CloseRequested: item.CloseRequested, LaunchUncertain: item.LaunchUncertain}
 	if item.Retained {
 		expiry := item.CreatedAt.Add(terminal.DefaultLifetime)
 		result.ExpiresAt = &expiry
@@ -893,7 +1062,7 @@ func (s *Server) listRetainedTerminals(w http.ResponseWriter, r *http.Request, u
 	items := make([]terminalOpenResponse, 0)
 	s.terminalMu.Lock()
 	for _, item := range s.terminalSessions {
-		if item.UserID == userID && (item.Retained || item.CloseRequested) {
+		if item.UserID == userID && !item.Detached && (item.Retained || item.CloseRequested) {
 			items = append(items, terminalSessionResponse(item))
 		}
 	}
@@ -906,6 +1075,9 @@ func (s *Server) resumeShortcut(w http.ResponseWriter, r *http.Request, userID s
 	var item panelTerminalSession
 	for _, existing := range s.terminalSessions {
 		if existing.UserID == userID && existing.ShortcutID == input.ShortcutID && existing.Purpose == input.Purpose {
+			if input.LookupOnly && input.LaunchID != "" && !slices.Contains(existing.LaunchIDs, input.LaunchID) {
+				continue
+			}
 			item = existing
 			break
 		}
@@ -933,8 +1105,41 @@ func (s *Server) resumeShortcut(w http.ResponseWriter, r *http.Request, userID s
 	}
 	// A failed close is still a real tracked process; do not start its replacement.
 	if item.CloseRequested || !time.Now().Before(item.CreatedAt.Add(terminal.DefaultLifetime)) {
+		s.scheduleTerminalCleanup()
 		s.writeProblem(w, r, 409, "terminal_close_pending", "End the previous session before restarting", "")
 		return true
+	}
+	if input.LaunchID != "" {
+		// A retry of an already registered launch must reattach to the same
+		// session even though its one-time intent has been consumed.
+		s.terminalMu.Lock()
+		current, exists := s.terminalSessions[item.ID]
+		alreadyRegistered := exists && slices.Contains(current.LaunchIDs, input.LaunchID)
+		s.terminalMu.Unlock()
+		if alreadyRegistered {
+			s.writeJSON(w, http.StatusOK, terminalSessionResponse(current))
+			return true
+		}
+		intent, ok := s.terminalLaunchIntents[input.LaunchID]
+		if !ok || !intent.matches(userID, input) || !time.Now().Before(intent.ExpiresAt) {
+			s.writeProblem(w, r, 409, "terminal_launch_intent_invalid", "Terminal launch expired or was cancelled", "")
+			return true
+		}
+		s.terminalMu.Lock()
+		if current, ok := s.terminalSessions[item.ID]; ok {
+			if len(current.LaunchIDs) >= maxPanelTerminals {
+				s.terminalMu.Unlock()
+				writeProblemJSON(w, contract.Problem{
+					Type: "about:blank", Title: "Terminal launch identity limit reached", Status: http.StatusTooManyRequests,
+					Code: "terminal_launch_ack_pending", Detail: "Pending launch acknowledgements must be cleared",
+					RequestID: requestID(r), Retryable: true, Details: map[string]string{"sessionId": item.ID},
+				})
+				return true
+			}
+			current.LaunchIDs = append(current.LaunchIDs, input.LaunchID)
+			s.terminalSessions[item.ID] = current
+		}
+		s.terminalMu.Unlock()
 	}
 	s.writeJSON(w, http.StatusOK, terminalSessionResponse(item))
 	return true

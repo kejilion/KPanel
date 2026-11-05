@@ -10,8 +10,6 @@ export default [
   ['调整左右分屏比例', 'Resize columns'],
   ['调整上下分屏比例', 'Resize rows'],
   ["等待登录","Awaiting sign-in"],
-  ['关闭未确认，会话已保留。请检查目标主机连接后重试。', 'Close was not confirmed. The session is retained. Check the host connection and retry.'],
-  ['重试关闭', 'Retry close'],
   ['正在关闭终端', 'Closing terminal'],
   ['关闭终端', 'Close terminal'],
   ['收起的主机列表', 'Collapsed host list'],

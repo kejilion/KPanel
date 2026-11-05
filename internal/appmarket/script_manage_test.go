@@ -53,9 +53,16 @@ func TestInstalledDedicatedApplicationsCanOpenNativeScriptManagement(t *testing.
 				if len(service.AppJobs()) != 0 {
 					t.Fatal("rejected management request created a job")
 				}
-				job, handled, err := service.StartScriptMutation(context.Background(), app.id, "manage", MutationInput{ResourceVersion: item.Runtime.ResourceVersion})
+				jobID := strings.Repeat("c", 32)
+				job, handled, err := service.StartScriptMutation(context.Background(), app.id, "manage", MutationInput{ResourceVersion: item.Runtime.ResourceVersion, JobID: jobID})
 				if err != nil || !handled {
 					t.Fatalf("management launch: handled=%v err=%v", handled, err)
+				}
+				if job.ID != jobID {
+					t.Fatalf("job identity = %q, want %q", job.ID, jobID)
+				}
+				if _, _, err := service.StartScriptMutation(context.Background(), app.id, "manage", MutationInput{ResourceVersion: item.Runtime.ResourceVersion, JobID: jobID}); !errors.Is(err, ErrConflict) {
+					t.Fatalf("existing identity accepted again: %v", err)
 				}
 				record, err := service.jobs.read(job.ID)
 				if err != nil {
