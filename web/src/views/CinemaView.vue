@@ -299,7 +299,7 @@ onBeforeUnmount(() => {
 <template>
   <main class="page cinema-page">
     <header v-if="!windowed" class="cinema-heading">
-      <img class="cinema-heading__icon" :src="'/desktop-icons/cinema-kpanel-flat-v2.webp'" alt="" />
+      <img class="cinema-heading__icon" :src="'/desktop-icons/cinema-kpanel-flat-v3.webp'" alt="" />
       <div>
         <h1>{{ i18n.t('route.cinema') }}</h1>
         <p>{{ phrase('自己的片库，随时开场') }}</p>

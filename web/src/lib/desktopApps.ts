@@ -129,7 +129,7 @@ export const desktopApps: DesktopApp[] = [
     path: '/cinema',
     labelKey: 'route.cinema',
     icon: Clapperboard,
-    desktopIconURL: '/desktop-icons/cinema-kpanel-flat-v2.webp',
+    desktopIconURL: '/desktop-icons/cinema-kpanel-flat-v3.webp',
     allowMultiple: false,
     gradient: ['#5eead4', '#164e63'],
     windowSize: { width: 1120, height: 780 },
