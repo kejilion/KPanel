@@ -107,6 +107,7 @@ let closeRequest: Promise<void> | undefined
 let closeConfirmed = false
 let detached = false
 let stopPageHideClose: (() => void) | undefined
+function markDetached(): void { detached = true }
 
 function closeSession(): Promise<void> {
   stopForClose()
@@ -146,7 +147,7 @@ onBeforeUnmount(() => {
   commandCapture?.dispose()
   if (!props.retained && !detached) void closeSession().catch(() => undefined)
 })
-defineExpose({ focusTerminal, executeCommand, executePresentedCommand, fillCommand, scheduleResize, closeSession, markDetached: () => { detached = true } })
+defineExpose({ focusTerminal, executeCommand, executePresentedCommand, fillCommand, scheduleResize, closeSession, markDetached })
 </script>
 
 <template>
