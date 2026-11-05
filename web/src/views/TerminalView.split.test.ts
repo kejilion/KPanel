@@ -6,13 +6,13 @@ import { resetLocaleForTest } from '@/i18n'
 import TerminalView from './TerminalView.vue'
 import TerminalQuickCommands from '@/components/terminal/TerminalQuickCommands.vue'
 
-const mocks = vi.hoisted(() => ({ open: vi.fn(), close: vi.fn(), execute: vi.fn(), mounted: [] as string[], unmounted: [] as string[] }))
+const mocks = vi.hoisted(() => ({ open: vi.fn(), close: vi.fn(), detach: vi.fn(), execute: vi.fn(), mounted: [] as string[], unmounted: [] as string[] }))
 vi.mock('vue-router', async (original) => ({ ...await original<typeof import('vue-router')>(),
   useRoute: () => ({ path: '/terminal', query: {} }),
 }))
 vi.mock('@/lib/api', () => ({ api: { cluster: { hosts: async () => ({ items: [
   { id: 'local', name: '本地主机', isLocal: true, terminalAvailable: true },
-] }) }, terminals: { list: () => Promise.resolve({ items: [] }), open: mocks.open } }, ApiError: class extends Error {} }))
+] }) }, terminals: { list: () => Promise.resolve({ items: [] }), open: mocks.open, detach: mocks.detach } }, ApiError: class extends Error {} }))
 vi.mock('@/components/terminal/TerminalQuickCommands.vue', () => ({ default: defineComponent({
   props: ['open', 'disabled'], emits: ['execute'], setup() { return () => null },
 }) }))
@@ -46,6 +46,7 @@ describe('terminal split workspace integration', () => {
     mocks.unmounted.length = 0
     mocks.execute.mockReset()
     mocks.close.mockReset().mockResolvedValue(undefined)
+    mocks.detach.mockReset().mockResolvedValue({ detached: true })
     let id = 0
     mocks.open.mockReset().mockImplementation(async () => ({ sessionId: `s${++id}`, offset: 0 }))
     vi.stubGlobal('ResizeObserver', class {
@@ -111,15 +112,12 @@ describe('terminal split workspace integration', () => {
     expect(visibleIds()).toHaveLength(3)
   })
 
-  it('preserves failed closes and removes a pane only after retry confirms close', async () => {
+  it('automatically queues a failed close and removes the pane without a prompt', async () => {
     await add(); await layout('columns')
     mocks.close.mockRejectedValueOnce(new Error('offline'))
     await wrapper.get('[data-session-id="s2"] [aria-label^="关闭终端"]').trigger('click')
     await flushPromises()
-    expect(visibleIds()).toContain('s2')
-    expect(mocks.unmounted).toEqual([])
-    await wrapper.get('[role="alert"] button').trigger('click')
-    await flushPromises()
+    expect(mocks.detach).toHaveBeenCalledWith('s2')
     expect(visibleIds()).toEqual(['s1'])
     expect(mocks.unmounted).toEqual(['s2'])
   })
