@@ -81,6 +81,17 @@ func TestRedactAndLimitRemovesCommonCredentialsAndPrivateKeys(t *testing.T) {
 	}
 }
 
+func TestRedactAndLimitKeepsOrdinaryToolFileContent(t *testing.T) {
+	value, err := json.Marshal(map[string]string{"content": "server {\n    listen 80;\n}\n"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := redactAndLimit(string(value), MaxToolResultBytes)
+	if !strings.Contains(result, "listen 80") {
+		t.Fatalf("ordinary file content was lost during model context projection: %s", result)
+	}
+}
+
 func (f *fakeTools) Definitions() []ToolDefinition {
 	return []ToolDefinition{{Name: "host_action", Description: "test", Schema: json.RawMessage(`{"type":"object"}`), ReadOnly: f.readOnly}}
 }
@@ -401,6 +412,63 @@ func TestNativeRuntimeReplansAfterAgentBusinessRejection(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("safe Agent rejection was not added to model context")
+	}
+}
+
+func TestNativeRuntimeUnavailableToolResult(t *testing.T) {
+	for _, readOnly := range []bool{true, false} {
+		t.Run(fmt.Sprintf("readOnly=%v", readOnly), func(t *testing.T) {
+			store, providerService, provider, model := runtimeFixture(t)
+			defer store.Close()
+			session, _ := store.CreateSession(context.Background(), Session{UserID: "admin", ProviderID: provider.ID, ModelID: model.ID})
+			run, _ := store.CreateRun(context.Background(), Run{SessionID: session.ID, UserID: "admin", ProviderID: provider.ID, ModelID: model.ID, ApprovalMode: ApprovalAuto})
+			approval := false
+			tools := &fakeTools{readOnly: readOnly, approval: &approval, executeErr: ErrToolResultUnavailable}
+			runtime, _ := NewNativeRuntime(store, providerService, &scriptedClient{tool: "host_action"}, tools, NewEventHub())
+			defer runtime.Close()
+			err := runtime.Run(context.Background(), run.ID)
+			loaded, _ := store.Run(context.Background(), "admin", run.ID)
+			if tools.executed != 1 || (readOnly && (err != nil || loaded.Status != RunCompleted)) || (!readOnly && (err == nil || loaded.Status != RunFailed)) {
+				t.Fatalf("readOnly=%v status=%s executed=%d err=%v", readOnly, loaded.Status, tools.executed, err)
+			}
+			if readOnly {
+				messages, _ := store.Messages(context.Background(), session.ID, 50)
+				found := false
+				for _, message := range messages {
+					found = found || strings.Contains(message.Content, "本次读取结果不可用")
+				}
+				if !found {
+					t.Fatal("missing unavailable result guidance")
+				}
+			}
+		})
+	}
+}
+
+func TestNativeRuntimeUnavailableResultAfterApproval(t *testing.T) {
+	for _, readOnly := range []bool{true, false} {
+		t.Run(fmt.Sprintf("readOnly=%v", readOnly), func(t *testing.T) {
+			store, providers, provider, model := runtimeFixture(t)
+			defer store.Close()
+			session, _ := store.CreateSession(context.Background(), Session{UserID: "admin", ProviderID: provider.ID, ModelID: model.ID})
+			run, _ := store.CreateRun(context.Background(), Run{SessionID: session.ID, UserID: "admin", ProviderID: provider.ID, ModelID: model.ID, ApprovalMode: ApprovalManual})
+			approval := true
+			tools := &fakeTools{readOnly: readOnly, approval: &approval, executeErr: ErrToolResultUnavailable}
+			runtime, _ := NewNativeRuntime(store, providers, &scriptedClient{tool: "host_action"}, tools, NewEventHub())
+			defer runtime.Close()
+			if err := runtime.Run(context.Background(), run.ID); err != nil {
+				t.Fatal(err)
+			}
+			calls, err := store.ToolCalls(context.Background(), run.ID)
+			if err != nil || len(calls) != 1 || calls[0].Status != ToolPendingApproval {
+				t.Fatalf("pending calls=%#v err=%v", calls, err)
+			}
+			err = runtime.Resume(context.Background(), run.ID, Decision{ToolCallID: calls[0].ID, Approve: true})
+			loaded, _ := store.Run(context.Background(), "admin", run.ID)
+			if tools.executed != 1 || (readOnly && (err != nil || loaded.Status != RunCompleted)) || (!readOnly && (err == nil || loaded.Status != RunFailed)) {
+				t.Fatalf("readOnly=%v status=%s executed=%d err=%v", readOnly, loaded.Status, tools.executed, err)
+			}
+		})
 	}
 }
 

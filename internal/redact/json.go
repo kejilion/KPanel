@@ -496,9 +496,16 @@ func (p *projection) unstructuredText(value string, depth int, invalidJSON bool)
 			return nil, err
 		}
 		parts := strings.Split(value, "\n")
+		headers := sourceBlockHeaders(parts)
 		sequence := textSequence{values: make([]any, 0, len(parts))}
-		for _, part := range parts {
-			item, err := p.normalizedText(part, depth)
+		for index, part := range parts {
+			var item any
+			var err error
+			if headers[index] {
+				item, err = p.leaf(part)
+			} else {
+				item, err = p.normalizedText(part, depth)
+			}
 			if err != nil {
 				return nil, err
 			}

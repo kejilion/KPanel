@@ -20,12 +20,13 @@ import (
 )
 
 var (
-	ErrNotFound      = errors.New("AI record not found")
-	ErrConflict      = errors.New("AI record changed")
-	ErrBusy          = errors.New("AI run is already active")
-	ErrToolConflict  = errors.New("host resource version changed")
-	ErrToolArguments = errors.New("tool arguments are invalid")
-	ErrToolRejected  = errors.New("host operation was rejected")
+	ErrNotFound              = errors.New("AI record not found")
+	ErrConflict              = errors.New("AI record changed")
+	ErrBusy                  = errors.New("AI run is already active")
+	ErrToolConflict          = errors.New("host resource version changed")
+	ErrToolArguments         = errors.New("tool arguments are invalid")
+	ErrToolRejected          = errors.New("host operation was rejected")
+	ErrToolResultUnavailable = errors.New("tool result could not be safely processed; operation may have completed")
 )
 
 const maxProviders = 128

@@ -555,11 +555,11 @@ func (t *panelAITools) finish(execution ai.ToolExecutionContext, name, target, r
 		return "", fmt.Errorf("Agent request failed (HTTP %d)", response.StatusCode)
 	}
 	if len(response.Body) > 512<<10 {
-		return "", errors.New("AI tool response exceeds the result budget")
+		return "", ai.ErrToolResultUnavailable
 	}
 	safe, err := mcpDisplayJSON(response.Body)
 	if err != nil {
-		return "", errors.New("invalid AI tool response")
+		return "", ai.ErrToolResultUnavailable
 	}
 	return string(safe), nil
 }
