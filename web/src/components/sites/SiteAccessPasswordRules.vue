@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from 'vue'
-import { ApiError, api } from '@/lib/api'
+import { api } from '@/lib/api'
 import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
 import type { SiteAccessPasswordRule } from '@/types/api'
 
@@ -27,6 +27,14 @@ function phrase(value: string): string {
 
 function sameScope(rule: SiteAccessPasswordRule): SiteAccessPasswordRule[] {
   return rules.value.filter((item) => item.scope === rule.scope && item.path === rule.path && (item.modifier || '') === (rule.modifier || ''))
+}
+
+function refreshAfterFailure(): void {
+  editing.value = undefined
+  ruleForm.value = undefined
+  deleteRule.value = undefined
+  saveError.value = ''
+  void load()
 }
 
 async function load(): Promise<void> {
@@ -93,10 +101,8 @@ async function saveRule(): Promise<void> {
     } catch {
       if (!disposed && site === props.siteId) notice.value = phrase('规则已保存，但网站状态刷新失败，请重新打开网站详情。')
     }
-  } catch (reason) {
-    if (!disposed && site === props.siteId) saveError.value = reason instanceof ApiError && reason.status === 409
-      ? phrase('规则已发生变化，请刷新后重试。')
-      : phrase('规则操作失败，请检查路径和网站配置后重试。')
+  } catch {
+    if (!disposed && site === props.siteId) saveError.value = phrase('操作结果未确认，请刷新查看后再重试。')
   } finally { if (!disposed) saving.value = false }
 }
 
@@ -128,11 +134,9 @@ async function save(rule: SiteAccessPasswordRule): Promise<void> {
       password: draft.action === 'delete' ? undefined : draft.password,
     })
     if (!disposed && site === props.siteId) { rules.value = updated; editing.value = undefined }
-  } catch (reason) {
+  } catch {
     if (!disposed && site === props.siteId) {
-      saveError.value = reason instanceof ApiError && reason.status === 409
-        ? phrase('规则已发生变化，请刷新后重试。')
-        : phrase('账号操作失败，请检查规则后重试。')
+      saveError.value = phrase('操作结果未确认，请刷新查看后再重试。')
     }
   } finally {
     if (!disposed) saving.value = false
@@ -182,7 +186,7 @@ onBeforeUnmount(() => { disposed = true; active?.abort(); editing.value = undefi
                 <label class="field"><span>{{ phrase('访问密码') }}</span><input v-model="editing.password" type="password" autocomplete="new-password" maxlength="256" required /></label>
               </template>
               <p v-else>{{ phrase('确定删除此账号？引用同一密码文件的规则也会受到影响。') }} {{ editing.username }}</p>
-              <p v-if="saveError" class="inline-alert inline-alert--danger" role="alert">{{ saveError }}</p>
+              <p v-if="saveError" class="inline-alert inline-alert--danger" role="alert">{{ saveError }} <button class="button button--ghost button--small" type="button" @click="refreshAfterFailure">{{ phrase('刷新规则') }}</button></p>
               <div class="access-password-actions">
                 <button class="button button--primary button--small" type="submit" :disabled="saving">{{ phrase(saving ? '正在保存…' : editing.action === 'delete' ? '确认删除' : '保存') }}</button>
                 <button class="button button--secondary button--small" type="button" :disabled="saving" @click="editing = undefined">{{ phrase('取消') }}</button>
@@ -200,13 +204,13 @@ onBeforeUnmount(() => { disposed = true; active?.abort(); editing.value = undefi
         <label class="field"><span>{{ phrase('访问密码') }}</span><input v-model="ruleForm.password" type="password" autocomplete="new-password" maxlength="256" required /></label>
         <p>{{ phrase('认证可能影响接口、回调和证书自动续签；已有路径规则、包含配置或重定向也可能改变认证范围，请保存后测试。') }}</p>
         <p>{{ phrase('反向代理的上游端口可能仍可直接访问。') }}</p>
-        <p v-if="saveError" class="inline-alert inline-alert--danger" role="alert">{{ saveError }}</p>
+        <p v-if="saveError" class="inline-alert inline-alert--danger" role="alert">{{ saveError }} <button class="button button--ghost button--small" type="button" @click="refreshAfterFailure">{{ phrase('刷新规则') }}</button></p>
         <div class="access-password-actions"><button class="button button--primary button--small" type="submit" :disabled="saving">{{ phrase(saving ? '正在保存…' : '保存') }}</button><button class="button button--secondary button--small" type="button" :disabled="saving" @click="ruleForm = undefined">{{ phrase('取消') }}</button></div>
       </form>
       <form v-if="deleteRule" class="access-password-edit" @submit.prevent="saveRule">
         <p>{{ phrase('确定删除这条规则？密码文件会保留。') }}</p>
         <p v-if="sameScope(deleteRule).length > 1">{{ phrase('只删除这一条，其他同范围的规则会保留。') }}</p>
-        <p v-if="saveError" class="inline-alert inline-alert--danger" role="alert">{{ saveError }}</p>
+        <p v-if="saveError" class="inline-alert inline-alert--danger" role="alert">{{ saveError }} <button class="button button--ghost button--small" type="button" @click="refreshAfterFailure">{{ phrase('刷新规则') }}</button></p>
         <div class="access-password-actions"><button class="button button--primary button--small" type="submit" :disabled="saving">{{ phrase('确认删除') }}</button><button class="button button--secondary button--small" type="button" :disabled="saving" @click="deleteRule = undefined">{{ phrase('取消') }}</button></div>
       </form>
       <p v-if="!writable && unavailableReason">{{ unavailableReason }}</p>

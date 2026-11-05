@@ -12,6 +12,8 @@ export default [
   ['跳转站点暂不支持添加访问密码。', 'Access passwords cannot currently be added to redirect sites.'],
   ['该模板暂不支持创建时设置访问密码。', 'This template cannot currently use an access password during creation.'],
   ['反向代理的上游端口可能仍可直接访问。', 'An upstream service may still be reachable directly through its own port.'],
+  ['操作结果未确认，请刷新查看后再重试。', 'The result is unconfirmed. Refresh the rules before trying again.'],
+  ['刷新规则', 'Refresh rules'],
   ['确定删除这条规则？密码文件会保留。', 'Delete this rule? The password file will be retained.'],
   ['添加账号', 'Add account'],
   ['确定删除此账号？引用同一密码文件的规则也会受到影响。', 'Delete this account? Other rules using the same password file are also affected.'],
