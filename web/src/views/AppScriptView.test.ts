@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   job: vi.fn(),
   cancelJob: vi.fn(),
   action: vi.fn(),
+  owner: { authenticated: true, user: { id: '' } },
 }))
 
 vi.mock('@/lib/api', () => ({
@@ -29,6 +30,7 @@ vi.mock('@/lib/api', () => ({
     },
   },
 }))
+vi.mock('@/stores/session', () => ({ useSession: () => ({ state: mocks.owner }) }))
 
 vi.mock('@/components/apps/AppInteractiveTerminal.vue', () => ({
   default: {
@@ -84,6 +86,7 @@ async function mountView(closeGuards?: DesktopWindowCloseGuardRegistry, consumeL
 describe('dedicated desktop app script terminal', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.owner.user.id = `app-test-${crypto.randomUUID()}`
     resetDesktopModeForTest()
     window.localStorage.clear()
     mocks.inventory.mockResolvedValue({ items: [app] })
@@ -101,7 +104,7 @@ describe('dedicated desktop app script terminal', () => {
   it('starts the structured manage action without mounting the app marketplace', async () => {
     const wrapper = await mountView()
 
-    expect(mocks.action).toHaveBeenCalledWith('openclaw', 'manage', { resourceVersion: 'rv-1' })
+    expect(mocks.action).toHaveBeenCalledWith('openclaw', 'manage', { resourceVersion: 'rv-1', jobId: expect.stringMatching(/^[a-f0-9]{32}$/) })
     expect(wrapper.find('.app-script-page__header').exists()).toBe(false)
     expect(wrapper.findComponent({ name: 'AppInteractiveTerminal' }).props()).toMatchObject({
       jobId: 'job-1',
@@ -186,7 +189,7 @@ describe('dedicated desktop app script terminal', () => {
   it('starts this app while another application has an active shell', async () => {
     mocks.jobs.mockResolvedValue({ items: [{ ...job, id: 'other-job', appId: 'other-app' }] })
     const wrapper = await mountView()
-    expect(mocks.action).toHaveBeenCalledWith('openclaw', 'manage', { resourceVersion: 'rv-1' })
+    expect(mocks.action).toHaveBeenCalledWith('openclaw', 'manage', { resourceVersion: 'rv-1', jobId: expect.stringMatching(/^[a-f0-9]{32}$/) })
     expect(wrapper.findComponent({ name: 'AppInteractiveTerminal' }).props('jobId')).toBe('job-1')
     wrapper.unmount()
   })
@@ -252,7 +255,7 @@ describe('dedicated desktop app script terminal', () => {
     await expect(closing).resolves.toBe(true)
     await flushPromises()
     expect(mocks.action).not.toHaveBeenCalled()
-    expect(mocks.cancelJob).toHaveBeenCalledExactlyOnceWith('job-1', expect.any(AbortSignal))
+    expect(mocks.cancelJob).toHaveBeenCalledWith('job-1', expect.any(AbortSignal))
     expect(window.localStorage.getItem('kpanel:active-app-job')).toBe('job-1')
     wrapper.unmount()
   })
@@ -271,7 +274,19 @@ describe('dedicated desktop app script terminal', () => {
     await expect(closing).resolves.toBe(true)
     await flushPromises()
     expect(mocks.action).toHaveBeenCalledOnce()
-    expect(mocks.cancelJob).toHaveBeenCalledExactlyOnceWith('job-1', expect.any(AbortSignal))
+    expect(mocks.cancelJob).toHaveBeenCalledWith('job-1', expect.any(AbortSignal))
+    wrapper.unmount()
+  })
+
+  it('keeps the exact pending job identity when a launch response is lost', async () => {
+    let guard: (() => boolean | Promise<boolean>) | undefined
+    mocks.action.mockReturnValueOnce(new Promise(() => undefined))
+    mocks.cancelJob.mockRejectedValue(new Error('offline'))
+    const wrapper = await mountView({ register: candidate => { guard = candidate; return vi.fn() } })
+    const jobId = mocks.action.mock.calls[0]![2].jobId as string
+    expect(await guard?.()).toBe(true)
+    expect(mocks.cancelJob).toHaveBeenCalledWith(jobId, expect.any(AbortSignal))
+    expect(JSON.parse(window.localStorage.getItem(`kpanel:pending-app-job-stops:${mocks.owner.user.id}`)!)).toContain(jobId)
     wrapper.unmount()
   })
 

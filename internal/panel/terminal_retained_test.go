@@ -116,6 +116,53 @@ func TestShortcutCloseFencesLaunchThatArrivesAfterLookup(t *testing.T) {
 	}
 }
 
+func TestShortcutOldCloseIdentityCannotResolveReplacement(t *testing.T) {
+	s, path := newTestServer(t)
+	s.agent = &retainedAgentStub{}
+	cookie, csrf := bootstrapCookies(t, s, path)
+	version := saveRetainedShortcut(t, s)
+	call := func(input terminalOpenRequest) *httptest.ResponseRecorder {
+		body, _ := json.Marshal(input)
+		return authenticatedRequest(s, http.MethodPost, "/api/v1/terminal-sessions", body, cookie, csrf, retainedHeaders(csrf))
+	}
+	input := terminalOpenRequest{HostID: "local", Rows: 24, Columns: 80, ShortcutID: panelTestShortcutID, PrepareOnly: true}
+	prepare := func() string {
+		var intent struct {
+			LaunchID string `json:"launchId"`
+		}
+		response := call(input)
+		if response.Code != 201 || json.Unmarshal(response.Body.Bytes(), &intent) != nil {
+			t.Fatal(response.Body.String())
+		}
+		return intent.LaunchID
+	}
+	oldID := prepare()
+	request := input
+	request.PrepareOnly, request.Retained, request.ShortcutVersion, request.LaunchID = false, true, version, oldID
+	opened := call(request)
+	var old terminalOpenResponse
+	if opened.Code != 201 || json.Unmarshal(opened.Body.Bytes(), &old) != nil {
+		t.Fatal(opened.Body.String())
+	}
+	closed := authenticatedRequest(s, http.MethodPost, "/api/v1/terminal-sessions/"+old.SessionID+"/close", []byte(`{}`), cookie, csrf, retainedHeaders(csrf))
+	if closed.Code != 200 {
+		t.Fatal(closed.Body.String())
+	}
+	newID := prepare()
+	request.LaunchID = newID
+	if opened = call(request); opened.Code != 201 {
+		t.Fatal(opened.Body.String())
+	}
+	request.LookupOnly, request.LaunchID = true, oldID
+	if response := call(request); response.Code != 404 {
+		t.Fatalf("old identity resolved replacement: %d %s", response.Code, response.Body)
+	}
+	request.LaunchID = newID
+	if response := call(request); response.Code != 200 {
+		t.Fatalf("new identity did not resolve: %d %s", response.Code, response.Body)
+	}
+}
+
 func TestShortcutLaunchIntentsAreBoundedExpireAndCancel(t *testing.T) {
 	s, path := newTestServer(t)
 	cookie, csrf := bootstrapCookies(t, s, path)

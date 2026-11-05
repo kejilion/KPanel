@@ -14,7 +14,8 @@ import PageHeader from '@/components/common/PageHeader.vue'
 import OperatingSystemIcon from '@/components/overview/OperatingSystemIcon.vue'
 import { useTerminalFullscreen } from '@/composables/useTerminalFullscreen'
 import { api, ApiError } from '@/lib/api'
-import { closeTerminalQuietly, retryPendingTerminalCloses } from '@/lib/terminalClose'
+import { closeTerminalQuietly, deferTerminalClose, retryPendingTerminalCloses } from '@/lib/terminalClose'
+import { useSession } from '@/stores/session'
 import {
   applyClusterHostOrderPreference,
   readClusterHostOrder,
@@ -92,6 +93,18 @@ let hostsRequest: Promise<void> | undefined
 let openingRequest: ReturnType<typeof api.terminals.open> | undefined
 let checkingWindowClose = false
 let disposed = false
+let userClosed = false
+const account = useSession()
+const owner = account.state.authenticated ? account.state.user?.id || '' : ''
+function cleanupLateSession(id: string): void {
+  if (owner && (!account.state.authenticated || account.state.user?.id !== owner)) {
+    deferTerminalClose(id, owner)
+    return
+  }
+  void closeTerminalQuietly(id, async () => {
+    if (!(await api.terminals.close(id)).closed) throw new Error('Terminal close was not confirmed')
+  })
+}
 let unsubscribeClusterHostOrder: (() => void) | undefined
 const connectionsCollapsedStorageKey = 'kpanel:terminal:connections-collapsed'
 
@@ -163,6 +176,10 @@ async function performLoadHosts(): Promise<void> {
       for (const session of retained.items) {
         const visible = session.workspaceVisible && (session.retained || session.closeRequested)
         if (!visible || sessions.value.some(item => item.id === session.sessionId)) continue
+        if (userClosed) {
+          cleanupLateSession(session.sessionId)
+          continue
+        }
         if (session.closeRequested && session.detachable) {
           // The user already closed this session before a reload. Finish the
           // local dismissal without restoring a prompt or replaying input.
@@ -176,6 +193,7 @@ async function performLoadHosts(): Promise<void> {
       }
       activeSessionId.value = sessions.value[0]?.id || ''
       initialHostLoad = false
+      if (userClosed) return
       const startHost = requestedTerminalHost() || inventory.value.items.find((host) => host.isLocal && host.terminalAvailable)
       if (startHost && (requestedTerminalHost() || !sessions.value.length)) await openHost(startHost)
     }
@@ -233,11 +251,7 @@ async function openSession(host: ClusterHost, retained = true): Promise<void> {
     })
 	const opened = await openingRequest
 	if (disposed) {
-      if (!opened.retained) {
-        await closeTerminalQuietly(opened.sessionId, async () => {
-          if (!(await api.terminals.close(opened.sessionId)).closed) throw new Error('Terminal close was not confirmed')
-        })
-      }
+      if (userClosed || !opened.retained) cleanupLateSession(opened.sessionId)
       return
     }
 	const item: OpenTerminal = { id: opened.sessionId, hostId: host.id, hostName: host.name, retained: opened.retained, ordinal: nextOrdinal(host.id), offset: opened.offset, state: 'connecting' }
@@ -264,15 +278,20 @@ async function closeSession(id: string): Promise<boolean> {
   if (item.closing) return false
   item.closing = true
   item.closeFailed = false
+  handle?.markDetached?.()
+  if (owner && (!account.state.authenticated || account.state.user?.id !== owner)) {
+    deferTerminalClose(id, owner)
+    removeSession(id)
+    return true
+  }
   try {
-    const outcome = await closeTerminalQuietly(id, async () => {
+    await closeTerminalQuietly(id, async () => {
       if (handle) await handle.closeSession()
       else {
         const result = await api.terminals.close(id)
         if (!result.closed) throw new Error('Terminal close was not confirmed')
       }
     })
-    if (outcome !== 'closed') handle?.markDetached?.()
     removeSession(id)
     return true
   } catch {
@@ -516,19 +535,13 @@ onMounted(() => {
   } catch {
     connectionsCollapsed.value = false
   }
-  const guard = async () => {
+  const guard = () => {
     if (checkingWindowClose) return false
     checkingWindowClose = true
-    try {
-      await hostsRequest
-      // Wait for a pending open so closing the window cannot orphan its PTY.
-      await openingRequest?.catch(() => undefined)
-      await nextTick()
-      const results = await Promise.all(sessions.value.map(item => closeSession(item.id)))
-      return results.every(Boolean)
-    } finally {
-      checkingWindowClose = false
-    }
+    userClosed = true
+    disposed = true
+    for (const item of [...sessions.value]) void closeSession(item.id)
+    return true
   }
   unregisterWindowCloseGuard = desktopWindowCloseGuards
     ? desktopWindowCloseGuards.register(guard)
@@ -540,7 +553,7 @@ onBeforeUnmount(() => {
   disposed = true
   unsubscribeClusterHostOrder?.()
   unregisterWindowCloseGuard?.()
-  controller?.abort()
+  if (!userClosed) controller?.abort()
 })
 </script>
 

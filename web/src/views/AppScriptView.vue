@@ -33,6 +33,7 @@ let closeRequest: Promise<boolean> | undefined
 let unregisterWindowCloseGuard: (() => void) | undefined
 let userClosed = false
 let closingOwner = ''
+let launchJobID = ''
 
 const activeJobStorageKey = 'kpanel:active-app-job'
 const appID = computed(() => String(route.params.appId || ''))
@@ -67,10 +68,12 @@ async function existingInteractiveJob(appId: string, signal: AbortSignal): Promi
 }
 
 async function launchManage(target: AppMarketItem): Promise<AppInstallJob> {
+  launchJobID = Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('')
   const start = async (candidate: AppMarketItem): Promise<AppInstallJob> => {
+    if (userClosed || currentOwner() !== owner) throw new Error('Task launch cancelled')
     const resourceVersion = candidate.runtime.resourceVersion
     if (!resourceVersion) throw new Error(i18n.t('appScript.resourceVersionMissing'))
-    const result = await api.apps.action(candidate.id, 'manage', { resourceVersion })
+    const result = await api.apps.action(candidate.id, 'manage', { resourceVersion, jobId: launchJobID })
     if (!isInteractiveJob(result) || !result.interactive) {
       throw new Error(i18n.t('appScript.interactiveTaskMissing'))
     }
@@ -133,6 +136,7 @@ function startLoad(allowLaunch = false): void {
 async function stopActiveJobBeforeClose(): Promise<boolean> {
   userClosed = true
   closingOwner = owner
+  if (!job.value && launchJobID) requestQuietAppJobStop(launchJobID, closingOwner, currentOwner)
   const active = job.value
   if (!active || !isActiveJob(active)) return true
   requestQuietAppJobStop(active.id, closingOwner, currentOwner)

@@ -724,6 +724,7 @@ type InstallInput struct {
 type MutationInput struct {
 	ResourceVersion string `json:"resourceVersion"`
 	AccessMode      string `json:"accessMode,omitempty"`
+	JobID           string `json:"jobId,omitempty"`
 }
 
 func (s *Service) Install(ctx context.Context, id string, input InstallInput) (dockerx.AppMutationResult, error) {

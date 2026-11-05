@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -57,6 +58,7 @@ type panelTerminalSession struct {
 	ShortcutID       string
 	Purpose          string
 	Title            string
+	LaunchIDs        []string
 	LaunchUncertain  bool
 }
 
@@ -488,6 +490,9 @@ func (s *Server) openTerminalSession(w http.ResponseWriter, r *http.Request, use
 	}
 	now := time.Now().UTC()
 	item := panelTerminalSession{ID: publicID, BackendSessionID: opened.SessionID, HostID: host.ID, UserID: userID, Owner: owner, CreatedAt: now, UpdatedAt: now, Retained: input.Retained, ShortcutID: input.ShortcutID, Purpose: input.Purpose, Title: launchTitle, LaunchUncertain: launchCommand != "", Detachable: true, WorkspaceVisible: input.ContainerID == ""}
+	if input.LaunchID != "" {
+		item.LaunchIDs = []string{input.LaunchID}
+	}
 	if host.IsLocal {
 		item.ReliableInput = localReliable
 	} else {
@@ -1047,6 +1052,9 @@ func (s *Server) resumeShortcut(w http.ResponseWriter, r *http.Request, userID s
 	var item panelTerminalSession
 	for _, existing := range s.terminalSessions {
 		if existing.UserID == userID && existing.ShortcutID == input.ShortcutID && existing.Purpose == input.Purpose {
+			if input.LookupOnly && input.LaunchID != "" && !slices.Contains(existing.LaunchIDs, input.LaunchID) {
+				continue
+			}
 			item = existing
 			break
 		}
@@ -1077,6 +1085,22 @@ func (s *Server) resumeShortcut(w http.ResponseWriter, r *http.Request, userID s
 		s.scheduleTerminalCleanup()
 		s.writeProblem(w, r, 409, "terminal_close_pending", "End the previous session before restarting", "")
 		return true
+	}
+	if input.LaunchID != "" {
+		intent, ok := s.terminalLaunchIntents[input.LaunchID]
+		if !ok || !intent.matches(userID, input) || !time.Now().Before(intent.ExpiresAt) {
+			s.writeProblem(w, r, 409, "terminal_launch_intent_invalid", "Terminal launch expired or was cancelled", "")
+			return true
+		}
+		s.terminalMu.Lock()
+		if current, ok := s.terminalSessions[item.ID]; ok {
+			current.LaunchIDs = append(current.LaunchIDs, input.LaunchID)
+			if len(current.LaunchIDs) > maxPanelTerminals {
+				current.LaunchIDs = current.LaunchIDs[len(current.LaunchIDs)-maxPanelTerminals:]
+			}
+			s.terminalSessions[item.ID] = current
+		}
+		s.terminalMu.Unlock()
 	}
 	s.writeJSON(w, http.StatusOK, terminalSessionResponse(item))
 	return true

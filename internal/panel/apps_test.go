@@ -107,6 +107,17 @@ func TestAllowedAppInstallPortReadPath(t *testing.T) {
 
 func TestValidateAppActionInput(t *testing.T) {
 	validVersion := "sha256:" + strings.Repeat("a", 64)
+	if field, _ := validateAppActionInput("manage", appActionInput{ResourceVersion: optionalString{Value: validVersion, Set: true}, JobID: optionalString{Value: strings.Repeat("b", 32), Set: true}}); field != "" {
+		t.Fatalf("valid job identity rejected on %s", field)
+	}
+	for _, action := range []string{"install", "update", "start"} {
+		if field, _ := validateAppActionInput(action, appActionInput{JobID: optionalString{Value: strings.Repeat("b", 32), Set: true}}); field != "jobId" {
+			t.Fatalf("job identity accepted for %s", action)
+		}
+	}
+	if field, _ := validateAppActionInput("manage", appActionInput{JobID: optionalString{Value: "../bad", Set: true}}); field != "jobId" {
+		t.Fatal("invalid job identity accepted")
+	}
 	if field, _ := validateAppActionInput("install", appActionInput{
 		HostPort:   optionalInt{Value: 80, Set: true},
 		AccessMode: optionalString{Value: "domain_only", Set: true},
