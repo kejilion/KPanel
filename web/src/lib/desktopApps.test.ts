@@ -29,6 +29,13 @@ function webpDimensions(image: Buffer): { width: number; height: number } {
 }
 
 describe('desktop app catalogue', () => {
+  it('keeps every desktop app in the server window-preferences allowlist', () => {
+    const source = readFileSync(new URL('../../../internal/store/preferences.go', import.meta.url), 'utf8')
+    const pattern = source.match(/var desktopRoutePattern = regexp\.MustCompile\(`([^`]+)`\)/)?.[1]
+    expect(pattern, 'server desktop route pattern must be discoverable').toBeDefined()
+    const allowed = new RegExp(pattern!)
+    for (const app of desktopApps) expect(allowed.test(app.path), `${app.path} cannot be saved by the server`).toBe(true)
+  })
   it('exposes the default desktop system applications', () => {
     const paths = desktopApps.map((app) => app.path)
     expect(paths).toEqual(

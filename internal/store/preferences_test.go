@@ -3,10 +3,8 @@ package store
 import (
 	"errors"
 	"math"
-	"os"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -332,29 +330,3 @@ func TestMusicCheckpointPersistsAndRejectsInvalidInput(t *testing.T) {
 	}
 }
 
-func TestPreferencesAcceptEveryDesktopApp(t *testing.T) {
-	source, err := os.ReadFile(filepath.Join("..", "..", "web", "src", "lib", "desktopApps.ts"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, catalogue, ok := strings.Cut(string(source), "export const desktopApps: DesktopApp[] = [")
-	if !ok {
-		t.Fatal("desktop app catalogue not found")
-	}
-	catalogue, _, ok = strings.Cut(catalogue, "/** Workspace keys")
-	if !ok {
-		t.Fatal("desktop app catalogue end not found")
-	}
-	paths := regexp.MustCompile(`(?m)^\s*(?:\{\s*)?path:\s*['"](/[^'"]+)['"]`).FindAllStringSubmatch(catalogue, -1)
-	if len(paths) < 20 {
-		t.Fatalf("desktop app catalogue unexpectedly short: %d", len(paths))
-	}
-	for _, match := range paths {
-		p := Preferences{Desktop: sampleDesktop()}
-		p.Desktop.Windows[0].Path = match[1]
-		p.Desktop.WindowSizes[0].Path = match[1]
-		if err := ValidatePreferences(p); err != nil {
-			t.Errorf("desktop app %q cannot sync: %v", match[1], err)
-		}
-	}
-}
