@@ -671,6 +671,7 @@ func (s *Server) handleTerminalOperation(w http.ResponseWriter, r *http.Request,
 		}
 		_ = s.audit(r, userID, "terminal.detach", "cluster_host", item.HostID, "success", nil)
 		s.writeJSON(w, http.StatusOK, map[string]bool{"detached": true})
+		s.scheduleTerminalCleanup()
 		return
 	case "input-transport":
 		if r.Method != http.MethodPost {
@@ -889,7 +890,12 @@ func (s *Server) pruneTerminalSessions(before time.Time) []panelTerminalSession 
 // different terminal. Only one bounded cleanup pass can run at a time.
 func (s *Server) scheduleTerminalCleanup() {
 	s.terminalMu.Lock()
-	if s.terminalCleanupRunning || s.terminalCleanupStopped {
+	if s.terminalCleanupStopped {
+		s.terminalMu.Unlock()
+		return
+	}
+	if s.terminalCleanupRunning {
+		s.terminalCleanupAgain = true
 		s.terminalMu.Unlock()
 		return
 	}
@@ -906,33 +912,63 @@ func (s *Server) scheduleTerminalCleanup() {
 			s.terminalMu.Lock()
 			s.terminalCleanupRunning = false
 			s.terminalCleanupCancel = nil
+			again := s.terminalCleanupAgain
+			s.terminalCleanupAgain = false
 			s.terminalMu.Unlock()
 			close(done)
+			if again {
+				s.scheduleTerminalCleanup()
+			}
 		}()
-		queue := make(chan panelTerminalSession, len(stale))
-		for _, item := range stale {
-			queue <- item
-		}
-		close(queue)
-		var workers sync.WaitGroup
-		for n := 0; n < min(4, len(stale)); n++ {
-			workers.Add(1)
-			go func() {
-				defer workers.Done()
-				for item := range queue {
-					if parent.Err() != nil {
-						return
-					}
-					ctx, cancel := context.WithTimeout(parent, 5*time.Second)
-					err := s.closeTerminalBackend(ctx, item)
-					cancel()
-					if err == nil || errors.Is(err, terminal.ErrNotFound) || errors.Is(err, terminal.ErrClosed) {
-						s.deleteTerminalSession(item.ID)
-					}
+		for pass := 0; pass < 4; pass++ {
+			if pass > 0 {
+				select {
+				case <-parent.Done():
+					return
+				case <-time.After(5 * time.Second):
 				}
-			}()
+				stale = s.pruneTerminalSessions(time.Now().UTC().Add(-panelTerminalIdleTTL))
+			}
+			if len(stale) == 0 {
+				return
+			}
+			queue := make(chan panelTerminalSession, len(stale))
+			for _, item := range stale {
+				queue <- item
+			}
+			close(queue)
+			var workers sync.WaitGroup
+			for n := 0; n < min(4, len(stale)); n++ {
+				workers.Add(1)
+				go func() {
+					defer workers.Done()
+					for item := range queue {
+						if parent.Err() != nil {
+							return
+						}
+						ctx, cancel := context.WithTimeout(parent, 5*time.Second)
+						err := s.closeTerminalBackend(ctx, item)
+						cancel()
+						if err == nil || errors.Is(err, terminal.ErrNotFound) || errors.Is(err, terminal.ErrClosed) {
+							s.deleteTerminalSession(item.ID)
+						}
+					}
+				}()
+			}
+			workers.Wait()
+			s.terminalMu.Lock()
+			pendingDetached := false
+			for _, item := range s.terminalSessions {
+				if item.Detached && item.CloseRequested {
+					pendingDetached = true
+					break
+				}
+			}
+			s.terminalMu.Unlock()
+			if !pendingDetached {
+				return
+			}
 		}
-		workers.Wait()
 	}()
 }
 

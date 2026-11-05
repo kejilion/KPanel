@@ -12,6 +12,7 @@ vi.mock('@/lib/api', () => ({
   ApiError: class extends Error { code = '' },
   api: { terminals: { open: mocks.open, prepareShortcut: mocks.prepareShortcut, resolveShortcut: mocks.resolveShortcut, preparePurpose: mocks.preparePurpose, resolvePurpose: mocks.resolvePurpose, close: mocks.close, detach: mocks.detach, closeOnUnload: mocks.closeOnUnload } },
 }))
+vi.mock('@/stores/session', () => ({ useSession: () => ({ state: { authenticated: true, user: { id: 'test-owner' } } }) }))
 const HostTerminal = defineComponent({
   name: 'HostTerminal', props: ['sessionId', 'hostName', 'initialOffset', 'retained'], emits: ['stateChange'],
   setup(_, { expose }) { expose({ executeCommand: mocks.execute, closeSession: mocks.childClose, markDetached: mocks.markDetached }); return () => null },
@@ -29,6 +30,7 @@ function create(hostId?: string, hostName = 'Local server', retainedProps: { sho
 }
 beforeEach(() => {
   vi.clearAllMocks()
+  window.localStorage.clear()
   mocks.open.mockResolvedValue(opened)
   mocks.prepareShortcut.mockResolvedValue({ launchId: 'b'.repeat(64), expiresAt: '' })
   mocks.preparePurpose.mockResolvedValue({ launchId: 'b'.repeat(64), expiresAt: '' })
@@ -75,7 +77,7 @@ describe('shortcut command terminal lifecycle', () => {
     const wrapper = create('local', 'Local', { purpose: 'site-management' })
     await flushPromises()
     expect(await closeGuard()).toBe(true)
-    expect(mocks.resolvePurpose).toHaveBeenCalledWith('site-management', 'b'.repeat(64))
+    expect(mocks.resolvePurpose).toHaveBeenCalledWith('site-management', 'b'.repeat(64), expect.any(AbortSignal))
     expect(mocks.close).toHaveBeenCalledWith(opened.sessionId)
     expect(mocks.open).toHaveBeenCalledTimes(1)
     expect(wrapper.emitted('close')).toHaveLength(1)
@@ -88,6 +90,7 @@ describe('shortcut command terminal lifecycle', () => {
     const closing = closeGuard()
     resolve({ launchId: 'b'.repeat(64) })
     expect(await closing).toBe(true)
+    await flushPromises()
     expect(mocks.open).not.toHaveBeenCalled()
     expect(mocks.resolvePurpose).toHaveBeenCalledTimes(1)
   })
@@ -111,8 +114,9 @@ describe('shortcut command terminal lifecycle', () => {
     const closed = closeGuard()
     resolve({ launchId: 'b'.repeat(64) })
     expect(await closed).toBe(true)
+    await flushPromises()
     expect(mocks.open).not.toHaveBeenCalled()
-    expect(mocks.resolveShortcut).toHaveBeenCalledWith('remote-1', 'a'.repeat(32), 'b'.repeat(64))
+    expect(mocks.resolveShortcut).toHaveBeenCalledWith('remote-1', 'a'.repeat(32), 'b'.repeat(64), expect.any(AbortSignal))
     expect(wrapper.emitted('close')).toHaveLength(1)
   })
   it('closes a failed launch window only after the server confirms no shortcut session exists', async () => {
@@ -131,7 +135,7 @@ describe('shortcut command terminal lifecycle', () => {
     const wrapper = create('remote-1', 'Remote', { shortcutId: 'a'.repeat(32) })
     await flushPromises()
     expect(await closeGuard()).toBe(true)
-    expect(mocks.resolveShortcut).toHaveBeenCalledWith('remote-1', 'a'.repeat(32), 'b'.repeat(64))
+    expect(mocks.resolveShortcut).toHaveBeenCalledWith('remote-1', 'a'.repeat(32), 'b'.repeat(64), expect.any(AbortSignal))
     expect(mocks.close).toHaveBeenCalledWith(opened.sessionId)
     expect(mocks.open).toHaveBeenCalledTimes(1)
     expect(mocks.execute).not.toHaveBeenCalled()
@@ -198,11 +202,11 @@ describe('shortcut command terminal lifecycle', () => {
     const wrapper = create('remote-1', 'Remote', { shortcutId: 'a'.repeat(32) })
     await flushPromises()
     const closing = closeGuard()
-    expect(wrapper.emitted('close')).toBeUndefined()
+    expect(wrapper.emitted('close')).toHaveLength(1)
     resolve(opened)
     expect(await closing).toBe(true)
     await flushPromises()
-    expect(mocks.childClose).toHaveBeenCalledTimes(1)
+    expect(mocks.close).toHaveBeenCalledWith(opened.sessionId)
     expect(mocks.prepareShortcut).toHaveBeenCalledTimes(1)
     expect(mocks.open).toHaveBeenCalledTimes(2)
     expect(mocks.execute).not.toHaveBeenCalled()
@@ -230,11 +234,11 @@ describe('shortcut command terminal lifecycle', () => {
     await flushPromises()
     const closing = closeGuard()
     await flushPromises()
-    expect(wrapper.emitted('close')).toBeUndefined()
+    expect(wrapper.emitted('close')).toHaveLength(1)
     resolveOpen(opened)
     await closing
     await flushPromises()
-    expect(mocks.childClose).toHaveBeenCalledTimes(1)
+    expect(mocks.close).toHaveBeenCalledWith(opened.sessionId)
     expect(wrapper.emitted('close')).toHaveLength(1)
     expect(mocks.execute).not.toHaveBeenCalled()
   })

@@ -117,6 +117,7 @@ type Server struct {
 	terminalLaunchIntents   map[string]panelTerminalLaunchIntent
 	terminalSessions        map[string]panelTerminalSession
 	terminalCleanupRunning  bool
+	terminalCleanupAgain    bool
 	terminalCleanupStopped  bool
 	terminalCleanupCancel   context.CancelFunc
 	terminalCleanupDone     chan struct{}

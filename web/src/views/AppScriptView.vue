@@ -20,6 +20,7 @@ const route = useRoute()
 const i18n = useI18n()
 const session = useSession()
 const currentOwner = () => session.state.authenticated ? session.state.user?.id || '' : ''
+const owner = currentOwner()
 const windowCloseGuards = inject(desktopWindowCloseGuardKey, undefined)
 const consumeWindowLaunch = inject(desktopWindowLaunchKey, () => false)
 const loading = ref(true)
@@ -30,6 +31,8 @@ let controller: AbortController | undefined
 let loadRequest: Promise<void> | undefined
 let closeRequest: Promise<boolean> | undefined
 let unregisterWindowCloseGuard: (() => void) | undefined
+let userClosed = false
+let closingOwner = ''
 
 const activeJobStorageKey = 'kpanel:active-app-job'
 const appID = computed(() => String(route.params.appId || ''))
@@ -108,8 +111,9 @@ async function load(allowLaunch = false): Promise<void> {
     }
     const existing = await existingInteractiveJob(target.id, requestController.signal)
     if (controller !== requestController) return
-    job.value = existing || (allowLaunch ? await launchManage(target) : undefined)
+    job.value = existing || (allowLaunch && !userClosed && currentOwner() === owner ? await launchManage(target) : undefined)
     if (job.value) rememberJob(job.value.id)
+    if (userClosed && isActiveJob(job.value)) requestQuietAppJobStop(job.value!.id, closingOwner, currentOwner)
   } catch (reason) {
     if (reason instanceof DOMException && reason.name === 'AbortError') return
     error.value = localizeError(reason, 'appScript.openFailed')
@@ -127,13 +131,11 @@ function startLoad(allowLaunch = false): void {
 }
 
 async function stopActiveJobBeforeClose(): Promise<boolean> {
-  // Discover or finish launching the task before deciding whether the window can close.
-  await loadRequest
-  controller?.abort()
-
+  userClosed = true
+  closingOwner = owner
   const active = job.value
   if (!active || !isActiveJob(active)) return true
-  requestQuietAppJobStop(active.id, currentOwner(), currentOwner)
+  requestQuietAppJobStop(active.id, closingOwner, currentOwner)
   return true
 }
 
@@ -154,7 +156,7 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   unregisterWindowCloseGuard?.()
-  controller?.abort()
+  if (!userClosed) controller?.abort()
 })
 </script>
 

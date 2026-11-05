@@ -2021,10 +2021,10 @@ export const api = {
       request('/terminal-sessions', { method: 'POST', body: { hostId, shortcutId, rows: 30, columns: 120, prepareOnly: true } }),
     preparePurpose: (purpose: 'site-management'): Promise<{ launchId: string; expiresAt: string }> =>
       request('/terminal-sessions', { method: 'POST', body: { hostId: 'local', purpose, rows: 30, columns: 120, prepareOnly: true } }),
-    resolvePurpose: (purpose: 'site-management', launchId?: string): Promise<TerminalSession> =>
-      request('/terminal-sessions', { method: 'POST', body: { hostId: 'local', purpose, launchId, rows: 30, columns: 120, lookupOnly: true } }),
-    resolveShortcut: (hostId: string, shortcutId: string, launchId?: string): Promise<TerminalSession> =>
-      request<TerminalSession>('/terminal-sessions', { method: 'POST', body: { hostId, shortcutId, launchId, rows: 30, columns: 120, lookupOnly: true } }),
+    resolvePurpose: (purpose: 'site-management', launchId?: string, signal?: AbortSignal): Promise<TerminalSession> =>
+      request('/terminal-sessions', { method: 'POST', signal, body: { hostId: 'local', purpose, launchId, rows: 30, columns: 120, lookupOnly: true } }),
+    resolveShortcut: (hostId: string, shortcutId: string, launchId?: string, signal?: AbortSignal): Promise<TerminalSession> =>
+      request<TerminalSession>('/terminal-sessions', { method: 'POST', signal, body: { hostId, shortcutId, launchId, rows: 30, columns: 120, lookupOnly: true } }),
     open: (hostId: string, rows: number, columns: number, options?: { containerId?: string; resourceVersion?: string; retained?: boolean; shortcutId?: string; shortcutVersion?: string; launchId?: string; purpose?: 'site-management' }): Promise<TerminalSession> =>
       request<TerminalSession>('/terminal-sessions', {
         method: 'POST',

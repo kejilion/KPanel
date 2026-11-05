@@ -4,7 +4,8 @@ import { LoaderCircle } from '@lucide/vue'
 import { desktopWindowCloseGuardKey } from '@/lib/desktopRouteKeys'
 import HostTerminal from '@/components/terminal/HostTerminal.vue'
 import { api, ApiError } from '@/lib/api'
-import { closeTerminalQuietly } from '@/lib/terminalClose'
+import { closeTerminalQuietly, deferTerminalClose, queueTerminalLaunchClose } from '@/lib/terminalClose'
+import { useSession } from '@/stores/session'
 import { useI18n } from '@/i18n'
 import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
 import type { TerminalSession } from '@/types/api'
@@ -28,13 +29,20 @@ const hostId = props.hostId || 'local'
 const launchTarget = { shortcutId: props.shortcutId, shortcutVersion: props.shortcutVersion, purpose: props.purpose }
 const namedLaunch = Boolean(launchTarget.shortcutId || launchTarget.purpose)
 let disposed = false
+let userClosed = false
 let submitted = false
 let launchId: string | undefined
+const account = useSession()
+const owner = account.state.authenticated ? account.state.user?.id || '' : ''
 
-function resolveLaunch(): Promise<TerminalSession> {
+function queueLaunchClose(): void {
+  if (launchId && namedLaunch) queueTerminalLaunchClose({ launchId, hostId, ...launchTarget }, owner)
+}
+
+function resolveLaunch(signal?: AbortSignal): Promise<TerminalSession> {
   return launchTarget.purpose
-    ? api.terminals.resolvePurpose(launchTarget.purpose, launchId)
-    : api.terminals.resolveShortcut(hostId, launchTarget.shortcutId!, launchId)
+    ? api.terminals.resolvePurpose(launchTarget.purpose, launchId, signal)
+    : api.terminals.resolveShortcut(hostId, launchTarget.shortcutId!, launchId, signal)
 }
 
 function phrase(value: string): string {
@@ -55,10 +63,15 @@ async function open(): Promise<void> {
       launchId = (await (launchTarget.purpose ? api.terminals.preparePurpose(launchTarget.purpose) : api.terminals.prepareShortcut(hostId, launchTarget.shortcutId!))).launchId
       if (!launchId) throw new Error('Terminal launch identity is missing')
       if (disposed) {
-        void resolveLaunch().catch(() => undefined)
+        if (userClosed) queueLaunchClose()
+        else void resolveLaunch().catch(() => undefined)
         return
       }
       if (closing.value) return
+    }
+    if (owner && (!account.state.authenticated || account.state.user?.id !== owner)) {
+      if (userClosed) queueLaunchClose()
+      return
     }
     const opened = props.existingSession || await (namedLaunch
       ? api.terminals.open(hostId, 30, 120, { ...launchTarget, retained: true, launchId }).catch(reason => {
@@ -68,7 +81,10 @@ async function open(): Promise<void> {
       })
       : api.terminals.open(hostId, 30, 120))
     if (disposed) {
-      if (!opened.retained) await closeTerminalQuietly(opened.sessionId, () => reclaim(opened))
+      if (userClosed || !opened.retained) {
+        if (owner && (!account.state.authenticated || account.state.user?.id !== owner)) deferTerminalClose(opened.sessionId, owner)
+        else await closeTerminalQuietly(opened.sessionId, () => reclaim(opened))
+      }
       return
     }
     session.value = opened
@@ -95,15 +111,29 @@ async function onStateChange(state: string): Promise<void> {
 async function close(): Promise<boolean> {
   if (closing.value) return false
   closing.value = true
+  userClosed = true
+  if (owner && (!account.state.authenticated || account.state.user?.id !== owner)) {
+    if (session.value) deferTerminalClose(session.value.sessionId, owner)
+    else queueLaunchClose()
+    disposed = true
+    emit('close')
+    return true
+  }
+  if (opening.value) {
+    disposed = true
+    queueLaunchClose()
+    emit('close')
+    return true
+  }
+  if (!session.value && namedLaunch) {
+    disposed = true
+    queueLaunchClose()
+    emit('close')
+    return true
+  }
   try {
     await openingRequest
     let target = session.value
-    if (!target && namedLaunch) {
-      try { target = await resolveLaunch() }
-      catch (reason) {
-        if (!(reason instanceof ApiError && reason.code === 'terminal_shortcut_session_not_found')) throw reason
-      }
-    }
     if (target) {
       try {
         const outcome = await closeTerminalQuietly(target.sessionId, () => session.value && terminal.value ? terminal.value.closeSession() : reclaim(target))
@@ -118,6 +148,7 @@ async function close(): Promise<boolean> {
     emit('close')
     return true
   } catch {
+    queueLaunchClose()
     disposed = true
     emit('close')
     return true
