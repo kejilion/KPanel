@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -67,6 +68,7 @@ func TestAccessPasswordAccountInputRejectsUnsafeFields(t *testing.T) {
 	for _, mutate := range []func(*AccessPasswordAccountInput){
 		func(i *AccessPasswordAccountInput) { i.Username = "user:other" },
 		func(i *AccessPasswordAccountInput) { i.Password = "secret\nother" },
+		func(i *AccessPasswordAccountInput) { i.Password = strings.Repeat("密", 86) },
 		func(i *AccessPasswordAccountInput) { i.Action = "delete" },
 	} {
 		input := valid

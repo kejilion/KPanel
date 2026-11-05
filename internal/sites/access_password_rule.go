@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/kejilion/kejilion-panel/internal/contract"
 )
 
 type AccessPasswordRuleInput struct {
@@ -51,7 +53,7 @@ func validateAccessRuleInput(input AccessPasswordRuleInput) error {
 	}
 	switch input.Action {
 	case "add":
-		if input.RuleID != "" || !validAccessAccountName(input.Username) || input.Password == "" || len(input.Password) > 1024 || !utf8.ValidString(input.Password) || strings.ContainsAny(input.Password, "\x00\r\n") {
+		if input.RuleID != "" || !validAccessAccountName(input.Username) || input.Password == "" || len(input.Password) > 256 || !utf8.ValidString(input.Password) || strings.ContainsAny(input.Password, "\x00\r\n") {
 			return fmt.Errorf("%w: invalid access rule", ErrInvalidInput)
 		}
 		if input.Scope == "server" {
@@ -99,6 +101,9 @@ func (m *Manager) EditAccessPasswordRule(ctx context.Context, siteID string, inp
 		}
 		var request any
 		if input.Action == "add" {
+			if site.Kind == contract.SiteRedirect {
+				return nil, fmt.Errorf("%w: redirect executes before Nginx access authentication", ErrUnprocessable)
+			}
 			if site.ResourceVersion != input.ResourceVersion {
 				return nil, fmt.Errorf("%w: site changed", ErrConflict)
 			}

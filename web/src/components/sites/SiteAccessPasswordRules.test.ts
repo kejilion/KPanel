@@ -45,6 +45,21 @@ describe('SiteAccessPasswordRules', () => {
     expect(wrapper.text()).toContain('只删除这一条，其他同范围的规则会保留。')
   })
 
+  it('prevents adding to a redirect site and rejects passwords over 256 UTF-8 bytes', async () => {
+    mocks.accessPasswords.mockResolvedValue([])
+    const wrapper = mount(SiteAccessPasswordRules, { props: { siteId: 'first', siteVersion: 'version', writable: true, allowAdd: false } })
+    await wrapper.get('button').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('button').find((button) => button.text() === '添加规则')!.attributes('disabled')).toBeDefined()
+    await wrapper.setProps({ allowAdd: true })
+    await wrapper.findAll('button').find((button) => button.text() === '添加规则')!.trigger('click')
+    await wrapper.get('input[autocomplete=off]').setValue('alice')
+    await wrapper.get('input[type=password]').setValue('密'.repeat(86))
+    await wrapper.get('form').trigger('submit.prevent')
+    expect(wrapper.get('[role=alert]').text()).toContain('访问密码不能超过 256 字节')
+    expect(mocks.updateAccessRule).not.toHaveBeenCalled()
+  })
+
   it('updates an account with the current rule version and clears the password', async () => {
     const rule = { id: 'rule', scope: 'location', path: '/admin/', usernames: ['alice'], accountsReadable: true, resourceVersion: 'version' }
     mocks.accessPasswords.mockResolvedValue([rule])

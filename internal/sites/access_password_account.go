@@ -96,7 +96,7 @@ func validateAccessAccountInput(input AccessPasswordAccountInput) error {
 	default:
 		return fmt.Errorf("%w: invalid account action", ErrInvalidInput)
 	}
-	if input.Action != "delete" && (input.Password == "" || len(input.Password) > 1024 || !utf8.ValidString(input.Password) || strings.ContainsAny(input.Password, "\x00\r\n")) {
+	if input.Action != "delete" && (input.Password == "" || len(input.Password) > 256 || !utf8.ValidString(input.Password) || strings.ContainsAny(input.Password, "\x00\r\n")) {
 		return fmt.Errorf("%w: invalid access password", ErrInvalidInput)
 	}
 	return nil

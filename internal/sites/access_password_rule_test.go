@@ -86,3 +86,27 @@ func TestAccessPasswordRuleDeleteSelectsExactDiscoveredContext(t *testing.T) {
 		t.Fatalf("wrong target: %#v", fake.input)
 	}
 }
+
+func TestAccessPasswordRuleCannotProtectExistingRedirect(t *testing.T) {
+	root := t.TempDir()
+	copyFixtureTree(t, filepath.Join("testdata", "web"), root)
+	config := `server { server_name static.example.com; location / { return 301 https://target.example.com$request_uri; } }`
+	if err := os.WriteFile(filepath.Join(root, "conf.d", "static.example.com.conf"), []byte(config), 0600); err != nil {
+		t.Fatal(err)
+	}
+	d := NewDiscoverer(root)
+	all, err := d.Discover()
+	if err != nil {
+		t.Fatal(err)
+	}
+	site := findSite(all, "static.example.com")
+	m := NewManager(root, d, nil)
+	fake := &fakeAccessRuleEditor{}
+	m.accessAccountEditor = fake
+	_, err = m.EditAccessPasswordRule(context.Background(), site.ID, AccessPasswordRuleInput{
+		Action: "add", ResourceVersion: site.ResourceVersion, Scope: "server", Username: "alice", Password: "secret",
+	})
+	if !errors.Is(err, ErrUnprocessable) || fake.calls != 0 {
+		t.Fatalf("redirect accepted: err=%v calls=%d kind=%s", err, fake.calls, site.Kind)
+	}
+}

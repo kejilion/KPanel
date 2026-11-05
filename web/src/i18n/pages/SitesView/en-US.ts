@@ -8,6 +8,8 @@ export default [
   ['填写网站配置中已有的路径。', 'Enter a path already present in the site configuration.'],
   ['认证可能影响接口、回调和证书自动续签；已有路径规则或重定向也可能改变认证范围，请保存后测试。', 'Authentication may affect APIs, callbacks, and automatic certificate renewal. Existing paths and redirects may change its scope; test after saving.'],
   ['只删除这一条，其他同范围的规则会保留。', 'Only this rule will be deleted; other rules for the same scope will remain.'],
+  ['访问密码不能超过 256 字节。', 'The access password must be no more than 256 bytes.'],
+  ['跳转站点暂不支持添加访问密码。', 'Access passwords cannot currently be added to redirect sites.'],
   ['确定删除这条规则？密码文件会保留。', 'Delete this rule? The password file will be retained.'],
   ['添加账号', 'Add account'],
   ['确定删除此账号？引用同一密码文件的规则也会受到影响。', 'Delete this account? Other rules using the same password file are also affected.'],

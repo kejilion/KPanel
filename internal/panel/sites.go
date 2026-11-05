@@ -374,7 +374,7 @@ func (s *Server) handleSiteWrite(
 func validateSiteWriteInput(input *siteWriteInput, create bool) (field, detail string) {
 	if input.AccessPassword != nil {
 		access := input.AccessPassword
-		if !create || access.Username == "" || len(access.Username) > 256 || hasControlCharacter(access.Username) || strings.Contains(access.Username, ":") || strings.HasPrefix(access.Username, "#") || access.Password == "" || len(access.Password) > 1024 || strings.ContainsAny(access.Password, "\x00\r\n") {
+		if !create || access.Username == "" || len(access.Username) > 256 || hasControlCharacter(access.Username) || strings.Contains(access.Username, ":") || strings.HasPrefix(access.Username, "#") || access.Password == "" || len(access.Password) > 256 || strings.ContainsAny(access.Password, "\x00\r\n") {
 			return "accessPassword", "Invalid access password input"
 		}
 		if access.Scope == "server" && access.Path != "" || access.Scope == "location" && (!strings.HasPrefix(access.Path, "/") || len(access.Path) > 1024 || hasControlCharacter(access.Path)) || access.Scope != "server" && access.Scope != "location" {

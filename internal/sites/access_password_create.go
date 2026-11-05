@@ -91,7 +91,7 @@ func validateAccessPasswordCreate(input *AccessPasswordCreateInput) error {
 	if input == nil {
 		return nil
 	}
-	if !validAccessAccountName(input.Username) || input.Password == "" || len(input.Password) > 1024 || !utf8.ValidString(input.Password) || strings.ContainsAny(input.Password, "\x00\r\n") {
+	if !validAccessAccountName(input.Username) || input.Password == "" || len(input.Password) > 256 || !utf8.ValidString(input.Password) || strings.ContainsAny(input.Password, "\x00\r\n") {
 		return fmt.Errorf("%w: invalid access credentials", ErrInvalidInput)
 	}
 	switch input.Scope {

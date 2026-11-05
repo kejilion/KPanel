@@ -955,7 +955,11 @@ async function submitSite(): Promise<void> {
     formError.value = customCertificateFormReason.value || '请检查域名和当前服务所需的配置。'
     return
   }
-	if (!editingSite.value && accessDraft.value.enabled && (!canConfigureAccessPassword.value || !accessDraft.value.path.trim().startsWith('/') || !accessDraft.value.username.trim() || !accessDraft.value.password || textByteLength(accessDraft.value.password) > 1024)) {
+	if (!editingSite.value && accessDraft.value.enabled && textByteLength(accessDraft.value.password) > 256) {
+	  formError.value = '访问密码不能超过 256 字节。'
+	  return
+	}
+	if (!editingSite.value && accessDraft.value.enabled && (!canConfigureAccessPassword.value || !accessDraft.value.path.trim().startsWith('/') || !accessDraft.value.username.trim() || !accessDraft.value.password)) {
 	  formError.value = '请检查访问密码的路径、账号和密码。'
 	  return
 	}
@@ -1440,6 +1444,7 @@ onBeforeUnmount(() => {
         <SiteAccessPasswordRules
           :site-id="selectedSite.id"
           :site-version="selectedSite.resourceVersion"
+          :allow-add="selectedSite.type !== 'redirect'"
           :writable="capabilitiesLoaded && capabilities.some((item) => item.id === 'sites.access-password.write' && item.enabled) && !panel.isReadOnly.value"
           :unavailable-reason="capabilitiesLoaded && !capabilities.some((item) => item.id === 'sites.access-password.write' && item.enabled) ? phrase('当前脚本不支持访问密码管理，请先更新配套脚本。') : ''"
           @changed="accessRulesChanged"

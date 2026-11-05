@@ -4,7 +4,7 @@ import { ApiError, api } from '@/lib/api'
 import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
 import type { SiteAccessPasswordRule } from '@/types/api'
 
-const props = withDefaults(defineProps<{ siteId: string; siteVersion?: string; writable?: boolean; unavailableReason?: string }>(), { siteVersion: '', writable: false, unavailableReason: '' })
+const props = withDefaults(defineProps<{ siteId: string; siteVersion?: string; writable?: boolean; allowAdd?: boolean; unavailableReason?: string }>(), { siteVersion: '', writable: false, allowAdd: true, unavailableReason: '' })
 const emit = defineEmits<{ changed: [siteVersion: string] }>()
 const expanded = ref(false)
 const loading = ref(false)
@@ -64,6 +64,10 @@ async function saveRule(): Promise<void> {
     saveError.value = phrase('请填写账号和密码。')
     return
   }
+  if (draft && new TextEncoder().encode(draft.password).length > 256) {
+    saveError.value = phrase('访问密码不能超过 256 字节。')
+    return
+  }
   const site = props.siteId
   saving.value = true
   saveError.value = ''
@@ -108,6 +112,10 @@ async function save(rule: SiteAccessPasswordRule): Promise<void> {
   if (!draft || draft.ruleId !== rule.id || saving.value || !props.writable) return
   if (!draft.username.trim() || (draft.action !== 'delete' && !draft.password)) {
     saveError.value = phrase('请填写账号和密码。')
+    return
+  }
+  if (draft.action !== 'delete' && new TextEncoder().encode(draft.password).length > 256) {
+    saveError.value = phrase('访问密码不能超过 256 字节。')
     return
   }
   const site = props.siteId
@@ -171,7 +179,7 @@ onBeforeUnmount(() => { disposed = true; active?.abort(); editing.value = undefi
             <form v-if="editing?.ruleId === rule.id" class="access-password-edit" @submit.prevent="save(rule)">
               <template v-if="editing.action !== 'delete'">
                 <label class="field"><span>{{ phrase('访问账号') }}</span><input v-model="editing.username" autocomplete="off" maxlength="256" required /></label>
-                <label class="field"><span>{{ phrase('访问密码') }}</span><input v-model="editing.password" type="password" autocomplete="new-password" maxlength="1024" required /></label>
+                <label class="field"><span>{{ phrase('访问密码') }}</span><input v-model="editing.password" type="password" autocomplete="new-password" maxlength="256" required /></label>
               </template>
               <p v-else>{{ phrase('确定删除此账号？引用同一密码文件的规则也会受到影响。') }} {{ editing.username }}</p>
               <p v-if="saveError" class="inline-alert inline-alert--danger" role="alert">{{ saveError }}</p>
@@ -183,12 +191,13 @@ onBeforeUnmount(() => { disposed = true; active?.abort(); editing.value = undefi
           </template>
         </li>
       </ul>
-      <button v-if="!loading && !error" class="button button--secondary button--small" type="button" :disabled="!writable || saving || !currentSiteVersion" @click="ruleForm = { scope: 'server', path: '', username: '', password: '' }; deleteRule = undefined; editing = undefined; saveError = ''">{{ phrase('添加规则') }}</button>
+      <button v-if="!loading && !error" class="button button--secondary button--small" type="button" :disabled="!writable || !allowAdd || saving || !currentSiteVersion" @click="ruleForm = { scope: 'server', path: '', username: '', password: '' }; deleteRule = undefined; editing = undefined; saveError = ''">{{ phrase('添加规则') }}</button>
+      <p v-if="!allowAdd">{{ phrase('跳转站点暂不支持添加访问密码。') }}</p>
       <form v-if="ruleForm" class="access-password-edit" @submit.prevent="saveRule">
         <label class="field"><span>{{ phrase('保护范围') }}</span><select v-model="ruleForm.scope"><option value="server">{{ phrase('站点级规则') }}</option><option value="location">{{ phrase('指定已有路径') }}</option></select></label>
         <label v-if="ruleForm.scope === 'location'" class="field"><span>{{ phrase('保护路径') }}</span><input v-model="ruleForm.path" placeholder="/admin/" required /><small>{{ phrase('填写网站配置中已有的路径。') }}</small></label>
         <label class="field"><span>{{ phrase('访问账号') }}</span><input v-model="ruleForm.username" autocomplete="off" required /></label>
-        <label class="field"><span>{{ phrase('访问密码') }}</span><input v-model="ruleForm.password" type="password" autocomplete="new-password" required /></label>
+        <label class="field"><span>{{ phrase('访问密码') }}</span><input v-model="ruleForm.password" type="password" autocomplete="new-password" maxlength="256" required /></label>
         <p>{{ phrase('认证可能影响接口、回调和证书自动续签；已有路径规则或重定向也可能改变认证范围，请保存后测试。') }}</p>
         <p v-if="saveError" class="inline-alert inline-alert--danger" role="alert">{{ saveError }}</p>
         <div class="access-password-actions"><button class="button button--primary button--small" type="submit" :disabled="saving">{{ phrase(saving ? '正在保存…' : '保存') }}</button><button class="button button--secondary button--small" type="button" :disabled="saving" @click="ruleForm = undefined">{{ phrase('取消') }}</button></div>

@@ -57,7 +57,8 @@ function change<K extends keyof SiteAccessPasswordDraft>(key: K, value: SiteAcce
         </label>
         <label class="field">
           <span>{{ phrase('访问密码') }}</span>
-          <input :value="modelValue.password" type="password" autocomplete="new-password" required @input="change('password', ($event.target as HTMLInputElement).value)" />
+          <input :value="modelValue.password" type="password" autocomplete="new-password" maxlength="256" required @input="change('password', ($event.target as HTMLInputElement).value)" />
+          <small>{{ phrase('访问密码不能超过 256 字节。') }}</small>
         </label>
         <small>{{ phrase('认证可能影响接口、回调和证书自动续签；已有路径规则或重定向也可能改变认证范围，请保存后测试。') }} {{ phrase('建议使用 HTTPS。') }}</small>
       </template>
