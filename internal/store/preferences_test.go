@@ -94,6 +94,19 @@ func TestMediaLocationPreferencesRejectInvalid(t *testing.T) {
 	}
 }
 
+func TestMediaLocationMatchesBrowserUnicodeBounds(t *testing.T) {
+	for _, path := range []string{"/music\u0085", "/" + strings.Repeat("😀", 511)} {
+		if err := ValidatePreferences(Preferences{MusicLocation: &MediaLocation{Path: path}}); err != nil {
+			t.Errorf("rejected browser-valid %q: %v", path, err)
+		}
+	}
+	for _, path := range []string{"/music\ufeff", "/" + strings.Repeat("😀", 512)} {
+		if ValidatePreferences(Preferences{MusicLocation: &MediaLocation{Path: path}}) == nil {
+			t.Errorf("accepted browser-invalid %q", path)
+		}
+	}
+}
+
 func TestBrowserPreferencesValidatePersistAndKeepOtherSections(t *testing.T) {
 	s, err := Open(filepath.Join(t.TempDir(), "panel.json"))
 	if err != nil {

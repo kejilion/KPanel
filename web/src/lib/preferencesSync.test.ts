@@ -64,6 +64,15 @@ it('restores a pending location after interrupted saving and rejects malformed p
   expect(mocks.update.mock.calls[0]![0]).toEqual({ musicLocation: { path: '/pending', hostId: 'edge-1' }, expectedResourceVersion: 'v1' })
 })
 
+it('saves a Unicode path alongside another preference without blocking it', async () => {
+  await startPreferencesSync('admin')
+  setMediaLocation('musicLocation', '/music\u0085', '')
+  await setLocale('en-US')
+  await flush()
+  expect(mocks.update.mock.calls[0]![0]).toMatchObject({ musicLocation: { path: '/music\u0085', hostId: '' }, locale: 'en-US' })
+  expect(sessionStorage.getItem('kpanel:preferences-pending:v1')).toBeNull()
+})
+
 beforeEach(() => {
   vi.useFakeTimers()
   vi.clearAllMocks()

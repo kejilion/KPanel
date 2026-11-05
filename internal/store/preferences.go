@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"unicode/utf16"
 	"unicode/utf8"
 )
 
@@ -29,12 +30,18 @@ type MediaLocation struct {
 
 var mediaHostPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{0,128}$`)
 
+// Match JavaScript String.trim so a path accepted by the client is never
+// rejected during a combined preferences update. Go's TrimSpace differs.
+func mediaTrimSpace(r rune) bool {
+	return r == 0x20 || (r >= 0x09 && r <= 0x0d) || r == 0x00a0 || r == 0x1680 || (r >= 0x2000 && r <= 0x200a) || r == 0x2028 || r == 0x2029 || r == 0x202f || r == 0x205f || r == 0x3000 || r == 0xfeff
+}
+
 func validMediaLocation(value *MediaLocation, allowRoot bool) bool {
 	if value == nil {
 		return true
 	}
 	p := value.Path
-	if !utf8.ValidString(p) || len(p) > 4096 || utf8.RuneCountInString(p) > 1024 || strings.TrimSpace(p) != p || !strings.HasPrefix(p, "/") || strings.Contains(p, "\\") || strings.IndexFunc(p, func(r rune) bool { return r < 32 || r == 127 }) >= 0 || !mediaHostPattern.MatchString(value.HostID) {
+	if !utf8.ValidString(p) || len(p) > 4096 || len(utf16.Encode([]rune(p))) > 1024 || strings.TrimFunc(p, mediaTrimSpace) != p || !strings.HasPrefix(p, "/") || strings.Contains(p, "\\") || strings.IndexFunc(p, func(r rune) bool { return r < 32 || r == 127 }) >= 0 || !mediaHostPattern.MatchString(value.HostID) {
 		return false
 	}
 	if p == "/" {
