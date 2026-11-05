@@ -3,6 +3,7 @@ import { applySyncedLocale, getLocale, t } from '@/i18n'
 import { applyDesktopPreferences, desktopPreferencesSnapshot, parseDesktopSessionPreferences } from '@/stores/desktopMode'
 import { useToast } from '@/stores/toast'
 import type { UserPreferences, UserPreferencesPatch } from '@/types/api'
+import { applyMediaLocation, legacyGalleryLocation, mediaLocationKeys, parseMediaLocation } from '@/lib/mediaLocations'
 
 interface Sync {
   owner: string
@@ -31,6 +32,10 @@ function readPending(owner: string): UserPreferencesPatch {
     if (['zh-CN', 'zh-TW', 'en-US'].includes(value.patch?.locale)) patch.locale = value.patch.locale
     const desktop = parseDesktopSessionPreferences(value.patch?.desktop)
     if (desktop) patch.desktop = desktop
+    for (const key of mediaLocationKeys) {
+      const location = parseMediaLocation(key, value.patch?.[key])
+      if (location) patch[key] = location
+    }
     return patch
   } catch { return {} }
 }
@@ -48,6 +53,11 @@ function requestSignal(sync: Sync): AbortSignal {
 
 function sameSection(key: keyof UserPreferencesPatch, left: unknown, right: unknown): boolean {
   if (key === 'locale') return left === right
+  if (key === 'browser') return JSON.stringify(left) === JSON.stringify(right)
+  if (key !== 'desktop') {
+    const a = parseMediaLocation(key, left), b = parseMediaLocation(key, right)
+    return a !== undefined && b !== undefined && a.path === b.path && a.hostId === b.hostId
+  }
   const a = parseDesktopSessionPreferences(left)
   const b = parseDesktopSessionPreferences(right)
   return a !== undefined && b !== undefined && JSON.stringify(a) === JSON.stringify(b)
@@ -84,6 +94,10 @@ async function load(sync: Sync): Promise<void> {
       const migration: UserPreferencesPatch = {}
       if (!server.locale) migration.locale = sync.initial.locale
       if (!server.desktop) migration.desktop = sync.initial.desktop
+      for (const key of mediaLocationKeys) {
+        if (!server[key] && sync.initial[key]) migration[key] = sync.initial[key]
+        applyMediaLocation(key, sync.pending[key] ?? server[key] ?? migration[key])
+      }
       sync.loaded = true
       const locale = sync.pending.locale ?? sync.server?.locale ?? migration.locale
       if (locale) await applySyncedLocale(locale)
@@ -133,6 +147,10 @@ function save(sync: Sync, migration: UserPreferencesPatch = {}): Promise<void> {
           sync.server = server
           if (server.locale) delete migration.locale
           if (server.desktop) delete migration.desktop
+          for (const key of mediaLocationKeys) if (server[key]) {
+            if (migration[key] && !sync.pending[key]) applyMediaLocation(key, server[key])
+            delete migration[key]
+          }
           // Do not remount live windows on a conflict; the next login/refresh
           // restores server state. Only dirty sections are written back.
         }
@@ -183,11 +201,12 @@ export function startPreferencesSync(owner: string): Promise<void> {
   if (current?.owner === owner) return current.loading ?? Promise.resolve()
   stopPreferencesSync()
   const sync: Sync = {
-    owner, controller: new AbortController(), initial: { locale: getLocale(), desktop: desktopPreferencesSnapshot() },
+    owner, controller: new AbortController(), initial: { locale: getLocale(), desktop: desktopPreferencesSnapshot(), galleryLocation: legacyGalleryLocation() },
     pending: readPending(owner), loaded: false, retries: 0, notified: false,
     restoreDesktop: true,
   }
   current = sync
+  for (const key of mediaLocationKeys) applyMediaLocation(key, sync.pending[key] ?? sync.initial[key])
   window.addEventListener('kpanel:preferences-changed', changed)
   window.addEventListener('online', retry)
   window.addEventListener('focus', retry)
@@ -200,6 +219,7 @@ export function stopPreferencesSync(): void {
     current.controller.abort()
   }
   current = undefined
+  for (const key of mediaLocationKeys) applyMediaLocation(key, undefined)
   window.removeEventListener('kpanel:preferences-changed', changed)
   window.removeEventListener('online', retry)
   window.removeEventListener('focus', retry)

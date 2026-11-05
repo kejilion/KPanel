@@ -10,10 +10,59 @@ import { getLocale, resetLocaleForTest, setLocale } from '@/i18n'
 import { applyDesktopPreferences, desktopPreferencesSnapshot, initializeDesktopMode, resetDesktopModeForTest, useDesktopMode } from '@/stores/desktopMode'
 import type { DesktopSessionPreferences, UserPreferences } from '@/types/api'
 import { startPreferencesSync, stopPreferencesSync } from './preferencesSync'
+import { mediaLocations, setMediaLocation } from './mediaLocations'
 
 const desktop: DesktopSessionPreferences = { mode: 'desktop', windows: [], windowSizes: [], sideSplitRatio: .6, focusedId: 0 }
 const remote = (): UserPreferences => ({ locale: 'zh-TW', desktop: structuredClone(desktop), resourceVersion: 'v1' })
 const flush = () => vi.advanceTimersByTimeAsync(500)
+
+it('restores all media locations with the existing single login request', async () => {
+  localStorage.setItem('kpanel:gallery:v1', JSON.stringify({ root: '/old/photos' }))
+  mocks.get.mockResolvedValue({ ...remote(), galleryLocation: { path: '/new/photos', hostId: '' },
+    musicLocation: { path: '/music', hostId: 'edge-1' }, cinemaLocation: { path: '/films', hostId: '' } })
+  await startPreferencesSync('admin')
+  expect(mocks.get).toHaveBeenCalledTimes(1)
+  expect(mocks.update).not.toHaveBeenCalled()
+  expect(mediaLocations.galleryLocation?.path).toBe('/new/photos')
+  expect(mediaLocations.musicLocation).toEqual({ path: '/music', hostId: 'edge-1' })
+  expect(mediaLocations.cinemaLocation?.path).toBe('/films')
+})
+
+it('migrates a legacy gallery only when the server has no gallery location', async () => {
+  localStorage.setItem('kpanel:gallery:v1', JSON.stringify({ root: '/old/photos' }))
+  await startPreferencesSync('admin')
+  expect(mocks.update.mock.calls[0]![0]).toEqual({ galleryLocation: { path: '/old/photos', hostId: '' }, expectedResourceVersion: 'v1' })
+  expect(mediaLocations.galleryLocation?.path).toBe('/old/photos')
+})
+
+it('drops a competing gallery migration and restores the winning server path', async () => {
+  localStorage.setItem('kpanel:gallery:v1', JSON.stringify({ root: '/old/photos' }))
+  mocks.update.mockRejectedValueOnce(new ApiError('conflict', 409))
+  mocks.get.mockResolvedValueOnce(remote()).mockResolvedValueOnce({ ...remote(), resourceVersion: 'other', galleryLocation: { path: '/other/photos', hostId: '' } })
+  await startPreferencesSync('admin'); await flush()
+  expect(mediaLocations.galleryLocation?.path).toBe('/other/photos')
+  expect(mocks.update).toHaveBeenCalledTimes(1)
+})
+
+it('retries only the explicitly edited media section on conflict and retains pending edits', async () => {
+  mocks.get.mockResolvedValue({ ...remote(), musicLocation: { path: '/old', hostId: '' } })
+  await startPreferencesSync('admin')
+  mocks.update.mockRejectedValueOnce(new ApiError('conflict', 409))
+  mocks.get.mockResolvedValue({ ...remote(), resourceVersion: 'other', cinemaLocation: { path: '/other', hostId: '' } })
+  setMediaLocation('musicLocation', '/new', 'edge-1')
+  await flush()
+  expect(mocks.update.mock.calls[1]![0]).toEqual({ musicLocation: { path: '/new', hostId: 'edge-1' }, expectedResourceVersion: 'other' })
+  expect(sessionStorage.getItem('kpanel:preferences-pending:v1')).toBeNull()
+})
+
+it('restores a pending location after interrupted saving and rejects malformed pending paths', async () => {
+  sessionStorage.setItem('kpanel:preferences-pending:v1', JSON.stringify({ owner: 'admin', patch: {
+    musicLocation: { path: '/pending', hostId: 'edge-1' }, cinemaLocation: { path: '/../../etc', hostId: '' },
+  } }))
+  await startPreferencesSync('admin')
+  expect(mediaLocations.musicLocation?.path).toBe('/pending')
+  expect(mocks.update.mock.calls[0]![0]).toEqual({ musicLocation: { path: '/pending', hostId: 'edge-1' }, expectedResourceVersion: 'v1' })
+})
 
 beforeEach(() => {
   vi.useFakeTimers()

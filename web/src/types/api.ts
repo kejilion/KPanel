@@ -2439,9 +2439,13 @@ export interface UserPreferences {
   resourceVersion: string
   locale?: 'zh-CN' | 'zh-TW' | 'en-US'
   desktop?: DesktopSessionPreferences
+  galleryLocation?: MediaLocation
+  musicLocation?: MediaLocation
+  cinemaLocation?: MediaLocation
 }
 
-export type UserPreferencesPatch = Partial<Pick<UserPreferences, 'locale' | 'desktop' | 'browser'>>
+export interface MediaLocation { path: string; hostId: string }
+export type UserPreferencesPatch = Partial<Pick<UserPreferences, 'locale' | 'desktop' | 'browser' | 'galleryLocation' | 'musicLocation' | 'cinemaLocation'>>
 
 export interface AppearanceSettings {
   branding?: SiteBranding

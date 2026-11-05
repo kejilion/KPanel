@@ -48,3 +48,34 @@ func TestPreferencesAuthenticatedSharedStateAndFailureBoundaries(t *testing.T) {
 		t.Fatal("failed write changed preferences")
 	}
 }
+
+func TestMediaLocationsThroughPreferencesAPI(t *testing.T) {
+	s, tokenPath := newTestServer(t)
+	session, csrf := bootstrapCookies(t, s, tokenPath)
+	read := authenticatedSiteRequest(s, session, csrf, http.MethodGet, preferencesPath, nil, false)
+	var initial preferencesResponse
+	if err := json.Unmarshal(read.Body.Bytes(), &initial); err != nil {
+		t.Fatal(err)
+	}
+	body, _ := json.Marshal(map[string]any{"musicLocation": map[string]string{"path": "/private/music", "hostId": "node-1"}, "expectedResourceVersion": initial.ResourceVersion})
+	if r := authenticatedSiteRequest(s, session, csrf, http.MethodPut, preferencesPath, body, false); r.Code != 403 {
+		t.Fatalf("missing csrf: %d", r.Code)
+	}
+	saved := authenticatedSiteRequest(s, session, csrf, http.MethodPut, preferencesPath, body, true)
+	if saved.Code != 200 {
+		t.Fatalf("save: %d %s", saved.Code, saved.Body.String())
+	}
+	var state preferencesResponse
+	if err := json.Unmarshal(saved.Body.Bytes(), &state); err != nil || state.MusicLocation == nil || state.MusicLocation.Path != "/private/music" {
+		t.Fatalf("saved state: %v %+v", err, state)
+	}
+	invalid, _ := json.Marshal(map[string]any{"galleryLocation": map[string]string{"path": "/../etc", "hostId": ""}, "expectedResourceVersion": state.ResourceVersion})
+	if r := authenticatedSiteRequest(s, session, csrf, http.MethodPut, preferencesPath, invalid, true); r.Code != 422 {
+		t.Fatalf("invalid path: %d", r.Code)
+	}
+	read = authenticatedSiteRequest(s, session, csrf, http.MethodGet, preferencesPath, nil, false)
+	var reread preferencesResponse
+	if err := json.Unmarshal(read.Body.Bytes(), &reread); err != nil || reread.MusicLocation == nil || reread.MusicLocation.HostID != "node-1" || reread.ResourceVersion != state.ResourceVersion {
+		t.Fatalf("reread: %v %+v", err, reread)
+	}
+}

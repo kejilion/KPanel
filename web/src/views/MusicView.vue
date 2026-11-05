@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { mediaLocations, setMediaLocation } from '@/lib/mediaLocations'
 import { useRoute, useRouter } from 'vue-router'
 import { Music2, Play, Pause, SkipBack, SkipForward, FolderOpen, Plus, RefreshCw, Download, X, Shuffle, Repeat, Repeat1, ListMusic, ArrowUp, ArrowDown, Volume2, VolumeX, Search, Disc3, ChevronRight, ListPlus } from '@lucide/vue'
 import HostSwitcher from '@/components/common/HostSwitcher.vue'
@@ -22,8 +23,9 @@ function phrase(value: string) { phraseCatalogVersion.value; return translatePhr
 const i18n = useI18n(), player = useMusicPlayer(), state = player.state
 const route = useRoute(), router = useRouter()
 const visible = inject(desktopWindowVisibleKey, ref(true))
-const hostId = computed(() => typeof route.query.hostId === 'string' ? route.query.hostId : '')
-const path = computed(() => typeof route.query.path === 'string' && (route.query.path === '/' || normalizeGalleryRoot(route.query.path)) ? route.query.path : MUSIC_ROOT)
+const explicitLocation = computed(() => typeof route.query.path === 'string' || typeof route.query.hostId === 'string')
+const hostId = computed(() => explicitLocation.value ? (typeof route.query.hostId === 'string' ? route.query.hostId : '') : mediaLocations.musicLocation?.hostId ?? '')
+const path = computed(() => typeof route.query.path === 'string' && (route.query.path === '/' || normalizeGalleryRoot(route.query.path)) ? route.query.path : explicitLocation.value ? MUSIC_ROOT : mediaLocations.musicLocation?.path ?? MUSIC_ROOT)
 const location = ref(''), search = ref(''), error = ref(''), loading = ref(false), truncated = ref(false)
 const entries = ref<FileEntry[]>([]), hosts = ref<ClusterHost[]>([]), hostsError = ref(false)
 const picker = ref<InstanceType<typeof HostSwitcher>>()
@@ -54,7 +56,10 @@ async function load() {
   catch (e) { if (!controller.signal.aborted) error.value = e instanceof Error ? e.message : String(e) }
   finally { if (!controller.signal.aborted) loading.value = false }
 }
-function navigate(target: string, host = hostId.value) { void router.push({ name: 'music', query: { path: target, ...(host ? { hostId: host } : {}) } }) }
+function navigate(target: string, host = hostId.value) {
+  setMediaLocation('musicLocation', target, host)
+  void router.push({ name: 'music', query: { path: target, ...(host ? { hostId: host } : {}) } })
+}
 function openLocation() {
   const target = location.value === '/' ? '/' : normalizeGalleryRoot(location.value)
   if (!target) { error.value = phrase('请输入有效的绝对路径'); return }
@@ -111,7 +116,7 @@ onBeforeUnmount(() => { destroyed = true; listing?.abort(); if (visible.value) s
 <template>
   <main class="page music-page" tabindex="0" @keydown="keyboard">
     <header class="music-header">
-      <div class="music-brand"><img src="/desktop-icons/music-kpanel-flat-v1.webp" alt="" /><div><h1>音乐</h1><p>把日常，交给一首好歌</p></div></div>
+      <div class="music-brand"><img :src="'/desktop-icons/music-kpanel-flat-v1.webp'" alt="" /><div><h1>音乐</h1><p>把日常，交给一首好歌</p></div></div>
     </header>
     <nav class="music-tabs" :aria-label="phrase('音乐导航')"><button :aria-current="tab === 'library' ? 'page' : undefined" @click="tab = 'library'"><Disc3 :size="18" /> 音乐库</button><button :aria-current="tab === 'listen' ? 'page' : undefined" @click="tab = 'listen'"><Music2 :size="18" /> 正在播放</button><button :aria-current="tab === 'queue' ? 'page' : undefined" @click="tab = 'queue'"><ListMusic :size="18" /> 播放队列 <span>{{ state.queue.length }}</span></button></nav>
     <template v-if="tab === 'library'">

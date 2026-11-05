@@ -17,6 +17,83 @@ func sampleDesktop() *DesktopPreferences {
 	}
 }
 
+func TestMediaLocationPreferencesPersistIndependently(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "panel.json")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, version := s.Preferences()
+	gallery := &MediaLocation{Path: "/srv/photos"}
+	if err = s.PatchPreferences(version, Preferences{GalleryLocation: gallery}); err != nil {
+		t.Fatal(err)
+	}
+	gallery.Path = "/changed"
+	_, version = s.Preferences()
+	if err = s.PatchPreferences(version, Preferences{MusicLocation: &MediaLocation{Path: "/", HostID: "edge-1"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.PatchPreferences(version, Preferences{CinemaLocation: &MediaLocation{Path: "/films"}}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale write: %v", err)
+	}
+	got, version := s.Preferences()
+	if got.GalleryLocation.Path != "/srv/photos" || got.MusicLocation.Path != "/" {
+		t.Fatalf("lost sections: %+v", got)
+	}
+	got.GalleryLocation.Path = "/alias"
+	if err = s.PatchPreferences(version, Preferences{CinemaLocation: &MediaLocation{Path: "/films"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.CreateInitialAdmin(User{ID: "admin", Username: "admin", PasswordHash: strings.Repeat("h", 32), Role: "admin", CreatedAt: time.Now(), UpdatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	backup, err := s.ExportIdentity()
+	if err != nil || ValidateIdentityBackup(backup) != nil {
+		t.Fatalf("backup: %v", err)
+	}
+	if err = s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	got, _ = s.Preferences()
+	if got.GalleryLocation.Path != "/srv/photos" || got.MusicLocation.HostID != "edge-1" || got.CinemaLocation.Path != "/films" {
+		t.Fatalf("restart lost locations: %+v", got)
+	}
+	destination, err := Open(filepath.Join(t.TempDir(), "restore.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer destination.Close()
+	if err = destination.RestoreIdentity(backup); err != nil {
+		t.Fatal(err)
+	}
+	restored, _ := destination.Preferences()
+	if !reflect.DeepEqual(restored, got) {
+		t.Fatal("backup lost media locations")
+	}
+}
+
+func TestMediaLocationPreferencesRejectInvalid(t *testing.T) {
+	for _, path := range []string{"", "relative", "/a/../b", "/a//b", "/a/", "/a\\b", "/bad\nname", "/bad\x7fname", "/a ", "/" + strings.Repeat("x", 1025)} {
+		if ValidatePreferences(Preferences{MusicLocation: &MediaLocation{Path: path}}) == nil {
+			t.Errorf("accepted %q", path)
+		}
+	}
+	for _, p := range []Preferences{
+		{GalleryLocation: &MediaLocation{Path: "/"}},
+		{GalleryLocation: &MediaLocation{Path: "/photos", HostID: "remote"}},
+		{CinemaLocation: &MediaLocation{Path: "/films", HostID: "bad/host"}},
+	} {
+		if ValidatePreferences(p) == nil {
+			t.Errorf("accepted %+v", p)
+		}
+	}
+}
+
 func TestBrowserPreferencesValidatePersistAndKeepOtherSections(t *testing.T) {
 	s, err := Open(filepath.Join(t.TempDir(), "panel.json"))
 	if err != nil {

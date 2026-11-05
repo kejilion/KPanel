@@ -14,9 +14,38 @@ import (
 // Preferences is bounded Panel-owned UI state, shared by the single administrator.
 // Nil sections have not been configured and may be migrated once by a client.
 type Preferences struct {
-	Browser *BrowserPreferences `json:"browser,omitempty"`
-	Locale  string              `json:"locale,omitempty"`
-	Desktop *DesktopPreferences `json:"desktop,omitempty"`
+	Browser         *BrowserPreferences `json:"browser,omitempty"`
+	Locale          string              `json:"locale,omitempty"`
+	Desktop         *DesktopPreferences `json:"desktop,omitempty"`
+	GalleryLocation *MediaLocation      `json:"galleryLocation,omitempty"`
+	MusicLocation   *MediaLocation      `json:"musicLocation,omitempty"`
+	CinemaLocation  *MediaLocation      `json:"cinemaLocation,omitempty"`
+}
+
+type MediaLocation struct {
+	Path   string `json:"path"`
+	HostID string `json:"hostId"`
+}
+
+var mediaHostPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{0,128}$`)
+
+func validMediaLocation(value *MediaLocation, allowRoot bool) bool {
+	if value == nil {
+		return true
+	}
+	p := value.Path
+	if !utf8.ValidString(p) || len(p) > 4096 || utf8.RuneCountInString(p) > 1024 || strings.TrimSpace(p) != p || !strings.HasPrefix(p, "/") || strings.Contains(p, "\\") || strings.IndexFunc(p, func(r rune) bool { return r < 32 || r == 127 }) >= 0 || !mediaHostPattern.MatchString(value.HostID) {
+		return false
+	}
+	if p == "/" {
+		return allowRoot
+	}
+	for _, part := range strings.Split(p[1:], "/") {
+		if part == "" || part == "." || part == ".." {
+			return false
+		}
+	}
+	return true
 }
 
 type BrowserPreferences struct {
@@ -65,6 +94,9 @@ func validDimension(value float64) bool {
 }
 
 func ValidatePreferences(value Preferences) error {
+	if !validMediaLocation(value.GalleryLocation, false) || (value.GalleryLocation != nil && value.GalleryLocation.HostID != "") || !validMediaLocation(value.MusicLocation, true) || !validMediaLocation(value.CinemaLocation, true) {
+		return ErrInvalidRecord
+	}
 	if b := value.Browser; b != nil && b.StartURL != "" {
 		u, err := url.Parse(b.StartURL)
 		if len(b.StartURL) > 4096 || !utf8.ValidString(b.StartURL) || strings.IndexFunc(b.StartURL, func(r rune) bool { return r <= 32 || r == 127 }) >= 0 || err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || u.User != nil {
@@ -104,6 +136,18 @@ func ValidatePreferences(value Preferences) error {
 }
 
 func clonePreferences(value Preferences) Preferences {
+	if value.GalleryLocation != nil {
+		v := *value.GalleryLocation
+		value.GalleryLocation = &v
+	}
+	if value.MusicLocation != nil {
+		v := *value.MusicLocation
+		value.MusicLocation = &v
+	}
+	if value.CinemaLocation != nil {
+		v := *value.CinemaLocation
+		value.CinemaLocation = &v
+	}
 	if value.Browser != nil {
 		b := *value.Browser
 		value.Browser = &b
@@ -147,6 +191,15 @@ func (s *Store) PatchPreferences(expected string, patch Preferences) error {
 	}
 	if patch.Desktop != nil {
 		s.data.Preferences.Desktop = clonePreferences(patch).Desktop
+	}
+	if patch.GalleryLocation != nil {
+		s.data.Preferences.GalleryLocation = clonePreferences(patch).GalleryLocation
+	}
+	if patch.MusicLocation != nil {
+		s.data.Preferences.MusicLocation = clonePreferences(patch).MusicLocation
+	}
+	if patch.CinemaLocation != nil {
+		s.data.Preferences.CinemaLocation = clonePreferences(patch).CinemaLocation
 	}
 	if err := s.persistLocked(); err != nil {
 		s.data = previous

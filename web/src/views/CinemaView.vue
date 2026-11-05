@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { mediaLocations, setMediaLocation } from '@/lib/mediaLocations'
 import { useRoute, useRouter } from 'vue-router'
 import { Clapperboard, Film, Folder, FolderOpen, Image as ImageIcon, LayoutGrid, Pencil, Play, RefreshCw, Search, X } from '@lucide/vue'
 import HostSwitcher from '@/components/common/HostSwitcher.vue'
@@ -32,8 +33,9 @@ const router = useRouter()
 const i18n = useI18n()
 const windowVisible = inject(desktopWindowVisibleKey, undefined)
 const windowed = Boolean(windowVisible)
-const hostId = computed(() => typeof route.query.hostId === 'string' ? route.query.hostId : '')
-const path = computed(() => typeof route.query.path === 'string' ? (route.query.path === '/' ? '/' : normalizeGalleryRoot(route.query.path) ?? CINEMA_ROOT) : CINEMA_ROOT)
+const explicitLocation = computed(() => typeof route.query.path === 'string' || typeof route.query.hostId === 'string')
+const hostId = computed(() => explicitLocation.value ? (typeof route.query.hostId === 'string' ? route.query.hostId : '') : mediaLocations.cinemaLocation?.hostId ?? '')
+const path = computed(() => typeof route.query.path === 'string' ? (route.query.path === '/' ? '/' : normalizeGalleryRoot(route.query.path) ?? CINEMA_ROOT) : explicitLocation.value ? CINEMA_ROOT : mediaLocations.cinemaLocation?.path ?? CINEMA_ROOT)
 const files = computed(() => fileAPIForHost(hostId.value))
 const preferences = ref(readCinemaPreferences(hostId.value, path.value))
 const snapshot = ref<CinemaFolder>()
@@ -152,7 +154,9 @@ function location(target: string, host = hostId.value) {
 }
 function browse(target: string, host = hostId.value) {
   if (saving.value) return
-  if (target === path.value && host === hostId.value) {
+  const unchanged = target === path.value && host === hostId.value
+  setMediaLocation('cinemaLocation', target, host)
+  if (unchanged) {
     void load()
     return
   }
@@ -295,7 +299,7 @@ onBeforeUnmount(() => {
 <template>
   <main class="page cinema-page">
     <header class="cinema-heading">
-      <img class="cinema-heading__icon" src="/desktop-icons/cinema-kpanel-flat-v1.webp" alt="" />
+      <img class="cinema-heading__icon" :src="'/desktop-icons/cinema-kpanel-flat-v1.webp'" alt="" />
       <div>
         <h1>{{ i18n.t('route.cinema') }}</h1>
         <p>{{ phrase('自己的片库，随时开场') }}</p>

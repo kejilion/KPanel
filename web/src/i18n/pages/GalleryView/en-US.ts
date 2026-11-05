@@ -117,7 +117,7 @@ export default [
   ["文件会移入回收站，可在文件管理的回收站中恢复。", "Files move to the trash. You can restore them from the trash in Files."],
   ["文件夹路径", "Folder path"],
   ["恢复默认", "Restore default"],
-  ["图库读取这个文件夹：其中的照片和视频直接显示，子文件夹作为相册。设置只保存在当前浏览器。", "The gallery reads this folder: its photos and videos appear directly and its subfolders become albums. This setting is saved in this browser only."],
+  ["图库读取这个文件夹：其中的照片和视频直接显示，子文件夹作为相册。位置保存在面板，可跨设备同步。", "The gallery reads this folder: its photos and videos appear directly and its subfolders become albums. The location is saved in the panel and synced across devices."],
   ["上传照片和视频", "Upload photos and videos"],
   ["在文件管理中打开", "Open in Files"],
   ["更多操作", "More actions"],

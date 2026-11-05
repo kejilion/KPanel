@@ -5,6 +5,7 @@ import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError, api } from '@/lib/api'
 import type { FileActionInput, FileDirectory, FileEntry } from '@/types/api'
+import { applyMediaLocation, mediaLocations } from '@/lib/mediaLocations'
 
 const harness = vi.hoisted(() => ({
   tree: {} as Record<string, FileEntry[]>,
@@ -92,6 +93,7 @@ beforeEach(() => {
 afterEach(() => {
   wrapper?.unmount()
   wrapper = undefined
+  applyMediaLocation('galleryLocation', undefined)
   vi.restoreAllMocks()
 })
 
@@ -382,7 +384,7 @@ describe('GalleryView on a remote host', () => {
     expect(view.get('.gallery-hero__title').text()).toBe('图库')
     expect(view.get('.host-switcher__trigger').text()).toContain('edge-melbourne')
     expect(view.text()).toContain('开始建立你的图库')
-    // The location setting belongs to this browser, so it is only offered on the local host.
+    // The library location belongs to the local panel and is only offered on the local host.
     const buttons = view.findAll('.gallery-empty button').map((button) => button.text())
     expect(buttons).toEqual(['创建图库文件夹'])
     harness.tree['/home/gallery'] = []
@@ -394,6 +396,22 @@ describe('GalleryView on a remote host', () => {
 })
 
 describe('GalleryView', () => {
+  it('restores the shared gallery root and saves an explicitly chosen location', async () => {
+    applyMediaLocation('galleryLocation', { path: '/srv/photos', hostId: '' })
+    harness.tree['/srv/photos'] = []
+    harness.tree['/srv/new'] = []
+    const view = await mountGallery()
+    expect(view.text()).toContain('/srv/photos')
+    await view.get('.gallery-hero__more > button').trigger('click')
+    await view.findAll('.gallery-menu button').find((button) => button.text().includes('图库位置'))!.trigger('click')
+    const input = document.querySelector<HTMLInputElement>('.gallery-form input')!
+    input.value = '/srv/new'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    document.querySelector<HTMLFormElement>('.gallery-form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+    expect(mediaLocations.galleryLocation).toEqual({ path: '/srv/new', hostId: '' })
+    expect(view.text()).toContain('/srv/new')
+  })
   it('keeps the last snapshot and reports a failed refresh with a retry', async () => {
     const view = await mountGallery()
     expect(view.get('.gallery-hero').classes()).not.toContain('gallery-hero--menu-open')

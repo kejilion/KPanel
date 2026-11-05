@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
+import { mediaLocations, setMediaLocation } from '@/lib/mediaLocations'
 import { provideGalleryRenderPolicy } from '@/lib/galleryRenderPolicy'
 import { useRoute, useRouter } from 'vue-router'
 import { createGalleryTouchSelection } from '@/lib/galleryTouchSelection'
@@ -136,6 +137,7 @@ const i18n = useI18n()
 const desktopWindowActive = inject(desktopWindowActiveKey, computed(() => true))
 
 const preferences = reactive(readGalleryPreferences(browserStorage()))
+watch(() => mediaLocations.galleryLocation?.path, path => { if (path) preferences.root = path }, { immediate: true })
 watch(preferences, (value) => writeGalleryPreferences(browserStorage(), { ...value }))
 
 const page = ref<HTMLElement>()
@@ -1152,6 +1154,7 @@ function submitLocation(): void {
   const root = normalizeGalleryRoot(locationValue.value)
   if (!root) return
   preferences.root = root
+  setMediaLocation('galleryLocation', root)
   locationDialogOpen.value = false
   void router.push({ name: 'gallery', query: {} })
 }
@@ -1760,7 +1763,7 @@ onBeforeUnmount(() => {
     <ModalDialog
       :open="locationDialogOpen"
       :title="phrase('图库位置')"
-      :description="phrase('图库读取这个文件夹：其中的照片和视频直接显示，子文件夹作为相册。设置只保存在当前浏览器。')"
+      :description="phrase('图库读取这个文件夹：其中的照片和视频直接显示，子文件夹作为相册。位置保存在面板，可跨设备同步。')"
       size="small"
       @close="locationDialogOpen = false"
     >
