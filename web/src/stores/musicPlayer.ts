@@ -20,7 +20,7 @@ export function createMusicPlayer(overrides: Partial<PlayerDependencies> = {}) {
   }
   const state = reactive({
     queue: [] as Track[], current: undefined as Track | undefined,
-    playing: false, waiting: false, position: 0, duration: 0, volume: 0.8, muted: false,
+    playing: false, waiting: false, restored: false, position: 0, duration: 0, volume: 0.8, muted: false,
     repeat: 'off' as Repeat, shuffle: false, error: '' as '' | 'blocked' | 'network' | 'unsupported',
     lyrics: '', lyricsLoading: false, lyricsFailed: false, embeddedCover: '', album: '',
     viewCount: 0, notice: '' as '' | 'added' | 'next' | 'full',
@@ -75,6 +75,7 @@ export function createMusicPlayer(overrides: Partial<PlayerDependencies> = {}) {
   async function resume() {
     const target = audio, id = sequence
     if (!target) return
+    state.restored = false
     state.error = ''
     try { await target.play() }
     catch (error) {
@@ -89,6 +90,7 @@ export function createMusicPlayer(overrides: Partial<PlayerDependencies> = {}) {
   function seek(value: number) {
     if (!audio || !Number.isFinite(value) || !state.duration) return
     audio.currentTime = Math.min(state.duration, Math.max(0, value)); state.position = audio.currentTime; syncSession()
+    if (typeof window !== 'undefined') window.dispatchEvent(new Event('kpanel:music-seek'))
   }
   function setVolume(value: number) {
     if (!Number.isFinite(value)) return
@@ -114,29 +116,35 @@ export function createMusicPlayer(overrides: Partial<PlayerDependencies> = {}) {
     state.lyricsFailed = Boolean(track.lyrics && sidecar.status === 'rejected' && !state.lyrics)
     state.lyricsLoading = false; publishMetadata()
   }
-  function play(track: Track, remember = true) {
+  function play(track: Track, remember = true, startPosition = 0, autoplay = true) {
     if (remember && state.current && key(state.current) !== key(track)) history = [...history.slice(-199), { ...state.current }]
     const id = ++sequence
     releaseAudio(); releaseMetadata()
-    state.current = { ...track }; state.position = 0; state.duration = 0; state.error = ''
+    state.position = startPosition; state.current = { ...track }; state.restored = !autoplay; state.duration = 0; state.error = ''
     const queuedKeys = new Set(state.queue.map(key))
     cycle = new Set([...cycle].filter(k => queuedKeys.has(k)))
     cycle.add(key(track))
-    state.playing = false; state.waiting = true; state.lyrics = ''; state.lyricsFailed = false; state.album = ''
+    state.playing = false; state.waiting = autoplay; state.lyrics = ''; state.lyricsFailed = false; state.album = ''
     const target = deps.audio(); audio = target
+    let pendingSeek = startPosition
     target.preload = 'metadata'; target.volume = state.volume; target.muted = state.muted
     target.onplaying = () => { if (owns(target, id)) { state.playing = true; state.waiting = false; syncSession() } }
     target.onpause = () => { if (owns(target, id)) { state.playing = false; syncSession() } }
     target.onwaiting = () => { if (owns(target, id)) state.waiting = true }
     target.oncanplay = () => { if (owns(target, id)) state.waiting = false }
     target.ontimeupdate = () => { if (owns(target, id)) { state.position = target.currentTime; syncSession() } }
-    target.onloadedmetadata = () => { if (owns(target, id)) { state.duration = Number.isFinite(target.duration) ? target.duration : 0; syncSession() } }
+    target.onloadedmetadata = () => { if (owns(target, id)) { state.duration = Number.isFinite(target.duration) ? target.duration : 0; if (pendingSeek > 0 && state.duration) { target.currentTime = Math.min(pendingSeek, state.duration); state.position = target.currentTime; pendingSeek = 0 }; syncSession() } }
     target.onerror = () => { if (owns(target, id)) { state.waiting = false; state.playing = false; state.error = target.error?.code === 2 ? 'network' : 'unsupported'; syncSession() } }
     target.onended = () => { if (owns(target, id)) { state.playing = false; state.waiting = false; next(true); syncSession() } }
     target.src = fileAPIForHost(track.hostId).contentUrl(track.entry.path)
-    bindSession(); publishMetadata(); void resume()
+    bindSession(); publishMetadata(); if (autoplay) void resume()
     controller = new AbortController(); timer = setTimeout(() => controller?.abort(), 8000)
     void metadata(track, id, controller.signal)
+  }
+  function restore(track: Track, position: number, repeat: Repeat, shuffle: boolean) {
+    state.queue = [track]; history = []; remaining = []; cycle.clear(); priority = ''
+    state.repeat = repeat; state.shuffle = shuffle
+    play(track, false, position, false)
   }
   function replaceQueue(tracks: Track[], start?: Track) {
     state.queue = [...new Map(tracks.slice(0, MUSIC_LIMIT).map(track => [key(track), track])).values()]
@@ -212,7 +220,7 @@ export function createMusicPlayer(overrides: Partial<PlayerDependencies> = {}) {
   function shuffle(value = !state.shuffle) { state.shuffle = value; remaining = []; history = []; cycle.clear(); if (state.current) cycle.add(key(state.current)) }
   function stop() {
     ++sequence; releaseAudio(); releaseMetadata(); history = []; remaining = []; cycle.clear(); priority = ''
-    state.current = undefined; state.queue = []; state.playing = false; state.waiting = false
+    state.current = undefined; state.queue = []; state.playing = false; state.waiting = false; state.restored = false
     state.position = 0; state.duration = 0; state.lyrics = ''; state.error = ''; state.notice = ''; state.lyricsLoading = false; state.lyricsFailed = false
     const session = mediaSession()
     if (session) {
@@ -222,7 +230,7 @@ export function createMusicPlayer(overrides: Partial<PlayerDependencies> = {}) {
       }
     }
   }
-  return { state, currentIndex, cover, play, choose, replaceQueue, enqueue, next, previous, toggle, pause, seek, setVolume, mute, remove, move, clearQueue, shuffle, stop }
+  return { state, currentIndex, cover, play, restore, choose, replaceQueue, enqueue, next, previous, toggle, pause, seek, setVolume, mute, remove, move, clearQueue, shuffle, stop }
 }
 const player = createMusicPlayer()
 export function useMusicPlayer() { return player }

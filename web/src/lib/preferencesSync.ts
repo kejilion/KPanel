@@ -2,8 +2,12 @@ import { api, ApiError } from '@/lib/api'
 import { applySyncedLocale, getLocale, t } from '@/i18n'
 import { applyDesktopPreferences, desktopPreferencesSnapshot, parseDesktopSessionPreferences } from '@/stores/desktopMode'
 import { useToast } from '@/stores/toast'
-import type { UserPreferences, UserPreferencesPatch } from '@/types/api'
 import { applyMediaLocation, legacyGalleryLocation, mediaLocationKeys, parseMediaLocation } from '@/lib/mediaLocations'
+import { watch, type WatchStopHandle } from 'vue'
+import { fileAPIForHost } from '@/lib/fileHostContext'
+import { isMusic, tracksFromEntries } from '@/lib/music'
+import { useMusicPlayer } from '@/stores/musicPlayer'
+import type { MusicPlaybackPreference, UserPreferences, UserPreferencesPatch } from '@/types/api'
 
 interface Sync {
   owner: string
@@ -18,9 +22,86 @@ interface Sync {
   retries: number
   notified: boolean
   restoreDesktop: boolean
+  musicTouched: boolean
+  restoringMusic: boolean
+  musicWatchers: WatchStopHandle[]
+  lastMusicProgress: number
+  musicSeek?: () => void
+  musicRefreshing?: Promise<void>
+  musicRestoreSerial: number
 }
 let current: Sync | undefined
 const pendingKey = 'kpanel:preferences-pending:v1'
+
+function parseMusicPlayback(value: unknown): MusicPlaybackPreference | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const m = value as Record<string, unknown>
+  if (typeof m.path !== 'string' || new TextEncoder().encode(m.path).length > 4096 || typeof m.hostId !== 'string' || !/^[A-Za-z0-9_-]{0,128}$/.test(m.hostId) || typeof m.position !== 'number' || !Number.isFinite(m.position) || m.position < 0 || m.position > 31536000 || typeof m.playing !== 'boolean' || typeof m.shuffle !== 'boolean' || !['off', 'all', 'one'].includes(String(m.repeat))) return undefined
+  if (m.path === '') {
+    if (m.hostId || m.position || m.playing) return undefined
+  } else if (!m.path.startsWith('/') || /[\x00-\x1f\x7f\\]/u.test(m.path) || m.path.slice(1).split('/').some(p => !p || p === '.' || p === '..')) return undefined
+  return { path: m.path, hostId: m.hostId, position: m.position, playing: m.playing, repeat: m.repeat as MusicPlaybackPreference['repeat'], shuffle: m.shuffle }
+}
+
+function musicSnapshot(): MusicPlaybackPreference {
+  const state = useMusicPlayer().state
+  return { path: state.current?.entry.path ?? '', hostId: state.current?.hostId ?? '', position: state.current ? Math.min(31536000, Math.max(0, Number.isFinite(state.position) ? state.position : 0)) : 0, playing: !!state.current && state.playing, repeat: state.repeat, shuffle: state.shuffle }
+}
+
+function watchMusic(sync: Sync): void {
+  const state = useMusicPlayer().state
+  const update = () => {
+    if (current !== sync || sync.restoringMusic) return
+    sync.musicTouched = true
+    sync.lastMusicProgress = Date.now()
+    const musicPlayback = parseMusicPlayback(musicSnapshot())
+    if (musicPlayback) changed(new CustomEvent('kpanel:preferences-changed', { detail: { musicPlayback } }))
+  }
+  sync.musicWatchers.push(watch([() => state.current?.entry.path, () => state.current?.hostId, () => state.playing, () => state.repeat, () => state.shuffle], update, { flush: 'sync' }))
+  sync.musicWatchers.push(watch(() => state.position, () => {
+    if (!state.current || sync.restoringMusic) return
+    if (state.playing && Date.now() - sync.lastMusicProgress >= 30000) update()
+  }, { flush: 'sync' }))
+  sync.musicSeek = update
+  window.addEventListener('kpanel:music-seek', update)
+}
+
+async function restoreMusic(sync: Sync, value: MusicPlaybackPreference | undefined): Promise<void> {
+  const serial = ++sync.musicRestoreSerial
+  const music = useMusicPlayer()
+  if (sync.musicTouched || (music.state.current && (!music.state.restored || music.state.playing))) return
+  if (!value?.path) {
+    if (value && music.state.restored) {
+      sync.restoringMusic = true
+      try { music.stop() } finally { sync.restoringMusic = false }
+    }
+    return
+  }
+  try {
+    const entry = await fileAPIForHost(value.hostId).entry(value.path, requestSignal(sync))
+    if (current !== sync || serial !== sync.musicRestoreSerial || sync.controller.signal.aborted || sync.musicTouched || (music.state.current && (!music.state.restored || music.state.playing)) || entry.path !== value.path || !isMusic(entry)) return
+    const track = tracksFromEntries([entry], value.hostId)[0]
+    if (!track) return
+    sync.restoringMusic = true
+    try { music.restore(track, value.position, value.repeat, value.shuffle) }
+    finally { sync.restoringMusic = false; sync.lastMusicProgress = Date.now() }
+  } catch { /* The saved host or file may be offline; keep the checkpoint for retry. */ }
+}
+
+function refreshMusic(sync: Sync): void {
+  const music = useMusicPlayer()
+  if (!sync.loaded || !sync.server || sync.musicRefreshing || sync.saving || sync.musicTouched || sync.pending.musicPlayback || (music.state.current && !music.state.restored)) return
+  const previous = sync.server
+  sync.musicRefreshing = (async () => {
+    try {
+      const server = await api.preferences.get(requestSignal(sync))
+      if (current !== sync || sync.server !== previous || sync.saving || sync.musicTouched || sync.pending.musicPlayback) return
+      sync.server = server
+      if (!sameSection('musicPlayback', previous.musicPlayback, server.musicPlayback)) await restoreMusic(sync, parseMusicPlayback(server.musicPlayback))
+    } catch { /* A later focus or login can retry without interrupting playback. */ }
+    finally { sync.musicRefreshing = undefined }
+  })()
+}
 
 function readPending(owner: string): UserPreferencesPatch {
   try {
@@ -36,6 +117,8 @@ function readPending(owner: string): UserPreferencesPatch {
       const location = parseMediaLocation(key, value.patch?.[key])
       if (location) patch[key] = location
     }
+    const musicPlayback = parseMusicPlayback(value.patch?.musicPlayback)
+    if (musicPlayback) patch.musicPlayback = musicPlayback
     return patch
   } catch { return {} }
 }
@@ -53,6 +136,10 @@ function requestSignal(sync: Sync): AbortSignal {
 
 function sameSection(key: keyof UserPreferencesPatch, left: unknown, right: unknown): boolean {
   if (key === 'locale') return left === right
+  if (key === 'musicPlayback') {
+    const a = parseMusicPlayback(left), b = parseMusicPlayback(right)
+    return a !== undefined && b !== undefined && JSON.stringify(a) === JSON.stringify(b)
+  }
   if (key === 'browser') return JSON.stringify(left) === JSON.stringify(right)
   if (key !== 'desktop') {
     const a = parseMediaLocation(key, left), b = parseMediaLocation(key, right)
@@ -99,6 +186,7 @@ async function load(sync: Sync): Promise<void> {
         applyMediaLocation(key, sync.pending[key] ?? server[key] ?? migration[key])
       }
       sync.loaded = true
+      void restoreMusic(sync, parseMusicPlayback(sync.pending.musicPlayback ?? server.musicPlayback))
       const locale = sync.pending.locale ?? sync.server?.locale ?? migration.locale
       if (locale) await applySyncedLocale(locale)
       if (current !== sync) return
@@ -194,6 +282,7 @@ function retry(): void {
   if (!current) return
   current.retries = 0
   schedule(current, 0)
+  refreshMusic(current)
 }
 
 /** Called before the authenticated shell mounts, so cached windows cannot launch first. */
@@ -203,13 +292,14 @@ export function startPreferencesSync(owner: string): Promise<void> {
   const sync: Sync = {
     owner, controller: new AbortController(), initial: { locale: getLocale(), desktop: desktopPreferencesSnapshot(), galleryLocation: legacyGalleryLocation() },
     pending: readPending(owner), loaded: false, retries: 0, notified: false,
-    restoreDesktop: true,
+    restoreDesktop: true, musicTouched: false, restoringMusic: false, musicWatchers: [], lastMusicProgress: Date.now(), musicRestoreSerial: 0,
   }
   current = sync
   for (const key of mediaLocationKeys) applyMediaLocation(key, sync.pending[key] ?? sync.initial[key])
   window.addEventListener('kpanel:preferences-changed', changed)
   window.addEventListener('online', retry)
   window.addEventListener('focus', retry)
+  watchMusic(sync)
   return load(sync)
 }
 
@@ -217,6 +307,8 @@ export function stopPreferencesSync(): void {
   if (current) {
     window.clearTimeout(current.timer)
     current.controller.abort()
+    for (const stop of current.musicWatchers) stop()
+    if (current.musicSeek) window.removeEventListener('kpanel:music-seek', current.musicSeek)
   }
   current = undefined
   for (const key of mediaLocationKeys) applyMediaLocation(key, undefined)

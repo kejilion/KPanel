@@ -11,6 +11,7 @@ import { useDesktopMode } from '@/stores/desktopMode'
 import { useSession } from '@/stores/session'
 import { useSiteBranding } from '@/stores/branding'
 import { useLiveNotifications } from '@/composables/useLiveNotifications'
+import { stopPreferencesSync } from '@/lib/preferencesSync'
 
 const route = useRoute()
 const i18n = useI18n()
@@ -21,7 +22,7 @@ const music = useMusicPlayer()
 watch(() => session.state.authenticated ? session.state.user?.id : undefined, (id, previous) => {
   if ((!id || (previous && id !== previous)) && music.state.current) music.stop()
 }, { flush: 'sync', immediate: true })
-onBeforeUnmount(() => music.stop())
+onBeforeUnmount(() => { stopPreferencesSync(); music.stop() })
 const branding = useSiteBranding()
 const brandIcons = Array.from(document.querySelectorAll<HTMLLinkElement>('link[rel="icon"], link[rel="apple-touch-icon"]')).map((link) => ({
   link, href: link.href, type: link.type, sizes: link.getAttribute('sizes'),

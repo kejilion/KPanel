@@ -2442,10 +2442,12 @@ export interface UserPreferences {
   galleryLocation?: MediaLocation
   musicLocation?: MediaLocation
   cinemaLocation?: MediaLocation
+  musicPlayback?: MusicPlaybackPreference
 }
 
 export interface MediaLocation { path: string; hostId: string }
-export type UserPreferencesPatch = Partial<Pick<UserPreferences, 'locale' | 'desktop' | 'browser' | 'galleryLocation' | 'musicLocation' | 'cinemaLocation'>>
+export type UserPreferencesPatch = Partial<Pick<UserPreferences, 'locale' | 'desktop' | 'browser' | 'galleryLocation' | 'musicLocation' | 'cinemaLocation' | 'musicPlayback'>>
+export interface MusicPlaybackPreference { path: string; hostId: string; position: number; playing: boolean; repeat: 'off' | 'all' | 'one'; shuffle: boolean }
 
 export interface AppearanceSettings {
   branding?: SiteBranding

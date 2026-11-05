@@ -260,3 +260,72 @@ func TestPreferencesAcceptCatalogueWindowRoutes(t *testing.T) {
 		}
 	}
 }
+
+func TestMusicCheckpointPersistsAndRejectsInvalidInput(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "panel.json")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, version := s.Preferences()
+	checkpoint := &MusicPlaybackPreference{Path: "/music/风歌.mp3", HostID: "edge-1", Position: 23.5, Playing: true, Repeat: "all", Shuffle: true}
+	if err = s.PatchPreferences(version, Preferences{MusicPlayback: checkpoint}); err != nil {
+		t.Fatal(err)
+	}
+	checkpoint.Path = "/changed"
+	value, version := s.Preferences()
+	if value.MusicPlayback.Path != "/music/风歌.mp3" {
+		t.Fatal("checkpoint aliases input")
+	}
+	value.MusicPlayback.Path = "/other"
+	value, _ = s.Preferences()
+	if value.MusicPlayback.Path != "/music/风歌.mp3" {
+		t.Fatal("checkpoint aliases snapshot")
+	}
+	if err = s.PatchPreferences("stale", Preferences{MusicPlayback: &MusicPlaybackPreference{Repeat: "off"}}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("expected conflict: %v", err)
+	}
+	if err = s.CreateInitialAdmin(User{ID: "admin", Username: "admin", PasswordHash: strings.Repeat("h", 32), Role: "admin", CreatedAt: time.Now(), UpdatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	backup, err := s.ExportIdentity()
+	if err != nil || ValidateIdentityBackup(backup) != nil {
+		t.Fatalf("backup: %v", err)
+	}
+	if err = s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	value, _ = s.Preferences()
+	if value.MusicPlayback.Position != 23.5 || value.MusicPlayback.HostID != "edge-1" {
+		t.Fatalf("restart lost checkpoint: %+v", value.MusicPlayback)
+	}
+	destination, err := Open(filepath.Join(t.TempDir(), "restore.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer destination.Close()
+	if err = destination.RestoreIdentity(backup); err != nil {
+		t.Fatal(err)
+	}
+	restored, _ := destination.Preferences()
+	if !reflect.DeepEqual(restored.MusicPlayback, value.MusicPlayback) {
+		t.Fatal("backup lost checkpoint")
+	}
+	for _, invalid := range []*MusicPlaybackPreference{
+		{Path: "/../etc", Repeat: "off"}, {Path: "/music//a.mp3", Repeat: "off"},
+		{Path: "/music/a.mp3", HostID: "bad/id", Repeat: "off"}, {Path: "/a", Position: math.Inf(1), Repeat: "off"},
+		{Path: "/a", Position: -1, Repeat: "off"}, {Path: "/a", Repeat: "invalid"}, {Playing: true, Repeat: "off"},
+	} {
+		if ValidatePreferences(Preferences{MusicPlayback: invalid}) == nil {
+			t.Errorf("accepted invalid checkpoint: %+v", invalid)
+		}
+	}
+	if err = s.PatchPreferences(version, Preferences{MusicPlayback: &MusicPlaybackPreference{Repeat: "off"}}); err != nil {
+		t.Fatal(err)
+	}
+}

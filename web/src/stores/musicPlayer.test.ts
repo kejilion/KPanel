@@ -28,6 +28,22 @@ function setup(tags = vi.fn(async (): Promise<MusicTags> => ({})), text = vi.fn(
 }
 afterEach(() => { players.splice(0).forEach(player => player.stop()); vi.restoreAllMocks() })
 describe('music listening session', () => {
+  it('restores a checkpoint without autoplay and seeks when metadata arrives', async () => {
+    const { player, audios } = setup()
+    player.restore(track('A', 'edge'), 42, 'all', true)
+    expect(player.state.current?.hostId).toBe('edge')
+    expect(player.state.position).toBe(42)
+    expect(player.state.restored).toBe(true)
+    expect(player.state.playing).toBe(false)
+    expect(audios[0]!.play).not.toHaveBeenCalled()
+    audios[0]!.onloadedmetadata?.()
+    expect(audios[0]!.currentTime).toBe(42)
+    player.toggle(); await flushPromises()
+    expect(audios[0]!.play).toHaveBeenCalledTimes(1)
+    expect(player.state.restored).toBe(false)
+    expect(player.state.repeat).toBe('all')
+    expect(player.state.shuffle).toBe(true)
+  })
   it('keeps source host immutable when different hosts share a path', () => {
     const { player, audios } = setup()
     player.replaceQueue([track('same', 'a'), track('same', 'b')])

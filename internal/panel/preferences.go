@@ -46,12 +46,12 @@ func (s *Server) handlePreferences(w http.ResponseWriter, r *http.Request) {
 			s.writeValidationProblem(w, r, "expectedResourceVersion", "a valid resourceVersion is required")
 			return
 		}
-		if (input.Locale == "" && input.Desktop == nil && input.Browser == nil && input.GalleryLocation == nil && input.MusicLocation == nil && input.CinemaLocation == nil) || store.ValidatePreferences(input.Preferences) != nil {
+		if (input.Locale == "" && input.Desktop == nil && input.Browser == nil && input.GalleryLocation == nil && input.MusicLocation == nil && input.CinemaLocation == nil && input.MusicPlayback == nil) || store.ValidatePreferences(input.Preferences) != nil {
 			s.writeProblem(w, r, 422, "preferences_invalid", "Preferences are invalid", "")
 			return
 		}
 		// Audit only section names, never window URLs or file paths.
-		change := map[string]any{"locale": input.Locale != "", "desktop": input.Desktop != nil, "browser": input.Browser != nil, "galleryLocation": input.GalleryLocation != nil, "musicLocation": input.MusicLocation != nil, "cinemaLocation": input.CinemaLocation != nil}
+		change := map[string]any{"locale": input.Locale != "", "desktop": input.Desktop != nil, "browser": input.Browser != nil, "galleryLocation": input.GalleryLocation != nil, "musicLocation": input.MusicLocation != nil, "cinemaLocation": input.CinemaLocation != nil, "musicPlayback": input.MusicPlayback != nil}
 		if s.audit(r, session.User.ID, "settings.preferences.update", "panel", "preferences", "intent", change) != nil {
 			s.writeProblem(w, r, 503, "audit_unavailable", "Audit storage unavailable", "")
 			return
