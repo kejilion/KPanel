@@ -198,7 +198,7 @@ onBeforeUnmount(() => { disposed = true; active?.abort(); editing.value = undefi
         <label v-if="ruleForm.scope === 'location'" class="field"><span>{{ phrase('保护路径') }}</span><input v-model="ruleForm.path" placeholder="/admin/" required /><small>{{ phrase('填写网站配置中已有的路径。') }}</small></label>
         <label class="field"><span>{{ phrase('访问账号') }}</span><input v-model="ruleForm.username" autocomplete="off" required /></label>
         <label class="field"><span>{{ phrase('访问密码') }}</span><input v-model="ruleForm.password" type="password" autocomplete="new-password" maxlength="256" required /></label>
-        <p>{{ phrase('认证可能影响接口、回调和证书自动续签；已有路径规则或重定向也可能改变认证范围，请保存后测试。') }}</p>
+        <p>{{ phrase('认证可能影响接口、回调和证书自动续签；已有路径规则、包含配置或重定向也可能改变认证范围，请保存后测试。') }}</p>
         <p v-if="saveError" class="inline-alert inline-alert--danger" role="alert">{{ saveError }}</p>
         <div class="access-password-actions"><button class="button button--primary button--small" type="submit" :disabled="saving">{{ phrase(saving ? '正在保存…' : '保存') }}</button><button class="button button--secondary button--small" type="button" :disabled="saving" @click="ruleForm = undefined">{{ phrase('取消') }}</button></div>
       </form>

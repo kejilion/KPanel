@@ -86,9 +86,10 @@ func TestAccessRedirectOnlyServerMatchesNarrowScriptException(t *testing.T) {
 	config := `server { return 301 https://example.com$request_uri; }
 	server { if ($arg_x) { return 200 ok; } return 301 https://example.com; }
 	server { rewrite ^ /other last; return 301 https://example.com; }
-	server { return 200 hello; }`
+	server { return 200 hello; }
+	server { include /etc/nginx/conf.d/extra.conf; return 301 https://example.com; }`
 	got, err := accessRedirectOnlyServers(config)
-	if err != nil || !got[0] || got[1] || got[2] || got[3] {
+	if err != nil || !got[0] || got[1] || got[2] || got[3] || got[4] {
 		t.Fatalf("unexpected redirect classification: %#v, %v", got, err)
 	}
 }

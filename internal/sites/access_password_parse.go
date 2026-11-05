@@ -124,7 +124,7 @@ func accessRedirectOnlyServers(input string) (map[int]bool, error) {
 		case ';':
 			if server >= 0 && len(blocks) == serverDepth && len(statement) > 0 {
 				item := &candidates[server]
-				if statement[0] == "rewrite" {
+				if statement[0] == "rewrite" || statement[0] == "include" {
 					item.unsafe = true
 				}
 				if statement[0] == "return" {
