@@ -17,6 +17,7 @@ const props = withDefaults(defineProps<{
   visible?: boolean
   autoFocus?: boolean
   retained?: boolean
+  closePending?: boolean
   historyHostId?: string
 }>(), { visible: true, autoFocus: true, retained: false, historyHostId: '' })
 const emit = defineEmits<{ stateChange: [state: 'connecting' | 'connected' | 'reconnecting' | 'finished'] }>()
@@ -35,7 +36,7 @@ let historyDraft = ''
 const adapter = computed(() => hostTerminalAdapter(props.sessionId))
 const {
   terminal, state, pendingLine, canInput,
-  focusTerminal, executeCommand, executePresentedCommand, scheduleResize, blockInput, queueInput,
+  focusTerminal, executeCommand, executePresentedCommand, scheduleResize, stopForClose, queueInput,
   containTerminalWheel, terminalTouchScroll, submitPendingLine, handlePendingLineEnter,
 } = useTerminalController({
   adapter: () => adapter.value, host, clipboardMenu,
@@ -104,10 +105,11 @@ function sendMobileTerminalKey(sequence: string): void {
 }
 let closeRequest: Promise<void> | undefined
 let closeConfirmed = false
+let detached = false
 let stopPageHideClose: (() => void) | undefined
 
 function closeSession(): Promise<void> {
-  blockInput()
+  stopForClose()
   if (closeConfirmed) return Promise.resolve()
   if (closeRequest) return closeRequest
   const id = props.sessionId
@@ -125,8 +127,10 @@ function closeSession(): Promise<void> {
   return request
 }
 watch(state, value => emit('stateChange', value === 'error' ? 'reconnecting' : value), { immediate: true })
+watch(() => props.closePending, pending => { if (pending) stopForClose() }, { immediate: true })
 watch(() => props.sessionId, (_id, previous) => {
   closeConfirmed = false
+  detached = false
   closeRequest = undefined
   // A reused temporary viewer must not leave its previous PTY behind.
   if (previous && !previousRetained) void api.terminals.close(previous).catch(() => api.terminals.closeOnUnload(previous))
@@ -135,14 +139,14 @@ watch(() => props.sessionId, (_id, previous) => {
 let previousRetained = props.retained
 watch(() => props.retained, value => { previousRetained = value })
 onMounted(() => {
-  stopPageHideClose = closeTerminalsOnPageHide(() => closeConfirmed || props.retained ? [] : [props.sessionId])
+  stopPageHideClose = closeTerminalsOnPageHide(() => closeConfirmed || detached || props.retained ? [] : [props.sessionId])
 })
 onBeforeUnmount(() => {
   stopPageHideClose?.()
   commandCapture?.dispose()
-  if (!props.retained) void closeSession().catch(() => undefined)
+  if (!props.retained && !detached) void closeSession().catch(() => undefined)
 })
-defineExpose({ focusTerminal, executeCommand, executePresentedCommand, fillCommand, scheduleResize, closeSession })
+defineExpose({ focusTerminal, executeCommand, executePresentedCommand, fillCommand, scheduleResize, closeSession, markDetached: () => { detached = true } })
 </script>
 
 <template>

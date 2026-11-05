@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/kejilion/kejilion-panel/internal/cluster"
@@ -46,6 +47,8 @@ type panelTerminalSession struct {
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 	CloseRequested   bool
+	Detached         bool
+	Detachable       bool
 	ReliableInput    bool
 	InputClaimed     bool
 	InputConnection  *terminalInputConnection
@@ -408,12 +411,7 @@ func (s *Server) openTerminalSession(w http.ResponseWriter, r *http.Request, use
 		s.writeProblem(w, r, http.StatusConflict, "container_terminal_unavailable", "Container terminal unavailable", "Docker management targets the local Agent")
 		return
 	}
-	stale := s.pruneTerminalSessions(time.Now().UTC().Add(-panelTerminalIdleTTL))
-	for _, item := range stale {
-		if err := s.closeTerminalBackend(r.Context(), item); err == nil || errors.Is(err, terminal.ErrNotFound) || errors.Is(err, terminal.ErrClosed) {
-			s.deleteTerminalSession(item.ID)
-		}
-	}
+	s.scheduleTerminalCleanup()
 	if !s.reserveTerminalOpen(userID) {
 		s.writeProblem(w, r, http.StatusTooManyRequests, "terminal_limit", "Terminal session limit reached", "")
 		return
@@ -486,7 +484,7 @@ func (s *Server) openTerminalSession(w http.ResponseWriter, r *http.Request, use
 		return
 	}
 	now := time.Now().UTC()
-	item := panelTerminalSession{ID: publicID, BackendSessionID: opened.SessionID, HostID: host.ID, UserID: userID, Owner: owner, CreatedAt: now, UpdatedAt: now, Retained: input.Retained, ShortcutID: input.ShortcutID, Purpose: input.Purpose, Title: launchTitle, LaunchUncertain: launchCommand != ""}
+	item := panelTerminalSession{ID: publicID, BackendSessionID: opened.SessionID, HostID: host.ID, UserID: userID, Owner: owner, CreatedAt: now, UpdatedAt: now, Retained: input.Retained, ShortcutID: input.ShortcutID, Purpose: input.Purpose, Title: launchTitle, LaunchUncertain: launchCommand != "", Detachable: input.ContainerID == "" && input.ShortcutID == "" && input.Purpose == ""}
 	if host.IsLocal {
 		item.ReliableInput = localReliable
 	} else {
@@ -565,12 +563,17 @@ func (s *Server) reserveTerminalOpen(userID string) bool {
 	s.terminalMu.Lock()
 	defer s.terminalMu.Unlock()
 	userCount := 0
+	activeCount := 0
 	for _, item := range s.terminalSessions {
+		if item.Detached {
+			continue
+		}
+		activeCount++
 		if item.UserID == userID {
 			userCount++
 		}
 	}
-	if len(s.terminalSessions)+s.terminalOpening >= maxPanelTerminals || userCount+s.terminalOpeningUser[userID] >= maxPanelTerminalsByUser {
+	if activeCount+s.terminalOpening >= maxPanelTerminals || userCount+s.terminalOpeningUser[userID] >= maxPanelTerminalsByUser {
 		return false
 	}
 	if s.terminalOpeningUser == nil {
@@ -619,7 +622,7 @@ func (s *Server) handleTerminalOperation(w http.ResponseWriter, r *http.Request,
 		item.InputConnection.cancel()
 	}
 
-	if item.CloseRequested && action != "close" && action != "output" {
+	if item.CloseRequested && action != "close" && action != "output" && action != "detach" {
 		s.writeProblem(w, r, http.StatusConflict, "terminal_close_pending", "Terminal is closing", "")
 		return
 	}
@@ -628,6 +631,44 @@ func (s *Server) handleTerminalOperation(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	switch action {
+	case "detach":
+		if r.Method != http.MethodPost {
+			s.writeProblem(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "Request method not allowed", "")
+			return
+		}
+		if !item.CloseRequested || !item.Detachable {
+			s.writeProblem(w, r, http.StatusConflict, "terminal_detach_unavailable", "Terminal cannot be detached", "")
+			return
+		}
+		if err := s.audit(r, userID, "terminal.detach", "cluster_host", item.HostID, "intent", nil); err != nil {
+			s.writeProblem(w, r, http.StatusServiceUnavailable, "audit_unavailable", "Audit storage unavailable", "")
+			return
+		}
+		s.terminalMu.Lock()
+		current, exists := s.terminalSessions[id]
+		count, own := 0, 0
+		for _, session := range s.terminalSessions {
+			if session.Detached {
+				count++
+				if session.UserID == userID {
+					own++
+				}
+			}
+		}
+		allowed := exists && current.UserID == userID && current.CloseRequested && current.Detachable && (current.Detached || count < maxPanelTerminals && own < maxPanelTerminalsByUser)
+		if allowed {
+			current.Detached = true
+			s.terminalSessions[id] = current
+		}
+		s.terminalMu.Unlock()
+		if !allowed {
+			_ = s.audit(r, userID, "terminal.detach", "cluster_host", item.HostID, "failure", nil)
+			s.writeProblem(w, r, http.StatusConflict, "terminal_detach_unavailable", "Terminal cannot be detached", "")
+			return
+		}
+		_ = s.audit(r, userID, "terminal.detach", "cluster_host", item.HostID, "success", nil)
+		s.writeJSON(w, http.StatusOK, map[string]bool{"detached": true})
+		return
 	case "input-transport":
 		if r.Method != http.MethodPost {
 			s.writeProblem(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "Request method not allowed", "")
@@ -841,7 +882,68 @@ func (s *Server) pruneTerminalSessions(before time.Time) []panelTerminalSession 
 	return stale
 }
 
+// Cleanup must not put an unreachable node on the critical path of opening a
+// different terminal. Only one bounded cleanup pass can run at a time.
+func (s *Server) scheduleTerminalCleanup() {
+	s.terminalMu.Lock()
+	if s.terminalCleanupRunning || s.terminalCleanupStopped {
+		s.terminalMu.Unlock()
+		return
+	}
+	s.terminalCleanupRunning = true
+	parent, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	s.terminalCleanupCancel = cancel
+	s.terminalCleanupDone = done
+	s.terminalMu.Unlock()
+	stale := s.pruneTerminalSessions(time.Now().UTC().Add(-panelTerminalIdleTTL))
+	go func() {
+		defer func() {
+			cancel()
+			s.terminalMu.Lock()
+			s.terminalCleanupRunning = false
+			s.terminalCleanupCancel = nil
+			s.terminalMu.Unlock()
+			close(done)
+		}()
+		queue := make(chan panelTerminalSession, len(stale))
+		for _, item := range stale {
+			queue <- item
+		}
+		close(queue)
+		var workers sync.WaitGroup
+		for n := 0; n < min(4, len(stale)); n++ {
+			workers.Add(1)
+			go func() {
+				defer workers.Done()
+				for item := range queue {
+					if parent.Err() != nil {
+						return
+					}
+					ctx, cancel := context.WithTimeout(parent, 5*time.Second)
+					err := s.closeTerminalBackend(ctx, item)
+					cancel()
+					if err == nil || errors.Is(err, terminal.ErrNotFound) || errors.Is(err, terminal.ErrClosed) {
+						s.deleteTerminalSession(item.ID)
+					}
+				}
+			}()
+		}
+		workers.Wait()
+	}()
+}
+
 func (s *Server) closeTerminalSessions() {
+	s.terminalMu.Lock()
+	s.terminalCleanupStopped = true
+	cancel, done := s.terminalCleanupCancel, s.terminalCleanupDone
+	if cancel != nil {
+		cancel()
+	}
+	s.terminalMu.Unlock()
+	if done != nil {
+		<-done
+	}
 	s.terminalMu.Lock()
 	items := make([]panelTerminalSession, 0, len(s.terminalSessions))
 	for _, item := range s.terminalSessions {
@@ -893,7 +995,7 @@ func (s *Server) listRetainedTerminals(w http.ResponseWriter, r *http.Request, u
 	items := make([]terminalOpenResponse, 0)
 	s.terminalMu.Lock()
 	for _, item := range s.terminalSessions {
-		if item.UserID == userID && (item.Retained || item.CloseRequested) {
+		if item.UserID == userID && !item.Detached && (item.Retained || item.CloseRequested) {
 			items = append(items, terminalSessionResponse(item))
 		}
 	}

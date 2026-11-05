@@ -58,6 +58,7 @@ interface HostTerminalHandle {
   fillCommand: (command: string) => boolean
   scheduleResize: () => void
   closeSession: () => Promise<void>
+  markDetached: () => void
 }
 
 const inventory = ref<ClusterHostList>()
@@ -266,6 +267,23 @@ async function closeSession(id: string): Promise<boolean> {
   } catch {
     item.closeFailed = true
     return false
+  } finally {
+    item.closing = false
+  }
+}
+
+async function detachSession(id: string): Promise<void> {
+  const item = sessions.value.find(session => session.id === id)
+  if (!item || item.closing || !item.closeFailed || !window.confirm(t('terminal.detachConfirm'))) return
+  item.closing = true
+  try {
+    const result = await api.terminals.detach(id)
+    if (!result.detached) throw new Error('Terminal detach was not confirmed')
+    terminalRefs.get(id)?.markDetached?.()
+    removeSession(id)
+    toast.show(t('terminal.detachedNotice'))
+  } catch {
+    toast.danger(t('terminal.detachFailed'))
   } finally {
     item.closing = false
   }
@@ -547,6 +565,7 @@ onBeforeUnmount(() => {
     <div v-for="item in sessions.filter((session) => session.closeFailed)" :key="item.id" class="terminal-alert" role="alert">
       <strong>{{ sessionLabel(item) }}</strong>：<span>关闭未确认，会话已保留。请检查目标主机连接后重试。</span>
       <button type="button" :disabled="item.closing" @click="closeSession(item.id)">重试关闭</button>
+      <button type="button" :disabled="item.closing" @click="detachSession(item.id)">{{ t('terminal.detachTab') }}</button>
     </div>
 
     <section
@@ -774,7 +793,7 @@ onBeforeUnmount(() => {
           @choose-host="connectionsCollapsed = false; mobileConnectionsOpen = true">
           <template #default="{ item, visible }">
             <HostTerminal :ref="(instance) => setTerminalRef(item.id, instance)" :session-id="item.id"
-              :retained="item.retained" :host-name="item.label" :history-host-id="item.hostId" :initial-offset="item.offset" :visible="visible && terminalMode === 'interactive'" :auto-focus="false"
+              :retained="item.retained" :close-pending="item.closeFailed || item.closing" :host-name="item.label" :history-host-id="item.hostId" :initial-offset="item.offset" :visible="visible && terminalMode === 'interactive'" :auto-focus="false"
               @state-change="updateWorkspaceSessionState(item.id, $event)" />
           </template>
         </TerminalWorkspace>

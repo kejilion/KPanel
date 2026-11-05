@@ -13,6 +13,7 @@ interface WorkspaceSession {
   state: string
   stateLabel: string
   closing?: boolean
+  closeFailed?: boolean
   retained?: boolean
   hostId?: string
 }

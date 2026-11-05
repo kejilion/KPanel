@@ -69,6 +69,21 @@ beforeEach(() => {
 afterEach(() => { for (const wrapper of wrappers.splice(0)) wrapper.unmount(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 describe.each(['session', 'task'] as const)('shared %s terminal controller', mode => {
+  it('stops output and resize retries while a close remains unconfirmed', async () => {
+    const f = fixture(mode, true)
+    const subscription = f.subscriptions[0]!
+    f.core.stopForClose()
+    expect(subscription.close).toHaveBeenCalledOnce()
+    subscription.handlers.chunk(chunk('late'))
+    f.visible.value = false; await flushPromises()
+    f.visible.value = true; await flushPromises()
+    await vi.advanceTimersByTimeAsync(20000)
+    expect(f.subscriptions).toHaveLength(1)
+    expect(f.resize).not.toHaveBeenCalled()
+    expect(mocks.writes.join('')).not.toContain('late')
+    expect(f.core.state.value).toBe('error')
+    expect(f.core.canInput.value).toBe(false)
+  })
   it.each([0, 1, 2, 3])('follows output only within two lines of the bottom (gap %s)', gap => {
     const f = fixture(mode, true)
     const terminal = f.core.terminal.value!

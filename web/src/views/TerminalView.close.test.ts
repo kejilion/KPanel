@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { desktopWindowCloseGuardKey } from '@/lib/desktopRouteKeys'
 import TerminalView from './TerminalView.vue'
 
-const mocks = vi.hoisted(() => ({ close: vi.fn(), hosts: vi.fn(), open: vi.fn(), list: vi.fn() }))
+const mocks = vi.hoisted(() => ({ close: vi.fn(), detach: vi.fn(), markDetached: vi.fn(), hosts: vi.fn(), open: vi.fn(), list: vi.fn() }))
 let closeGuard: () => boolean | Promise<boolean>
 function create() {
   return mount(TerminalView, { global: { provide: {
@@ -18,11 +18,11 @@ vi.mock('vue-router', async (importOriginal) => ({
   useRoute: () => ({ query: {} }),
 }))
 
-vi.mock('@/lib/api', () => ({ api: { cluster: { hosts: mocks.hosts }, terminals: { batches: () => Promise.resolve({ available: true, items: [] }), list: mocks.list, open: mocks.open } }, ApiError: class extends Error {} }))
+vi.mock('@/lib/api', () => ({ api: { cluster: { hosts: mocks.hosts }, terminals: { batches: () => Promise.resolve({ available: true, items: [] }), list: mocks.list, open: mocks.open, detach: mocks.detach } }, ApiError: class extends Error {} }))
 vi.mock('@/components/terminal/HostTerminal.vue', () => ({ default: defineComponent({
   props: ['sessionId', 'hostName', 'initialOffset'],
   setup(_, { expose }) {
-    expose({ closeSession: mocks.close, focusTerminal() {}, executeCommand() { return true }, scheduleResize() {} })
+    expose({ closeSession: mocks.close, markDetached: mocks.markDetached, focusTerminal() {}, executeCommand() { return true }, scheduleResize() {} })
     return () => null
   },
 }) }))
@@ -30,10 +30,31 @@ vi.mock('@/components/terminal/HostTerminal.vue', () => ({ default: defineCompon
 describe('explicit terminal tab close', () => {
   beforeEach(() => {
     mocks.close.mockReset()
+    mocks.detach.mockReset()
+    mocks.markDetached.mockReset()
     mocks.list.mockResolvedValue({ items: [] })
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     mocks.hosts.mockResolvedValue({ items: [{ id: 'local', name: 'Local host', isLocal: true, terminalAvailable: true }] })
     mocks.open.mockResolvedValue({ sessionId: 'same-session', offset: 0 })
+  })
+
+  it('removes only the local tab after explicit confirmation and a successful detach', async () => {
+    mocks.close.mockRejectedValue(new Error('offline'))
+    mocks.detach.mockResolvedValue({ detached: true })
+    const wrapper = create()
+    await flushPromises()
+    await wrapper.get('[aria-label="关闭终端"]').trigger('click')
+    await flushPromises()
+    vi.mocked(window.confirm).mockReturnValueOnce(false)
+    await wrapper.get('[role="alert"] button:last-child').trigger('click')
+    expect(mocks.detach).not.toHaveBeenCalled()
+    expect(wrapper.findAll('.terminal-tab')).toHaveLength(1)
+    await wrapper.get('[role="alert"] button:last-child').trigger('click')
+    await flushPromises()
+    expect(mocks.detach).toHaveBeenCalledWith('same-session')
+    expect(mocks.markDetached).toHaveBeenCalledOnce()
+    expect(wrapper.findAll('.terminal-tab')).toHaveLength(0)
+    wrapper.unmount()
   })
 
   it('keeps the tab on failure, deduplicates clicks and removes only after retry confirms close', async () => {

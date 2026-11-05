@@ -2053,6 +2053,10 @@ export const api = {
       request<{ closed: boolean }>(`/terminal-sessions/${encodeURIComponent(sessionId)}/close`, {
         method: 'POST', body: {},
       }),
+    detach: (sessionId: string): Promise<{ detached: boolean }> =>
+      request<{ detached: boolean }>(`/terminal-sessions/${encodeURIComponent(sessionId)}/detach`, {
+        method: 'POST', body: {},
+      }),
     // For a page that is going away: nothing can read the answer, and a
     // keepalive request is the only kind the browser lets finish afterwards.
     closeOnUnload: (sessionId: string): void => {
