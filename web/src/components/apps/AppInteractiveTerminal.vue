@@ -5,6 +5,7 @@ import TerminalToolbar from '@/components/terminal/TerminalToolbar.vue'
 import { jobTerminalAdapter } from '@/lib/terminalAdapters'
 import { joinTerminalSizeGroup, type TerminalSizeMembership } from '@/lib/terminalSizeOwnership'
 import { useTerminalController } from '@/composables/useTerminalController'
+import { useMobileTerminalCtrl } from '@/composables/useMobileTerminalCtrl'
 import { useTerminalActivity } from '@/composables/useTerminalActivity'
 import { useTerminalFullscreen } from '@/composables/useTerminalFullscreen'
 import { useI18n } from '@/i18n'
@@ -22,7 +23,7 @@ const host = ref<HTMLElement>()
 const clipboardMenu = ref<InstanceType<typeof TerminalContextMenu>>()
 const mobileTerminalKeys = [
   ['Esc', '\x1b'], ['Tab', '\t'], ['↑', '\x1b[A'], ['↓', '\x1b[B'], ['←', '\x1b[D'], ['→', '\x1b[C'],
-  ['Space', ' '], ['Ctrl+C', '\x03'], ['Ctrl+D', '\x04'], ['Ctrl+Z', '\x1a'], ['Ctrl+L', '\x0c'], ['Enter', '\r'],
+  ['Space', ' '], ['Ctrl+C', '\x03'], ['Ctrl+D', '\x04'], ['Ctrl+Z', '\x1a'], ['Ctrl+L', '\x0c'],
 ] as const
 const sizeMembership = shallowRef<TerminalSizeMembership>()
 const ownsSize = computed(() => sizeMembership.value?.isOwner() ?? true)
@@ -45,12 +46,10 @@ const {
   sizeSynced: size => sizeMembership.value?.publish(size),
 })
 const { fullscreen, toggleFullscreen } = useTerminalFullscreen(fitTerminal)
+const { ctrlActive, toggleCtrl, captureCtrlInput, startCtrlComposition, finishCtrlComposition } = useMobileTerminalCtrl(canInput, queueInput)
 function sendMobileTerminalKey(sequence: string): void {
+  ctrlActive.value = false
   if (!canInput.value) return
-  if (sequence === '\r') {
-    if (queueInput(`${pendingLine.value}\r`)) pendingLine.value = ''
-    return
-  }
   if (sequence === '\t' && pendingLine.value) {
     if (queueInput(`${pendingLine.value}${sequence}`)) pendingLine.value = ''
     return
@@ -61,6 +60,7 @@ function sendMobileTerminalKey(sequence: string): void {
   }
   queueInput(sequence)
 }
+watch(() => `${props.kind ?? 'app'}:${props.jobId}`, () => { ctrlActive.value = false })
 const connectionState = computed(() => state.value === 'reconnecting' ? 'error' : state.value)
 const taskKindLabel = computed(() => { locale.value; return t(`terminal.task.kind.${props.kind ?? 'app'}`) })
 const taskDescription = computed(() => { locale.value; return t(`terminal.task.description.${props.kind ?? 'app'}`) })
@@ -136,10 +136,20 @@ onBeforeUnmount(() => sizeMembership.value?.leave())
           @pointerdown.prevent
           @click="sendMobileTerminalKey(sequence)"
         >{{ label }}</button>
+        <button
+          class="interactive-terminal__mobile-key"
+          type="button"
+          :aria-label="t('terminal.mobileCtrlHint')"
+          :aria-pressed="ctrlActive"
+          :title="t('terminal.mobileCtrlHint')"
+          :disabled="!canInput"
+          @pointerdown.prevent
+          @click="toggleCtrl"
+        >Ctrl{{ ctrlActive ? ' ✓' : '' }}</button>
       </div>
       <form
         class="interactive-terminal__composer"
-        @submit.prevent="submitPendingLine"
+        @submit.prevent="ctrlActive = false; submitPendingLine()"
       >
         <input
           v-model="pendingLine"
@@ -149,8 +159,11 @@ onBeforeUnmount(() => sizeMembership.value?.leave())
           autocapitalize="off"
           spellcheck="false"
           maxlength="8192"
-          :placeholder="t('terminal.task.inputPlaceholder')" :disabled="!canInput"
-          @keydown.enter="handlePendingLineEnter"
+          :placeholder="ctrlActive ? t('terminal.mobileCtrlHint') : t('terminal.task.inputPlaceholder')" :disabled="!canInput"
+          @beforeinput="captureCtrlInput"
+          @compositionstart="startCtrlComposition"
+          @compositionend.capture="finishCtrlComposition"
+          @keydown.enter="ctrlActive = false; handlePendingLineEnter($event)"
         />
         <button type="submit" :disabled="!canInput">{{ t('terminal.send') }}</button>
       </form>
@@ -366,6 +379,12 @@ onBeforeUnmount(() => sizeMembership.value?.leave())
     border-color: var(--terminal-accent);
     outline: 2px solid var(--terminal-accent);
     outline-offset: 1px;
+  }
+
+  .interactive-terminal__mobile-key[aria-pressed="true"] {
+    border-color: var(--terminal-accent);
+    color: var(--terminal-background);
+    background: var(--terminal-accent);
   }
 
   .interactive-terminal__mobile-key:disabled {

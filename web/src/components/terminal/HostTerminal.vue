@@ -5,6 +5,7 @@ import { api, ApiError } from '@/lib/api'
 import { closeTerminalsOnPageHide } from '@/lib/terminalPageHide'
 import { hostTerminalAdapter } from '@/lib/terminalAdapters'
 import { useTerminalController } from '@/composables/useTerminalController'
+import { useMobileTerminalCtrl } from '@/composables/useMobileTerminalCtrl'
 import { useI18n } from '@/i18n'
 import { isTouchPrimary } from '@/lib/touchFocus'
 import { createTerminalCommandCapture, type TerminalCommandCapture } from '@/lib/terminalCommandCapture'
@@ -27,7 +28,7 @@ const composerInput = ref<HTMLInputElement>()
 const terminalHistory = useTerminalHistory()
 const mobileTerminalKeys = [
   ['Esc', '\x1b'], ['Tab', '\t'], ['↑', '\x1b[A'], ['↓', '\x1b[B'], ['←', '\x1b[D'], ['→', '\x1b[C'],
-  ['Space', ' '], ['Ctrl+C', '\x03'], ['Ctrl+D', '\x04'], ['Ctrl+Z', '\x1a'], ['Ctrl+L', '\x0c'], ['Enter', '\r'],
+  ['Space', ' '], ['Ctrl+C', '\x03'], ['Ctrl+D', '\x04'], ['Ctrl+Z', '\x1a'], ['Ctrl+L', '\x0c'],
 ] as const
 let commandCapture: TerminalCommandCapture | undefined
 let historyIndex = -1
@@ -86,12 +87,10 @@ function browseHistory(event: KeyboardEvent, step: 1 | -1): void {
   moveComposerCaretToEnd(false)
 }
 function editComposer(): void { historyIndex = -1 }
+const { ctrlActive, toggleCtrl, captureCtrlInput, startCtrlComposition, finishCtrlComposition } = useMobileTerminalCtrl(canInput, queueInput)
 function sendMobileTerminalKey(sequence: string): void {
+  ctrlActive.value = false
   if (!canInput.value) return
-  if (sequence === '\r') {
-    if (queueInput(`${pendingLine.value}\r`)) pendingLine.value = ''
-    return
-  }
   if (sequence === '\t' && pendingLine.value) {
     if (queueInput(`${pendingLine.value}${sequence}`)) pendingLine.value = ''
     return
@@ -126,6 +125,7 @@ function closeSession(): Promise<void> {
 }
 watch(state, value => emit('stateChange', value === 'error' ? 'reconnecting' : value), { immediate: true })
 watch(() => props.sessionId, (_id, previous) => {
+  ctrlActive.value = false
   closeConfirmed = false
   closeRequest = undefined
   // A reused temporary viewer must not leave its previous PTY behind.
@@ -172,8 +172,18 @@ defineExpose({ focusTerminal, executeCommand, executePresentedCommand, fillComma
         @pointerdown.prevent
         @click="sendMobileTerminalKey(sequence)"
       >{{ label }}</button>
+      <button
+        class="host-terminal__mobile-key"
+        type="button"
+        :aria-label="t('terminal.mobileCtrlHint')"
+        :aria-pressed="ctrlActive"
+        :title="t('terminal.mobileCtrlHint')"
+        :disabled="!canInput"
+        @pointerdown.prevent
+        @click="toggleCtrl"
+      >Ctrl{{ ctrlActive ? ' ✓' : '' }}</button>
     </div>
-    <form class="host-terminal__composer" @submit.prevent="submitPendingLine">
+    <form class="host-terminal__composer" @submit.prevent="ctrlActive = false; submitPendingLine()">
       <input
         ref="composerInput"
         v-model="pendingLine"
@@ -182,9 +192,12 @@ defineExpose({ focusTerminal, executeCommand, executePresentedCommand, fillComma
         autocapitalize="off"
         spellcheck="false"
         maxlength="8192"
-        :placeholder="t('terminal.inputPlaceholder')"
+        :placeholder="ctrlActive ? t('terminal.mobileCtrlHint') : t('terminal.inputPlaceholder')"
         :disabled="!canInput"
-        @keydown.enter="handlePendingLineEnter"
+        @beforeinput="captureCtrlInput"
+        @compositionstart="startCtrlComposition"
+        @compositionend.capture="finishCtrlComposition"
+        @keydown.enter="ctrlActive = false; handlePendingLineEnter($event)"
         @keydown.up="browseHistory($event, 1)"
         @keydown.down="browseHistory($event, -1)"
         @input="editComposer"
@@ -214,6 +227,7 @@ defineExpose({ focusTerminal, executeCommand, executePresentedCommand, fillComma
   .host-terminal__mobile-keys { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:6px; padding:8px 10px 0; }
   .host-terminal__mobile-key { min-width:0; min-height:40px; border:1px solid var(--terminal-shell-border,#29383a); border-radius:var(--radius-sm,8px); padding:4px 2px; color:var(--terminal-shell-text,#d8dddc); background:var(--terminal-shell-background,#0b1214); font:600 12px ui-sans-serif,system-ui,sans-serif; cursor:pointer; touch-action:manipulation; }
   .host-terminal__mobile-key:active:not(:disabled),.host-terminal__mobile-key:focus-visible { border-color:var(--brand,#35cba6); outline:2px solid var(--brand,#35cba6); outline-offset:1px; }
+  .host-terminal__mobile-key[aria-pressed="true"] { border-color:var(--brand,#35cba6); color:var(--on-brand,#05251c); background:var(--brand,#35cba6); }
   .host-terminal__mobile-key:disabled { cursor:not-allowed; opacity:.6; }
 }
 /* Workspace dialogs run the terminal to the window edges. */

@@ -547,6 +547,7 @@ export const zhTWMessages = {
   "terminal.inputPlaceholder": "預輸入命令，按 Enter 整行傳送，↑↓ 翻歷史",
   "terminal.send": "傳送",
   "terminal.mobileKeys": "終端輔助按鍵",
+  "terminal.mobileCtrlHint": "Ctrl 已按下，請用英文鍵盤輸入字母",
   "terminal.inputFailed": "輸入傳送失敗，正在重連。",
   'terminal.inputCapacity': '輸入佇列已滿，本次輸入未加入；請等待待發輸入完成。',
   'terminal.inputUncertain': '無法安全確認輸入結果，已停止繼續輸入；請檢查輸出並新開終端。',

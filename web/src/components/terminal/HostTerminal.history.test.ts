@@ -103,9 +103,26 @@ describe('HostTerminal command history', () => {
     await input.setValue('ls')
     await view.findAll('.host-terminal__mobile-key').find((button) => button.text() === 'Space')!.trigger('click')
     expect(input.element.value).toBe('ls ')
-    await view.findAll('.host-terminal__mobile-key').find((button) => button.text() === 'Enter')!.trigger('click')
+    await view.get('.host-terminal__composer').trigger('submit')
     expect(input.element.value).toBe('')
     expect(mocks.captured).toEqual(['ls \r'])
+  })
+
+  it('sends mobile Ctrl+X immediately and preserves the draft', async () => {
+    const view = mountTerminal('host-a')
+    await flushPromises()
+    const input = view.get<HTMLInputElement>('.host-terminal__composer input')
+    await input.setValue('draft')
+    const ctrl = view.findAll('.host-terminal__mobile-key').find(button => button.text() === 'Ctrl')!
+    await ctrl.trigger('click')
+    expect(document.activeElement).toBe(input.element)
+    const event = new InputEvent('beforeinput', { inputType: 'insertText', data: 'X', bubbles: true, cancelable: true })
+    input.element.dispatchEvent(event)
+    await view.vm.$nextTick()
+    expect(event.defaultPrevented).toBe(true)
+    expect(mocks.captured).toEqual(['\x18'])
+    expect(input.element.value).toBe('draft')
+    expect(ctrl.attributes('aria-pressed')).toBe('false')
   })
 
   it('fills the composer for review and refuses commands it cannot hold', async () => {
