@@ -2007,6 +2007,33 @@ createServer(async (request, response) => {
     if (['zh-CN', 'zh-TW', 'en-US'].includes(input.locale)) changes.locale = input.locale
     if (input.desktop && Array.isArray(input.desktop.windows) && input.desktop.windows.length <= 8
       && Array.isArray(input.desktop.windowSizes) && input.desktop.windowSizes.length <= 32) changes.desktop = input.desktop
+    for (const key of ['galleryLocation', 'musicLocation', 'cinemaLocation']) {
+      const location = input[key]
+      if (!location) continue
+      const path = location.path
+      const host = location.hostId
+      const validPath = typeof path === 'string' && path.length <= 1024 && path === path.trim() && path.startsWith('/')
+        && !/[\u0000-\u001f\u007f\\]/u.test(path) && (path === '/' ? key !== 'galleryLocation' : path.slice(1).split('/').every(part => part && part !== '.' && part !== '..'))
+      if (!validPath || typeof host !== 'string' || !/^[A-Za-z0-9_-]{0,128}$/.test(host) || (key === 'galleryLocation' && host)) {
+        send(response, 422, { title: 'Preferences are invalid', code: 'preferences_invalid' })
+        return
+      }
+      changes[key] = { path, hostId: host }
+    }
+    if (input.musicPlayback != null) {
+      const value = input.musicPlayback
+      const validPath = typeof value.path === 'string' && Buffer.byteLength(value.path, 'utf8') <= 4096
+        && (value.path === '' || (value.path.startsWith('/') && !/[\u0000-\u001f\u007f\\]/u.test(value.path)
+          && value.path.slice(1).split('/').every(part => part && part !== '.' && part !== '..')))
+      if (!validPath || typeof value.hostId !== 'string' || !/^[A-Za-z0-9_-]{0,128}$/.test(value.hostId)
+        || typeof value.position !== 'number' || !Number.isFinite(value.position) || value.position < 0 || value.position > 31536000
+        || typeof value.playing !== 'boolean' || typeof value.shuffle !== 'boolean' || !['off', 'all', 'one'].includes(value.repeat)
+        || (value.path === '' && (value.hostId || value.position || value.playing))) {
+        send(response, 422, { title: 'Preferences are invalid', code: 'preferences_invalid' })
+        return
+      }
+      changes.musicPlayback = { path: value.path, hostId: value.hostId, position: value.position, playing: value.playing, repeat: value.repeat, shuffle: value.shuffle }
+    }
     if (!Object.keys(changes).length) {
       send(response, 422, { title: 'Preferences are invalid', code: 'preferences_invalid' })
       return
