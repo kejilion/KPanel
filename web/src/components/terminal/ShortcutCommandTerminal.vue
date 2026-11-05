@@ -31,6 +31,7 @@ let disposed = false
 let userClosed = false
 let submitted = false
 let launchId: string | undefined
+let resolvingSessionId = ''
 const account = useSession()
 const owner = account.state.authenticated ? account.state.user?.id || '' : ''
 
@@ -66,23 +67,30 @@ async function prepareLaunch(): Promise<boolean> {
 }
 
 async function openNamed(): Promise<TerminalSession | undefined> {
-  for (let attempt = 0; ; attempt++) {
-    try {
-      return await api.terminals.open(hostId, 30, 120, { ...launchTarget, retained: true, launchId }).catch(reason => {
-        if (disposed || closing.value || !(reason instanceof ApiError) || reason.code !== 'terminal_retention_unavailable') throw reason
-        // Explicit rejection happens before starting a command; reuse the identity.
-        return api.terminals.open(hostId, 30, 120, { ...launchTarget, retained: false, launchId })
-      })
-    } catch (reason) {
-      // This particular rejection is emitted before a session can start.
-      // A fresh intent is safe after retrying pending acknowledgements.
-      if (disposed || closing.value || !(reason instanceof ApiError) || reason.code !== 'terminal_launch_ack_pending' || attempt >= 2) throw reason
-      await new Promise<void>(resolve => window.setTimeout(resolve, 2000))
-      if (disposed || closing.value) return undefined
-      await flushPendingTerminalLaunchAcks(owner, launchTarget)
-      if (disposed || closing.value || owner && (!account.state.authenticated || account.state.user?.id !== owner)) return undefined
-      if (!(await prepareLaunch())) return undefined
+  try {
+    return await api.terminals.open(hostId, 30, 120, { ...launchTarget, retained: true, launchId }).catch(reason => {
+      if (disposed || closing.value || !(reason instanceof ApiError) || reason.code !== 'terminal_retention_unavailable') throw reason
+      // Explicit rejection happens before starting a command; reuse the identity.
+      return api.terminals.open(hostId, 30, 120, { ...launchTarget, retained: false, launchId })
+    })
+  } catch (reason) {
+    if (!(reason instanceof ApiError) || reason.code !== 'terminal_launch_ack_pending' || !reason.details || typeof reason.details !== 'object' || !('sessionId' in reason.details)) throw reason
+    const id = reason.details.sessionId
+    if (typeof id !== 'string' || !/^[a-f0-9]{64}$/.test(id)) throw reason
+    resolvingSessionId = id
+    launchId = undefined
+    if (disposed || closing.value || owner && (!account.state.authenticated || account.state.user?.id !== owner)) {
+      if (userClosed) deferTerminalClose(id, owner)
+      return undefined
     }
+    // Lookup never creates a PTY. A replacement session must not be mistaken
+    // for the one that caused the capacity response.
+    const signal = AbortSignal.timeout(10_000)
+    const existing = launchTarget.purpose
+      ? await api.terminals.resolvePurpose(launchTarget.purpose, undefined, signal)
+      : await api.terminals.resolveShortcut(hostId, launchTarget.shortcutId!, undefined, signal)
+    if (existing.sessionId !== id) throw new Error('Terminal session changed during recovery')
+    return existing
   }
 }
 
@@ -112,6 +120,7 @@ async function open(): Promise<void> {
       return
     }
     session.value = opened
+    resolvingSessionId = ''
     if (launchId) queueTerminalLaunchAck(opened.sessionId, launchId, owner, launchTarget)
     if (opened.launchUncertain) error.value = t('terminal.launchUncertain')
   } catch (reason) {
@@ -143,6 +152,8 @@ async function close(): Promise<boolean> {
     handle?.markDetached?.()
     void closeTerminalForOwner(target.sessionId, owner, () => handle ? handle.closeSession() : reclaim(target)).catch(() => undefined)
     session.value = undefined
+  } else if (resolvingSessionId) {
+    deferTerminalClose(resolvingSessionId, owner)
   } else if (namedLaunch) {
     queueLaunchClose()
   }

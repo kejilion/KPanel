@@ -1119,7 +1119,11 @@ func (s *Server) resumeShortcut(w http.ResponseWriter, r *http.Request, userID s
 		if current, ok := s.terminalSessions[item.ID]; ok {
 			if len(current.LaunchIDs) >= maxPanelTerminals {
 				s.terminalMu.Unlock()
-				s.writeProblem(w, r, 429, "terminal_launch_ack_pending", "Terminal launch identity limit reached", "Pending launch acknowledgements must be cleared")
+				writeProblemJSON(w, contract.Problem{
+					Type: "about:blank", Title: "Terminal launch identity limit reached", Status: http.StatusTooManyRequests,
+					Code: "terminal_launch_ack_pending", Detail: "Pending launch acknowledgements must be cleared",
+					RequestID: requestID(r), Retryable: true, Details: map[string]string{"sessionId": item.ID},
+				})
 				return true
 			}
 			current.LaunchIDs = append(current.LaunchIDs, input.LaunchID)

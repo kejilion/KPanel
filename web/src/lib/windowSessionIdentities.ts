@@ -33,6 +33,14 @@ function tryWebLease(token: string, attemptGeneration: number): Promise<'busy' |
   })
 }
 
+function releaseSharedPort(port: MessagePort, token: string): void {
+  const closeTimer = window.setTimeout(() => port.close(), 30_000)
+  port.onmessage = event => {
+    if (event.data?.status === 'released') { window.clearTimeout(closeTimer); port.close() }
+  }
+  try { port.postMessage({ op: 'release', token }) } catch { window.clearTimeout(closeTimer); port.close() }
+}
+
 function trySharedLease(token: string, attemptGeneration: number): Promise<'busy' | string> {
   return new Promise(resolve => {
     let settled = false
@@ -41,7 +49,11 @@ function trySharedLease(token: string, attemptGeneration: number): Promise<'busy
       if (settled) return
       settled = true
       window.clearTimeout(timer)
-      if (value !== token) worker?.port.close()
+      if (value !== token && worker) {
+        // Keep the port until release is acknowledged, so an already accepted
+        // claim cannot be stranded by a delayed response to the main thread.
+        releaseSharedPort(worker.port, token)
+      }
       resolve(value)
     }
     const timer = window.setTimeout(() => finish(''), 750)
@@ -51,8 +63,12 @@ function trySharedLease(token: string, attemptGeneration: number): Promise<'busy
       worker.onerror = () => finish('')
       port.onmessage = event => {
         if (event.data?.status === 'busy') { finish('busy'); return }
+        if (event.data?.status === 'offered' && !settled && generation === attemptGeneration) {
+          port.postMessage({ op: 'commit', token })
+          return
+        }
         if (event.data?.status !== 'acquired' || settled || generation !== attemptGeneration) { finish(''); return }
-        releaseLease = () => { port.postMessage({ op: 'release', token }); port.close() }
+        releaseLease = () => releaseSharedPort(port, token)
         finish(token)
       }
       port.start()

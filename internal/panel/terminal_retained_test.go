@@ -154,6 +154,14 @@ func TestShortcutOldCloseIdentityCannotResolveReplacement(t *testing.T) {
 		if index == maxPanelTerminals && !strings.Contains(resumed.Body.String(), "terminal_launch_ack_pending") {
 			t.Fatalf("identity limit was not distinguishable from a general launch failure: %s", resumed.Body)
 		}
+		if index == maxPanelTerminals {
+			var problem struct {
+				Details map[string]string `json:"details"`
+			}
+			if json.Unmarshal(resumed.Body.Bytes(), &problem) != nil || problem.Details["sessionId"] != old.SessionID {
+				t.Fatalf("identity limit did not bind the existing session: %s", resumed.Body)
+			}
+		}
 		if index < maxPanelTerminals {
 			lastAcknowledged = request.LaunchID
 		}

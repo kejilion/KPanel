@@ -12,6 +12,7 @@ type Problem struct {
 	RequestID   string            `json:"requestId"`
 	Retryable   bool              `json:"retryable"`
 	FieldErrors map[string]string `json:"fieldErrors,omitempty"`
+	Details     map[string]string `json:"details,omitempty"`
 }
 
 type PageResult[T any] struct {

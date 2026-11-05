@@ -191,6 +191,7 @@ interface ProblemPayload {
   requestId?: string
   retryable?: boolean
   fieldErrors?: Record<string, string>
+  details?: unknown
 }
 
 interface RawAgentHealth {
@@ -863,7 +864,7 @@ async function request<T>(
       message,
       response.status,
       envelope?.error?.code || problem?.code || `http_${response.status}`,
-      envelope?.error?.details || problem?.fieldErrors,
+      envelope?.error?.details || problem?.details || problem?.fieldErrors,
       problem?.requestId || response.headers.get('x-request-id') || undefined,
     )
   }

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 describe('window identity snapshots', () => {
   beforeEach(() => { window.sessionStorage.clear(); vi.resetModules() })
-  afterEach(() => { Reflect.deleteProperty(navigator, 'locks'); vi.unstubAllGlobals(); vi.restoreAllMocks() })
+  afterEach(() => { Reflect.deleteProperty(navigator, 'locks'); vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
   it('does not restore copied sessionStorage when an opener still owns the tab lease', async () => {
     const held = new Set<string>()
@@ -50,10 +50,18 @@ describe('window identity snapshots', () => {
         const port = {
           onmessage: null as ((event: { data: { status: string } }) => void) | null,
           postMessage: (value: { op: string; token: string }) => {
-            if (value.op === 'release') { if (owners.get(value.token) === identity) owners.delete(value.token); return }
+            if (value.op === 'release') {
+              if (owners.get(value.token) === identity) owners.delete(value.token)
+              queueMicrotask(() => port.onmessage?.({ data: { status: 'released' } }))
+              return
+            }
+            if (value.op === 'commit') {
+              queueMicrotask(() => port.onmessage?.({ data: { status: 'acquired' } }))
+              return
+            }
             const owner = owners.get(value.token)
             if (!owner) owners.set(value.token, identity)
-            queueMicrotask(() => port.onmessage?.({ data: { status: owner && owner !== identity ? 'busy' : 'acquired' } }))
+            queueMicrotask(() => port.onmessage?.({ data: { status: owner && owner !== identity ? 'busy' : 'offered' } }))
           },
           start: () => undefined,
           close: () => undefined,
@@ -73,5 +81,36 @@ describe('window identity snapshots', () => {
     expect(original.readWindowIdentities(firstKey, /^[a-z-]+$/, 16)).toEqual(['job-a'])
     original.resetWindowIdentityForTest()
     duplicate.resetWindowIdentityForTest()
+  })
+
+  it('releases a worker claim if its acknowledgement arrives too late', async () => {
+    Reflect.deleteProperty(navigator, 'locks')
+    vi.useFakeTimers()
+    const held = new Set<string>()
+    let closed = false
+    class SlowSharedWorker {
+      onerror: (() => void) | null = null
+      port = {
+        onmessage: null as ((event: { data: { status: string } }) => void) | null,
+        postMessage: (value: { op: string; token: string }) => {
+          if (value.op === 'claim') held.add(value.token)
+          if (value.op === 'release') {
+            held.delete(value.token)
+            queueMicrotask(() => this.port.onmessage?.({ data: { status: 'released' } }))
+          }
+        },
+        start: () => undefined,
+        close: () => { closed = true },
+      }
+    }
+    vi.stubGlobal('SharedWorker', SlowSharedWorker)
+    const identities = await import('./windowSessionIdentities')
+    const result = identities.windowIdentityKey('terminal', 'owner', '1')
+    expect(held.size).toBe(1)
+    await vi.advanceTimersByTimeAsync(750)
+    expect(await result).toBe('')
+    expect(held.size).toBe(0)
+    expect(closed).toBe(true)
+    identities.resetWindowIdentityForTest()
   })
 })

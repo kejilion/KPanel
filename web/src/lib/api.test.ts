@@ -16,6 +16,13 @@ afterEach(() => {
 })
 
 describe('API client', () => {
+  it('preserves structured problem details for safe terminal recovery', async () => {
+    const id = 'a'.repeat(64)
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({
+      title: 'Terminal launch identity limit reached', code: 'terminal_launch_ack_pending', details: { sessionId: id },
+    }, { status: 429 })))
+    await expect(api.terminals.open('local', 30, 120)).rejects.toMatchObject({ code: 'terminal_launch_ack_pending', details: { sessionId: id } })
+  })
   it('restores the combined session and its CSRF token with one request', async () => {
     const session = { user: { id: 'owner' }, csrfToken: 'combined-token', expiresAt: '2030-01-01T00:00:00Z' }
     const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({ required: false, authenticated: true, session }))
