@@ -143,8 +143,8 @@ func TestConservativeLogMultiRecordMatchesText(t *testing.T) {
 		}
 		value := input.String()
 		result, _, err := ConservativeLogTail(context.Background(), strings.NewReader(value), 1024, 1024)
-		if err == nil && (result != value || Text(value) != value) {
-			t.Fatalf("accepted projection disagreement on %q", value)
+		if err == nil && result != Text(value) {
+			t.Fatalf("accepted projection disagreement on %q: result=%q text=%q", value, result, Text(value))
 		}
 	}
 }
@@ -259,6 +259,45 @@ func TestConservativeLogTailYAMLDocumentAndDepthBoundaries(t *testing.T) {
 		result, _, err := ConservativeLogTail(context.Background(), strings.NewReader(input), 1<<20, 4096)
 		if err == nil || result != "" {
 			t.Fatalf("ambiguous YAML document accepted result=%q err=%v", result, err)
+		}
+	}
+}
+
+func TestConservativeLogTailDistinguishesGenericWordsFromKeys(t *testing.T) {
+	ordinary := "ordinary author=alice filename=access.log metadata=present monkey=visible\nuser name changed; data value is available; kind response\n" + `{"name":"alice","data":"normal"}` + "\n" + `{"message":"password policy changed","email":"user@example.test","percent":"30%","path":"C:\\temp"}` + "\n"
+	got, _, err := ConservativeLogTail(context.Background(), strings.NewReader(ordinary), 1024, 1024)
+	if err != nil || got != Text(ordinary) {
+		t.Fatalf("ordinary record=%q projected=%q err=%v", got, Text(ordinary), err)
+	}
+	for _, input := range []string{
+		"auth=OPAQUE_BODY\n",
+		`{"auth":"OPAQUE_BODY"}` + "\n",
+		`{"ſecret":"OPAQUE_BODY"}` + "\n",
+		`{"passw\u006frd":"OPAQUE_BODY"}` + "\n",
+		`{"content":"{\"auth\":\"OPAQUE_BODY\"}"}` + "\n",
+		`{"name":"OPAQUE_BODY","name":"safe"}` + "\n",
+		"kind: Secret\ndata:\n  value: OPAQUE_BODY\n",
+		"https://example.test/?auth=OPAQUE_BODY\n",
+		"https://example.test/?%61uth=OPAQUE_BODY\n",
+	} {
+		got, _, err := ConservativeLogTail(context.Background(), strings.NewReader(input), 1024, 1024)
+		if strings.Contains(got, "OPAQUE_BODY") || (err != nil && got != "") {
+			t.Fatalf("sensitive context exposed input=%q result=%q err=%v", input, got, err)
+		}
+	}
+}
+
+func TestConservativeLogTailRejectsSplitStructuredKeys(t *testing.T) {
+	for _, input := range []string{
+		"{\"name\"\n: \"PASSWORD\",\n\"value\"\n: \"OPAQUE_BODY\"}\n",
+		"{\"kind\"\n: \"Secret\",\n\"data\"\n: {\"x\":\"OPAQUE_BODY\"}}\n",
+	} {
+		for offset := 0; offset < 128; offset++ {
+			pad := strings.Repeat("x", (64<<10)-offset-1) + "\n"
+			got, _, err := ConservativeLogTail(context.Background(), tinyChunkReader{strings.NewReader(pad + input), 7}, 1<<20, 4096)
+			if strings.Contains(got, "OPAQUE_BODY") || (err != nil && got != "") {
+				t.Fatalf("split structure offset=%d exposed result=%q err=%v", offset, got, err)
+			}
 		}
 	}
 }

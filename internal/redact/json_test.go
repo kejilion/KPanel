@@ -93,6 +93,14 @@ func TestJSONProjectionHandlesEncodedNamesAndNestedContent(t *testing.T) {
 	}
 }
 
+func TestJSONProjectionRecognizesUnicodeSimpleFoldAliases(t *testing.T) {
+	input := `{"ſecret":"OPAQUE_ONE","paſſword":"OPAQUE_TWO","apiKey":"OPAQUE_THREE","author":"visible"}`
+	result, err := JSON([]byte(input))
+	if err != nil || strings.Contains(string(result), "OPAQUE_") || !strings.Contains(string(result), `"author":"visible"`) {
+		t.Fatalf("unicode credential projection result=%s err=%v", result, err)
+	}
+}
+
 func TestJSONProjectionKeepsOrdinaryLogsAndRejectsMalformedData(t *testing.T) {
 	input := `{"content":"2026-10-24 nginx: syntax is ok\npassword=synthetic-secret\nrequest finished","sizeBytes":123,"resourceVersion":"sha256:test"}`
 	result, err := JSON([]byte(input))

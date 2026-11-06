@@ -278,7 +278,7 @@ func normalizedJSONKey(key string) string {
 		}
 		return r
 	}, key)
-	return strings.ToLower(strings.NewReplacer("_", "", "-", "", ".", "").Replace(key))
+	return simpleFoldForSecrets(strings.NewReplacer("_", "", "-", "", ".", "").Replace(key))
 }
 
 func secretNormalizedJSONKey(key string) bool {

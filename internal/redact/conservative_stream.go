@@ -2,7 +2,9 @@ package redact
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"regexp"
@@ -16,7 +18,7 @@ var (
 	ErrStreamLimit      = errors.New("stream projection budget exceeded")
 	streamKeyNormalizer = strings.NewReplacer("_", "", "-", "", ".", "")
 	streamAccessLine    = regexp.MustCompile(`^([0-9A-Fa-f:.]+ - [A-Za-z0-9_.-]+ )\[([0-9]{2}/[A-Za-z]{3}/[0-9]{4}:[0-9]{2}:[0-9]{2}:[0-9]{2} [+-][0-9]{4})\]( "[^"\r\n]*" [1-5][0-9]{2} [0-9]+ "[^"\r\n]*" "[^"\r\n]*"(?: "[^"\r\n]*")?)$`)
-	streamUnsafeWords   = []string{"password", "passwd", "pwd", "token", "secret", "apikey", "accesskey", "authorization", "cookie", "credential", "privatekey", "密码", "口令", "令牌", "密钥", "私钥", "auth", "key", "kind", "name", "value", "data", "signature", "bearer", "basic", "mysql", "mariadb", "curl"}
+	streamUnsafeWords   = []string{"password", "passwd", "pwd", "token", "secret", "apikey", "accesskey", "authorization", "cookie", "credential", "privatekey", "tlskey", "密码", "口令", "令牌", "密钥", "私钥", "signature", "bearer", "basic", "mysql", "mariadb", "curl"}
 )
 
 // ConservativeLogTail is an experimental fail-closed projection for large
@@ -225,6 +227,29 @@ func independentPlainRecord(line []byte) ([]byte, []byte, bool) {
 	}
 	text := string(line)
 	body := strings.TrimSuffix(text, "\n")
+	if looksLikeJSON(body) && json.Valid([]byte(body)) {
+		// JSON projection canonicalizes object key order even when no field is
+		// redacted. Compare canonical semantics and emit the projected record;
+		// this also avoids returning discarded duplicate object members.
+		decoder := json.NewDecoder(strings.NewReader(body))
+		decoder.UseNumber()
+		var parsed any
+		if decoder.Decode(&parsed) != nil {
+			return nil, nil, false
+		}
+		canonical, err := json.Marshal(parsed)
+		if err != nil {
+			return nil, nil, false
+		}
+		projected := []byte(Text(body))
+		if !bytes.Equal(canonical, projected) {
+			return nil, nil, false
+		}
+		if strings.HasSuffix(text, "\n") {
+			projected = append(projected, '\n')
+		}
+		return projected, projected, true
+	}
 	accessMatch := streamAccessLine.FindStringSubmatchIndex(body)
 	view := line
 	if accessMatch != nil {
@@ -233,9 +258,6 @@ func independentPlainRecord(line []byte) ([]byte, []byte, bool) {
 			normalized += "\n"
 		}
 		view = []byte(normalized)
-	}
-	if strings.ContainsRune(text, '?') && kubernetesYAMLSecretKind.MatchString(text) {
-		return nil, nil, false
 	}
 	unsafe := strings.ContainsAny(text, "%@")
 	ascii := true
@@ -252,7 +274,10 @@ func independentPlainRecord(line []byte) ([]byte, []byte, bool) {
 	}
 	lower := strings.ToLower(text)
 	if !ascii {
-		lower = streamSimpleFold(text)
+		lower = simpleFoldForSecrets(text)
+	}
+	if (strings.Contains(lower, "kind") || strings.ContainsRune(text, '?')) && kubernetesYAMLSecretKind.MatchString(text) {
+		return nil, nil, false
 	}
 	if strings.Contains(lower, "sk-") || strings.Contains(lower, "sig=") || strings.Contains(lower, "docker") && strings.Contains(lower, "login") {
 		unsafe = true
@@ -265,6 +290,9 @@ func independentPlainRecord(line []byte) ([]byte, []byte, bool) {
 		}
 	}
 	normalized := streamKeyNormalizer.Replace(lower)
+	if streamHasContextWord(lower) {
+		unsafe = true
+	}
 	for _, word := range streamUnsafeWords {
 		if strings.Contains(normalized, word) {
 			unsafe = true
@@ -289,9 +317,50 @@ func independentPlainRecord(line []byte) ([]byte, []byte, bool) {
 	return view, line, true
 }
 
-// streamSimpleFold matches the Unicode simple-fold behavior used by the
+// Generic labels are sensitive only in a key or parameter position. Merely
+// mentioning words such as "name" or "data" in a log is not an assignment.
+func streamHasContextWord(value string) bool {
+	match := func(start, end int) bool {
+		switch value[start:end] {
+		case "auth", "auths":
+		default:
+			return false
+		}
+		index := end
+		if index < len(value) && (value[index] == '\'' || value[index] == '"') {
+			index++
+		}
+		for index < len(value) && (value[index] == ' ' || value[index] == '\t') {
+			index++
+		}
+		if index < len(value) && (value[index] == ':' || value[index] == '=') {
+			return true
+		}
+		return start >= 2 && value[start-2:start] == "--" && end < len(value) && (value[end] == ' ' || value[end] == '\t')
+	}
+	start := -1
+	for pos, r := range value {
+		word := r == '_' || r >= 'a' && r <= 'z' || r >= '0' && r <= '9'
+		if r >= utf8.RuneSelf {
+			word = unicode.IsLetter(r) || unicode.IsDigit(r)
+		}
+		if word {
+			if start < 0 {
+				start = pos
+			}
+		} else if start >= 0 {
+			if match(start, pos) {
+				return true
+			}
+			start = -1
+		}
+	}
+	return start >= 0 && match(start, len(value))
+}
+
+// simpleFoldForSecrets matches the Unicode simple-fold behavior used by the
 // case-insensitive regular expressions in the ordinary projector.
-func streamSimpleFold(value string) string {
+func simpleFoldForSecrets(value string) string {
 	var out strings.Builder
 	out.Grow(len(value))
 	for _, r := range value {
