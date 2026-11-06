@@ -2,11 +2,11 @@ package redact
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
+	"net/url"
 	"regexp"
 	"strings"
 	"unicode"
@@ -14,12 +14,13 @@ import (
 )
 
 var (
-	ErrStreamAmbiguous    = errors.New("stream contains context-dependent or encoded content")
-	ErrStreamLimit        = errors.New("stream projection budget exceeded")
-	streamKeyNormalizer   = strings.NewReplacer("_", "", "-", "", ".", "")
-	streamAccessLine      = regexp.MustCompile(`^([0-9A-Fa-f:.]+ - [A-Za-z0-9_.-]+ )\[([0-9]{2}/[A-Za-z]{3}/[0-9]{4}:[0-9]{2}:[0-9]{2}:[0-9]{2} [+-][0-9]{4})\]( "[^"\r\n]*" [1-5][0-9]{2} [0-9]+ "[^"\r\n]*" "[^"\r\n]*"(?: "[^"\r\n]*")?)$`)
-	streamUnsafeWords     = []string{"password", "passwd", "pwd", "token", "secret", "apikey", "accesskey", "authorization", "cookie", "credential", "privatekey", "tlskey", "密码", "口令", "令牌", "密钥", "私钥", "signature", "bearer", "basic", "mysql", "mariadb", "curl"}
-	streamSensitiveSuffix = regexp.MustCompile(`(?i)(?:^|[^?&%\p{L}\p{N}_.-])(?:[\p{L}\p{N}_.-]*(?:` + secretNamePattern + `)[\p{L}\p{N}_.-]*|auths?|bearer|basic)[ \t]*$`)
+	ErrStreamAmbiguous      = errors.New("stream contains context-dependent or encoded content")
+	ErrStreamLimit          = errors.New("stream projection budget exceeded")
+	streamKeyNormalizer     = strings.NewReplacer("_", "", "-", "", ".", "")
+	streamAccessLine        = regexp.MustCompile(`^([0-9A-Fa-f:.]+ - [A-Za-z0-9_.-]+ )\[([0-9]{2}/[A-Za-z]{3}/[0-9]{4}:[0-9]{2}:[0-9]{2}:[0-9]{2} [+-][0-9]{4})\]( "[^"\r\n]*" [1-5][0-9]{2} [0-9]+ "[^"\r\n]*" "[^"\r\n]*"(?: "[^"\r\n]*")?)$`)
+	streamUnsafeWords       = []string{"password", "passwd", "pwd", "token", "secret", "apikey", "accesskey", "authorization", "cookie", "credential", "privatekey", "tlskey", "密码", "口令", "令牌", "密钥", "私钥", "signature", "bearer", "basic", "mysql", "mariadb", "curl"}
+	streamSensitiveSuffix   = regexp.MustCompile(`(?i)(?:^|[^?&%\p{L}\p{N}_.-])(?:[\p{L}\p{N}_.-]*(?:` + secretNamePattern + `)[\p{L}\p{N}_.-]*|auths?|bearer|basic)[ \t]*$`)
+	streamIncompleteCommand = regexp.MustCompile(`(?i)\b(?:curl\b[^\r\n]*(?:[ \t]-[a-z]*u|[ \t]--user=?)|(?:mysql|mariadb|mysqldump|mariadb-dump|mysqladmin)\b[^\r\n]*(?:[ \t]-p|[ \t]--password=?))[ \t]*$`)
 )
 
 // ConservativeLogTail is an experimental fail-closed projection for large
@@ -32,9 +33,10 @@ func ConservativeLogTail(ctx context.Context, source io.Reader, maxInput, maxOut
 		return "", false, ErrStreamLimit
 	}
 	const maxLine = 64 << 10
+	const maxBatch = 64 << 10
 	reader := bufio.NewReaderSize(io.LimitReader(source, int64(maxInput)+1), maxLine+1)
 	tail := make([]byte, 0, maxOutput+2*maxLine+1)
-	batch := make([]byte, 0, maxLine)
+	batch := make([]byte, 0, maxBatch)
 	flush := func() error {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -43,7 +45,15 @@ func ConservativeLogTail(ctx context.Context, source io.Reader, maxInput, maxOut
 			return nil
 		}
 		original := string(batch)
-		safe := !streamMayContainStructure(original) || Text(original) == original
+		safe := !streamMayContainStructure(original)
+		if !safe {
+			projected := Text(original)
+			safe = projected == original
+			if !safe && strings.HasSuffix(original, "\n") {
+				withoutNewline := strings.TrimSuffix(original, "\n")
+				safe = projected == withoutNewline && json.Valid([]byte(withoutNewline))
+			}
+		}
 		batch = batch[:0]
 		if err := ctx.Err(); err != nil {
 			return err
@@ -163,7 +173,7 @@ func ConservativeLogTail(ctx context.Context, source io.Reader, maxInput, maxOut
 					return "", false, ErrStreamAmbiguous
 				}
 			}
-			if len(batch)+len(view) > maxLine {
+			if len(batch)+len(view) > maxBatch {
 				if err := flush(); err != nil {
 					return "", false, err
 				}
@@ -229,27 +239,26 @@ func independentPlainRecord(line []byte) ([]byte, []byte, bool) {
 	text := string(line)
 	body := strings.TrimSuffix(text, "\n")
 	if looksLikeJSON(body) && json.Valid([]byte(body)) {
-		// JSON projection canonicalizes object key order even when no field is
-		// redacted. Compare canonical semantics and emit the projected record;
-		// this also avoids returning discarded duplicate object members.
+		// Canonicalize each complete record before the batch projector checks it;
+		// emitting only this form also drops duplicate object members.
 		decoder := json.NewDecoder(strings.NewReader(body))
 		decoder.UseNumber()
 		var parsed any
 		if decoder.Decode(&parsed) != nil {
 			return nil, nil, false
 		}
+		budget := 0
+		if streamJSONHasAmbiguousYAML(parsed, 0, &budget) {
+			return nil, nil, false
+		}
 		canonical, err := json.Marshal(parsed)
 		if err != nil {
 			return nil, nil, false
 		}
-		projected := []byte(Text(body))
-		if !bytes.Equal(canonical, projected) {
-			return nil, nil, false
-		}
 		if strings.HasSuffix(text, "\n") {
-			projected = append(projected, '\n')
+			canonical = append(canonical, '\n')
 		}
-		return projected, projected, true
+		return canonical, canonical, true
 	}
 	accessMatch := streamAccessLine.FindStringSubmatchIndex(body)
 	view := line
@@ -323,6 +332,108 @@ func independentPlainRecord(line []byte) ([]byte, []byte, bool) {
 	// generic text projector. Normalize only that strictly validated span in the
 	// validation view; the original bytes remain the eventual output.
 	return view, line, true
+}
+
+// A JSONL field can carry fragments of one YAML document across records and
+// batches. Reject potential data subtrees rather than projecting each record
+// without the later document's kind. This checks values, not JSON field names.
+func streamJSONHasAmbiguousYAML(value any, depth int, budget *int) bool {
+	*budget = *budget + 1
+	if depth > 32 || *budget > 65536 {
+		return true
+	}
+	switch item := value.(type) {
+	case map[string]any:
+		for _, child := range item {
+			if streamJSONHasAmbiguousYAML(child, depth+1, budget) {
+				return true
+			}
+		}
+	case []any:
+		for _, child := range item {
+			if streamJSONHasAmbiguousYAML(child, depth+1, budget) {
+				return true
+			}
+		}
+	case string:
+		normalized := normalizeRecordValue(item)
+		if looksLikeJSON(normalized) && json.Valid([]byte(normalized)) {
+			decoder := json.NewDecoder(strings.NewReader(normalized))
+			decoder.UseNumber()
+			var nested any
+			if decoder.Decode(&nested) != nil || streamJSONHasAmbiguousYAML(nested, depth+1, budget) {
+				return true
+			}
+		}
+		for _, line := range strings.Split(normalized, "\n") {
+			line = strings.TrimSpace(line)
+			matchLine := strings.Map(func(r rune) rune {
+				if unicode.Is(unicode.Cf, r) {
+					return -1
+				}
+				return r
+			}, line)
+			folded := streamKeyNormalizer.Replace(simpleFoldForSecrets(matchLine))
+			candidate := strings.Contains(folded, "auth")
+			for _, word := range streamUnsafeWords {
+				if strings.Contains(folded, word) {
+					candidate = true
+					break
+				}
+			}
+			if candidate && (secretLineAssignment.MatchString(matchLine) || streamSensitiveSuffix.MatchString(matchLine)) {
+				return true
+			}
+			if (strings.Contains(folded, "curl") || strings.Contains(folded, "mysql") || strings.Contains(folded, "mariadb")) && streamIncompleteCommand.MatchString(matchLine) {
+				return true
+			}
+			if strings.Contains(line, "-----") && (privateKeyBegin.MatchString(line) || privateKeyEnd.MatchString(line)) {
+				return true
+			}
+			if strings.ContainsAny(line, "?&") {
+				for _, match := range urlQueryParameter.FindAllStringSubmatch(line, -1) {
+					name, err := url.QueryUnescape(match[2])
+					if err != nil || isSensitiveURLQueryName(name) {
+						return true
+					}
+				}
+			}
+			if line == "?" || strings.HasPrefix(line, "? ") || strings.HasPrefix(line, "?\t") {
+				return true
+			}
+			if strings.Contains(line, `\`) && (strings.ContainsAny(line, `"'`) || strings.HasSuffix(line, `\`)) {
+				return true
+			}
+			boundary := 0
+			for pos, r := range line {
+				if strings.ContainsRune("{}[],", r) {
+					boundary = pos + 1
+					continue
+				}
+				if r != ':' {
+					continue
+				}
+				prefix := line[boundary:pos]
+				boundary = pos + 1
+				key := strings.TrimSpace(prefix)
+				for strings.HasPrefix(key, "- ") {
+					key = strings.TrimSpace(key[2:])
+				}
+				for strings.HasPrefix(key, "!") || strings.HasPrefix(key, "&") {
+					separator := strings.IndexAny(key, " \t")
+					if separator < 0 {
+						break
+					}
+					key = strings.TrimSpace(key[separator:])
+				}
+				name := normalizedJSONKey(strings.Trim(key, `"'`))
+				if name == "data" || name == "stringdata" || secretNormalizedJSONKey(name) {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // Generic labels are sensitive only in a key or parameter position. Merely

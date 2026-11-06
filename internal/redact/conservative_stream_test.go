@@ -2,6 +2,7 @@ package redact
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"math/rand"
@@ -315,6 +316,115 @@ func TestConservativeLogTailRejectsSplitStructuredKeys(t *testing.T) {
 				t.Fatalf("split structure offset=%d exposed result=%q err=%v", offset, got, err)
 			}
 		}
+	}
+}
+
+func TestConservativeLogTailProtectsSecretAcrossJSONLBatchBoundary(t *testing.T) {
+	pad := strings.Repeat(strings.Repeat("x", 63)+"\n", 1022)
+	input := pad + `{"line":"data:"}` + "\n" + `{"line":"  opaque: OPAQUE_BODY"}` + "\n" + strings.Repeat(`{"other":"safe"}`+"\n", 10) + `{"line":"kind: Secret"}` + "\n"
+	got, _, err := ConservativeLogTail(context.Background(), strings.NewReader(input), 1<<20, 64<<10)
+	if strings.Contains(got, "OPAQUE_BODY") || (err != nil && got != "") {
+		t.Fatalf("JSONL cross-batch secret exposed result tail=%q err=%v", got[max(0, len(got)-512):], err)
+	}
+	const secret = "U1lOVEhFVElDX1NFQ1JFVA=="
+	first := `{"line":"data:"}` + "\n" + `{"line":"  #` + strings.Repeat("x", 65457) + `"}` + "\n" + `{"line":"  opaque: ` + secret + `"}` + "\n"
+	if len(first) != 65535 {
+		t.Fatalf("fixture prefix size=%d", len(first))
+	}
+	input = first + `{"line":"kind: Secret"}` + "\n"
+	if strings.Contains(Text(input), secret) {
+		t.Fatal("reference projection retained synthetic secret")
+	}
+	got, _, err = ConservativeLogTail(context.Background(), strings.NewReader(input), 1<<20, 64<<10)
+	if strings.Contains(got, secret) || (err != nil && got != "") {
+		t.Fatalf("aligned JSONL secret exposed err=%v", err)
+	}
+	first = `{"line":"data:"}` + "\n"
+	lastData := `{"line":"  opaque: ` + secret + `"}` + "\n"
+	remaining := (1 << 20) - 1 - len(first) - len(lastData)
+	const commentPrefix = `{"line":"  #`
+	const commentSuffix = `"}` + "\n"
+	for remaining > 0 {
+		size := min(remaining, 60000)
+		if size < len(commentPrefix)+len(commentSuffix) {
+			t.Fatal("invalid boundary fixture")
+		}
+		first += commentPrefix + strings.Repeat("x", size-len(commentPrefix)-len(commentSuffix)) + commentSuffix
+		remaining -= size
+	}
+	first += lastData
+	if len(first) != (1<<20)-1 {
+		t.Fatalf("MiB fixture prefix size=%d", len(first))
+	}
+	input = first + `{"line":"kind: Secret"}` + "\n"
+	if strings.Contains(Text(input), secret) {
+		t.Fatal("MiB reference projection retained synthetic secret")
+	}
+	got, _, err = ConservativeLogTail(context.Background(), strings.NewReader(input), 2<<20, 64<<10)
+	if strings.Contains(got, secret) || (err != nil && got != "") {
+		t.Fatalf("MiB-aligned JSONL secret exposed err=%v", err)
+	}
+}
+
+func TestConservativeLogTailRejectsAmbiguousYAMLInsideJSONValues(t *testing.T) {
+	values := []any{
+		"data:",
+		"!!str\tdata:",
+		"? data",
+		"da\u200bta:",
+		"pass\u200bword: OPAQUE_BODY",
+		"pass\u200bword",
+		`"d\u0061ta":`,
+		"password:",
+		"auth=",
+		"https://example.test/?%61uth=",
+		"-----BEGIN PRIVATE KEY-----",
+		"curl -u",
+		"curl --user=",
+		"mysql -p",
+		"mariadb --password=",
+		`{"line":"data:"}`,
+		[]any{"normal", "stringData:"},
+		map[string]any{"nested": "data:"},
+	}
+	for _, value := range values {
+		encoded, err := json.Marshal(map[string]any{"line": value})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, _, err := ConservativeLogTail(context.Background(), strings.NewReader(string(encoded)+"\n"), 1<<20, 4096)
+		if err == nil || got != "" {
+			t.Fatalf("ambiguous JSON value=%q result=%q err=%v", encoded, got, err)
+		}
+	}
+	value := map[string]any{"metadata": "ordinary", "line": "author: ordinary"}
+	budget := 0
+	if streamJSONHasAmbiguousYAML(value, 0, &budget) {
+		t.Fatal("ordinary metadata was treated as data")
+	}
+	encoded, _ := json.Marshal(value)
+	got, _, err := ConservativeLogTail(context.Background(), strings.NewReader(string(encoded)+"\n"), 1<<20, 4096)
+	if err != nil || !strings.Contains(got, "metadata") || !strings.Contains(got, "ordinary") {
+		t.Fatalf("ordinary metadata result=%q err=%v", got, err)
+	}
+}
+
+func TestConservativeLogTailRejectsJSONLCredentialContinuationAcrossBatches(t *testing.T) {
+	for _, marker := range []string{"password:", "pass\u200bword", "auth=", "https://example.test/?%61uth=", "-----BEGIN PRIVATE KEY-----", "curl -u", "mysql -p"} {
+		first, _ := json.Marshal(map[string]string{"line": marker})
+		input := strings.Repeat(strings.Repeat("x", 63)+"\n", 1022) + string(first) + "\n" + strings.Repeat(`{"other":"safe"}`+"\n", 10) + `{"line":"OPAQUE_BODY"}` + "\n"
+		got, _, err := ConservativeLogTail(context.Background(), strings.NewReader(input), 1<<20, 64<<10)
+		if strings.Contains(got, "OPAQUE_BODY") || (err != nil && got != "") {
+			t.Fatalf("continuation %q exposed result=%q err=%v", marker, got[max(0, len(got)-256):], err)
+		}
+	}
+}
+
+func TestTextManyOrdinaryJSONRecordsRespectProjectionBudget(t *testing.T) {
+	value := strings.Repeat(`{"name":"alice","data":"normal","message":"password policy changed"}`+"\n", 51000)
+	got := Text(value)
+	if !strings.Contains(got, "projection limit") {
+		t.Fatalf("expected bounded projection refusal, got %q", got[:min(len(got), 160)])
 	}
 }
 

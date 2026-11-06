@@ -5,6 +5,7 @@ package agent
 import (
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,6 +55,14 @@ func TestAITailStreamsLargeStableLogAndRejectsSensitiveContext(t *testing.T) {
 	if response.Code != http.StatusOK || strings.Contains(response.Body.String(), "OPAQUE_BODY") || !strings.Contains(response.Body.String(), "sample-119999") {
 		t.Fatalf("sensitive tail status=%d body=%s", response.Code, response.Body.String())
 	}
+	jsonl := log.String() + `{"line":"data:"}` + "\n" + `{"line":"  opaque: OPAQUE_BODY"}` + "\n" + `{"line":"kind: Secret"}` + "\n"
+	if err := os.WriteFile(path, []byte(jsonl), 0600); err != nil {
+		t.Fatal(err)
+	}
+	response = fileRequest(server, http.MethodGet, "/v1/files/ai-tail?path=%2Flarge.log&maxBytes=1024", "")
+	if response.Code != http.StatusUnprocessableEntity || strings.Contains(response.Body.String(), "OPAQUE_BODY") {
+		t.Fatalf("JSONL secret context status=%d body=%s", response.Code, response.Body.String())
+	}
 }
 
 func TestAITailStreamsManyShortStableLogRecords(t *testing.T) {
@@ -88,5 +97,51 @@ func TestAITailStreamsManyShortStableLogRecords(t *testing.T) {
 	response := fileRequest(server, http.MethodGet, "/v1/files/ai-tail?path=%2Fmany.log&maxBytes=1024", "")
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "sample-059999") || !strings.Contains(response.Body.String(), "author=alice") || !strings.Contains(response.Body.String(), "filename=access.log") || !strings.Contains(response.Body.String(), "metadata=present") || !strings.Contains(response.Body.String(), "user name changed") || !strings.Contains(response.Body.String(), `\"name\":\"alice\"`) || !strings.Contains(response.Body.String(), "password policy changed") || !strings.Contains(response.Body.String(), "user@example.test") || !strings.Contains(response.Body.String(), "30%") || !strings.Contains(response.Body.String(), "curl/8.0.0") || !strings.Contains(response.Body.String(), "[REDACTED LOG RECORD]") || strings.Contains(response.Body.String(), "OPAQUE_BODY") || strings.Contains(response.Body.String(), "OPAQUE_AUTH") || strings.Contains(response.Body.String(), "OPAQUE_ENCODED") {
 		t.Fatalf("many-record tail status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestAITailStreamsManyOrdinaryJSONRecords(t *testing.T) {
+	server := testServer(t)
+	root := t.TempDir()
+	manager, err := filemanager.New(filemanager.Config{Root: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = manager.Close() })
+	server.files = manager
+	value := strings.Repeat(`{"x":0}`+"\n", 50001) + `{"name":"alice","data":"normal","message":"password policy changed"}` + "\n"
+	if len(value) >= 8<<20 {
+		t.Fatal("fixture must remain under the snapshot threshold")
+	}
+	if err := os.WriteFile(filepath.Join(root, "many-json.log"), []byte(value), 0600); err != nil {
+		t.Fatal(err)
+	}
+	response := fileRequest(server, http.MethodGet, "/v1/files/ai-tail?path=%2Fmany-json.log&maxBytes=1024", "")
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "password policy changed") || !strings.Contains(response.Body.String(), `\"name\":\"alice\"`) {
+		t.Fatalf("ordinary JSON records status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func BenchmarkAITailManyOrdinaryJSONRecords(b *testing.B) {
+	root := b.TempDir()
+	manager, err := filemanager.New(filemanager.Config{Root: root})
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(func() { _ = manager.Close() })
+	handler, stop := NewCachedFileHandler(manager, b.TempDir())
+	b.Cleanup(stop)
+	value := strings.Repeat(`{"name":"alice","data":"normal","message":"password policy changed"}`+"\n", 51000)
+	if err := os.WriteFile(filepath.Join(root, "many-json.log"), []byte(value), 0600); err != nil {
+		b.Fatal(err)
+	}
+	b.SetBytes(int64(len(value)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/files/ai-tail?path=%2Fmany-json.log&maxBytes=1024", nil))
+		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "password policy changed") {
+			b.Fatalf("ordinary JSON records status=%d body=%s", response.Code, response.Body.String())
+		}
 	}
 }
