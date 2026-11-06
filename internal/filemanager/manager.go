@@ -310,6 +310,27 @@ func (m *Manager) Stat(virtual string) (contract.FileEntry, error) {
 	return m.entry(normalized, info), nil
 }
 
+// VerifyOpenIdentity checks that a protected virtual path still names the
+// already-open regular file, without taking a second download slot. Callers
+// must keep the original descriptor open throughout this check.
+func (m *Manager) VerifyOpenIdentity(ctx context.Context, virtual string, opened os.FileInfo, version string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	_, normalized, err := m.resolveExisting(virtual)
+	if err != nil {
+		return err
+	}
+	current, err := m.rootFS.Lstat(rootName(normalized))
+	if err != nil {
+		return err
+	}
+	if opened == nil || !current.Mode().IsRegular() || !os.SameFile(opened, current) || m.entry(normalized, current).ResourceVersion != version {
+		return ErrConflict
+	}
+	return ctx.Err()
+}
+
 func (m *Manager) Open(ctx context.Context, virtual string) (io.ReadSeekCloser, contract.FileEntry, error) {
 	if err := acquireNow(ctx, m.downloadGate); err != nil {
 		return nil, contract.FileEntry{}, err

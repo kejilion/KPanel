@@ -28,6 +28,7 @@ import (
 	"github.com/kejilion/kejilion-panel/internal/contract"
 	"github.com/kejilion/kejilion-panel/internal/filemanager"
 	"github.com/kejilion/kejilion-panel/internal/httpstream"
+	"github.com/kejilion/kejilion-panel/internal/redact"
 )
 
 const (
@@ -440,6 +441,125 @@ func (s *Server) fileTail(w http.ResponseWriter, r *http.Request) {
 		Path: entry.Path, Content: string(content), SizeBytes: entry.SizeBytes,
 		ResourceVersion: entry.ResourceVersion, Truncated: start > 0,
 	})
+}
+
+// fileAITail projects a complete bounded snapshot before selecting its tail.
+// Selecting first loses structural context (for example, Kubernetes Secret kind).
+func (s *Server) fileAITail(w http.ResponseWriter, r *http.Request) {
+	requestID := requestIDFrom(w)
+	if r.URL.RawPath != "" || !strictQuery(r.URL.Query(), "path", "maxBytes") {
+		writeProblem(w, requestID, http.StatusBadRequest, "invalid_query", "File tail query is invalid", "")
+		return
+	}
+	maxBytes := int64(32 << 10)
+	if raw := r.URL.Query().Get("maxBytes"); raw != "" {
+		parsed, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || parsed < 1024 || parsed > fileToolTextMaxBytes {
+			writeProblem(w, requestID, http.StatusBadRequest, "invalid_limit", "File tail limit must be between 1024 and 65536 bytes", "")
+			return
+		}
+		maxBytes = parsed
+	}
+	select {
+	case s.aiTailGate <- struct{}{}:
+		defer func() { <-s.aiTailGate }()
+	default:
+		writeProblem(w, requestID, http.StatusServiceUnavailable, "projection_busy", "File projection is busy", "")
+		return
+	}
+	const maxSnapshot = 8 << 20
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	file, entry, err := s.files.Open(ctx, r.URL.Query().Get("path"))
+	if err != nil {
+		writeFileProblem(w, requestID, err)
+		return
+	}
+	defer file.Close()
+	statFile, ok := file.(interface {
+		Stat() (os.FileInfo, error)
+		Fd() uintptr
+	})
+	if !ok || entry.SizeBytes < 0 || uint64(entry.SizeBytes) >= uint64(^uint(0)>>1) {
+		writeProblem(w, requestID, http.StatusUnprocessableEntity, "projection_unavailable", "A stable file snapshot is unavailable", "")
+		return
+	}
+	lease, err := tryStableReadLease(statFile, cancel)
+	if err != nil {
+		writeProblem(w, requestID, http.StatusUnprocessableEntity, "projection_unavailable", "Stable reading is unavailable: the file may be in use, inaccessible, or on an unsupported filesystem; close writers or use a stable copy", "")
+		return
+	}
+	defer lease.close()
+	before, err := statFile.Stat()
+	if err != nil || before.Size() != entry.SizeBytes {
+		writeProblem(w, requestID, http.StatusConflict, "projection_changed", "File changed during projection", "")
+		return
+	}
+	var projected []byte
+	var truncated bool
+	if entry.SizeBytes <= maxSnapshot {
+		content, readErr := io.ReadAll(io.LimitReader(file, maxSnapshot+1))
+		if readErr != nil || len(content) > maxSnapshot || before.Size() != int64(len(content)) {
+			writeProblem(w, requestID, http.StatusConflict, "projection_changed", "File changed during projection", "")
+			return
+		}
+		if !utf8.Valid(content) || bytes.IndexByte(content, 0) >= 0 {
+			writeProblem(w, requestID, http.StatusUnprocessableEntity, "text_preview_unavailable", "File is not valid UTF-8 text", "")
+			return
+		}
+		if bytes.Count(content, []byte("\n")) > 50000 {
+			writeProblem(w, requestID, http.StatusUnprocessableEntity, "projection_unavailable", "File exceeds the AI-safe projection budget", "")
+			return
+		}
+		for _, line := range bytes.Split(content, []byte("\n")) {
+			if len(line) > 64<<10 {
+				writeProblem(w, requestID, http.StatusUnprocessableEntity, "projection_unavailable", "File exceeds the AI-safe projection budget", "")
+				return
+			}
+		}
+		// Project after copying; the opened file remains leased until the final
+		// identity check, so no writer can alter this snapshot while it is read.
+		projected = []byte(redact.Text(string(content)))
+		truncated = len(projected) > int(maxBytes)
+		if truncated {
+			projected = projected[len(projected)-int(maxBytes):]
+			if newline := bytes.IndexByte(projected, '\n'); newline >= 0 {
+				projected = projected[newline+1:]
+			}
+			for len(projected) > 0 && !utf8.Valid(projected) {
+				projected = projected[1:]
+			}
+		}
+	} else {
+		// This conservative stream has no fixed source-size cap. It refuses
+		// ambiguous contexts rather than returning a partially checked result.
+		tail, wasTruncated, streamErr := redact.ConservativeLogTail(ctx, file, int(entry.SizeBytes), int(maxBytes))
+		if streamErr != nil {
+			writeProblem(w, requestID, http.StatusUnprocessableEntity, "projection_unavailable", "The file could not be safely projected; try a smaller stable plain-text copy with shorter lines", "")
+			return
+		}
+		projected, truncated = []byte(tail), wasTruncated
+	}
+	after, statErr := statFile.Stat()
+	if statErr != nil || after.Size() != before.Size() || !after.ModTime().Equal(before.ModTime()) || !os.SameFile(before, after) || ctx.Err() != nil || !lease.valid() {
+		writeProblem(w, requestID, http.StatusConflict, "projection_changed", "File changed during projection", "")
+		return
+	}
+	// Verify through the protected root while the original inode is leased,
+	// without acquiring a second download slot.
+	if err := s.files.VerifyOpenIdentity(ctx, r.URL.Query().Get("path"), before, entry.ResourceVersion); err != nil || !lease.valid() {
+		writeProblem(w, requestID, http.StatusConflict, "projection_changed", "File changed during projection", "")
+		return
+	}
+	lease.close() // The projected result no longer depends on the source inode.
+	if ctx.Err() != nil {
+		writeProblem(w, requestID, http.StatusConflict, "projection_changed", "File projection was interrupted", "")
+		return
+	}
+	writeJSON(w, http.StatusOK, struct {
+		fileTailResult
+		Projection string `json:"projection"`
+	}{fileTailResult: fileTailResult{Path: entry.Path, Content: string(projected), SizeBytes: entry.SizeBytes, ResourceVersion: entry.ResourceVersion, Truncated: truncated}, Projection: "full-context-v1"})
 }
 
 func (s *Server) fileRead(w http.ResponseWriter, r *http.Request, requestID string, shareContent bool) {

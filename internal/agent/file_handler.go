@@ -20,7 +20,7 @@ func NewFileHandler(files *filemanager.Manager) http.Handler {
 func NewCachedFileHandler(files *filemanager.Manager, stateDir string) (http.Handler, func()) {
 	// The standalone handler serves light-node brokers; it needs the same bounded
 	// thumbnail gate as the Agent or thumbnail requests block until timeout.
-	server := &Server{files: files, now: time.Now, thumbnailGate: make(chan struct{}, 1), previewGate: make(chan struct{}, 1),
+	server := &Server{files: files, now: time.Now, thumbnailGate: make(chan struct{}, 1), previewGate: make(chan struct{}, 1), aiTailGate: make(chan struct{}, 1),
 		previews:   newPreviewCache(),
 		thumbnails: newThumbnailCache(thumbnailCacheBytes), thumbnailDisk: newThumbnailDisk(stateDir)}
 	server.previewJobs = newPreviewQueue(server, stateDir)
@@ -55,6 +55,8 @@ func NewCachedFileHandler(files *filemanager.Manager, stateDir string) (http.Han
 			server.requireMethod(w, r, requestID, http.MethodGet, server.fileText)
 		case "/v1/files/tail":
 			server.requireMethod(w, r, requestID, http.MethodGet, server.fileTail)
+		case "/v1/files/ai-tail":
+			server.requireMethod(w, r, requestID, http.MethodGet, server.fileAITail)
 		case "/v1/files/upload":
 			server.requireMethod(w, r, requestID, http.MethodPost, server.fileUpload)
 		case "/v1/files/transfer/export":

@@ -19,6 +19,9 @@ import (
 
 type managedJobAgent struct {
 	calls          atomic.Int32
+	tailCalls      atomic.Int32
+	tailNotFound   atomic.Bool
+	tailProjected  atomic.Bool
 	completed      atomic.Bool
 	foreignArchive bool
 	holdTrash      atomic.Bool
@@ -26,6 +29,14 @@ type managedJobAgent struct {
 }
 
 func (a *managedJobAgent) Get(ctx context.Context, path, _, _ string) (AgentResponse, error) {
+	if path == "/v1/files/ai-tail" && a.tailNotFound.Load() {
+		a.tailCalls.Add(1)
+		return AgentResponse{StatusCode: http.StatusNotFound, Body: []byte(`{"code":"not_found"}`)}, nil
+	}
+	if path == "/v1/files/ai-tail" && a.tailProjected.Load() {
+		a.tailCalls.Add(1)
+		return AgentResponse{StatusCode: http.StatusOK, Body: qualifiedTestTail("latest notice")}, nil
+	}
 	if path == "/v1/files/trash" {
 		if a.holdTrash.Load() {
 			select {
@@ -196,6 +207,56 @@ func TestMCPClusterHTTPSApprovalLostReceiptRecoveryAndTargetRevocation(t *testin
 	_, narrowToken, err := center.mcp.access.CreateWithPolicy("Narrow files", []mcpaccess.HostGrant{{ID: host.ID, Identity: center.mcpHostIdentity(host)}}, narrow, time.Hour, center.mcp.access.Snapshot().ResourceVersion)
 	if err != nil {
 		t.Fatal(err)
+	}
+	// Simulate an older peer that accepts the unchanged operation signature and
+	// returns its already-truncated legacy result. The controller must reject it.
+	var legacyCalls atomic.Int32
+	target.cluster.SetManagedOperationHandler(func(_ context.Context, _ string, _ cluster.ManagedGrant, input cluster.ManagedRequest, _ func() bool) (json.RawMessage, error) {
+		if input.Mode == "read" && input.Tool == "host_file_tail" {
+			legacyCalls.Add(1)
+			return json.RawMessage(`{"data":{"content":"SYNTHETIC_PRIVATE","truncated":true},"redacted":true}`), nil
+		}
+		return nil, managedRemoteError("unexpected_test_operation")
+	}, func() bool { return target.mcp.access.Snapshot().Enabled })
+	legacyRequest, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{"name": "host_file_tail", "arguments": map[string]any{"hostId": host.ID, "path": "/home/web/client/test.log"}}})
+	legacyResult := mcpRPC(center, narrowToken, string(legacyRequest)).Body.String()
+	target.cluster.SetManagedOperationHandler(target.handleManagedClusterOperation, func() bool { return target.mcp.access.Snapshot().Enabled })
+	if legacyCalls.Load() != 1 || strings.Contains(legacyResult, "SYNTHETIC_PRIVATE") || !strings.Contains(legacyResult, `"isError":true`) || !strings.Contains(legacyResult, "file_projection_unavailable") {
+		t.Fatalf("legacy peer calls=%d result=%s", legacyCalls.Load(), legacyResult)
+	}
+	events, _, err := center.store.ListAudit(30, "")
+	failedTail := false
+	for _, event := range events {
+		if event.Action == "mcp.tool.host_file_tail" && event.Result == "failure" {
+			failedTail = true
+		}
+	}
+	if err != nil || !failedTail {
+		t.Fatalf("missing remote failure audit: %#v err=%v", events, err)
+	}
+	// The new target must also reject an old Agent's 404 and record its own
+	// failure, in addition to the controller's failure audit.
+	agent.tailNotFound.Store(true)
+	oldAgentResult := mcpRPC(center, narrowToken, string(legacyRequest)).Body.String()
+	agent.tailNotFound.Store(false)
+	if agent.tailCalls.Load() != 1 || !strings.Contains(oldAgentResult, `"isError":true`) {
+		t.Fatalf("old Agent calls=%d result=%s", agent.tailCalls.Load(), oldAgentResult)
+	}
+	targetEvents, _, err := target.store.ListAudit(30, "")
+	targetFailedTail := false
+	for _, event := range targetEvents {
+		if event.Action == "mcp.cluster.tool.host_file_tail" && event.Result == "failure" {
+			targetFailedTail = true
+		}
+	}
+	if err != nil || !targetFailedTail {
+		t.Fatalf("missing target failure audit: %#v err=%v", targetEvents, err)
+	}
+	agent.tailProjected.Store(true)
+	qualifiedResult := mcpRPC(center, narrowToken, string(legacyRequest)).Body.String()
+	agent.tailProjected.Store(false)
+	if agent.tailCalls.Load() != 2 || !strings.Contains(qualifiedResult, "latest notice") || strings.Contains(qualifiedResult, `"isError":true`) {
+		t.Fatalf("qualified Agent calls=%d result=%s", agent.tailCalls.Load(), qualifiedResult)
 	}
 	listing := managedCall(center, narrowToken, "host_file_trash_list", map[string]any{"hostId": host.ID})
 	encoded, _ := json.Marshal(listing)

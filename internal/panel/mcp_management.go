@@ -168,23 +168,41 @@ func (s *Server) callManagedMCP(ctx context.Context, op managedOperation, raw js
 		}
 		response, callErr := s.mcpLocalRequest(ctx, op, prepared, newRequestID())
 		if callErr != nil {
+			if op.Name == "host_file_tail" {
+				if err := s.auditMCP(call, "tool."+op.Name, hostID, "failure"); err != nil {
+					return mcpToolError("audit_unavailable")
+				}
+			}
 			return mcpToolError("agent_unavailable")
 		}
 		if response.StatusCode < 200 || response.StatusCode >= 300 {
+			if op.Name == "host_file_tail" {
+				if err := s.auditMCP(call, "tool."+op.Name, hostID, "failure"); err != nil {
+					return mcpToolError("audit_unavailable")
+				}
+			}
 			return mcpToolError(mcpAgentError(response))
 		}
 		body, projectionErr := mcpFileReadProjection(op.Name, response.Body, call.principal.Policy)
 		if projectionErr != nil {
+			if err := s.auditMCP(call, "tool."+op.Name, hostID, "failure"); err != nil {
+				return mcpToolError("audit_unavailable")
+			}
 			return mcpToolError(projectionErr.Error())
 		}
 		if err := mcpTaskDisplayBody(op.Name, body); err != nil {
 			return mcpToolError(err.Error())
 		}
-		output, err = mcpManagedOutput(body, offset, limit)
+		output, err = mcpManagedOutputFor(op.Name, body, offset, limit)
 	} else {
 		output, err = s.readManagedRemote(ctx, call, host.ID, op, arguments, offset, limit)
 	}
 	if err != nil {
+		if op.Name == "host_file_tail" {
+			if auditErr := s.auditMCP(call, "tool."+op.Name, hostID, "failure"); auditErr != nil {
+				return mcpToolError("audit_unavailable")
+			}
+		}
 		return mcpToolError(err.Error())
 	}
 	current, err := s.cluster.Host(ctx, hostID)
@@ -219,8 +237,15 @@ func mcpManagedResult(output map[string]any) *mcp.CallToolResult {
 }
 
 func mcpManagedOutput(body []byte, offset, limit int) (map[string]any, error) {
+	return mcpManagedOutputFor("", body, offset, limit)
+}
+
+func mcpManagedOutputFor(tool string, body []byte, offset, limit int) (map[string]any, error) {
 	if len(body) > 8<<20 {
 		return nil, errors.New("agent_response_too_large")
+	}
+	if tool == "host_file_tail" && !validAIFileTailProjection(body) {
+		return nil, errors.New("file_projection_invalid")
 	}
 	var data any
 	if json.Unmarshal(body, &data) != nil {
@@ -229,7 +254,9 @@ func mcpManagedOutput(body []byte, offset, limit int) (map[string]any, error) {
 	truncated := false
 	if object, ok := data.(map[string]any); ok {
 		var err error
-		truncated, err = mcpTerminalProjection(object)
+		if tool != "host_file_tail" {
+			truncated, err = mcpTerminalProjection(object)
+		}
 		if err != nil {
 			return nil, err
 		}

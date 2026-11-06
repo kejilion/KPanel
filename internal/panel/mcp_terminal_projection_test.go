@@ -19,6 +19,32 @@ func TestMCPRejectsRawTerminalWindowWithoutContext(t *testing.T) {
 	}
 }
 
+func TestMCPFileProjectionCannotQualifyTerminalData(t *testing.T) {
+	for _, body := range []string{
+		`{"projection":"full-context-v1","content":"safe","dataBase64":"U0VDUkVU"}`,
+		`{"projection":"full-context-v1","content":"safe","text":"SECRET"}`,
+		`{"projection":"full-context-v1","content":"safe","nextOffset":4}`,
+		`{"projection":"full-context-v1","content":123}`,
+		`{"projection":"full-context-v1","content":"safe","Content":"OPAQUE_SYNTHETIC"}`,
+		`{"projection":"full-context-v1","content":"safe","content":"OPAQUE_SYNTHETIC"}`,
+	} {
+		if output, err := mcpManagedOutputFor("host_file_tail", []byte(body), 0, 20); err == nil {
+			t.Fatalf("invalid file projection accepted: %#v", output)
+		}
+	}
+	valid := qualifiedTestTail("safe")
+	duplicate := append(append([]byte{}, valid[:len(valid)-1]...), []byte(`,"Content":"OPAQUE_SYNTHETIC"}`)...)
+	if _, err := mcpManagedOutputFor("host_file_tail", duplicate, 0, 20); err == nil {
+		t.Fatal("case-variant field accepted")
+	}
+	if _, err := mcpManagedOutput(valid, 0, 20); err == nil {
+		t.Fatal("file projection accepted for unrelated tool")
+	}
+	if _, err := mcpManagedOutputFor("host_file_tail", valid, 0, 20); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestMCPJobOutputVersionedDisplayContract(t *testing.T) {
 	for source, owner := range managedJobSources {
 		if !owner.Output {

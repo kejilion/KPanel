@@ -1,13 +1,16 @@
 package panel
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"path"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/kejilion/kejilion-panel/internal/contract"
 	"github.com/kejilion/kejilion-panel/internal/mcpaccess"
@@ -71,6 +74,9 @@ func addManagedFiles(result map[string]managedOperation, add func(string, string
 }
 
 func mcpFileReadProjection(tool string, body []byte, policy *mcpaccess.Policy) ([]byte, error) {
+	if tool == "host_file_tail" && !validAIFileTailProjection(body) {
+		return nil, errors.New("file_projection_unavailable")
+	}
 	if tool != "host_file_trash_list" {
 		return body, nil
 	}
@@ -86,6 +92,67 @@ func mcpFileReadProjection(tool string, body []byte, policy *mcpaccess.Policy) (
 	}
 	// Counts and pagination must describe only the authorized subset.
 	return json.Marshal(map[string]any{"items": items, "readAt": directory.ReadAt, "scanTruncated": directory.Truncated})
+}
+
+func strictProjectionObject(body []byte, allowed map[string]bool) (map[string]json.RawMessage, bool) {
+	if len(body) > 512<<10 {
+		return nil, false
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	start, err := decoder.Token()
+	if err != nil || start != json.Delim('{') {
+		return nil, false
+	}
+	fields := make(map[string]json.RawMessage)
+	for decoder.More() {
+		token, err := decoder.Token()
+		key, ok := token.(string)
+		if err != nil || !ok || !allowed[key] {
+			return nil, false
+		}
+		if _, exists := fields[key]; exists {
+			return nil, false
+		}
+		var value json.RawMessage
+		if decoder.Decode(&value) != nil {
+			return nil, false
+		}
+		fields[key] = value
+	}
+	end, err := decoder.Token()
+	if err != nil || end != json.Delim('}') || decoder.Decode(&struct{}{}) != io.EOF {
+		return nil, false
+	}
+	return fields, true
+}
+
+func validAIFileTailProjection(body []byte) bool {
+	fields, ok := strictProjectionObject(body, map[string]bool{"path": true, "content": true, "sizeBytes": true, "resourceVersion": true, "truncated": true, "projection": true})
+	if !ok || len(fields) != 6 {
+		return false
+	}
+	var proof struct {
+		Path            *string `json:"path"`
+		Content         *string `json:"content"`
+		SizeBytes       *int64  `json:"sizeBytes"`
+		ResourceVersion *string `json:"resourceVersion"`
+		Truncated       *bool   `json:"truncated"`
+		Projection      string  `json:"projection"`
+	}
+	return json.Unmarshal(body, &proof) == nil && proof.Path != nil && *proof.Path != "" && proof.Content != nil && proof.SizeBytes != nil && *proof.SizeBytes >= 0 && proof.ResourceVersion != nil && resourceVersionPattern.MatchString(*proof.ResourceVersion) && proof.Truncated != nil && proof.Projection == "full-context-v1"
+}
+
+func validRemoteAIFileTailProjection(body []byte) bool {
+	fields, ok := strictProjectionObject(body, map[string]bool{"data": true, "observedAt": true, "redacted": true, "truncated": true})
+	if !ok || len(fields) != 4 || !validAIFileTailProjection(fields["data"]) {
+		return false
+	}
+	var envelope struct {
+		ObservedAt time.Time `json:"observedAt"`
+		Redacted   bool      `json:"redacted"`
+		Truncated  *bool     `json:"truncated"`
+	}
+	return json.Unmarshal(body, &envelope) == nil && !envelope.ObservedAt.IsZero() && envelope.Redacted && envelope.Truncated != nil
 }
 
 func (s *Server) mcpTrashPreflight(ctx context.Context, raw json.RawMessage, policy *mcpaccess.Policy) error {

@@ -155,9 +155,19 @@ func (s *Server) handleManagedClusterOperation(ctx context.Context, controllerID
 		}
 		response, err := s.mcpLocalRequest(ctx, op, prepared, newRequestID())
 		if err != nil {
+			if op.Name == "host_file_tail" {
+				if err := s.auditMCP(call, "cluster.tool."+op.Name, host.ID, "failure"); err != nil {
+					return nil, managedRemoteError("audit_unavailable")
+				}
+			}
 			return nil, managedRemoteError("agent_unavailable")
 		}
 		if response.StatusCode < 200 || response.StatusCode >= 300 {
+			if op.Name == "host_file_tail" {
+				if err := s.auditMCP(call, "cluster.tool."+op.Name, host.ID, "failure"); err != nil {
+					return nil, managedRemoteError("audit_unavailable")
+				}
+			}
 			return nil, managedRemoteError(mcpAgentError(response))
 		}
 		limit := input.Limit
@@ -166,12 +176,15 @@ func (s *Server) handleManagedClusterOperation(ctx context.Context, controllerID
 		}
 		body, projectionErr := mcpFileReadProjection(op.Name, response.Body, policy)
 		if projectionErr != nil {
+			if err := s.auditMCP(call, "cluster.tool."+op.Name, host.ID, "failure"); err != nil {
+				return nil, managedRemoteError("audit_unavailable")
+			}
 			return nil, managedRemoteError(projectionErr.Error())
 		}
 		if err := mcpTaskDisplayBody(op.Name, body); err != nil {
 			return nil, managedRemoteError(err.Error())
 		}
-		output, err := mcpManagedOutput(body, input.Offset, limit)
+		output, err := mcpManagedOutputFor(op.Name, body, input.Offset, limit)
 		if err != nil {
 			return nil, managedRemoteError("agent_response_invalid")
 		}
@@ -228,6 +241,9 @@ func (s *Server) readManagedRemote(ctx context.Context, call mcpRequest, hostID 
 	}
 	if response.ErrorCode != "" {
 		return nil, errors.New(response.ErrorCode)
+	}
+	if op.Name == "host_file_tail" && !validRemoteAIFileTailProjection(response.Data) {
+		return nil, errors.New("file_projection_unavailable")
 	}
 	var output map[string]any
 	if err := mcpTaskDisplayBody(op.Name, response.Data); err != nil {

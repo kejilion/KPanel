@@ -123,6 +123,7 @@ type Server struct {
 	jobInputs         jobInputRegistry
 	jobInputBackends  map[string]jobInput
 	previewGate       chan struct{}
+	aiTailGate        chan struct{}
 	previews          *thumbnailCache
 	previewJobs       *previewQueue
 	thumbnailGate     chan struct{}
@@ -291,6 +292,7 @@ func NewServer(config Config) (*Server, error) {
 		terminals:        config.Terminals,
 		thumbnailGate:    make(chan struct{}, 1),
 		previewGate:      make(chan struct{}, 1),
+		aiTailGate:       make(chan struct{}, 1),
 		previews:         newPreviewCache(),
 		thumbnails:       newThumbnailCache(thumbnailCacheBytes),
 		thumbnailDisk:    newThumbnailDisk(config.StateDir),
@@ -554,6 +556,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.requireMethod(w, r, requestID, http.MethodGet, s.fileText)
 	case r.URL.Path == "/v1/files/tail":
 		s.requireMethod(w, r, requestID, http.MethodGet, s.fileTail)
+	case r.URL.Path == "/v1/files/ai-tail":
+		s.requireMethod(w, r, requestID, http.MethodGet, s.fileAITail)
 	case r.URL.Path == "/v1/files/upload":
 		s.requireMethod(w, r, requestID, http.MethodPost, s.fileUpload)
 	case r.URL.Path == "/v1/files/transfer/export":

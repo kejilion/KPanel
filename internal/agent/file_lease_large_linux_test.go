@@ -1,0 +1,57 @@
+//go:build linux
+
+package agent
+
+import (
+	"fmt"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/kejilion/kejilion-panel/internal/filemanager"
+)
+
+func TestAITailStreamsLargeStableLogAndRejectsSensitiveContext(t *testing.T) {
+	server := testServer(t)
+	root := t.TempDir()
+	manager, err := filemanager.New(filemanager.Config{Root: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = manager.Close() })
+	server.files = manager
+	var log strings.Builder
+	for i := 0; i < 120000; i++ {
+		fmt.Fprintf(&log, "127.0.0.1 - - [06/Nov/2026:02:55:56 +0000] \"GET /sample-%06d HTTP/1.1\" 200 896 \"-\" \"Wget\" \"-\"\n", i)
+	}
+	log.WriteString("127.0.0.1 - - [06/Nov/2026:02:55:56 +0000] \"GET /search?token=OPAQUE_BODY HTTP/1.1\" 200 896 \"-\" \"Wget\" \"-\"\n")
+	if log.Len() <= 8<<20 {
+		t.Fatal("fixture did not exercise the large-log path")
+	}
+	path := filepath.Join(root, "large.log")
+	if err := os.WriteFile(path, []byte(log.String()), 0600); err != nil {
+		t.Fatal(err)
+	}
+	response := fileRequest(server, http.MethodGet, "/v1/files/ai-tail?path=%2Flarge.log&maxBytes=1024", "")
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "sample-119999") || !strings.Contains(response.Body.String(), "[REDACTED LOG RECORD]") || strings.Contains(response.Body.String(), "OPAQUE_BODY") || !strings.Contains(response.Body.String(), `"truncated":true`) {
+		t.Fatalf("large tail status=%d body=%s", response.Code, response.Body.String())
+	}
+	pem := log.String() + "-----BEGIN PRIVATE KEY-----\nOPAQUEBODY\n-----END PRIVATE KEY-----\n" + "127.0.0.1 - - [06/Nov/2026:02:55:56 +0000] \"GET /after HTTP/1.1\" 200 896 \"-\" \"Wget\" \"-\"\n"
+	if err := os.WriteFile(path, []byte(pem), 0600); err != nil {
+		t.Fatal(err)
+	}
+	response = fileRequest(server, http.MethodGet, "/v1/files/ai-tail?path=%2Flarge.log&maxBytes=1024", "")
+	if response.Code != http.StatusOK || strings.Contains(response.Body.String(), "OPAQUEBODY") || !strings.Contains(response.Body.String(), "[REDACTED PRIVATE KEY]") || !strings.Contains(response.Body.String(), "/after") {
+		t.Fatalf("large private-key projection status=%d body=%s", response.Code, response.Body.String())
+	}
+	secret := "apiVersion: v1\nkind: Secret\nstringData:\n  opaque: OPAQUE_BODY\n---\n" + log.String()
+	if err := os.WriteFile(path, []byte(secret), 0600); err != nil {
+		t.Fatal(err)
+	}
+	response = fileRequest(server, http.MethodGet, "/v1/files/ai-tail?path=%2Flarge.log&maxBytes=1024", "")
+	if response.Code != http.StatusOK || strings.Contains(response.Body.String(), "OPAQUE_BODY") || !strings.Contains(response.Body.String(), "sample-119999") {
+		t.Fatalf("sensitive tail status=%d body=%s", response.Code, response.Body.String())
+	}
+}

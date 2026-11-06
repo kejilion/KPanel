@@ -291,7 +291,7 @@ func (t *panelAITools) Execute(ctx context.Context, execution ai.ToolExecutionCo
 				values.Set("search", input.Search)
 			}
 		} else if name == "host_file_tail" {
-			path = "/v1/files/tail"
+			path = "/v1/files/ai-tail"
 			if input.MaxBytes == 0 {
 				input.MaxBytes = 32 << 10
 			}
@@ -522,15 +522,22 @@ func (t *panelAITools) prepareWrite(name string, raw json.RawMessage) (method, p
 
 func (t *panelAITools) finish(execution ai.ToolExecutionContext, name, target, requestID string, change map[string]any, response AgentResponse, callErr error) (string, error) {
 	result := "success"
-	if callErr != nil || response.StatusCode < 200 || response.StatusCode >= 300 {
+	invalidTailProjection := name == "host_file_tail" && callErr == nil && response.StatusCode >= 200 && response.StatusCode < 300 && !validAIFileTailProjection(response.Body)
+	if callErr != nil || response.StatusCode < 200 || response.StatusCode >= 300 || invalidTailProjection {
 		result = "failure"
 	}
 	if change == nil {
 		change = map[string]any{"tool": name, "target": target, "sessionId": execution.SessionID, "runId": execution.RunID, "toolCallId": execution.ToolCallID}
 	}
-	_ = t.server.store.AppendAudit(store.AuditEvent{ID: newRequestID(), OccurredAt: time.Now().UTC(), ActorType: "user", ActorID: execution.UserID, Action: "ai.tool." + name, TargetKind: "host_operation", TargetID: target, Result: result, RequestID: requestID, Change: change}, store.MaxAuditEntries)
+	auditErr := t.server.store.AppendAudit(store.AuditEvent{ID: newRequestID(), OccurredAt: time.Now().UTC(), ActorType: "user", ActorID: execution.UserID, Action: "ai.tool." + name, TargetKind: "host_operation", TargetID: target, Result: result, RequestID: requestID, Change: change}, store.MaxAuditEntries)
+	if name == "host_file_tail" && auditErr != nil {
+		return "", errors.New("AI tool audit unavailable")
+	}
 	if callErr != nil {
 		return "", errors.New("Agent unavailable")
+	}
+	if invalidTailProjection {
+		return "", ai.ErrToolResultUnavailable
 	}
 	if result == "failure" {
 		if response.StatusCode == http.StatusConflict || response.StatusCode == http.StatusPreconditionFailed {

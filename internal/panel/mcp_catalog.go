@@ -194,7 +194,7 @@ func (op managedOperation) prepare(raw json.RawMessage, policy *mcpaccess.Policy
 					query.Set("search", input.Search)
 				}
 			case "host_file_tail":
-				path = "/v1/files/tail"
+				path = "/v1/files/ai-tail"
 				if input.MaxBytes == 0 {
 					input.MaxBytes = 16384
 				}

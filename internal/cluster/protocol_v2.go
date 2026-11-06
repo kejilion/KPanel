@@ -609,7 +609,7 @@ func v2FileRelayRequestPath(path string) bool {
 	switch path {
 	case "/v1/files", "/v1/files/entry", "/v1/files/entries",
 		"/v1/files/trash", "/v1/files/content", "/v1/files/archive",
-		"/v1/files/text", "/v1/files/tail", "/v1/files/upload",
+		"/v1/files/text", "/v1/files/tail", "/v1/files/ai-tail", "/v1/files/upload",
 		"/v1/files/transfer/export", "/v1/files/transfer/import",
 		"/v1/files/actions", "/v1/files/archive-contents", "/v1/files/archive-jobs", "/v1/files/transfer/sessions":
 		return true

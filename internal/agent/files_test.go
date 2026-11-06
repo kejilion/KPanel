@@ -555,6 +555,49 @@ func TestFileTailReadsLargeUTF8LogAndHonorsProtectedPaths(t *testing.T) {
 	}
 }
 
+func TestAITailProjectsFullContextBeforeTruncation(t *testing.T) {
+	server := testServer(t)
+	root := t.TempDir()
+	manager, err := filemanager.New(filemanager.Config{Root: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = manager.Close() })
+	server.files = manager
+	content := "apiVersion: v1\nkind: Secret\nmetadata:\n  name: fixture\ndata:\n" + strings.Repeat("  filler: value\n", 200) + "  opaque: SYNTHETIC_PRIVATE\n"
+	if err := os.WriteFile(filepath.Join(root, "manifest.log"), []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+	response := fileRequest(server, http.MethodGet, "/v1/files/ai-tail?path=%2Fmanifest.log&maxBytes=1024", "")
+	if response.Code != http.StatusOK || strings.Contains(response.Body.String(), "SYNTHETIC_PRIVATE") || !strings.Contains(response.Body.String(), `"projection":"full-context-v1"`) {
+		t.Fatalf("unsafe projected tail status=%d body=%s", response.Code, response.Body.String())
+	}
+	content = strings.Repeat("ordinary log line\n", 200) + "latest error\n"
+	if err := os.WriteFile(filepath.Join(root, "ordinary.log"), []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+	response = fileRequest(server, http.MethodGet, "/v1/files/ai-tail?path=%2Fordinary.log&maxBytes=1024", "")
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "latest error") || !strings.Contains(response.Body.String(), `"truncated":true`) {
+		t.Fatalf("ordinary projected tail status=%d body=%s", response.Code, response.Body.String())
+	}
+	if err := os.WriteFile(filepath.Join(root, "oversized.log"), []byte(strings.Repeat("x", (8<<20)+1)), 0600); err != nil {
+		t.Fatal(err)
+	}
+	response = fileRequest(server, http.MethodGet, "/v1/files/ai-tail?path=%2Foversized.log", "")
+	if response.Code != http.StatusUnprocessableEntity || strings.Contains(response.Body.String(), strings.Repeat("x", 1024)) {
+		t.Fatalf("oversized response status=%d", response.Code)
+	}
+	for name, value := range map[string]string{"long.log": strings.Repeat("x", (64<<10)+1), "many.log": strings.Repeat("x\n", 50001)} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(value), 0600); err != nil {
+			t.Fatal(err)
+		}
+		response = fileRequest(server, http.MethodGet, "/v1/files/ai-tail?path=%2F"+name, "")
+		if response.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("%s status=%d", name, response.Code)
+		}
+	}
+}
+
 func TestFileEndpointsListWriteUploadAndRejectProtectedPaths(t *testing.T) {
 	server := testServer(t)
 	root := t.TempDir()

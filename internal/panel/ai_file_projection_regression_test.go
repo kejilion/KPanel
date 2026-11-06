@@ -5,11 +5,36 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/kejilion/kejilion-panel/internal/agent"
 	"github.com/kejilion/kejilion-panel/internal/ai"
+	"github.com/kejilion/kejilion-panel/internal/filemanager"
+	"github.com/kejilion/kejilion-panel/internal/mcpaccess"
 )
+
+type fileHandlerBridge struct{ handler http.Handler }
+
+func (b fileHandlerBridge) Get(ctx context.Context, path, query, _ string) (AgentResponse, error) {
+	request := httptest.NewRequest(http.MethodGet, path+"?"+query, nil).WithContext(ctx)
+	recorder := httptest.NewRecorder()
+	b.handler.ServeHTTP(recorder, request)
+	return AgentResponse{StatusCode: recorder.Code, Body: recorder.Body.Bytes()}, nil
+}
+
+func (b fileHandlerBridge) Do(context.Context, string, string, string, string, []byte) (AgentResponse, error) {
+	return AgentResponse{}, errors.New("unexpected operation")
+}
+
+func qualifiedTestTail(content string) []byte {
+	body, _ := json.Marshal(map[string]any{"path": "/home/web/test.log", "content": content, "sizeBytes": len(content), "resourceVersion": "sha256:" + strings.Repeat("a", 64), "truncated": false, "projection": "full-context-v1"})
+	return body
+}
 
 func TestAIToolUnavailableProjectionIsSafe(t *testing.T) {
 	for _, body := range []string{`{"content":"CONFIG_SECRET"`, strings.Repeat("x", (512<<10)+1)} {
@@ -115,7 +140,7 @@ func TestApprovedAIReadProjectsNginxTLSConfig(t *testing.T) {
 
 func TestApprovedAITailProjectsNginxNoticeLog(t *testing.T) {
 	content := "2026/11/05 20:43:00 [notice] 42#42: signal process started\n"
-	body, _ := json.Marshal(map[string]any{"path": "/home/web/log/nginx/error.log", "content": content})
+	body := qualifiedTestTail(content)
 	server, _ := newTestServer(t)
 	server.agent = &stubAgent{response: AgentResponse{StatusCode: http.StatusOK, Body: body}}
 	tools := &panelAITools{server: server}
@@ -123,5 +148,138 @@ func TestApprovedAITailProjectsNginxNoticeLog(t *testing.T) {
 	result, err := tools.Execute(context.Background(), ai.ToolExecutionContext{UserID: "admin", Approved: true}, "host_file_tail", args)
 	if err != nil || !strings.Contains(result, "signal process started") {
 		t.Fatalf("approved log tail result=%q err=%v", result, err)
+	}
+}
+
+func TestApprovedAITailRealAgentFileHandler(t *testing.T) {
+	root := t.TempDir()
+	content := "apiVersion: v1\nkind: Secret\nmetadata:\n  name: fixture\ndata:\n" + strings.Repeat("  filler: value\n", 200) + "  opaque: SYNTHETIC_PRIVATE\n"
+	if err := os.WriteFile(filepath.Join(root, "manifest.log"), []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+	manager, err := filemanager.New(filemanager.Config{Root: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = manager.Close() })
+	handler, stop := agent.NewCachedFileHandler(manager, t.TempDir())
+	t.Cleanup(stop)
+	server, _ := newTestServer(t)
+	server.agent = fileHandlerBridge{handler: handler}
+	result, err := (&panelAITools{server: server}).Execute(context.Background(), ai.ToolExecutionContext{UserID: "admin", Approved: true}, "host_file_tail", json.RawMessage(`{"path":"/manifest.log","maxBytes":1024}`))
+	if err != nil || strings.Contains(result, "SYNTHETIC_PRIVATE") || !strings.Contains(result, "full-context-v1") || !strings.Contains(result, `"truncated":true`) {
+		t.Fatalf("unsafe Agent-to-Panel result=%q err=%v", result, err)
+	}
+}
+
+func TestApprovedAITailRejectsLegacyUnprojectedAgentResult(t *testing.T) {
+	body, _ := json.Marshal(map[string]any{"path": "/tmp/log", "content": "  arbitrary: OPAQUE_SYNTHETIC\n", "truncated": true})
+	server, _ := newTestServer(t)
+	server.agent = &stubAgent{response: AgentResponse{StatusCode: http.StatusOK, Body: body}}
+	tools := &panelAITools{server: server}
+	result, err := tools.Execute(context.Background(), ai.ToolExecutionContext{UserID: "admin", Approved: true}, "host_file_tail", json.RawMessage(`{"path":"/tmp/log"}`))
+	if result != "" || !errors.Is(err, ai.ErrToolResultUnavailable) {
+		t.Fatalf("legacy response result=%q err=%v", result, err)
+	}
+	events, _, err := server.store.ListAudit(10, "")
+	if err != nil || len(events) == 0 || events[0].Action != "ai.tool.host_file_tail" || events[0].Result != "failure" {
+		t.Fatalf("missing failure audit: %#v err=%v", events, err)
+	}
+}
+
+func TestApprovedAITailRequiresAuditAvailability(t *testing.T) {
+	server, _ := newTestServer(t)
+	server.agent = &stubAgent{response: AgentResponse{StatusCode: http.StatusOK, Body: qualifiedTestTail("visible log")}}
+	if err := server.store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	result, err := (&panelAITools{server: server}).Execute(context.Background(), ai.ToolExecutionContext{UserID: "admin", Approved: true}, "host_file_tail", json.RawMessage(`{"path":"/tmp/log"}`))
+	if result != "" || err == nil || !strings.Contains(err.Error(), "audit unavailable") {
+		t.Fatalf("result=%q err=%v", result, err)
+	}
+}
+
+func TestMCPTailRequiresAgentProjection(t *testing.T) {
+	policy, err := managedPolicy([]string{"files"}, false, false, []string{"/var/log"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err := managedCatalog()["host_file_tail"].prepare(json.RawMessage(`{"path":"/var/log/test"}`), policy)
+	if err != nil || request.Path != "/v1/files/ai-tail" {
+		t.Fatalf("request=%#v err=%v", request, err)
+	}
+	if _, err := mcpFileReadProjection("host_file_tail", []byte(`{"content":"opaque secret","truncated":true}`), nil); err == nil {
+		t.Fatal("legacy raw tail accepted")
+	}
+	body := qualifiedTestTail("safe result")
+	if _, err := mcpFileReadProjection("host_file_tail", body, nil); err != nil {
+		t.Fatalf("projected result rejected: %v", err)
+	}
+	if validRemoteAIFileTailProjection([]byte(`{"data":{"content":"opaque secret"},"redacted":true}`)) {
+		t.Fatal("legacy remote accepted")
+	}
+	remote, _ := json.Marshal(map[string]any{"data": json.RawMessage(body), "observedAt": "2026-11-06T00:00:00Z", "redacted": true, "truncated": false})
+	if !validRemoteAIFileTailProjection(remote) {
+		t.Fatal("qualified remote rejected")
+	}
+	remoteExtra := append(append([]byte{}, remote[:len(remote)-1]...), []byte(`,"extra":"OPAQUE_SYNTHETIC"}`)...)
+	if validRemoteAIFileTailProjection(remoteExtra) {
+		t.Fatal("unexpected remote field accepted")
+	}
+	if validRemoteAIFileTailProjection([]byte(strings.Replace(string(remote), "2026-11-06T00:00:00Z", "OPAQUE_SYNTHETIC", 1))) {
+		t.Fatal("invalid metadata accepted")
+	}
+	if validAIFileTailProjection([]byte(`{"content":"safe","projection":"full-context-v1"}`)) {
+		t.Fatal("incomplete result accepted")
+	}
+	for _, field := range []string{"path", "content", "sizeBytes", "resourceVersion", "truncated", "projection"} {
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(body, &fields); err != nil {
+			t.Fatal(err)
+		}
+		fields[field] = json.RawMessage("null")
+		nullResult, _ := json.Marshal(fields)
+		if validAIFileTailProjection(nullResult) {
+			t.Fatalf("null field %s accepted", field)
+		}
+	}
+}
+
+func TestMCPTailRejectsLegacyAgentAndAuditsFailure(t *testing.T) {
+	for _, response := range []AgentResponse{
+		{StatusCode: http.StatusNotFound, Body: []byte(`{"code":"not_found"}`)},
+		{StatusCode: http.StatusOK, Body: []byte(`{"content":"SYNTHETIC_PRIVATE","truncated":true}`)},
+	} {
+		s, path := newTestServerWithPublicURL(t, "https://panel.test")
+		bootstrapCookiesForOrigin(t, s, path, "https://panel.test")
+		_, _ = s.mcp.access.SetEnabled(true, s.mcp.access.Snapshot().ResourceVersion)
+		host, err := s.cluster.Host(context.Background(), "local")
+		if err != nil {
+			t.Fatal(err)
+		}
+		policy, err := managedPolicy([]string{"files"}, false, false, []string{"/home/web"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, token, err := s.mcp.access.CreateWithPolicy("Tail", []mcpaccess.HostGrant{{ID: host.ID, Identity: s.mcpHostIdentity(host)}}, policy, time.Hour, s.mcp.access.Snapshot().ResourceVersion)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.agent = &stubAgent{response: response}
+		body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"host_file_tail","arguments":{"hostId":"local","path":"/home/web/test.log"}}}`
+		result := mcpRPC(s, token, body).Body.String()
+		if strings.Contains(result, "SYNTHETIC_PRIVATE") || !strings.Contains(result, `"isError":true`) {
+			t.Fatalf("unsafe result: %s", result)
+		}
+		events, _, err := s.store.ListAudit(20, "")
+		found := false
+		for _, event := range events {
+			if event.Action == "mcp.tool.host_file_tail" && event.Result == "failure" {
+				found = true
+			}
+		}
+		if err != nil || !found {
+			t.Fatalf("missing MCP failure audit: %#v err=%v", events, err)
+		}
 	}
 }
