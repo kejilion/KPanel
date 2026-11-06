@@ -564,6 +564,9 @@ func redactLine(value string) string {
 }
 
 func isSensitiveURLQueryName(name string) bool {
+	// Classify the decoded key with format characters removed while retaining
+	// its original spelling in the output and preserving word boundaries.
+	name = removeFormatCharacters(name)
 	if secretNormalizedJSONKey(normalizedJSONKey(name)) {
 		return true
 	}

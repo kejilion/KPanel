@@ -203,7 +203,7 @@ func TestApprovedAITailAndMCPRedactAuthViaRealAgent(t *testing.T) {
 	bridge := fileHandlerBridge{handler: handler}
 	server, _ := newTestServer(t)
 	server.agent = bridge
-	for _, content := range []string{"auth: OPAQUE_BODY\n", "auths:\n  registry.example:\n    auth: OPAQUE_BODY\n", "https://example.test/?auth=OPAQUE_BODY&safe=visible\n", "https://example.test/?auths=OPAQUE_BODY&safe=visible\n", `{"ſecret":"OPAQUE_BODY"}` + "\n", "{\"pass\u200bword\":\"OPAQUE_BODY\"}\n", "pass\u200bword=OPAQUE_BODY\n", "https://example.test/?pass%E2%80%8Bword=OPAQUE_BODY\n", "--pass\u200bword OPAQUE_BODY\n", "Authori\u200bzation: Bearer OPAQUE_BODY\n", "B\u200bearer OPAQUE_BODY\n", "ki\u200bnd: Secret\ndata:\n  opaque: OPAQUE_BODY\n"} {
+	for _, content := range []string{"auth: OPAQUE_BODY\n", "auths:\n  registry.example:\n    auth: OPAQUE_BODY\n", "https://example.test/?auth=OPAQUE_BODY&safe=visible\n", "https://example.test/?auths=OPAQUE_BODY&safe=visible\n", `{"ſecret":"OPAQUE_BODY"}` + "\n", "{\"pass\u200bword\":\"OPAQUE_BODY\"}\n", "pass\u200bword=OPAQUE_BODY\n", "https://example.test/?pass%E2%80%8Bword=OPAQUE_BODY\n", "https://example.test/?signature%E2%80%8B=OPAQUE_BODY\n", "https://example.test/?signa%E2%80%8Bture=OPAQUE_BODY\n", "https://example.test/?s%E2%80%8Big=OPAQUE_BODY\n", "--pass\u200bword OPAQUE_BODY\n", "Authori\u200bzation: Bearer OPAQUE_BODY\n", "B\u200bearer OPAQUE_BODY\n", "ki\u200bnd: Secret\ndata:\n  opaque: OPAQUE_BODY\n"} {
 		if err := os.WriteFile(filepath.Join(root, "fixture.yaml"), []byte(content), 0600); err != nil {
 			t.Fatal(err)
 		}

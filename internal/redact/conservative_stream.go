@@ -306,7 +306,8 @@ func independentPlainRecord(line []byte) ([]byte, []byte, bool) {
 	}
 	if strings.ContainsAny(text, "?&") {
 		for _, match := range urlQueryParameter.FindAllStringSubmatch(text, -1) {
-			if isSensitiveURLQueryName(match[2]) {
+			name, err := url.QueryUnescape(match[2])
+			if err != nil || isSensitiveURLQueryName(name) {
 				unsafe = true
 			}
 		}

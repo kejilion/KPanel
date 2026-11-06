@@ -41,12 +41,15 @@ func TestTextRedactsFormatCharactersInSensitiveKeysOnly(t *testing.T) {
 		"-----BEGIN PRI\u200bVATE KEY-----\nOPAQUE_BODY\n-----END PRI\u200bVATE KEY-----\n",
 		"https://example.test/?pass\u200bword=OPAQUE_BODY&safe=visible\n",
 		"https://example.test/?pass%E2%80%8Bword=OPAQUE_BODY&safe=visible\n",
+		"https://example.test/?signa%E2%80%8Bture=OPAQUE_BODY&safe=visible\n",
+		"https://example.test/?signature%E2%80%8B=OPAQUE_BODY&safe=visible\n",
+		"https://example.test/?s%E2%80%8Big=OPAQUE_BODY&safe=visible\n",
 	} {
 		if got := Text(input); strings.Contains(got, "OPAQUE_BODY") || strings.Contains(got, "dXNlcjpQQVNT") {
 			t.Fatalf("format-key leaked input=%q result=%q", input, got)
 		}
 	}
-	ordinary := "author\u200b=visible metadata=present body=a\u200bb\n"
+	ordinary := "author\u200b=visible metadata=present body=a\u200bb\nhttps://example.test/?design=visible&signal=visible&safe=visible\n"
 	if got := Text(ordinary); got != ordinary {
 		t.Fatalf("ordinary content changed: %q", got)
 	}
