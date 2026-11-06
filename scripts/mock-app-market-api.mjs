@@ -1,4 +1,3 @@
-import { mockMusic } from './mock-music.mjs'
 import { handleMockVirtualMachines } from './mock-virtual-machines.mjs'
 import { mockBrowserComponent } from './mock-browser-component.mjs'
 import { createServer } from 'node:http'
@@ -1984,7 +1983,6 @@ async function mockAIApproval(request, response, url) {
 
 createServer(async (request, response) => {
   const url = new URL(request.url, 'http://127.0.0.1:8080')
-  if (await mockMusic(request, response, url, send, readJSON)) return
   if (await mockBrowserComponent(request, response, url, send, readJSON)) return
   if (await mockAIApproval(request, response, url)) return
   if (await mockSiteMonitoring(request, response, url, send, readJSON)) return
