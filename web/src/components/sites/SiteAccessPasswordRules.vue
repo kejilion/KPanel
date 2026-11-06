@@ -209,6 +209,7 @@ onBeforeUnmount(() => { disposed = true; active?.abort(); editing.value = undefi
         <label class="field"><span>{{ phrase('访问密码') }}</span><input v-model="ruleForm.password" type="password" autocomplete="new-password" maxlength="256" required /></label>
         <p>{{ phrase('认证可能影响接口、回调和证书自动续签；已有路径规则、包含配置或重定向也可能改变认证范围，请保存后测试。') }}</p>
         <p>{{ phrase('反向代理的上游端口可能仍可直接访问。') }}</p>
+        <p>{{ phrase('配置的响应头可能在未认证时公开，请勿在响应头中放置敏感信息。') }}</p>
         <p v-if="saveError" class="inline-alert inline-alert--danger" role="alert">{{ saveError }} <button class="button button--ghost button--small" type="button" @click="refreshAfterFailure">{{ phrase('刷新规则') }}</button></p>
         <div class="access-password-actions"><button class="button button--primary button--small" type="submit" :disabled="saving">{{ phrase(saving ? '正在保存…' : '保存') }}</button><button class="button button--secondary button--small" type="button" :disabled="saving" @click="ruleForm = undefined">{{ phrase('取消') }}</button></div>
       </form>

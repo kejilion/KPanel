@@ -1,6 +1,7 @@
 import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
+  ['配置的响应头可能在未认证时公开，请勿在响应头中放置敏感信息。', 'Configured response headers may be visible before authentication. Do not put sensitive information in them.'],
   ['删除规则', 'Delete rule'],
   ['添加规则', 'Add rule'],
   ['保护范围', 'Protection scope'],

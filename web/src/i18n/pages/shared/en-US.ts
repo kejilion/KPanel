@@ -1,6 +1,7 @@
 import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
+  ['配置的响应头可能在未认证时公开，请勿在响应头中放置敏感信息。', 'Configured response headers may be visible before authentication. Do not put sensitive information in them.'],
   ['操作结果未确认，请刷新查看后再重试。', 'The result is unconfirmed. Refresh the rules before trying again.'],
   ['该模板会开放应用直连端口，暂不支持创建时设置访问密码。', 'This template exposes an application port and cannot currently use an access password during creation.'],
   ['访问密码不能超过 256 字节。', 'The access password must be no more than 256 bytes.'],
