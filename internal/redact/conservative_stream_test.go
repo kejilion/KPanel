@@ -84,9 +84,6 @@ func TestConservativeLogTailMasksSensitiveAccessRecords(t *testing.T) {
 
 func TestConservativeLogTailRejectsCrossRecordSecrets(t *testing.T) {
 	for _, secret := range []string{
-		"apiVersion: v1\nkind: Secret\ndata:\n  opaque: SYNTHETIC_PRIVATE\n",
-		"data:\n  opaque: SYNTHETIC_PRIVATE\nkind: Secret\n",
-		"data:\n  opaque: OPAQUE_BODY\n",
 		"- \"pass\\u0077ord\": SYNTHETIC_PRIVATE\n",
 		"Authorization: Bearer SYNTHETIC_PRIVATE\n",
 		`{"name":"opaque","value":"SYNTHETIC_PRIVATE"}` + "\n",
@@ -174,8 +171,6 @@ func TestConservativeLogRecognizedSensitiveClasses(t *testing.T) {
 func TestConservativeLogTailRejectsCrossBatchContext(t *testing.T) {
 	pad := strings.Repeat(strings.Repeat("x", 63)+"\n", 1023)
 	for _, input := range []string{
-		pad + "kind: Secret\n" + strings.Repeat("x", 60) + "\n  opaque: OPAQUE_BODY\n",
-		pad + "data:\n  opaque: OPAQUE_BODY\n" + strings.Repeat("x", 60) + "\nkind: Secret\n",
 		pad + "password: |\n" + strings.Repeat("x", 60) + "\n  OPAQUE_BODY\n",
 		pad + "\"pass\\u0077ord\":\n" + strings.Repeat("x", 60) + "\n  OPAQUE_BODY\n",
 		pad + "{\"x\":\"\n" + strings.Repeat("x", 60) + "\nOPAQUE_BODY\n\"}\n",
@@ -213,6 +208,57 @@ func TestConservativeLogTailMasksPrivateKeysAcrossBatches(t *testing.T) {
 		result, _, err := ConservativeLogTail(context.Background(), tinyChunkReader{strings.NewReader(pad + key + realNginxRecords), 11}, 1<<20, 4096)
 		if result != "" || !errors.Is(err, ErrStreamAmbiguous) {
 			t.Fatalf("nested private context accepted result=%q err=%v", result, err)
+		}
+	}
+}
+
+func TestConservativeLogTailMasksYAMLDataAcrossBatches(t *testing.T) {
+	pad := strings.Repeat(strings.Repeat("x", 63)+"\n", 1023)
+	for _, document := range []string{
+		"kind: Secret\nstringData:\n  opaque: OPAQUE_BODY\n---\n",
+		"data:\n  opaque: OPAQUE_BODY\nkind: Secret\n---\n",
+		"stringData:\n  opaque: \"start\nOPAQUE_BODY\nend\"\n---\n",
+		"data: {opaque:\nOPAQUE_BODY}\n---\n",
+		"data:\n- OPAQUE_BODY\n---\n",
+	} {
+		result, _, err := ConservativeLogTail(context.Background(), tinyChunkReader{strings.NewReader(pad + document + realNginxRecords), 11}, 1<<20, 4096)
+		if err != nil || strings.Contains(result, "OPAQUE_BODY") || !strings.Contains(result, "[REDACTED YAML DATA]") || !strings.Contains(result, "fixture-missing") {
+			t.Fatalf("YAML data projection result=%q err=%v", result, err)
+		}
+	}
+}
+
+func TestConservativeLogTailRejectsAmbiguousYAMLDedent(t *testing.T) {
+	input := "kind: Secret\nstringData:\n  opaque: |\nOPAQUE_BODY\n"
+	result, _, err := ConservativeLogTail(context.Background(), strings.NewReader(input), 1<<20, 4096)
+	if err == nil || result != "" {
+		t.Fatalf("invalid ambiguous YAML exposed result=%q err=%v", result, err)
+	}
+}
+
+func TestConservativeLogTailRejectsOrMasksYAMLAliasAndHiddenPEM(t *testing.T) {
+	pad := strings.Repeat(strings.Repeat("x", 63)+"\n", 1023)
+	for _, input := range []string{
+		"metadata:\n  annotations:\n    hint: &shared OPAQUE_BODY\nkind: Secret\nstringData:\n  opaque: *shared\n---\n",
+		"saved: &shared OPAQUE_BODY\ndata: *shared\n---\n",
+		"data:\n  -----BEGIN PRI\x1b[0mVATE KEY-----]\nmetadata:\n  note: OPAQUE_BODY\n",
+	} {
+		result, _, err := ConservativeLogTail(context.Background(), tinyChunkReader{strings.NewReader(pad + input + realNginxRecords), 11}, 1<<20, 4096)
+		if strings.Contains(result, "OPAQUE_BODY") || (err != nil && result != "") {
+			t.Fatalf("YAML alias or hidden PEM leaked result=%q err=%v", result, err)
+		}
+	}
+}
+
+func TestConservativeLogTailYAMLDocumentAndDepthBoundaries(t *testing.T) {
+	for _, input := range []string{
+		"data: " + strings.Repeat("[", 33) + "OPAQUE_BODY" + strings.Repeat("]", 33) + "\n---\n",
+		"data:\n  opaque: \"open\n---\nOPAQUE_BODY\n",
+		"kind: Secret\nmetadata:\n  annotations:\n    hint: OPAQUE_BODY\n---\n",
+	} {
+		result, _, err := ConservativeLogTail(context.Background(), strings.NewReader(input), 1<<20, 4096)
+		if err == nil || result != "" {
+			t.Fatalf("ambiguous YAML document accepted result=%q err=%v", result, err)
 		}
 	}
 }

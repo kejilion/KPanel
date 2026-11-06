@@ -55,6 +55,7 @@ func ConservativeLogTail(ctx context.Context, source io.Reader, maxInput, maxOut
 	tailIncomplete := false
 	privateActive := false
 	privateLabel := ""
+	var yamlState streamYAMLState
 	for {
 		if err := ctx.Err(); err != nil {
 			return "", false, err
@@ -80,6 +81,25 @@ func ConservativeLogTail(ctx context.Context, source io.Reader, maxInput, maxOut
 			end := privateKeyEnd.FindStringIndex(trimmed)
 			standaloneBegin := begin != nil && begin[0] == 0 && begin[1] == len(trimmed)
 			standaloneEnd := end != nil && end[0] == 0 && end[1] == len(trimmed)
+			yamlMasked := false
+			if !privateActive && !standaloneBegin && !standaloneEnd {
+				var yamlErr error
+				var reset bool
+				yamlMasked, reset, yamlErr = yamlState.consume(string(line))
+				if yamlErr != nil {
+					return "", false, yamlErr
+				}
+				if reset {
+					// Earlier records can contain anchors referenced by this data.
+					// Validate the pending batch before discarding the retained prefix.
+					if err := flush(); err != nil {
+						return "", false, err
+					}
+					tail = tail[:0]
+					truncated = true
+					tailIncomplete = false
+				}
+			}
 			switch {
 			case privateActive:
 				// A marker nested in another representation may belong to a
@@ -120,6 +140,19 @@ func ConservativeLogTail(ctx context.Context, source io.Reader, maxInput, maxOut
 				tailIncomplete = false
 				view = []byte("[REDACTED PRIVATE KEY]\n")
 				display = view
+			case yamlMasked:
+				// Embedded PEM markers may belong to a separate semantic
+				// channel; do not discard that state while masking YAML.
+				if begin != nil || end != nil || strings.Contains(string(line), `\`) {
+					return "", false, ErrStreamAmbiguous
+				}
+				for _, r := range string(line) {
+					if unicode.IsControl(r) && r != '\n' && r != '\t' {
+						return "", false, ErrStreamAmbiguous
+					}
+				}
+				view = []byte("[REDACTED YAML DATA]\n")
+				display = view
 			default:
 				var safe bool
 				view, display, safe = independentPlainRecord(line)
@@ -147,6 +180,9 @@ func ConservativeLogTail(ctx context.Context, source io.Reader, maxInput, maxOut
 	}
 	if err := ctx.Err(); err != nil {
 		return "", false, err
+	}
+	if yamlState.quote != 0 || len(yamlState.flow) != 0 {
+		return "", false, ErrStreamAmbiguous
 	}
 	if err := flush(); err != nil {
 		return "", false, err
