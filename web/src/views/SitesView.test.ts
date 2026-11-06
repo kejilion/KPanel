@@ -409,6 +409,26 @@ describe('SitesView creation experience', () => {
     expect(view.replacement.privateKey).toBe('')
   })
 
+  it('clears an unfinished certificate draft when the main site settings are saved', async () => {
+    const view = setupView()
+    const current = { ...site('example.com'), allowedActions: ['update', 'delete'] }
+    view.openEdit(current)
+    view.openCertificateReplacement(current)
+    view.replacement.certificate = 'unfinished-certificate'
+    view.replacement.privateKey = 'unfinished-private-key'
+    vi.mocked(api.sites.update).mockResolvedValue(current)
+    vi.mocked(api.sites.list).mockResolvedValue({ items: [current], total: 1 })
+    vi.mocked(api.agent.capabilities).mockResolvedValue([])
+    vi.mocked(api.sites.installations).mockResolvedValue([])
+    vi.mocked(api.system.publicNetwork).mockResolvedValue({} as never)
+    await view.submitSite()
+    expect(api.sites.update).toHaveBeenCalledOnce()
+    expect(view.editorOpen.value).toBe(false)
+    expect(view.certificateSite.value).toBeUndefined()
+    expect(view.replacement.certificate).toBe('')
+    expect(view.replacement.privateKey).toBe('')
+  })
+
   it('opens settings for WordPress and unclassified sites without enabling unsupported site updates', async () => {
     const view = setupView()
     for (const type of ['wordpress', 'unknown'] as const) {

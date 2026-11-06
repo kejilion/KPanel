@@ -1045,7 +1045,7 @@ async function submitSite(): Promise<void> {
             void focusInstallationPanel()
           }
         })
-    if (wasEditing) editorOpen.value = false
+    if (wasEditing) closeEditor()
     toast.success(
       wasEditing
         ? '网站已更新'
