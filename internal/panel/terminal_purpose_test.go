@@ -13,6 +13,7 @@ func TestSiteManagementTerminalRestoresAndLaunchesOnce(t *testing.T) {
 	for _, legacy := range []bool{false, true} {
 		t.Run(map[bool]string{false: "retained", true: "legacy"}[legacy], func(t *testing.T) {
 			s, path := newTestServer(t)
+			suspendTestTerminalCleanup(s)
 			stub := &retainedAgentStub{strictLegacy: legacy}
 			s.agent = stub
 			cookie, csrf := bootstrapCookies(t, s, path)

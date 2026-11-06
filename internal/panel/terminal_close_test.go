@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -24,6 +25,18 @@ type terminalCloseAgent struct {
 	ids       []string
 	deadline  bool
 	closeBody []byte
+}
+
+func suspendTestTerminalCleanup(server *Server) {
+	server.terminalMu.Lock()
+	server.terminalCleanupStopped = true
+	server.terminalMu.Unlock()
+}
+
+func resumeTestTerminalCleanup(server *Server) {
+	server.terminalMu.Lock()
+	server.terminalCleanupStopped = false
+	server.terminalMu.Unlock()
 }
 
 func (s *terminalCloseAgent) Do(ctx context.Context, method, path, query, requestID string, body []byte) (AgentResponse, error) {
@@ -63,6 +76,7 @@ func TestTerminalCloseRejectsUnconfirmedSuccessBody(t *testing.T) {
 
 func TestDetachRetainsUnconfirmedIdentityButFreesInteractiveSlot(t *testing.T) {
 	server, tokenPath := newTestServer(t)
+	suspendTestTerminalCleanup(server)
 	stub := &terminalCloseAgent{err: errors.New("offline")}
 	server.agent = stub
 	cookie, csrf := bootstrapCookies(t, server, tokenPath)
@@ -105,6 +119,7 @@ func TestDetachRetainsUnconfirmedIdentityButFreesInteractiveSlot(t *testing.T) {
 		server.releaseTerminalOpen(item.UserID)
 	}
 	stub.err = nil
+	resumeTestTerminalCleanup(server)
 	server.scheduleTerminalCleanup()
 	server.terminalMu.Lock()
 	done := server.terminalCleanupDone
@@ -221,9 +236,9 @@ func TestRemoteTerminalCloseConfirmsTargetAbsenceAndRetainsTransportFailures(t *
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = target.Close() })
-	transportFailure := false
+	var transportFailure atomic.Bool
 	loopback := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if transportFailure {
+		if transportFailure.Load() {
 			w.WriteHeader(http.StatusBadGateway)
 			return
 		}
@@ -262,10 +277,11 @@ func TestRemoteTerminalCloseConfirmsTargetAbsenceAndRetainsTransportFailures(t *
 		t.Fatal(err)
 	}
 	server, _ := newTestServer(t)
+	suspendTestTerminalCleanup(server)
 	server.cluster = center
 	for _, failureCode := range []string{"", "terminal_not_found", "terminal_closed"} {
 		server.terminalSessions["remote"] = panelTerminalSession{ID: "remote", UserID: "owner", BackendSessionID: "backend", HostID: host.ID}
-		transportFailure = true
+		transportFailure.Store(true)
 		failed := httptest.NewRecorder()
 		server.handleTerminalOperation(failed, httptest.NewRequest(http.MethodPost, "/", nil), "owner", "remote", "close")
 		if failed.Code != http.StatusBadGateway {
@@ -274,7 +290,7 @@ func TestRemoteTerminalCloseConfirmsTargetAbsenceAndRetainsTransportFailures(t *
 		if _, ok := server.terminalSessions["remote"]; !ok {
 			t.Fatal("remote transport failure erased identity")
 		}
-		transportFailure = false
+		transportFailure.Store(false)
 		stub.code = failureCode
 		stub.status = http.StatusOK
 		if failureCode != "" {
@@ -292,7 +308,7 @@ func TestRemoteTerminalCloseConfirmsTargetAbsenceAndRetainsTransportFailures(t *
 	// A disconnected node can later return authenticated confirmation that the
 	// old PTY no longer exists, as after a target process restart.
 	server.terminalSessions["detached-remote"] = panelTerminalSession{ID: "detached-remote", UserID: "owner", BackendSessionID: "backend", HostID: host.ID, Detachable: true}
-	transportFailure = true
+	transportFailure.Store(true)
 	failed := httptest.NewRecorder()
 	server.handleTerminalOperation(failed, httptest.NewRequest(http.MethodPost, "/", nil), "owner", "detached-remote", "close")
 	if failed.Code != http.StatusBadGateway {
@@ -303,8 +319,9 @@ func TestRemoteTerminalCloseConfirmsTargetAbsenceAndRetainsTransportFailures(t *
 	if detached.Code != http.StatusOK {
 		t.Fatalf("detach = %d %s", detached.Code, detached.Body.String())
 	}
-	transportFailure = false
+	transportFailure.Store(false)
 	stub.code, stub.status = "terminal_not_found", http.StatusNotFound
+	resumeTestTerminalCleanup(server)
 	server.scheduleTerminalCleanup()
 	server.terminalMu.Lock()
 	done := server.terminalCleanupDone
