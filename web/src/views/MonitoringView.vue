@@ -58,7 +58,6 @@ import type {
   MonitoringHostPoint,
   MonitoringOperatorLatencySeries,
   MonitoringRange,
-  MonitoringCheckKind,
 } from '@/types/api'
 
 const ranges: Array<{ value: MonitoringRange; label: string }> = [
@@ -121,7 +120,6 @@ const error = ref('')
 const diskChartMode = ref<'capacity' | 'io'>('capacity')
 const networkChartMode = ref<'traffic' | 'connections'>('traffic')
 const operatorLatencyVisibility = ref<Record<string, boolean>>({})
-const activeCheckKind = ref<MonitoringCheckKind>('ping')
 type MonitoringCategoryId = 'all' | 'host' | 'containers' | 'checks'
 const monitoringCategories: Array<{ id: MonitoringCategoryId; label: string }> = [
   { id: 'all', label: '全部' },
@@ -318,12 +316,7 @@ const activeHostNetwork = computed(() => networkChartMode.value === 'traffic'
   ? hostNetworkTraffic.value
   : hostNetworkConnections.value)
 const allMonitoringChecks = computed<MonitoringOperatorLatencySeries[]>(() => history.value?.operatorLatency || [])
-const operatorLatencyRoutes = computed(() => allMonitoringChecks.value.filter((series) => (series.kind || 'ping') === activeCheckKind.value))
-const checkKindCounts = computed<Record<MonitoringCheckKind, number>>(() => ({
-  ping: allMonitoringChecks.value.filter((series) => (series.kind || 'ping') === 'ping').length,
-  tcp: allMonitoringChecks.value.filter((series) => series.kind === 'tcp').length,
-  http: allMonitoringChecks.value.filter((series) => series.kind === 'http').length,
-}))
+const operatorLatencyRoutes = allMonitoringChecks
 const operatorLatencyChart = computed<TrendSeries[]>(() => operatorLatencyRoutes.value
   .filter((series) => operatorLatencyVisibility.value[series.id])
   .map((series) => ({
@@ -517,7 +510,7 @@ function showAllOperatorLatency(visible: boolean): void {
   operatorLatencyVisibility.value = Object.fromEntries(
     allMonitoringChecks.value.map((series) => [
       series.id,
-      operatorLatencyRoutes.value.some((active) => active.id === series.id) ? visible : operatorLatencyVisibility.value[series.id] ?? true,
+      visible,
     ]),
   )
 }
@@ -548,12 +541,6 @@ function latestLatencyLabel(series: MonitoringOperatorLatencySeries): string {
   if (latency === undefined) return '等待采样'
   if (latency === null) return '超时'
   return formatLatency(latency)
-}
-
-function activeCheckDescription(): string {
-  if (activeCheckKind.value === 'tcp') return '检测端口建立连接的响应时间与可用性'
-  if (activeCheckKind.value === 'http') return '检测 HTTP 状态与首个响应的耗时'
-  return '包含默认三网九节点，可自由增删改'
 }
 
 function serviceStatusLabel(state: MonitoringStatusCellState): string {
@@ -1166,7 +1153,7 @@ onBeforeUnmount(() => {
         <header class="operator-latency-heading">
           <div>
             <span class="operator-latency-icon"><RadioTower :size="18" /></span>
-            <span><strong>服务检测</strong><small>{{ activeCheckDescription() }}</small></span>
+            <span><strong>服务检测</strong><small>统一展示 Ping、TCP 与 HTTP 检测，可自由增删改</small></span>
           </div>
           <div class="service-check-heading__actions">
             <span v-if="operatorLatencyRoutes.length && history.storage.lastOperatorLatencyAt">
@@ -1183,11 +1170,6 @@ onBeforeUnmount(() => {
             ><Settings2 :size="15" />管理检测项</button>
           </div>
         </header>
-        <div class="service-check-tabs" role="tablist" aria-label="检测协议">
-          <button v-for="kind in (['ping', 'tcp', 'http'] as const)" :key="kind" type="button" role="tab" :aria-selected="activeCheckKind === kind" :class="{ 'is-active': activeCheckKind === kind }" @click="activeCheckKind = kind">
-            {{ kind === 'ping' ? 'Ping' : kind.toUpperCase() }}<span>{{ checkKindCounts[kind] }}</span>
-          </button>
-        </div>
         <template v-if="operatorLatencyRoutes.length">
           <div class="operator-latency-controls">
             <div class="operator-latency-routes" aria-label="检测项显示选择">
@@ -1260,7 +1242,7 @@ onBeforeUnmount(() => {
           </section>
         </template>
         <div v-else class="operator-latency-empty service-check-empty">
-          <strong>当前协议暂无检测项</strong>
+          <strong>暂无检测项</strong>
           <span>{{ isRemoteHost ? '请在该节点所属面板添加检测项。' : '点击“管理检测项”添加 Ping、TCP 或 HTTP 检测。' }}</span>
         </div>
       </article>
@@ -1358,10 +1340,6 @@ onBeforeUnmount(() => {
 .operator-latency-heading small { color: var(--muted); font-size: 13px; font-weight: 400; }
 .service-check-heading__actions { display: flex !important; align-items: center; justify-content: flex-end; gap: 10px !important; }
 .service-check-heading__actions > span { color: var(--muted); font-size: 13px; }
-.service-check-tabs { display: inline-flex; width: fit-content; gap: 3px; padding: 3px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-subtle); }
-.service-check-tabs button { display: inline-flex; min-height: 34px; align-items: center; gap: 7px; padding: 0 15px; border: 0; border-radius: var(--radius-sm); color: var(--muted); background: transparent; cursor: pointer; font: inherit; font-size: 14px; }
-.service-check-tabs button span { min-width: 20px; padding: 1px 6px; border-radius: 999px; color: inherit; background: color-mix(in srgb, currentColor 9%, transparent); font-size: 12px; }
-.service-check-tabs button:hover, .service-check-tabs button.is-active { color: var(--brand-strong); background: var(--brand-soft); }
 .operator-latency-controls { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 7px; }
 .operator-latency-routes { display: flex; min-width: 0; flex: 1; flex-wrap: wrap; gap: 6px; }
 .operator-route {
@@ -1514,8 +1492,6 @@ onBeforeUnmount(() => {
   .operator-latency-heading, .operator-latency-controls, .service-check-heading__actions { align-items: flex-start; flex-direction: column; }
   .service-check-heading__actions { width: 100%; }
   .service-check-heading__actions .button { width: 100%; justify-content: center; }
-  .service-check-tabs { width: 100%; }
-  .service-check-tabs button { flex: 1; justify-content: center; padding: 0 8px; }
   .operator-latency-actions { align-self: stretch; }
   .operator-latency-actions button { flex: 1; }
   .operator-route { flex: 1 1 calc(50% - 4px); justify-content: flex-start; }

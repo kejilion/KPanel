@@ -11,7 +11,6 @@ describe('monitoring container comparison layout', () => {
     expect(checks).toBeGreaterThan(0)
     expect(host).toBeLessThan(containers)
     expect(containers).toBeLessThan(checks)
-    expect(monitoringSource).toContain("(['ping', 'tcp', 'http'] as const)")
     expect(monitoringSource).toContain('@select-range="zoomToRange"')
   })
 

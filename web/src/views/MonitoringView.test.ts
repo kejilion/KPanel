@@ -79,10 +79,10 @@ describe('monitoring host selection', () => {
     expect(metricButton('连接数').attributes('disabled')).toBeUndefined()
   })
 
-  it('renders Ping, TCP, and HTTP as three views on the shared timeline', async () => {
+  it('shows all check protocols together and applies visibility controls across protocols', async () => {
     const value = history()
     value.operatorLatency = [
-      { id: 'ping-one', kind: 'ping', name: 'Ping 节点', address: '1.1.1.1', target: '1.1.1.1', points: [
+      { id: 'ping-one', name: 'Ping 节点', address: '1.1.1.1', target: '1.1.1.1', points: [
         { collectedAt: '2026-09-11T00:30:00Z', latencyMilliseconds: 18, successCount: 1, failureCount: 0 },
         { collectedAt: '2026-09-11T01:00:00Z', latencyMilliseconds: null, successCount: 0, failureCount: 1 },
       ] },
@@ -94,15 +94,32 @@ describe('monitoring host selection', () => {
     mocks.history.mockResolvedValue(value)
     const { wrapper } = await mountAt()
     expect(wrapper.text()).toContain('Ping 节点')
-    expect(wrapper.text()).not.toContain('TCP 服务')
+    expect(wrapper.text()).toContain('TCP 服务')
+    expect(wrapper.text()).toContain('HTTP 服务')
+    expect(wrapper.find('.service-check-card [role="tablist"]').exists()).toBe(false)
     expect(wrapper.find('.service-status-matrix').exists()).toBe(true)
-    expect(wrapper.findAll('.service-status-row')).toHaveLength(1)
+    expect(wrapper.findAll('.service-status-row')).toHaveLength(3)
     expect(wrapper.find('.service-status-cell--success').exists()).toBe(true)
     expect(wrapper.find('.service-status-cell--failure').exists()).toBe(true)
-    await wrapper.findAll('[role="tab"]').find((tab) => tab.text().includes('TCP'))!.trigger('click')
-    expect(wrapper.text()).toContain('TCP 服务')
-    expect(wrapper.text()).not.toContain('Ping 节点')
-    expect(wrapper.findAll('.service-status-row')).toHaveLength(1)
+    const routes = () => wrapper.findAll('.operator-route')
+    const chartLabels = () => wrapper.findAllComponents(TrendChart)
+      .flatMap((chart) => chart.props('series').map((series: { label: string }) => series.label))
+    expect(chartLabels()).toEqual(expect.arrayContaining(['Ping 节点', 'TCP 服务']))
+    expect(routes().map((route) => route.attributes('aria-pressed'))).toEqual(['true', 'true', 'true'])
+    await routes()[1]!.trigger('click')
+    expect(chartLabels()).toContain('Ping 节点')
+    expect(chartLabels()).not.toContain('TCP 服务')
+    await wrapper.findAll('.operator-latency-actions button')[1]!.trigger('click')
+    expect(routes().every((route) => route.attributes('aria-pressed') === 'false')).toBe(true)
+    expect(wrapper.text()).toContain('已隐藏全部检测项')
+    expect(wrapper.findAll('.service-status-row')).toHaveLength(3)
+    await wrapper.findAll('.operator-latency-actions button')[0]!.trigger('click')
+    expect(routes().every((route) => route.attributes('aria-pressed') === 'true')).toBe(true)
+    expect(chartLabels()).toEqual(expect.arrayContaining(['Ping 节点', 'TCP 服务']))
+    mocks.history.mockResolvedValue(history())
+    await selectHost(wrapper, a)
+    expect(wrapper.text()).toContain('暂无检测项')
+    expect(wrapper.findAll('.service-status-row')).toHaveLength(0)
   })
 
   it('plots the median of each interval with the lowest-to-highest band', async () => {
