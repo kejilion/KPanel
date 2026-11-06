@@ -5,7 +5,7 @@
   "owner": "KPanel release maintainers",
   "sourceManifestSha256": "d71dfdf7706b65bcc97fde40b8c44081164bb525be11c12d01a30f500e9a6965",
   "sourceManifestEncoding": "SHA256 of UTF-8 MODULE@VERSION followed by a space and the Go h1 module content checksum; go mod verify checks the downloaded archive and extracted module.",
-  "selectedGraphSha256": "5af8164cdc9d6b4b9df678482e159b9c81d10a4a93d613c5ba1c0613f5e44c81",
+  "selectedGraphSha256": "114cf13cd84467ef198222440e5c17ee68f94d0026f1273a120f4c5f4c2c1a6e",
   "buildTargetFilesSha256": {
     "Dockerfile": "f79d2d404aa91b8d56bf1401f2126bdf8b552c252fc38b5734c360a45c53161c",
     ".github/workflows/release.yml": "f2179cdc8358290e826f92c27316b265dade18275d1e9b89f83b0917f9d73bdc",
@@ -184,8 +184,8 @@
     "rc130Rc5SupersededManualClosureEvidenceSha256": "5390e468927e1855389d316eea91ecb3b9f168ad1038bc5c89520192d4b40b0a",
     "rc130Rc6IdentityEvidenceSha256": "d74e39302dbe65ad1b025872f30e945331246ce248923c89172eaca9b461f8fc",
     "rc130Rc6IdentitySummary": "RC6 version-only source rebind: the official firstPartySources helper recomputed 1,297 files as d951f00a9c8d00d7dea0b2e831847e21af65e9e46f8bbfae4e1da6c0c794d69e. Relative to the exact candidate base, the sole Go source change is the internal/version/version.go version literal from 1.30.0-rc.5-dev to 1.30.0-rc.6-dev; go.mod, go.sum, vendored torrent source and all release/build target inputs are unchanged. Existing findings and dispositions and the 2026-10-25 through 2026-11-08 observation window are preserved. This identity binding does not claim a scanner result; fresh six-target closure inventory, scanners, exact candidate CI and full L3 remain required.",
-    "rc130Rc7IdentityEvidenceSha256": "54ed973ac9f90a354ac7c568823a1d3700b78e5ae6f90dc336dbb340e280ac4d",
-    "rc130Rc7IdentitySummary": "RC7 security dependency rebind after the current Trivy database reported CVE-2026-78661 in golang.org/x/net v0.60.0. Upgrade to v0.62.0 and required compatible modules x/crypto v0.58.0, x/sync v0.24.0, x/sys v0.49.0, x/term v0.47.0, x/text v0.43.0. Pinned Go 1.27.3 and the repository productionClosure helper recomputed the selected graph and all six production rows; 1303 first-party source files remain byte-identical. Exact RC7 L3 must independently reobserve the graph and run fresh scanners; this local identity record does not imply a scan or release pass."
+    "rc130Rc7IdentityEvidenceSha256": "403990427c22bec1f4371323e1d2177b286981aa88ac4b92e402c14c1681c824",
+    "rc130Rc7IdentitySummary": "RC7 security dependency rebind after the current Trivy database reported CVE-2026-78661 in golang.org/x/net v0.60.0. Upgrade to v0.62.0 and required compatible modules x/crypto v0.58.0, x/sync v0.24.0, x/sys v0.49.0, x/term v0.47.0, x/text v0.43.0. Pinned Go 1.27.3, repository productionClosure and canonical localeCompare graph ordering recomputed the selected graph and all six production rows; 1303 first-party source files remain byte-identical. Exact RC7 L3 must independently reobserve the graph and run fresh scanners; this local identity record does not imply a scan or release pass."
   },
   "findings": [
     {
