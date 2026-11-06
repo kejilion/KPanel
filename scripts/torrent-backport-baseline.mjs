@@ -93,7 +93,7 @@ export function scannerManifest(modules, scope) {
 export function validateScanScope(policy, identity, now = new Date()) {
   const date = value => /^\d{4}-\d{2}-\d{2}$/.test(value ?? '') ? Date.parse(value + 'T00:00:00Z') : NaN;
   const observed = date(policy.observedAt), expires = date(policy.expiresAt);
-  if (policy.schemaVersion !== 1 || policy.observedAt !== '2026-10-25' || policy.expiresAt !== '2026-11-08'
+  if (policy.schemaVersion !== 1 || policy.observedAt !== '2026-11-06' || policy.expiresAt !== '2026-11-20'
       || !Number.isFinite(observed) || !Number.isFinite(expires) || now.getTime() < observed || now.getTime() >= expires
       || expires - observed > 14 * 86400000) throw new Error('Scan scope is not within its reviewed observation window');
   if (policy.sourceManifestSha256 !== SOURCE_MANIFEST_SHA256 || policy.sourceManifestSha256 !== identity.sourceManifestSha256
@@ -103,7 +103,7 @@ export function validateScanScope(policy, identity, now = new Date()) {
       || JSON.stringify(policy.buildTargetFilesSha256) !== JSON.stringify(identity.buildTargetFilesSha256)) throw new Error('Scan scope source, targets or closure changed');
   if (policy.review?.state !== 'reviewed' || !policy.owner || !policy.review.reviewerRole
       || !/^[a-f0-9]{64}$/.test(policy.review.evidenceSha256 ?? '')) throw new Error('Scan scope requires independent review');
-  if (!Array.isArray(policy.findings) || policy.findings.length !== 37) throw new Error('Unexpected bounded scan scope');
+  if (!Array.isArray(policy.findings) || policy.findings.length !== 38) throw new Error('Unexpected bounded scan scope');
   const keys = new Set();
   for (const f of policy.findings) {
     const key = [f.scope, f.kind, f.id, f.module, f.version].join('|');
@@ -115,7 +115,7 @@ export function validateScanScope(policy, identity, now = new Date()) {
     keys.add(key);
   }
   if (policy.findings.filter(f => f.scope === 'selected' && f.kind === 'vulnerability').length !== 10
-      || policy.findings.filter(f => f.scope === 'standalone' && f.kind === 'vulnerability').length !== 25
+      || policy.findings.filter(f => f.scope === 'standalone' && f.kind === 'vulnerability').length !== 26
       || policy.findings.filter(f => f.scope === 'standalone' && f.kind === 'misconfiguration').length !== 2) throw new Error('Unexpected bounded scan finding kinds');
 }
 

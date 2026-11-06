@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "observedAt": "2026-10-25",
-  "expiresAt": "2026-11-08",
+  "observedAt": "2026-11-06",
+  "expiresAt": "2026-11-20",
   "owner": "KPanel release maintainers",
   "sourceManifestSha256": "d71dfdf7706b65bcc97fde40b8c44081164bb525be11c12d01a30f500e9a6965",
   "sourceManifestEncoding": "SHA256 of UTF-8 MODULE@VERSION followed by a space and the Go h1 module content checksum; go mod verify checks the downloaded archive and extracted module.",
@@ -185,7 +185,11 @@
     "rc130Rc6IdentityEvidenceSha256": "d74e39302dbe65ad1b025872f30e945331246ce248923c89172eaca9b461f8fc",
     "rc130Rc6IdentitySummary": "RC6 version-only source rebind: the official firstPartySources helper recomputed 1,297 files as d951f00a9c8d00d7dea0b2e831847e21af65e9e46f8bbfae4e1da6c0c794d69e. Relative to the exact candidate base, the sole Go source change is the internal/version/version.go version literal from 1.30.0-rc.5-dev to 1.30.0-rc.6-dev; go.mod, go.sum, vendored torrent source and all release/build target inputs are unchanged. Existing findings and dispositions and the 2026-10-25 through 2026-11-08 observation window are preserved. This identity binding does not claim a scanner result; fresh six-target closure inventory, scanners, exact candidate CI and full L3 remain required.",
     "rc130Rc7IdentityEvidenceSha256": "403990427c22bec1f4371323e1d2177b286981aa88ac4b92e402c14c1681c824",
-    "rc130Rc7IdentitySummary": "RC7 security dependency rebind after the current Trivy database reported CVE-2026-78661 in golang.org/x/net v0.60.0. Upgrade to v0.62.0 and required compatible modules x/crypto v0.58.0, x/sync v0.24.0, x/sys v0.49.0, x/term v0.47.0, x/text v0.43.0. Pinned Go 1.27.3, repository productionClosure and canonical localeCompare graph ordering recomputed the selected graph and all six production rows; 1303 first-party source files remain byte-identical. Exact RC7 L3 must independently reobserve the graph and run fresh scanners; this local identity record does not imply a scan or release pass."
+    "rc130Rc7IdentitySummary": "RC7 security dependency rebind after the current Trivy database reported CVE-2026-78661 in golang.org/x/net v0.60.0. Upgrade to v0.62.0 and required compatible modules x/crypto v0.58.0, x/sync v0.24.0, x/sys v0.49.0, x/term v0.47.0, x/text v0.43.0. Pinned Go 1.27.3, repository productionClosure and canonical localeCompare graph ordering recomputed the selected graph and all six production rows; 1303 first-party source files remain byte-identical. Exact RC7 L3 must independently reobserve the graph and run fresh scanners; this local identity record does not imply a scan or release pass.",
+    "rc130Rc7StandaloneFindingEvidenceSha256": "ef5c95dbfe00fde2b570624d63cfa5be8781efd54ec94e9392db0f0fa2e207bc",
+    "rc130Rc7StandaloneFindingSummary": "Exact candidate CI run 42301480042 observed one additional HIGH standalone finding: golang.org/x/net v0.47.0 / CVE-2026-78661. The official Go advisory GO-2026-6860 marks golang.org/x/net/html before v0.62.0 affected; the exact candidate's selected graph used v0.62.0 and its production Trivy report had zero HIGH/CRITICAL findings. The upstream standalone manifest remains unmodified and independently scanned. Classified as superseded-by-selected-version. The supplemental record is candidate-owner triage bound to the exact CI log and official advisory; it does not claim an independent human review.",
+    "rc130Rc7MainIdentityEvidenceSha256": "6dc50eefcf70155b9394af34c85d92679be85d96ee120e974d140d5e87518e9a",
+    "rc130Rc7MainIdentitySummary": "Using the canonical inventory helpers with Go 1.27.3 against main base e5fbae358b4ab32ba090162296ae45bd6e16d914 plus only the RC7 x/net security dependency update, requalified 1,297 first-party source files, 113 production modules and six matching actual/original closures. The exact GitHub-hosted main-branch CI must revalidate this identity before integration is accepted."
   },
   "findings": [
     {
@@ -386,7 +390,7 @@
       "version": "v0.44.0",
       "severity": "HIGH",
       "disposition": "superseded-by-selected-version",
-      "reason": "The standalone declaration uses v0.44.0; KPanel selects v0.57.0. Selected and production inventories are scanned independently without suppressing production findings."
+      "reason": "The standalone declaration uses v0.44.0; KPanel selects v0.58.0. Selected and production inventories are scanned independently without suppressing production findings."
     },
     {
       "scope": "standalone",
@@ -396,7 +400,7 @@
       "version": "v0.44.0",
       "severity": "HIGH",
       "disposition": "superseded-by-selected-version",
-      "reason": "The standalone declaration uses v0.44.0; KPanel selects v0.57.0. Selected and production inventories are scanned independently without suppressing production findings."
+      "reason": "The standalone declaration uses v0.44.0; KPanel selects v0.58.0. Selected and production inventories are scanned independently without suppressing production findings."
     },
     {
       "scope": "standalone",
@@ -406,7 +410,7 @@
       "version": "v0.44.0",
       "severity": "HIGH",
       "disposition": "superseded-by-selected-version",
-      "reason": "The standalone declaration uses v0.44.0; KPanel selects v0.57.0. Selected and production inventories are scanned independently without suppressing production findings."
+      "reason": "The standalone declaration uses v0.44.0; KPanel selects v0.58.0. Selected and production inventories are scanned independently without suppressing production findings."
     },
     {
       "scope": "standalone",
@@ -416,7 +420,7 @@
       "version": "v0.44.0",
       "severity": "HIGH",
       "disposition": "superseded-by-selected-version",
-      "reason": "The standalone declaration uses v0.44.0; KPanel selects v0.57.0. Selected and production inventories are scanned independently without suppressing production findings."
+      "reason": "The standalone declaration uses v0.44.0; KPanel selects v0.58.0. Selected and production inventories are scanned independently without suppressing production findings."
     },
     {
       "scope": "standalone",
@@ -426,7 +430,7 @@
       "version": "v0.44.0",
       "severity": "HIGH",
       "disposition": "superseded-by-selected-version",
-      "reason": "The standalone declaration uses v0.44.0; KPanel selects v0.57.0. Selected and production inventories are scanned independently without suppressing production findings."
+      "reason": "The standalone declaration uses v0.44.0; KPanel selects v0.58.0. Selected and production inventories are scanned independently without suppressing production findings."
     },
     {
       "scope": "standalone",
@@ -436,7 +440,7 @@
       "version": "v0.44.0",
       "severity": "HIGH",
       "disposition": "superseded-by-selected-version",
-      "reason": "The standalone declaration uses v0.44.0; KPanel selects v0.57.0. Selected and production inventories are scanned independently without suppressing production findings."
+      "reason": "The standalone declaration uses v0.44.0; KPanel selects v0.58.0. Selected and production inventories are scanned independently without suppressing production findings."
     },
     {
       "scope": "standalone",
@@ -456,7 +460,7 @@
       "version": "v0.44.0",
       "severity": "HIGH",
       "disposition": "superseded-by-selected-version",
-      "reason": "The standalone declaration uses v0.44.0; KPanel selects v0.57.0. Selected and production inventories are scanned independently without suppressing production findings."
+      "reason": "The standalone declaration uses v0.44.0; KPanel selects v0.58.0. Selected and production inventories are scanned independently without suppressing production findings."
     },
     {
       "scope": "standalone",
@@ -466,7 +470,7 @@
       "version": "v0.44.0",
       "severity": "HIGH",
       "disposition": "superseded-by-selected-version",
-      "reason": "The standalone declaration uses v0.44.0; KPanel selects v0.57.0. Selected and production inventories are scanned independently without suppressing production findings."
+      "reason": "The standalone declaration uses v0.44.0; KPanel selects v0.58.0. Selected and production inventories are scanned independently without suppressing production findings."
     },
     {
       "scope": "standalone",
@@ -476,7 +480,7 @@
       "version": "v0.44.0",
       "severity": "HIGH",
       "disposition": "superseded-by-selected-version",
-      "reason": "The standalone declaration uses v0.44.0; KPanel selects v0.57.0. Selected and production inventories are scanned independently without suppressing production findings."
+      "reason": "The standalone declaration uses v0.44.0; KPanel selects v0.58.0. Selected and production inventories are scanned independently without suppressing production findings."
     },
     {
       "scope": "standalone",
@@ -491,12 +495,22 @@
     {
       "scope": "standalone",
       "kind": "vulnerability",
+      "id": "CVE-2026-78661",
+      "module": "golang.org/x/net",
+      "version": "v0.47.0",
+      "severity": "HIGH",
+      "disposition": "superseded-by-selected-version",
+      "reason": "The unchanged standalone upstream manifest uses v0.47.0; the official Go advisory marks golang.org/x/net/html before v0.62.0 affected. KPanel's selected and production inventories use v0.62.0, and the exact RC7 production scan reported zero HIGH/CRITICAL findings. The upstream manifest remains independently scanned."
+    },
+    {
+      "scope": "standalone",
+      "kind": "vulnerability",
       "id": "CVE-2026-56851",
       "module": "golang.org/x/text",
       "version": "v0.31.0",
       "severity": "HIGH",
       "disposition": "superseded-by-selected-version",
-      "reason": "The preserved standalone manifest is affected below v0.41.0; KPanel selected and production inventories use v0.42.0. The original module manifest remains unchanged and is scanned independently."
+      "reason": "The preserved standalone manifest is affected below v0.41.0; KPanel selected and production inventories use v0.43.0. The original module manifest remains unchanged and is scanned independently."
     },
     {
       "scope": "standalone",
@@ -506,7 +520,7 @@
       "version": "v0.31.0",
       "severity": "HIGH",
       "disposition": "superseded-by-selected-version",
-      "reason": "The standalone declaration uses v0.31.0; KPanel selects v0.42.0. Selected and production inventories are scanned independently without suppressing production findings."
+      "reason": "The standalone declaration uses v0.31.0; KPanel selects v0.43.0. Selected and production inventories are scanned independently without suppressing production findings."
     },
     {
       "scope": "standalone",
@@ -516,7 +530,7 @@
       "version": "v0.44.0",
       "severity": "HIGH",
       "disposition": "superseded-by-selected-version",
-      "reason": "The standalone declaration uses v0.44.0; KPanel selects v0.57.0. Selected and production inventories are scanned independently without suppressing production findings."
+      "reason": "The standalone declaration uses v0.44.0; KPanel selects v0.58.0. Selected and production inventories are scanned independently without suppressing production findings."
     },
     {
       "scope": "standalone",

@@ -150,11 +150,11 @@ const scopePolicy = () => JSON.parse(readFileSync(join(repo, 'scripts/torrent-ba
 const scopeIdentity = policy => Object.fromEntries(['sourceManifestSha256', 'selectedGraphSha256', 'buildTargetFilesSha256', 'closureSha256', 'firstPartySourceSha256'].map(key => [key, structuredClone(policy[key])]));
 
 test('bounded scan scope expires, binds source and targets, and requires exact independently reviewed findings', () => {
-  const policy = scopePolicy(), identity = scopeIdentity(policy), observed = new Date('2026-10-25T12:00:00Z');
+  const policy = scopePolicy(), identity = scopeIdentity(policy), observed = new Date('2026-11-06T12:00:00Z');
   assert.doesNotThrow(() => validateScanScope(policy, identity, observed));
-  for (const date of ['2026-10-24T23:59:59Z', '2026-11-08T00:00:00Z']) assert.throws(() => validateScanScope(policy, identity, new Date(date)), /window/);
-  const stale = { ...policy, observedAt: '2026-10-11', expiresAt: '2026-10-25' };
-  assert.throws(() => validateScanScope(stale, identity, new Date('2026-10-12T12:00:00Z')), /window/);
+  for (const date of ['2026-11-05T23:59:59Z', '2026-11-20T00:00:00Z']) assert.throws(() => validateScanScope(policy, identity, new Date(date)), /window/);
+  const stale = { ...policy, observedAt: '2026-10-23', expiresAt: '2026-11-06' };
+  assert.throws(() => validateScanScope(stale, identity, new Date('2026-10-24T12:00:00Z')), /window/);
   for (const key of ['sourceManifestSha256', 'selectedGraphSha256', 'closureSha256', 'buildTargetFilesSha256', 'firstPartySourceSha256']) {
     assert.throws(() => validateScanScope(policy, { ...identity, [key]: 'changed' }, observed), /changed/);
   }
@@ -163,7 +163,8 @@ test('bounded scan scope expires, binds source and targets, and requires exact i
     assert.throws(() => validateScanScope(changed, identity, observed));
   }
   assert.equal(policy.findings.filter(f => f.scope === 'selected').length, 10);
-  assert.equal(policy.findings.filter(f => f.scope === 'standalone').length, 27);
+  assert.equal(policy.findings.length, 38);
+  assert.equal(policy.findings.filter(f => f.scope === 'standalone').length, 28);
 });
 
 test('release inventory matrix and build-file hashes cover every supported release environment', () => {
@@ -237,13 +238,23 @@ test('selected and standalone findings remain visible and cannot allow unknown I
   assert.equal(xText?.module, 'golang.org/x/text');
   assert.equal(xText?.version, 'v0.31.0');
   assert.equal(xText?.disposition, 'superseded-by-selected-version');
-  assert.match(xText?.reason ?? '', /below v0\.41\.0; KPanel selected and production inventories use v0\.42\.0/);
+  assert.match(xText?.reason ?? '', /below v0\.41\.0; KPanel selected and production inventories use v0\.43\.0/);
   const xTextInventory = [{ Path: xText.module, Version: xText.version }];
   const xTextFinding = { VulnerabilityID: xText.id, PkgName: xText.module, InstalledVersion: xText.version, Severity: xText.severity };
   const xTextReport = scanReport(xTextInventory, [xTextFinding]);
   xTextReport.Results.push({ Target: 'Dockerfile', Class: 'config', Type: 'dockerfile', Misconfigurations: [] });
-  assert.equal(verifyScanReport(xTextReport, xTextInventory, 1, 'standalone', policy, [], [{ Path: xText.module, Version: 'v0.42.0' }]).findingsRetained[0].id, xText.id);
+  assert.equal(verifyScanReport(xTextReport, xTextInventory, 1, 'standalone', policy, [], [{ Path: xText.module, Version: 'v0.43.0' }]).findingsRetained[0].id, xText.id);
   assert.throws(() => verifyScanReport(xTextReport, xTextInventory, 1, 'standalone', policy, [], xTextInventory), /not superseded/);
+  const xNet = policy.findings.find(f => f.scope === 'standalone' && f.id === 'CVE-2026-78661');
+  assert.equal(xNet?.module, 'golang.org/x/net');
+  assert.equal(xNet?.version, 'v0.47.0');
+  assert.equal(xNet?.disposition, 'superseded-by-selected-version');
+  assert.match(xNet?.reason ?? '', /selected and production inventories use v0\.62\.0/);
+  const xNetInventory = [{ Path: xNet.module, Version: xNet.version }];
+  const xNetReport = scanReport(xNetInventory, [{ VulnerabilityID: xNet.id, PkgName: xNet.module, InstalledVersion: xNet.version, Severity: xNet.severity }]);
+  xNetReport.Results.push({ Target: 'Dockerfile', Class: 'config', Type: 'dockerfile', Misconfigurations: [] });
+  assert.equal(verifyScanReport(xNetReport, xNetInventory, 1, 'standalone', policy, [], [{ Path: xNet.module, Version: 'v0.62.0' }]).findingsRetained[0].id, xNet.id);
+  assert.throws(() => verifyScanReport(xNetReport, xNetInventory, 1, 'standalone', policy, [], xNetInventory), /not superseded/);
   const selected = [{ Path: old.module, Version: 'v99.0.0' }];
   assert.throws(() => verifyScanReport({ ...report, Results: report.Results.slice(0, 1) }, oldInventory, 1, 'standalone', policy, [], selected), /incomplete/);
   const config = policy.findings.find(f => f.kind === 'misconfiguration');
