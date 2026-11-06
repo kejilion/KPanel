@@ -10,6 +10,13 @@ vi.mock('@/lib/api', () => ({ ApiError: class extends Error { status = 500 }, ap
 beforeEach(() => { mocks.accessPasswords.mockReset(); mocks.updateAccessAccount.mockReset(); mocks.updateAccessRule.mockReset(); mocks.list.mockReset() })
 
 describe('SiteAccessPasswordRules', () => {
+  it('shows the unauthenticated response-header warning when configuring a new site', async () => {
+    const wrapper = mount(SiteAccessPasswordCreate, { props: { modelValue: { enabled: true, path: '/', username: 'admin', password: '' }, writable: true } })
+    expect(wrapper.get('.site-settings-section__content').attributes('style')).toContain('display: none')
+    await wrapper.get('button').trigger('click')
+    expect(wrapper.text()).toContain('配置的响应头可能在未认证时公开，请勿在响应头中放置敏感信息。')
+  })
+
   it('uses the same collapsed access-password entry for creation and later management', async () => {
     mocks.accessPasswords.mockResolvedValue([])
     const create = mount(SiteAccessPasswordCreate, { props: { modelValue: { enabled: false, path: '/', username: '', password: '' }, writable: true } })

@@ -16,7 +16,7 @@ const contentId = `site-settings-section-${useId()}`
       </span>
       <ChevronDown :size="18" :class="{ 'is-open': expanded }" />
     </button>
-    <div v-if="expanded" :id="contentId" class="site-settings-section__content">
+    <div v-show="expanded" :id="contentId" class="site-settings-section__content">
       <slot />
     </div>
   </section>

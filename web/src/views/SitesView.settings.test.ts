@@ -37,6 +37,9 @@ describe('site settings entries', () => {
     const createPassword = wrapper.findAll('button').find((item) => item.text().startsWith('访问密码'))!
     expect(createCertificate.attributes('aria-expanded')).toBe('false')
     expect(createPassword.attributes('aria-expanded')).toBe('false')
+    for (const button of [createCertificate, createPassword]) {
+      expect(wrapper.find(`[id="${button.attributes('aria-controls')}"]`).exists()).toBe(true)
+    }
     const certificateLabel = createCertificate.text(), passwordLabel = createPassword.text()
     await createCertificate.trigger('click')
     expect(createCertificate.attributes('aria-expanded')).toBe('true')
@@ -49,6 +52,9 @@ describe('site settings entries', () => {
     expect(editPassword.text()).toBe(passwordLabel)
     expect(editCertificate.attributes('aria-expanded')).toBe('false')
     expect(editPassword.attributes('aria-expanded')).toBe('false')
+    for (const button of [editCertificate, editPassword]) {
+      expect(wrapper.find(`[id="${button.attributes('aria-controls')}"]`).exists()).toBe(true)
+    }
     await editCertificate.trigger('click')
     expect(editCertificate.attributes('aria-expanded')).toBe('true')
     expect(wrapper.text()).toContain('保存证书')
