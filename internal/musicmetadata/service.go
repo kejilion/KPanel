@@ -69,7 +69,7 @@ func (c metadataClient) Open(ctx context.Context, raw string) (*http.Response, e
 
 func New() *Service {
 	public := remotedownload.NewClient(remotedownload.Config{ConnectTimeout: 3 * time.Second})
-	client := &http.Client{Timeout: 4 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }, Transport: &http.Transport{Proxy: nil, DialContext: public.DialPublic, TLSHandshakeTimeout: 3 * time.Second, ResponseHeaderTimeout: 3 * time.Second, MaxConnsPerHost: 2, MaxIdleConns: 4, MaxIdleConnsPerHost: 2, IdleConnTimeout: 30 * time.Second}}
+	client := &http.Client{Timeout: 4 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }, Transport: &http.Transport{Proxy: nil, DialContext: public.DialPublic, TLSHandshakeTimeout: 3 * time.Second, ResponseHeaderTimeout: 3 * time.Second, MaxResponseHeaderBytes: 64 << 10, MaxConnsPerHost: 2, MaxIdleConns: 4, MaxIdleConnsPerHost: 2, IdleConnTimeout: 30 * time.Second}}
 	return &Service{client: metadataClient{client}, active: make(chan struct{}, 2), cache: make(map[Query]cached)}
 }
 
