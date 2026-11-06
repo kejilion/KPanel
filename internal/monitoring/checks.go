@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -18,6 +19,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"golang.org/x/net/idna"
 )
 
 const (
@@ -239,12 +242,14 @@ func validateChecks(state persistedChecks) error {
 		}
 		switch item.Kind {
 		case "ping":
-			if ip := net.ParseIP(item.Target); ip == nil || ip.To4() == nil {
-				return &CheckValidationError{Field: "items.target", Detail: "Ping target must be an IPv4 address"}
+			if _, ok := checkHost(item.Target); !ok {
+				return &CheckValidationError{Field: "items.target", Detail: "Ping target must be an IPv4 address, IPv6 address or hostname"}
 			}
 		case "tcp":
 			host, port, err := net.SplitHostPort(item.Target)
 			value, parseErr := strconv.Atoi(port)
+			// Preserve the existing TCP/HTTP configuration grammar so an older
+			// saved target cannot disable the entire store after an upgrade.
 			if err != nil || strings.TrimSpace(host) == "" || strings.ContainsAny(host, " \t\r\n") || parseErr != nil || value < 1 || value > 65535 {
 				return &CheckValidationError{Field: "items.target", Detail: "TCP target must use host:port"}
 			}
@@ -258,6 +263,48 @@ func validateChecks(state persistedChecks) error {
 		}
 	}
 	return nil
+}
+
+// checkHost accepts only an IP or DNS host, not a URL, port or path.
+// Preserve the original configuration; IDNA normalization is for dialing.
+func checkHost(value string) (string, bool) {
+	if strings.ContainsAny(value, " \t\r\n") || hasCheckControl(value) {
+		return "", false
+	}
+	if ip, err := netip.ParseAddr(value); err == nil {
+		return ip.String(), true
+	}
+	// Existing TCP/HTTP checks can use internal DNS names with underscores.
+	// Apply IDNA only to non-ASCII input, preserving those working names.
+	host := value
+	var err error
+	if !utf8.ValidString(value) {
+		return "", false
+	}
+	for _, character := range value {
+		if character > 127 {
+			host, err = idna.Lookup.ToASCII(value)
+			break
+		}
+	}
+	if err != nil || host == "" || len(host) > 254 {
+		return "", false
+	}
+	name := strings.TrimSuffix(host, ".")
+	if len(name) > 253 || strings.Trim(name, "0123456789.") == "" {
+		return "", false
+	}
+	for _, label := range strings.Split(name, ".") {
+		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return "", false
+		}
+		for _, character := range label {
+			if !(character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z' || character >= '0' && character <= '9' || character == '-' || character == '_') {
+				return "", false
+			}
+		}
+	}
+	return host, true
 }
 
 func hasCheckControl(value string) bool {

@@ -34,6 +34,23 @@ beforeEach(() => {
 })
 
 describe('MonitoringChecksDialog', () => {
+  it.each([
+    ['ping', '1.1.1.1'], ['ping', '2606:4700:4700::1111'], ['ping', 'example.com'],
+    ['tcp', '1.1.1.1:443'], ['tcp', '[2606:4700:4700::1111]:443'], ['tcp', 'example.com:443'],
+    ['http', 'http://1.1.1.1/'], ['http', 'http://[::1]:8080/health'], ['http', 'https://example.com/'],
+  ])('saves %s target %s', async (kind, target) => {
+    const wrapper = mount(MonitoringChecksDialog, { props: { open: true }, global: { stubs: { teleport: true } } })
+    await flushPromises()
+    await wrapper.get('select').setValue(kind)
+    await wrapper.get('.check-editor__target input').setValue(target)
+    const save = wrapper.findAll('button').find((button) => button.text().includes('保存变更'))!
+    expect(save.attributes('disabled')).toBeUndefined()
+    await save.trigger('click')
+    await flushPromises()
+    expect(mocks.updateChecks).toHaveBeenCalledWith({expectedResourceVersion:version,items:[expect.objectContaining({kind,target})]})
+    wrapper.unmount()
+  })
+
   it('edits the unified list and saves one versioned replacement', async () => {
     const wrapper = mount(MonitoringChecksDialog, { attachTo: document.body, props: { open: true }, global: { stubs: { teleport: true } } })
     await flushPromises()

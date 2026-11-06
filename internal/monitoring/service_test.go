@@ -354,7 +354,7 @@ func TestNetworkLatencyProbeRejectsInvalidTargetsAndAllFailures(t *testing.T) {
 			return 0, errors.New("filtered")
 		},
 	}}
-	if _, err := prober.Probe(context.Background(), "example.com"); err == nil {
+	if _, err := prober.Probe(context.Background(), "https://example.com"); err == nil {
 		t.Fatal("invalid target was accepted")
 	}
 	if _, err := prober.Probe(context.Background(), "192.0.2.1"); err == nil {

@@ -8,12 +8,14 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"golang.org/x/net/icmp"
 	"golang.org/x/net/ipv4"
+	"golang.org/x/net/ipv6"
 )
 
 const (
@@ -30,6 +32,7 @@ type operatorLatencyProbe func(context.Context, string) (time.Duration, error)
 
 type networkLatencyProber struct {
 	probes []operatorLatencyProbe
+	lookup func(context.Context, string) ([]net.IPAddr, error)
 }
 
 type dnsLatencyProbe struct {
@@ -41,7 +44,7 @@ type icmpLatencyProbe struct {
 	nextSequence atomic.Uint32
 }
 
-// NewOperatorLatencyProber measures a bounded round trip to configured IPv4
+// NewOperatorLatencyProber measures a bounded round trip to configured IP or DNS
 // Ping targets. ICMP uses Linux ping sockets, while TCP/53 and UDP DNS provide
 // fallbacks for networks that filter one of the protocols. No CAP_NET_RAW is
 // added to the Agent capability boundary.
@@ -49,11 +52,11 @@ func NewOperatorLatencyProber() OperatorLatencyProber {
 	dialer := net.Dialer{Timeout: operatorProbeTimeout}
 	dns := &dnsLatencyProbe{dialer: dialer}
 	echo := &icmpLatencyProbe{}
-	return &networkLatencyProber{probes: []operatorLatencyProbe{
+	return &networkLatencyProber{lookup: net.DefaultResolver.LookupIPAddr, probes: []operatorLatencyProbe{
 		echo.Probe,
 		func(ctx context.Context, address string) (time.Duration, error) {
 			startedAt := time.Now()
-			connection, err := dialer.DialContext(ctx, "tcp4", net.JoinHostPort(address, "53"))
+			connection, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(address, "53"))
 			latency := time.Since(startedAt)
 			if err != nil {
 				return 0, err
@@ -66,24 +69,62 @@ func NewOperatorLatencyProber() OperatorLatencyProber {
 }
 
 func (prober *networkLatencyProber) Probe(ctx context.Context, address string) (time.Duration, error) {
-	if prober == nil || net.ParseIP(address) == nil || len(prober.probes) == 0 {
+	host, valid := checkHost(address)
+	if prober == nil || !valid || len(prober.probes) == 0 {
 		return 0, errors.New("operator latency target is invalid")
 	}
 	probeContext, cancel := context.WithTimeout(ctx, operatorProbeTimeout)
 	defer cancel()
+	addresses := []string{host}
+	if _, err := netip.ParseAddr(host); err != nil {
+		lookup := prober.lookup
+		if lookup == nil {
+			lookup = net.DefaultResolver.LookupIPAddr
+		}
+		resolved, err := lookup(probeContext, host)
+		if err != nil {
+			return 0, err
+		}
+		// At most one IP per family bounds DNS fan-out; racing both families
+		// prevents a blackholed AAAA from hiding a working A, or vice versa.
+		addresses = nil
+		seen := [2]bool{}
+		for _, item := range resolved {
+			if item.IP.To16() == nil {
+				continue
+			}
+			family := 0
+			if item.IP.To4() == nil {
+				family = 1
+			}
+			if !seen[family] {
+				addresses = append(addresses, item.String())
+				seen[family] = true
+			}
+			if seen[0] && seen[1] {
+				break
+			}
+		}
+		if len(addresses) == 0 {
+			return 0, errors.New("operator latency target has no IP addresses")
+		}
+	}
 	type result struct {
 		latency time.Duration
 		err     error
 	}
-	results := make(chan result, len(prober.probes))
-	for _, probe := range prober.probes {
-		go func(run operatorLatencyProbe) {
-			latency, err := run(probeContext, address)
-			results <- result{latency: latency, err: err}
-		}(probe)
+	count := len(addresses) * len(prober.probes)
+	results := make(chan result, count)
+	for _, target := range addresses {
+		for _, probe := range prober.probes {
+			go func(run operatorLatencyProbe, target string) {
+				latency, err := run(probeContext, target)
+				results <- result{latency: latency, err: err}
+			}(probe, target)
+		}
 	}
-	errorsSeen := make([]error, 0, len(prober.probes))
-	for range prober.probes {
+	errorsSeen := make([]error, 0, count)
+	for range count {
 		select {
 		case item := <-results:
 			if item.err == nil {
@@ -99,10 +140,10 @@ func (prober *networkLatencyProber) Probe(ctx context.Context, address string) (
 }
 
 func (prober *dnsLatencyProbe) Probe(ctx context.Context, address string) (time.Duration, error) {
-	if prober == nil || net.ParseIP(address) == nil {
+	if _, err := netip.ParseAddr(address); prober == nil || err != nil {
 		return 0, errors.New("DNS latency target is invalid")
 	}
-	connection, err := prober.dialer.DialContext(ctx, "udp4", net.JoinHostPort(address, "53"))
+	connection, err := prober.dialer.DialContext(ctx, "udp", net.JoinHostPort(address, "53"))
 	if err != nil {
 		return 0, err
 	}
@@ -139,11 +180,18 @@ func (prober *icmpLatencyProbe) Probe(ctx context.Context, address string) (time
 	if prober == nil {
 		return 0, errors.New("ICMP latency probe is unavailable")
 	}
-	destination := net.ParseIP(address)
-	if destination == nil || destination.To4() == nil {
+	ip, err := netip.ParseAddr(address)
+	if err != nil {
 		return 0, errors.New("ICMP latency target is invalid")
 	}
-	connection, err := icmp.ListenPacket("udp4", "0.0.0.0")
+	destination := net.IP(ip.AsSlice())
+	network, bind, protocol := "udp4", "0.0.0.0", 1
+	var requestType, replyType icmp.Type = ipv4.ICMPTypeEcho, ipv4.ICMPTypeEchoReply
+	if destination.To4() == nil {
+		network, bind, protocol = "udp6", "::", 58
+		requestType, replyType = ipv6.ICMPTypeEchoRequest, ipv6.ICMPTypeEchoReply
+	}
+	connection, err := icmp.ListenPacket(network, bind)
 	if err != nil {
 		return 0, err
 	}
@@ -157,7 +205,7 @@ func (prober *icmpLatencyProbe) Probe(ctx context.Context, address string) (time
 	}
 	sequence := int(prober.nextSequence.Add(1) & 0xffff)
 	request, err := (&icmp.Message{
-		Type: ipv4.ICMPTypeEcho,
+		Type: requestType,
 		Code: 0,
 		Body: &icmp.Echo{ID: sequence, Seq: sequence, Data: []byte("kpanel")},
 	}).Marshal(nil)
@@ -165,17 +213,21 @@ func (prober *icmpLatencyProbe) Probe(ctx context.Context, address string) (time
 		return 0, err
 	}
 	startedAt := time.Now()
-	if _, err := connection.WriteTo(request, &net.UDPAddr{IP: destination}); err != nil {
+	if _, err := connection.WriteTo(request, &net.UDPAddr{IP: destination, Zone: ip.Zone()}); err != nil {
 		return 0, err
 	}
 	response := make([]byte, 128)
-	read, _, err := connection.ReadFrom(response)
+	read, peer, err := connection.ReadFrom(response)
 	latency := time.Since(startedAt)
 	if err != nil {
 		return 0, err
 	}
-	message, err := icmp.ParseMessage(1, response[:read])
-	if err != nil || message.Type != ipv4.ICMPTypeEchoReply {
+	peerAddress, ok := peer.(*net.UDPAddr)
+	if !ok || !peerAddress.IP.Equal(destination) {
+		return 0, errors.New("ICMP reply address mismatch")
+	}
+	message, err := icmp.ParseMessage(protocol, response[:read])
+	if err != nil || message.Type != replyType || message.Code != 0 {
 		return 0, errors.New("ICMP latency response is invalid")
 	}
 	echo, ok := message.Body.(*icmp.Echo)
@@ -251,8 +303,13 @@ func probeCheck(ctx context.Context, ping OperatorLatencyProber, target Check) (
 	case "ping":
 		return ping.Probe(probeContext, target.Target)
 	case "tcp":
+		host, port, err := net.SplitHostPort(target.Target)
+		host, valid := checkHost(host)
+		if err != nil || !valid {
+			return 0, errors.New("TCP latency target is invalid")
+		}
 		startedAt := time.Now()
-		connection, err := (&net.Dialer{Timeout: operatorProbeTimeout}).DialContext(probeContext, "tcp", target.Target)
+		connection, err := (&net.Dialer{Timeout: operatorProbeTimeout}).DialContext(probeContext, "tcp", net.JoinHostPort(host, port))
 		latency := time.Since(startedAt)
 		if err != nil {
 			return 0, err

@@ -6,6 +6,7 @@ import ErrorState from '@/components/feedback/ErrorState.vue'
 import LoadingState from '@/components/feedback/LoadingState.vue'
 import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
 import { ApiError, api } from '@/lib/api'
+import { validMonitoringCheckTarget } from '@/lib/monitoringCheckTargets'
 import type { MonitoringCheck, MonitoringCheckKind, MonitoringCheckSnapshot } from '@/types/api'
 
 const props = defineProps<{ open: boolean }>()
@@ -29,9 +30,9 @@ const canAdd = computed(() => items.value.length < (snapshot.value?.maxItems || 
 const canSave = computed(() => Boolean(snapshot.value?.available) && !saving.value && items.value.every(validCheck))
 
 function checkPlaceholder(kind: MonitoringCheckKind): string {
-  if (kind === 'tcp') return 'example.com:443'
-  if (kind === 'http') return 'https://example.com/health'
-  return '1.1.1.1'
+  if (kind === 'tcp') return 'example.com:443 / [::1]:443'
+  if (kind === 'http') return 'https://example.com/health / http://[::1]/'
+  return '1.1.1.1 / 2606:4700:4700::1111 / example.com'
 }
 
 function newID(): string {
@@ -57,29 +58,16 @@ function removeCheck(index: number): void {
 
 function validCheck(item: MonitoringCheck): boolean {
   if (!item.name.trim() || item.name !== item.name.trim() || [...item.name].length > 48) return false
-  if (item.kind === 'ping') {
-    const octets = item.target.split('.')
-    return octets.length === 4 && octets.every((octet) => /^\d{1,3}$/.test(octet) && Number(octet) <= 255)
-  }
-  if (item.kind === 'tcp') {
-    const match = item.target.match(/^(?:\[[^\]]+\]|[^:\s]+):(\d{1,5})$/)
-    return Boolean(match && Number(match[1]) >= 1 && Number(match[1]) <= 65535)
-  }
-  try {
-    const url = new URL(item.target)
-    return (url.protocol === 'http:' || url.protocol === 'https:') && Boolean(url.hostname) && !url.username && !url.password
-  } catch {
-    return false
-  }
+  return validMonitoringCheckTarget(item.kind, item.target)
 }
 
 function validationHint(item: MonitoringCheck): string {
   if (!item.name.trim()) return phrase('请填写检测名称。')
   if (item.name !== item.name.trim() || [...item.name].length > 48) return phrase('名称需为 1–48 个字符，首尾不能有空格。')
   if (validCheck(item)) return ''
-  if (item.kind === 'ping') return phrase('Ping 目标需填写 IPv4 地址。')
-  if (item.kind === 'tcp') return phrase('TCP 目标需使用 host:port 格式。')
-  return phrase('HTTP 目标需使用完整的 http 或 https URL。')
+  if (item.kind === 'ping') return phrase('Ping 目标需填写 IPv4、IPv6 地址或域名。')
+  if (item.kind === 'tcp') return phrase('TCP 支持 IP 或域名，使用 host:port；IPv6 使用 [地址]:端口。')
+  return phrase('HTTP 支持 IP 或域名，需填写完整 URL；IPv6 使用 http://[地址]/。')
 }
 
 async function load(): Promise<void> {
@@ -140,7 +128,7 @@ onBeforeUnmount(() => controller?.abort())
   <ModalDialog
     :open="open"
     :title="phrase('管理检测项')"
-    :description="phrase('统一管理 Ping、TCP 与 HTTP 检测；保存后下一轮采样生效。')"
+    :description="phrase('三种检测均支持 IPv4、IPv6 和域名；TCP/HTTP 的 IPv6 地址需用 [] 包裹。保存后下一轮采样生效。')"
     size="large"
     :close-disabled="saving"
     @close="emit('close')"
@@ -186,15 +174,15 @@ onBeforeUnmount(() => controller?.abort())
 .check-manager__toolbar > span { flex: 1; color: var(--muted); font-size: 13px; }
 .check-manager__list { display: grid; gap: 9px; max-height: min(58vh, 620px); overflow-y: auto; padding-right: 3px; }
 .check-editor {
-  --check-type-accent: #4f86c6;
+  --check-type-accent: var(--monitoring-ping-accent);
   display: grid; grid-template-columns: 120px minmax(160px, .75fr) minmax(240px, 1.4fr) 38px; align-items: end; gap: 10px; padding: 12px;
   border: 1px solid color-mix(in srgb, var(--check-type-accent) 28%, var(--border));
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--check-type-accent) 12%, var(--surface));
 }
-.check-editor--ping { --check-type-accent: #4f86c6; }
-.check-editor--tcp { --check-type-accent: #29947f; }
-.check-editor--http { --check-type-accent: #8968c2; }
+.check-editor--ping { --check-type-accent: var(--monitoring-ping-accent); }
+.check-editor--tcp { --check-type-accent: var(--monitoring-tcp-accent); }
+.check-editor--http { --check-type-accent: var(--monitoring-http-accent); }
 .check-editor label { display: grid; gap: 6px; color: var(--muted); font-size: 13px; }
 .check-editor input, .check-editor select { width: 100%; min-height: 38px; padding: 7px 9px; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); background: var(--surface); font: inherit; font-size: 14px; }
 .check-editor__kind select { border-color: color-mix(in srgb, var(--check-type-accent) 32%, var(--border)); background: color-mix(in srgb, var(--check-type-accent) 7%, var(--surface)); }

@@ -13,6 +13,9 @@
   --sidebar-collapsed-width: 78px;
   --topbar-height: 70px;
   --scrollbar-size: 10px;
+  --monitoring-ping-accent: #4f86c6;
+  --monitoring-tcp-accent: #29947f;
+  --monitoring-http-accent: #8968c2;
   /* Shared dark workspace: terminals and log/console viewers stay visually
      consistent in both application themes. File previews use their own
      derived workbench palette. */

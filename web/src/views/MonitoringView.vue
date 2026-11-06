@@ -1184,7 +1184,12 @@ onBeforeUnmount(() => {
         </header>
         <p class="operator-latency-note">每 5 分钟统一采样；超时记为缺测，不记作 0 ms。曲线是区间内的中位延迟，显示 3 条以内时色带标出最低到最高；曲线支持拖拽框选并沿用上方时间范围。</p>
         <section v-for="group in serviceCheckGroups" :key="group.kind" class="service-check-group" :data-check-kind="group.kind" :aria-labelledby="`service-check-group-${group.kind}`">
-          <h3 :id="`service-check-group-${group.kind}`" class="service-check-group__title">{{ group.label }}<span>{{ group.routes.length }}</span></h3>
+          <header class="service-check-group__heading">
+            <h3 :id="`service-check-group-${group.kind}`" class="service-check-group__title">{{ group.label }}<span>{{ group.routes.length }}</span></h3>
+            <div v-if="group.routes.length" class="operator-latency-actions">
+              <button type="button" @click="showAllOperatorLatency(group.kind, group.visibleCount === 0)">{{ group.visibleCount ? '全隐藏' : '全显示' }}</button>
+            </div>
+          </header>
           <template v-if="group.routes.length">
             <div class="operator-latency-controls">
               <div class="operator-latency-routes" aria-label="检测项显示选择">
@@ -1202,10 +1207,6 @@ onBeforeUnmount(() => {
                   <span>{{ operatorLatencyLabel(series) }}</span>
                   <small>{{ latestLatencyLabel(series) }}</small>
                 </button>
-              </div>
-              <div class="operator-latency-actions">
-                <button type="button" @click="showAllOperatorLatency(group.kind, true)">全显示</button>
-                <button type="button" @click="showAllOperatorLatency(group.kind, false)">全隐藏</button>
               </div>
             </div>
             <TrendChart
@@ -1347,9 +1348,13 @@ onBeforeUnmount(() => {
 .chart-switch button:hover, .chart-switch button.is-active { color: var(--brand-strong); background: var(--brand-soft); }
 .operator-latency-card { padding-bottom: 12px; }
 .service-check-card { display: grid; gap: 10px; }
-.service-check-group { display: grid; min-width: 0; gap: 10px; padding-top: 16px; border-top: 1px solid var(--border); }
+.service-check-group { display: grid; min-width: 0; gap: 10px; padding: 12px; border: 1px solid color-mix(in srgb, var(--check-type-accent) 28%, var(--border)); border-radius: var(--radius); background: color-mix(in srgb, var(--check-type-accent) 8%, var(--surface)); }
+.service-check-group__heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; min-width: 0; }
+.service-check-group[data-check-kind='ping'] { --check-type-accent: var(--monitoring-ping-accent); }
+.service-check-group[data-check-kind='tcp'] { --check-type-accent: var(--monitoring-tcp-accent); }
+.service-check-group[data-check-kind='http'] { --check-type-accent: var(--monitoring-http-accent); }
 .service-check-group__title { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--text); font-size: 16px; }
-.service-check-group__title > span { padding: 2px 7px; border-radius: 999px; color: var(--muted); background: var(--surface-subtle); font-size: 12px; font-weight: 400; }
+.service-check-group__title > span { padding: 2px 7px; border-radius: 999px; color: var(--muted); background: color-mix(in srgb, var(--check-type-accent) 12%, var(--surface-subtle)); font-size: 12px; font-weight: 400; }
 .service-check-card :deep(.trend-chart__tick) { font-size: 12px; }
 .service-check-card :deep(.trend-chart__axis), .service-check-card :deep(.trend-chart__tooltip time) { font-size: 13px; }
 .service-check-card :deep(.trend-chart__tooltip span) { font-size: 14px; }

@@ -177,9 +177,13 @@ CF-Server-Monitor 取桶内样本、monitor 存中位数加上下界，四个同
 | 联通 | `123.125.81.6` | `210.22.84.3` | `210.21.196.6` |
 | 移动 | `221.179.155.161` | `211.136.112.50` | `211.136.192.6` |
 
-检测配置由 Agent 私有目录中的 `checks.json` 持久化，最多 16 项，支持 Ping IPv4、TCP `host:port`
-和无凭据的绝对 HTTP/HTTPS URL。每轮最多 3 个并发，每项目最长 1.5 秒；Ping 同时执行非特权 ICMP
-ping socket、TCP/53 与 UDP DNS 探测，以最先收到的有效结果记录往返时间；TCP 记录连接建立时间；
+检测配置由 Agent 私有目录中的 `checks.json` 持久化，最多 16 项，Ping、TCP、HTTP 均支持 IPv4、IPv6
+和域名（含 IDNA 国际化域名）。Ping 填裸地址或域名；TCP 填 `host:port`，IPv6 使用 `[地址]:端口`；HTTP
+填无凭据的绝对 HTTP/HTTPS URL，IPv6 使用 `http://[地址]/`。旧检测配置与默认九条 IPv4 线路保持兼容。
+每轮最多 3 个检测项并发，每项目最长 1.5 秒（包含 DNS 解析）；Ping 域名每种地址族最多取一个地址，
+IPv4/IPv6 并行尝试，每项最多 6 个有界协议探测，最先成功即取消其余探测；直接 IP 每项仍最多 3 个。
+Ping 同时执行非特权 ICMP/ICMPv6 ping socket（Windows 使用原生 IP Helper API）、TCP/53 与 UDP DNS
+探测，以最先收到的有效结果记录往返时间；TCP 记录连接建立时间；
 HTTP 接受 2xx/3xx 状态并记录首个响应耗时，不跟随重定向；管理员直接配置的内网 HTTP/HTTPS 目标仍可探测。全部超时、拒绝或返回失败状态时记录为缺测值，不伪装成 `0 ms`。该实现不增加
 `CAP_NET_RAW`，也不依赖宿主机 `ping` 命令。运营商归属以
 [`gaoyifan/china-operator-ip`](https://github.com/gaoyifan/china-operator-ip) `master@4593b6c4d577b61e3c2189bcd06f1e4c24750b7d`

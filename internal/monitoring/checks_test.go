@@ -97,7 +97,7 @@ func TestCheckStoreValidatesTargetsAndConflicts(t *testing.T) {
 		t.Fatalf("stale replacement error=%v", err)
 	}
 	invalid := append([]Check(nil), valid...)
-	invalid[0].Target = "example.com"
+	invalid[0].Target = "https://example.com"
 	if _, err := store.replace(ReplaceChecksInput{ExpectedResourceVersion: saved.ResourceVersion, Items: invalid}); validationCheckField(err) != "items.target" {
 		t.Fatalf("invalid Ping error=%v", err)
 	}
