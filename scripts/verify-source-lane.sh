@@ -19,6 +19,7 @@ case "${1:-}" in
   torrent)
     # Nested module tests are not included by ./...; use the root dependency graph.
     go test -race github.com/anacrolix/torrent -run '^TestMsgWriter(BroadcastDuringFillWakesWriter|KeepAliveTimerRearmed)$' -count=1 -timeout=1m
+    go test -race github.com/anacrolix/torrent/bencode -run '^TestDecodeMaxDepth' -count=1 -timeout=1m
     ;;
   deploy)
     bash scripts/verify-deploy.sh

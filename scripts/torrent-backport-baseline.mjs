@@ -1,18 +1,17 @@
 #!/usr/bin/env node
 
-// Local replacements hide upstream version identity from vulnerability databases.
-// Keep the actual-source scans and add a conservative scan of the original version.
+// Bind scans to the verified upstream torrent module and the production graph.
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const MODULE = 'github.com/anacrolix/torrent';
-const VERSION = 'v1.61.0';
-const REPLACEMENT = './third_party/torrent';
-const SOURCE_MANIFEST_SHA256 = '3165b3c3e3fcdefe8dc52fba19a0a872eb26238692d6fedff4db2fc48ecf2580';
+const VERSION = 'v1.61.1-0.20260911233437-76452a2c8a2f';
+const MODULE_SUM = 'h1:Qd2S/HI+0pR+EMyPS58AB573G3W92zSngOmH/e0qqP8=';
+const SOURCE_MANIFEST_SHA256 = createHash('sha256').update(`${MODULE}@${VERSION} ${MODULE_SUM}`).digest('hex');
 const repoRoot = resolve(import.meta.dirname, '..');
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const MAIN_MODULE = 'github.com/kejilion/kejilion-panel';
@@ -43,8 +42,7 @@ export function productionClosure(packages, target, selected) {
     const m = p.Module;
     const expected = graph.get(m?.Path);
     if (!expected || m.Error || Boolean(m.Main) !== Boolean(expected.Main) || (m.Version ?? '') !== (expected.Version ?? '')
-        || (m.Replace?.Path ?? '') !== (expected.Replace?.Path ?? '')
-        || (m.Replace && (m.Path !== MODULE || m.Replace.Path !== REPLACEMENT || m.Replace.Version))) throw new Error('Production module is outside the selected graph');
+        || m.Replace || expected.Replace) throw new Error('Production module is outside the selected graph');
     if (!m.Main) {
       if (!m.Version) throw new Error('Production module is missing its version');
       modules.set(m.Path, { Path: m.Path, Version: m.Version });
@@ -178,9 +176,9 @@ export function verifyScanReport(report, inventory, exitCode, scope, policy, pro
 }
 
 export function baselineMod(source) {
-  const directive = /^replace github\.com\/anacrolix\/torrent v1\.61\.0 => \.\/third_party\/torrent\r?\n/gm;
-  if ([...source.matchAll(directive)].length !== 1) throw new Error('Expected one exact version-qualified torrent replacement');
-  return source.replace(directive, '');
+  if (!new RegExp('^[ \\t]*(?:require[ \\t]+)?github\\.com/anacrolix/torrent[ \\t]+' + VERSION.replaceAll('.', '\\.') + '[ \\t]*\\r?$', 'm').test(source)
+      || /^replace\s+github\.com\/anacrolix\/torrent\b/m.test(source)) throw new Error('Expected the exact unmodified upstream torrent version');
+  return source;
 }
 
 export function parseModuleJSON(text) {
@@ -206,10 +204,7 @@ export function parseModuleJSON(text) {
 }
 
 export function verifyModuleDeclarations(actual, baseline) {
-  const replacements = Array.isArray(actual.Replace) ? actual.Replace.filter(r => r.Old?.Path === MODULE) : [];
-  if (replacements.length !== 1 || replacements[0].Old.Version !== VERSION
-      || replacements[0].New?.Path !== REPLACEMENT || replacements[0].New.Version
-      || actual.Require?.filter(r => r.Path === MODULE && r.Version === VERSION).length !== 1) throw new Error('Unexpected torrent module declaration');
+  if ((actual.Replace ?? []).length || actual.Require?.filter(r => r.Path === MODULE && r.Version === VERSION).length !== 1) throw new Error('Unexpected torrent module declaration');
   const normalizeEmptyReplace = declaration => {
     const normalized = { ...declaration };
     const absent = normalized.Replace === undefined || normalized.Replace === null;
@@ -219,17 +214,16 @@ export function verifyModuleDeclarations(actual, baseline) {
     if (absent || normalized.Replace.length === 0) delete normalized.Replace;
     return normalized;
   };
-  const expected = { ...actual, Replace: actual.Replace.filter(r => r !== replacements[0]) };
-  if (JSON.stringify(normalizeEmptyReplace(expected)) !== JSON.stringify(normalizeEmptyReplace(baseline))) throw new Error('Baseline changed other module declarations');
+  if (JSON.stringify(normalizeEmptyReplace(actual)) !== JSON.stringify(normalizeEmptyReplace(baseline))) throw new Error('Baseline changed other module declarations');
 }
 
 export function verifyModuleGraphs(actual, baseline) {
   for (const graph of [actual, baseline]) {
-    if (graph.some(m => !m.Path || m.Error) || new Set(graph.map(m => m.Path)).size !== graph.length) throw new Error('Invalid module graph');
+    if (graph.some(m => !m.Path || m.Error || m.Replace) || new Set(graph.map(m => m.Path)).size !== graph.length) throw new Error('Invalid module graph');
   }
   const current = actual.find(m => m.Path === MODULE);
   const original = baseline.find(m => m.Path === MODULE);
-  if (current?.Version !== VERSION || current.Replace?.Path !== REPLACEMENT || current.Replace.Version
+  if (current?.Version !== VERSION || current.Replace
       || original?.Version !== VERSION || original.Replace) throw new Error('Torrent baseline identity mismatch');
   const normalized = graph => graph.map(m => ({ Path: m.Path, Version: m.Version ?? '',
     ...(m.Path !== MODULE && m.Replace ? { Replace: { Path: m.Replace.Path, Version: m.Replace.Version ?? '' } } : {}) }))
@@ -238,25 +232,34 @@ export function verifyModuleGraphs(actual, baseline) {
   return hash(JSON.stringify(normalized(baseline)));
 }
 
-export function validateBackport(repo) {
-  const directory = join(repo, 'third_party/torrent');
-  const provenance = JSON.parse(readFileSync(join(directory, 'KPANEL_BACKPORT.json'), 'utf8'));
-  if (provenance.module !== MODULE || provenance.version !== VERSION || provenance.replacement !== REPLACEMENT
-      || provenance.sourceManifestSha256 !== SOURCE_MANIFEST_SHA256 || provenance.files?.length !== 453
-      || new Set(provenance.files.map(f => f.path)).size !== 453) throw new Error('Invalid backport provenance');
-  const files = readdirSync(directory, { recursive: true, withFileTypes: true });
-  if (files.some(f => f.isSymbolicLink())) throw new Error('Backport source must not contain symlinks');
-  for (const file of provenance.files) {
-    if (!file.path || isAbsolute(file.path) || file.path.includes('\\') || file.path.split('/').some(p => p === '..' || p === '.')) throw new Error('Unsafe source manifest path');
-    const target = join(directory, file.path);
-    if (!lstatSync(target).isFile() || hash(readFileSync(target)) !== file.sha256) throw new Error('Backport source digest mismatch: ' + file.path);
-  }
-  const manifestHash = hash(provenance.files.map(f => `${f.sha256}  ${f.path}\n`).join(''));
-  if (manifestHash !== provenance.sourceManifestSha256) throw new Error('Backport source manifest digest mismatch');
-  const names = files.filter(f => f.isFile()).map(f => relative(directory, join(f.parentPath, f.name)).replaceAll('\\', '/'));
-  const expected = new Set([...provenance.files.map(f => f.path), 'KPANEL_BACKPORT.md', 'KPANEL_BACKPORT.json']);
-  if (names.length !== expected.size || names.some(name => !expected.has(name))) throw new Error('Unexpected backport source files');
-  return provenance;
+function validateUpstreamDeclarations(repo, environment) {
+  baselineMod(readFileSync(join(repo, 'go.mod'), 'utf8'));
+  const declarations = JSON.parse(go(['mod', 'edit', '-json'], repo, moduleEnvironment(undefined, environment)));
+  verifyModuleDeclarations(declarations, declarations);
+  const sumLine = `${MODULE} ${VERSION} ${MODULE_SUM}`;
+  if (readFileSync(join(repo, 'go.sum'), 'utf8').split(/\r?\n/).filter(line => line === sumLine).length !== 1) throw new Error('Upstream torrent checksum declaration mismatch');
+  return { module: MODULE, version: VERSION, source: 'unmodified-upstream', moduleSum: MODULE_SUM,
+    sourceManifestSha256: SOURCE_MANIFEST_SHA256 };
+}
+
+function upstreamDownload(repo, env) {
+  const item = JSON.parse(go(['mod', 'download', '-json', MODULE + '@' + VERSION], repo, env));
+  if (item.Path !== MODULE || item.Version !== VERSION || item.Sum !== MODULE_SUM || !item.Dir || !item.Zip) throw new Error('Upstream torrent archive identity mismatch');
+  return item;
+}
+
+export function verifyUpstream(repo, { offline = false, environment = process.env } = {}) {
+  const provenance = validateUpstreamDeclarations(repo, environment);
+  const env = moduleEnvironment(undefined, offline ? { ...environment, GOPROXY: 'off', GOSUMDB: 'off' } : environment);
+  const download = upstreamDownload(repo, env);
+  go(['mod', 'verify'], repo, env);
+  return { provenance: { ...provenance, archiveSha256: hash(readFileSync(download.Zip)) }, directory: download.Dir };
+}
+
+// Governance preflight is offline and fails if the pinned archive has not yet
+// been fetched or the local extracted module has been modified.
+export function validateBackport(repo, environment = process.env) {
+  return verifyUpstream(repo, { offline: true, environment }).provenance;
 }
 
 export function moduleEnvironment(modfile, environment = process.env) {
@@ -273,7 +276,7 @@ function go(args, cwd, env) {
 
 function prepare(repo, directory, basename) {
   if (!lstatSync(directory).isDirectory() || lstatSync(directory).isSymbolicLink() || readdirSync(directory).length) throw new Error('Baseline directory must be empty and private');
-  const provenance = validateBackport(repo);
+  const { provenance } = verifyUpstream(repo);
   const sourceMod = readFileSync(join(repo, 'go.mod'), 'utf8');
   const sourceSum = readFileSync(join(repo, 'go.sum'));
   const modfile = join(directory, basename + '.mod');
@@ -294,7 +297,7 @@ function prepare(repo, directory, basename) {
     if (JSON.stringify(initial) !== JSON.stringify(current)) throw new Error('Scanner changed the module manifests');
   };
   unchanged();
-  console.log(JSON.stringify({ torrentBaseline: 'qualified-original-version-coverage', module: MODULE, version: VERSION,
+  console.log(JSON.stringify({ torrentBaseline: 'qualified-upstream-version-coverage', module: MODULE, version: VERSION,
     graphSha256, sourceManifestSha256: provenance.sourceManifestSha256, ...initial }));
   return { environment: baselineEnvironment, unchanged, actualGraph, originalGraph, graphSha256, initial, modfile };
 }
@@ -322,7 +325,7 @@ function scanInventories(repo, directory) {
   evidence('selected.actual', baseline.actualGraph);
   evidence('selected.original', baseline.originalGraph);
   const actual = parseModuleJSON(baseline.actualGraph), original = parseModuleJSON(baseline.originalGraph);
-  if (actual.filter(m => m.Main && m.Path === MAIN_MODULE).length !== 1 || actual.some(m => m.Replace && m.Path !== MODULE)) throw new Error('Unexpected scanner graph replacement or main module');
+  if (actual.filter(m => m.Main && m.Path === MAIN_MODULE).length !== 1 || actual.some(m => m.Replace)) throw new Error('Unexpected scanner graph replacement or main module');
   const selected = original.filter(m => !m.Main).map(({ Path, Version }) => ({ Path, Version })).sort((a, b) => ascii(a.Path, b.Path));
   const environment = { ...process.env, GOFLAGS: '', GOWORK: 'off', GOTOOLCHAIN: 'local', CGO_ENABLED: '0', GOAMD64: 'v1', GOARM64: 'v8.0', GOEXPERIMENT: '' };
   if (go(['env', 'GOVERSION'], repo, environment).trim() !== GO_VERSION) throw new Error('Production inventory requires the fixed Go toolchain');
@@ -338,7 +341,8 @@ function scanInventories(repo, directory) {
   }
   const production = [...union.values()].sort((a, b) => ascii(a.Path, b.Path));
   if (!production.some(m => m.Path === MODULE && m.Version === VERSION)) throw new Error('Production inventory lost the torrent identity');
-  const standaloneMod = JSON.parse(go(['mod', 'edit', '-json', '-modfile=' + join(repo, 'third_party/torrent/go.mod')], repo, moduleEnvironment()));
+  const standaloneDir = verifyUpstream(repo).directory;
+  const standaloneMod = JSON.parse(go(['mod', 'edit', '-json', '-modfile=' + join(standaloneDir, 'go.mod')], repo, moduleEnvironment()));
   if (standaloneMod.Module?.Path !== MODULE || standaloneMod.Replace?.length) throw new Error('Unexpected standalone module declarations');
   const standalone = standaloneMod.Require.map(({ Path, Version }) => ({ Path, Version })).sort((a, b) => ascii(a.Path, b.Path));
   const sources = firstPartySources(repo);
@@ -353,7 +357,7 @@ function scanInventories(repo, directory) {
   for (const scope of ['selected', 'production', 'standalone']) {
     const destination = join(directory, scope); mkdirSync(destination, { mode: 0o700 });
     if (scope === 'standalone') {
-      for (const file of ['go.mod', 'go.sum', 'Dockerfile']) writeFileSync(join(destination, file), readFileSync(join(repo, 'third_party/torrent', file)), { flag: 'wx', mode: 0o600 });
+      for (const file of ['go.mod', 'go.sum', 'Dockerfile']) writeFileSync(join(destination, file), readFileSync(join(standaloneDir, file)), { flag: 'wx', mode: 0o600 });
     } else writeFileSync(join(destination, 'go.mod'), scannerManifest(inventories[scope], scope), { flag: 'wx', mode: 0o600 });
   }
   baseline.unchanged();
@@ -369,7 +373,7 @@ function checkReport(repo, directory, scope, reportPath, exitCode, stderrPath) {
   const record = JSON.parse(readFileSync(join(directory, 'inventory.json'), 'utf8'));
   const policyRaw = readFileSync(join(repo, 'scripts/torrent-backport-scan-scope.json'));
   const policy = JSON.parse(policyRaw);
-  validateBackport(repo);
+  verifyUpstream(repo);
   if (record.schemaVersion !== 1 || hash(policyRaw) !== record.policySha256
       || hash(readFileSync(join(repo, 'go.mod'), 'utf8')) !== record.sourceManifests.mod
       || hash(readFileSync(join(repo, 'go.sum'))) !== record.sourceManifests.sum
@@ -415,7 +419,7 @@ export function main(argv) {
     console.log('torrent_baseline_govuln=start tool=' + pins[0] + ' tool_sha256=' + hash(readFileSync(scanner)));
     run(scanner, ['./...'], repoRoot, baseline.environment);
     baseline.unchanged();
-    console.log('torrent_baseline_govuln=pass coverage=original-upstream-version-conservative');
+    console.log('torrent_baseline_govuln=pass coverage=verified-upstream-version');
   } finally {
     // The path is created in this invocation, outside the checkout; never accept a caller path here.
     if (resolve(directory).startsWith(resolve(tmpdir()) + (process.platform === 'win32' ? '\\' : '/'))) rmSync(directory, { recursive: true, force: true });

@@ -77,7 +77,7 @@ test('governance preflight rejects signals and keeps canonical source byte valid
   try {
     const report = qualifyGovernance({ repo: root, probe: () => ({ status: 0, signal: 'SIGTERM' }) });
     assert.equal(report.checks.filter((check) => check.status === 'failed').length, 5);
-    assert.ok(report.failures.some((failure) => failure.startsWith('vendor-source-bytes:')));
+    assert.ok(report.failures.some((failure) => failure.startsWith('upstream-source-bytes:')));
     assert.equal(report.status, 'failed');
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

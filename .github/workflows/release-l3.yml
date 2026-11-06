@@ -36,6 +36,8 @@ jobs:
           node-version: "24.22.1"
           cache: npm
           cache-dependency-path: web/package-lock.json
+      - name: Fetch the pinned Go module graph for offline governance preflight
+        run: go mod download
       - name: Run authoritative L3
         env:
           KPANEL_CANDIDATE_SHA: ${{ inputs.candidate || github.sha }}

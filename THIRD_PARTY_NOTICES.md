@@ -19,9 +19,17 @@ KPanel.
 | [TigerVNC](https://github.com/TigerVNC/tigervnc) (optional browser image) | Alpine package version recorded in `/usr/share/kpanel-browser-packages.txt` | GPL-2.0-or-later and component notices | [`LICENSES/GPL-2.0.txt`](LICENSES/GPL-2.0.txt); [source and build recipe](https://git.alpinelinux.org/aports/tree/community/tigervnc?h=3.24-stable) |
 | [Openbox](http://openbox.org/) (optional browser image) | Alpine package version recorded in `/usr/share/kpanel-browser-packages.txt` | GPL-2.0-or-later | [`LICENSES/GPL-2.0.txt`](LICENSES/GPL-2.0.txt); [source and build recipe](https://git.alpinelinux.org/aports/tree/community/openbox?h=3.24-stable) |
 | `github.com/go-json-experiment/json` | `44df1a37e875` | BSD-3-Clause | [`LICENSES/go-json-experiment-BSD-3-Clause.txt`](LICENSES/go-json-experiment-BSD-3-Clause.txt) |
-| `github.com/anacrolix/dht/v2` | `v2.23.0` | MPL-2.0 | [`LICENSES/anacrolix-dht-MPL-2.0.txt`](LICENSES/anacrolix-dht-MPL-2.0.txt) |
+| `github.com/anacrolix/dht/v2` | `v2.23.1-0.20260525063928-ec3a9bd99456` | MPL-2.0 | [`LICENSES/anacrolix-dht-MPL-2.0.txt`](LICENSES/anacrolix-dht-MPL-2.0.txt) |
 | `github.com/anacrolix/log` | `v0.17.1-0.20251118025802-918f1157b7bb` | MPL-2.0 | [`LICENSES/anacrolix-log-MPL-2.0.txt`](LICENSES/anacrolix-log-MPL-2.0.txt) |
-| `github.com/anacrolix/torrent` | `v1.61.0` with upstream message-writer fixes ([source and modifications](third_party/torrent/KPANEL_BACKPORT.md)) | MPL-2.0 | [`LICENSES/anacrolix-torrent-MPL-2.0.txt`](LICENSES/anacrolix-torrent-MPL-2.0.txt) |
+| `github.com/anacrolix/torrent` | `v1.61.1-0.20260911233437-76452a2c8a2f` ([upstream source](https://github.com/anacrolix/torrent/tree/76452a2c8a2f)) | MPL-2.0 | [`LICENSES/anacrolix-torrent-MPL-2.0.txt`](LICENSES/anacrolix-torrent-MPL-2.0.txt) |
+| `github.com/anacrolix/go-utp` | `v0.0.0-20260908033909-9f1664acf866` | MIT | [`LICENSES/anacrolix-go-utp-MIT.txt`](LICENSES/anacrolix-go-utp-MIT.txt) |
+| `github.com/anacrolix/btree` | `v0.1.1` | Apache-2.0 | [`LICENSES/Apache-2.0.txt`](LICENSES/Apache-2.0.txt) |
+| `github.com/anacrolix/chansync` | `v0.8.0` | MIT | [`LICENSES/anacrolix-chansync-MIT.txt`](LICENSES/anacrolix-chansync-MIT.txt) |
+| `github.com/anacrolix/generics` | `v0.2.0` | MPL-2.0 | [`LICENSES/anacrolix-torrent-MPL-2.0.txt`](LICENSES/anacrolix-torrent-MPL-2.0.txt) |
+| `github.com/anacrolix/missinggo/v2` | `v2.11.0` | MIT | [`LICENSES/anacrolix-missinggo-MIT.txt`](LICENSES/anacrolix-missinggo-MIT.txt) |
+| `github.com/RoaringBitmap/roaring/v2` | `v2.16.0` | Apache-2.0 | [`LICENSES/Apache-2.0.txt`](LICENSES/Apache-2.0.txt) |
+| `github.com/bits-and-blooms/bitset` | `v1.24.2` | BSD-3-Clause | [`LICENSES/bits-and-blooms-bitset-BSD-3-Clause.txt`](LICENSES/bits-and-blooms-bitset-BSD-3-Clause.txt) |
+| `github.com/mschoch/smat` | `v0.2.0` | Apache-2.0 | [`LICENSES/Apache-2.0.txt`](LICENSES/Apache-2.0.txt) |
 | `golang.org/x/crypto` | `v0.54.0` | BSD-3-Clause | [`LICENSES/golang-x-crypto-BSD-3-Clause.txt`](LICENSES/golang-x-crypto-BSD-3-Clause.txt) |
 | `golang.org/x/image` | `v0.45.0` | BSD-3-Clause | [`LICENSES/golang-x-image-BSD-3-Clause.txt`](LICENSES/golang-x-image-BSD-3-Clause.txt) |
 | `golang.org/x/sys` | `v0.47.0` | BSD-3-Clause | [`LICENSES/golang-x-sys-BSD-3-Clause.txt`](LICENSES/golang-x-sys-BSD-3-Clause.txt) |

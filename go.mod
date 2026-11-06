@@ -2,13 +2,10 @@ module github.com/kejilion/kejilion-panel
 
 go 1.27.3
 
-// v1.61.0 with two upstream message-writer fixes; see third_party/torrent/KPANEL_BACKPORT.md.
-replace github.com/anacrolix/torrent v1.61.0 => ./third_party/torrent
-
 require (
-	github.com/anacrolix/dht/v2 v2.23.0
+	github.com/anacrolix/dht/v2 v2.23.1-0.20260525063928-ec3a9bd99456
 	github.com/anacrolix/log v0.17.1-0.20251118025802-918f1157b7bb
-	github.com/anacrolix/torrent v1.61.0
+	github.com/anacrolix/torrent v1.61.1-0.20260911233437-76452a2c8a2f
 	github.com/chromedp/cdproto v0.157.8
 	github.com/chromedp/chromedp v0.21.0
 	github.com/coder/websocket v1.8.15
@@ -31,15 +28,17 @@ require (
 
 require (
 	github.com/RoaringBitmap/roaring v1.2.3 // indirect
+	github.com/RoaringBitmap/roaring/v2 v2.16.0 // indirect
 	github.com/alecthomas/atomic v0.1.0-alpha2 // indirect
-	github.com/anacrolix/btree v0.0.0-20251201064447-d86c3fa41bd8 // indirect
-	github.com/anacrolix/chansync v0.7.0 // indirect
+	github.com/anacrolix/btree v0.1.1 // indirect
+	github.com/anacrolix/chansync v0.8.0 // indirect
 	github.com/anacrolix/envpprof v1.4.0 // indirect
-	github.com/anacrolix/generics v0.1.1-0.20251125230353-15d98d46693b // indirect
-	github.com/anacrolix/go-libutp v1.3.2 // indirect
+	github.com/anacrolix/generics v0.2.0 // indirect
+	github.com/anacrolix/go-libutp v1.5.2-0.20260908013213-836dd42cdde6 // indirect
+	github.com/anacrolix/go-utp v0.0.0-20260908033909-9f1664acf866 // indirect
 	github.com/anacrolix/missinggo v1.3.0 // indirect
 	github.com/anacrolix/missinggo/perf v1.0.0 // indirect
-	github.com/anacrolix/missinggo/v2 v2.10.0 // indirect
+	github.com/anacrolix/missinggo/v2 v2.11.0 // indirect
 	github.com/anacrolix/mmsg v1.0.1 // indirect
 	github.com/anacrolix/multiless v0.4.0 // indirect
 	github.com/anacrolix/stm v0.5.0 // indirect
@@ -48,7 +47,7 @@ require (
 	github.com/anacrolix/utp v0.1.0 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/benbjohnson/immutable v0.4.1-0.20221220213129-8932b999621d // indirect
-	github.com/bits-and-blooms/bitset v1.2.2 // indirect
+	github.com/bits-and-blooms/bitset v1.24.2 // indirect
 	github.com/bradfitz/iter v0.0.0-20191230175014-e8f45d346db8 // indirect
 	github.com/cespare/xxhash v1.1.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect

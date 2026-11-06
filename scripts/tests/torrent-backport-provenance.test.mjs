@@ -13,6 +13,8 @@ const manifestType = 'application/vnd.oci.image.manifest.v1+json';
 const sbomType = 'https://spdx.dev/Document';
 const slsaType = 'https://slsa.dev/provenance/v0.2';
 const mainModule = 'github.com/kejilion/kejilion-panel';
+const torrentVersion = 'v1.61.1-0.20260911233437-76452a2c8a2f';
+const torrentSum = 'h1:Qd2S/HI+0pR+EMyPS58AB573G3W92zSngOmH/e0qqP8=';
 
 function statement(type, subject, predicate) {
   return { _type: 'https://in-toto.io/Statement/v0.1', predicateType: type,
@@ -71,7 +73,7 @@ function fixture(change = () => {}) {
 
 function goInfo(arch, executable, withTorrent = executable === 'paneld') {
   return `/temporary/${executable}: go1.27.3\n\tpath\t${mainModule}/cmd/${executable}\n\tmod\t${mainModule}\t(devel)\t\n`
-    + (withTorrent ? '\tdep\tgithub.com/anacrolix/torrent\tv1.61.0\n\t=>\t./third_party/torrent\t(devel)\t\n\n' : '')
+    + (withTorrent ? `\tdep\tgithub.com/anacrolix/torrent\t${torrentVersion}\t${torrentSum}\n` : '')
     + `\tbuild\tGOOS=linux\n\tbuild\tGOARCH=${arch}\n`;
 }
 
@@ -166,11 +168,12 @@ test('trusted CDN redirect strips registry bearer; untrusted targets and loops f
   await assert.rejects(boundedGet('https://registry-1.docker.io/test', { fetcher: async () => new Response(null, { status: 307, headers: { location: 'https://registry-1.docker.io/again' } }) }), /redirect limit/);
 });
 
-test('binary build info enforces main module/platform and panel replacement; Agent absence is explicit', () => {
-  assert.equal(parseGoBuildInfo(goInfo('amd64', 'paneld'), 'amd64', 'paneld').torrent.version, 'v1.61.0');
+test('binary build info enforces main module/platform and upstream identity; Agent absence is explicit', () => {
+  assert.equal(parseGoBuildInfo(goInfo('amd64', 'paneld'), 'amd64', 'paneld').torrent.version, torrentVersion);
   assert.equal(parseGoBuildInfo(goInfo('arm64', 'kejilion-agent'), 'arm64', 'kejilion-agent').torrentStatus, 'not-linked');
   for (const bad of [goInfo('arm64', 'paneld'), goInfo('amd64', 'paneld', false),
-    goInfo('amd64', 'paneld').replace('v1.61.0', 'v1.60.0'), goInfo('amd64', 'paneld').replace('./third_party/torrent', '/tmp/torrent'),
+    goInfo('amd64', 'paneld').replace(torrentVersion, 'v1.60.0'), goInfo('amd64', 'paneld').replace(torrentSum, 'h1:invalid'),
+    goInfo('amd64', 'paneld').replace(`\t${torrentSum}\n`, `\t${torrentSum}\n\t=>\t./third_party/torrent\t(devel)\n`),
     goInfo('amd64', 'paneld').replace(mainModule + '/cmd/paneld', 'other/cmd/paneld'), goInfo('amd64', 'paneld') + '\tbuild\tGOARCH=arm64\n']) {
     assert.throws(() => parseGoBuildInfo(bad, 'amd64', 'paneld'));
   }
