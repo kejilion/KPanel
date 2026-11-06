@@ -12,7 +12,7 @@
     "scripts/build-mcp-clients.sh": "29b0e82668f585aa46d10432912e1050954430cfac6a0550dd408d728979e113",
     "Makefile": "f651d8ce2f10adc487118e1ccb476615347661922a8c8ef529f1b8013da5d53e"
   },
-  "closureSha256": "170008703d7167aee35e178126d73a50157d32ec2b265ffb1ddd646c5b210316",
+  "closureSha256": "809175a267e841ed87627dd6e590fb2fe9385553558a005f0527b77dd2db3b1e",
   "firstPartySourceSha256": "cd49bad82ad70f4f0da556c77137dee7ca3c68b3d4f4732f73eec6e4646ae221",
   "buildTargetHashEncoding": "UTF-8 with LF line endings",
   "closureEncoding": "SHA256 of JSON.stringify of ordered OS/architecture rows; packages sorted by import path; path, module and selected version; stdlib go1.27.3; main-module packages additionally bind relative sourceDirectory and sorted actual GoFiles.",
@@ -24,7 +24,7 @@
     "architectureClosureSummary": "Independent read-only qualification of ce5abcc323a5e767ecddf2849182875ee21e561f re-observed all six actual/original production closures and 1079 first-party Go files against Git blobs, reproducing the previous source and closure identities as a control. Only Linux existing-package GoFiles change; the other four targets, 110 production modules, selected graph, vendored source and build-target hashes remain unchanged. Rebind derived source and closure identities only; all findings, dispositions, observation and expiry remain unchanged. This qualification is not scanner, release or deployment approval.",
     "state": "reviewed",
     "reviewerRole": "Independent read-only release-time source and scope reviewer; candidate owner binds the exact CI observation; cross-provider review unavailable",
-    "evidenceSha256": "5390e468927e1855389d316eea91ecb3b9f168ad1038bc5c89520192d4b40b0a",
+    "evidenceSha256": "808a55e73bc0f416e8a344dde0e45f50b800f8decfd1884f7af283dda32f6541",
     "upstreamUpgradeSummary": "The upstream torrent content checksum and fixed version replace the local backport. Independent qualification recomputed all six Go 1.27.3 production closures, the selected graph and first-party source identity; 113 production, 473 selected and 147 standalone modules were observed. The existing 37 findings, dispositions and observation window remain; only the two upstream development Dockerfile finding versions changed. Raw local scan reports were inspected but not independently rerun. Exact-candidate CI, canonical scanners, L3 and image verification remain required.",
     "securityClosurePreviousEvidenceSha256": "99a423c33dc50216767a66bc678f95d3b142af7b7aa5a817648b538c1cc5aa79",
     "securityClosureObservationSha256": "facb75be50ad173b5dffa7e3e763369e726bebe0c997db72709ef7ca04ca0dd7",
@@ -179,8 +179,9 @@
     "v130Rc2VersionSummary": "Relative to reviewed product candidate only internal/version/version.go version literal changes; no new imports, modules or build target changes. Existing product Go preference changes were qualified at f9d0150f. Existing findings, dispositions, closure and expiry unchanged; exact candidate CI and L3 required.",
     "v130Rc3VersionEvidenceSha256": "f71480b49b2a4a5a1521caf328557e83709904b5b418f5581f73a6787213e1ff",
     "v130Rc3VersionSummary": "Only internal/version/version.go version literal changes among Go sources from rc.2; dependency closure and build targets unchanged. Existing source findings and expiry retained. Exact candidate CI and L3 required.",
-    "rc130Rc5IdentityEvidenceSha256": "5390e468927e1855389d316eea91ecb3b9f168ad1038bc5c89520192d4b40b0a",
-    "rc130Rc5IdentitySummary": "RC5 scope rebind: the exact candidate CI raw Go 1.27.3 actual/original outputs match across all six targets. Source manifest, selected graph, build targets and 37 retained findings remain unchanged; source inventory is 1297 Go files. Full source/dependency scanning remains required."
+    "rc130Rc5IdentityEvidenceSha256": "808a55e73bc0f416e8a344dde0e45f50b800f8decfd1884f7af283dda32f6541",
+    "rc130Rc5IdentitySummary": "RC5 scope rebind: the repository productionClosure function reproduced the existing closure identity from exact CI outputs for all six targets. Dependency graph, source manifest and build targets remain unchanged; source identity is rebound to 1297 Go files. All 37 findings and dates are retained. Full scanners remain required; an earlier manual closure digest is superseded.",
+    "rc130Rc5SupersededManualClosureEvidenceSha256": "5390e468927e1855389d316eea91ecb3b9f168ad1038bc5c89520192d4b40b0a"
   },
   "findings": [
     {
