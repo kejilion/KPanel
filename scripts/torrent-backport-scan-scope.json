@@ -13,7 +13,7 @@
     "Makefile": "f651d8ce2f10adc487118e1ccb476615347661922a8c8ef529f1b8013da5d53e"
   },
   "closureSha256": "809175a267e841ed87627dd6e590fb2fe9385553558a005f0527b77dd2db3b1e",
-  "firstPartySourceSha256": "cd49bad82ad70f4f0da556c77137dee7ca3c68b3d4f4732f73eec6e4646ae221",
+  "firstPartySourceSha256": "d951f00a9c8d00d7dea0b2e831847e21af65e9e46f8bbfae4e1da6c0c794d69e",
   "buildTargetHashEncoding": "UTF-8 with LF line endings",
   "closureEncoding": "SHA256 of JSON.stringify of ordered OS/architecture rows; packages sorted by import path; path, module and selected version; stdlib go1.27.3; main-module packages additionally bind relative sourceDirectory and sorted actual GoFiles.",
   "firstPartySourceEncoding": "SHA256 of JSON.stringify of all cmd/internal Go source path and SHA256 pairs sorted by relative path; contents normalized to UTF-8 LF. All actual main-module production GoFiles must be covered. Generated .pb.go and .proto files or symlinks require a new review.",
@@ -181,7 +181,9 @@
     "v130Rc3VersionSummary": "Only internal/version/version.go version literal changes among Go sources from rc.2; dependency closure and build targets unchanged. Existing source findings and expiry retained. Exact candidate CI and L3 required.",
     "rc130Rc5IdentityEvidenceSha256": "808a55e73bc0f416e8a344dde0e45f50b800f8decfd1884f7af283dda32f6541",
     "rc130Rc5IdentitySummary": "RC5 scope rebind: the repository productionClosure function reproduced the existing closure identity from exact CI outputs for all six targets. Dependency graph, source manifest and build targets remain unchanged; source identity is rebound to 1297 Go files. All 37 findings and dates are retained. Full scanners remain required; an earlier manual closure digest is superseded.",
-    "rc130Rc5SupersededManualClosureEvidenceSha256": "5390e468927e1855389d316eea91ecb3b9f168ad1038bc5c89520192d4b40b0a"
+    "rc130Rc5SupersededManualClosureEvidenceSha256": "5390e468927e1855389d316eea91ecb3b9f168ad1038bc5c89520192d4b40b0a",
+    "rc130Rc6IdentityEvidenceSha256": "d74e39302dbe65ad1b025872f30e945331246ce248923c89172eaca9b461f8fc",
+    "rc130Rc6IdentitySummary": "RC6 version-only source rebind: the official firstPartySources helper recomputed 1,297 files as d951f00a9c8d00d7dea0b2e831847e21af65e9e46f8bbfae4e1da6c0c794d69e. Relative to the exact candidate base, the sole Go source change is the internal/version/version.go version literal from 1.30.0-rc.5-dev to 1.30.0-rc.6-dev; go.mod, go.sum, vendored torrent source and all release/build target inputs are unchanged. Existing findings and dispositions and the 2026-10-25 through 2026-11-08 observation window are preserved. This identity binding does not claim a scanner result; fresh six-target closure inventory, scanners, exact candidate CI and full L3 remain required."
   },
   "findings": [
     {
