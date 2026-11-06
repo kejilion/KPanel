@@ -5,7 +5,7 @@ import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
 import type { SiteAccessPasswordRule } from '@/types/api'
 
 const props = withDefaults(defineProps<{ siteId: string; siteVersion?: string; writable?: boolean; allowAdd?: boolean; unavailableReason?: string }>(), { siteVersion: '', writable: false, allowAdd: true, unavailableReason: '' })
-const emit = defineEmits<{ changed: [siteVersion: string] }>()
+const emit = defineEmits<{ changed: [siteVersion: string]; busy: [value: boolean] }>()
 const expanded = ref(false)
 const loading = ref(false)
 const error = ref(false)
@@ -159,7 +159,8 @@ watch(() => props.siteId, () => {
   currentSiteVersion.value = props.siteVersion
 })
 watch(() => props.siteVersion, (version) => { currentSiteVersion.value = version })
-onBeforeUnmount(() => { disposed = true; active?.abort(); editing.value = undefined; ruleForm.value = undefined })
+watch(saving, (value) => emit('busy', value), { flush: 'sync' })
+onBeforeUnmount(() => { disposed = true; active?.abort(); editing.value = undefined; ruleForm.value = undefined; emit('busy', false) })
 </script>
 
 <template>

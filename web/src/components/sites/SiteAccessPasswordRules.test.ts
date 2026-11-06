@@ -81,6 +81,23 @@ describe('SiteAccessPasswordRules', () => {
     expect(wrapper.text()).toContain('bob')
   })
 
+  it('reports a pending write until the account change finishes', async () => {
+    const rule = { id: 'rule', scope: 'server', path: '/', usernames: ['alice'], accountsReadable: true, resourceVersion: 'version' }
+    mocks.accessPasswords.mockResolvedValue([rule])
+    let finish!: (value: typeof rule[]) => void
+    mocks.updateAccessAccount.mockReturnValue(new Promise<typeof rule[]>((resolve) => { finish = resolve }))
+    const wrapper = mount(SiteAccessPasswordRules, { props: { siteId: 'first', writable: true } })
+    await wrapper.get('button').trigger('click')
+    await flushPromises()
+    await wrapper.findAll('button').find((button) => button.text() === '修改')!.trigger('click')
+    await wrapper.get('input[type=password]').setValue('synthetic-secret')
+    await wrapper.get('form').trigger('submit.prevent')
+    expect(wrapper.emitted('busy')).toEqual([[true]])
+    finish([rule])
+    await flushPromises()
+    expect(wrapper.emitted('busy')).toEqual([[true], [false]])
+  })
+
   it('adds a rule using the site version and refreshes it after saving', async () => {
     mocks.accessPasswords.mockResolvedValue([])
     mocks.updateAccessRule.mockResolvedValue([])

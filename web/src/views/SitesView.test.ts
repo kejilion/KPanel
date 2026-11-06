@@ -77,6 +77,11 @@ interface SitesBindings {
     privateKey: string
   }
   accessDraft: Ref<{ enabled: boolean; path: string; username: string; password: string }>
+  editingSite: Ref<Site | undefined>
+  canEditSiteFields: ComputedRef<boolean>
+  accessSaving: Ref<boolean>
+  accessRulesChanged: (version: string) => void
+  openEdit: (site: Site) => void
   editorOpen: Ref<boolean>
   formValid: ComputedRef<boolean>
   submitSite: () => Promise<void>
@@ -355,6 +360,67 @@ describe('SitesView creation experience', () => {
     expect(view.certificateSite.value).toBeUndefined()
     expect(view.replacement.privateKey).toBe('')
     expect(view.replacement.certificate).toBe('')
+  })
+
+  it('keeps settings open and uses the latest version when access rules and certificates change', async () => {
+    const view = setupView()
+    const current = site('example.com')
+    const updated = { ...current, resourceVersion: `sha256:${'b'.repeat(64)}` }
+    view.capabilitiesLoaded.value = true
+    view.capabilities.value = [{ id: 'sites.certificate-replace', enabled: true }]
+    view.sites.value = [current]
+    view.openEdit(current)
+    view.openCertificateReplacement(current)
+    view.accessRulesChanged(updated.resourceVersion)
+    expect(view.editingSite.value?.resourceVersion).toBe(updated.resourceVersion)
+    expect(view.certificateSite.value?.resourceVersion).toBe(updated.resourceVersion)
+    view.replacement.certificate = 'certificate'
+    view.replacement.privateKey = 'private-key'
+    const saved = { ...updated, resourceVersion: `sha256:${'c'.repeat(64)}` }
+    vi.mocked(api.sites.update).mockResolvedValue(saved)
+    vi.mocked(api.sites.list).mockResolvedValue({ items: [saved], total: 1 })
+    vi.mocked(api.agent.capabilities).mockResolvedValue([])
+    vi.mocked(api.sites.installations).mockResolvedValue([])
+    vi.mocked(api.system.publicNetwork).mockResolvedValue({} as never)
+    await view.replaceCertificate()
+    expect(api.sites.update).toHaveBeenCalledWith(current.id, expect.objectContaining({ expectedResourceVersion: updated.resourceVersion }))
+    expect(view.editingSite.value?.resourceVersion).toBe(saved.resourceVersion)
+    expect(view.editorOpen.value).toBe(true)
+    expect(view.replacement.privateKey).toBe('')
+  })
+
+  it('prevents closing settings or replacing a certificate while access rules are being saved', async () => {
+    const view = setupView()
+    const current = site('example.com')
+    view.capabilitiesLoaded.value = true
+    view.capabilities.value = [{ id: 'sites.certificate-replace', enabled: true }]
+    view.openEdit(current)
+    view.openCertificateReplacement(current)
+    view.replacement.certificate = 'certificate'
+    view.replacement.privateKey = 'private-key'
+    view.accessSaving.value = true
+    view.closeEditor()
+    await view.replaceCertificate()
+    expect(view.editorOpen.value).toBe(true)
+    expect(api.sites.update).not.toHaveBeenCalled()
+    view.accessSaving.value = false
+    view.closeEditor()
+    expect(view.editorOpen.value).toBe(false)
+    expect(view.replacement.privateKey).toBe('')
+  })
+
+  it('opens settings for WordPress and unclassified sites without enabling unsupported site updates', async () => {
+    const view = setupView()
+    for (const type of ['wordpress', 'unknown'] as const) {
+      const current = { ...site(`${type}.example.com`), type, allowedActions: ['delete'] }
+      view.openEdit(current)
+      expect(view.editorOpen.value).toBe(true)
+      expect(view.editingSite.value?.id).toBe(current.id)
+      expect(view.canEditSiteFields.value).toBe(false)
+      await view.submitSite()
+      expect(api.sites.update).not.toHaveBeenCalled()
+      view.closeEditor()
+    }
   })
 
   it('fails closed on missing replacement capability and clears dismissed private material', async () => {

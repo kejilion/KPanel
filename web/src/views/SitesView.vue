@@ -191,6 +191,7 @@ const editorTitle = computed(() => {
   return '正在搭建网站'
 })
 const editorDescription = computed(() => {
+  if (editingSite.value) return '在此管理网站设置、证书和访问密码。'
   if (!installationTaskView.value) {
     return '脚本建站由独立后台任务执行；关闭窗口不会中断，可从网站页重新打开终端。'
   }
@@ -327,9 +328,11 @@ const form = reactive({
   privateKey: '',
 })
 const accessDraft = ref({ enabled: false, path: '/', username: '', password: '' })
+const accessSaving = ref(false)
 const accessPasswordCapability = computed(() => capabilities.value.find((item) => item.id === 'sites.access-password.write'))
 const accessTemplateUnsupported = computed(() => form.type === 'redirect' || form.type === 'recipe' && ['bitwarden', 'halo'].includes(form.recipe))
 const canConfigureAccessPassword = computed(() => capabilitiesLoaded.value && accessPasswordCapability.value?.enabled === true && !panel.isReadOnly.value && !accessTemplateUnsupported.value)
+const canEditSiteFields = computed(() => Boolean(editingSite.value?.allowedActions?.includes('update') && serviceOptions.some((option) => option.type === editingSite.value?.type)))
 
 const certificateSite = ref<Site>()
 const replacement = reactive({ certificate: '', privateKey: '', error: '', submitting: false })
@@ -342,12 +345,10 @@ function openCertificateReplacement(site: Site): void {
   replacement.privateKey = ''
   replacement.error = ''
   certificateSite.value = site
-  selectedSite.value = undefined
 }
 
 function closeCertificateReplacement(): void {
   if (replacement.submitting) return
-  selectedSite.value = certificateSite.value
   certificateSite.value = undefined
   replacement.certificate = ''
   replacement.privateKey = ''
@@ -356,7 +357,7 @@ function closeCertificateReplacement(): void {
 
 async function replaceCertificate(): Promise<void> {
   const site = certificateSite.value
-  if (!site || !replacementValid.value || !canReplaceCertificate.value || panel.isReadOnly.value) return
+  if (!site || !replacementValid.value || !canReplaceCertificate.value || panel.isReadOnly.value || submitting.value || accessSaving.value || replacement.submitting) return
   replacement.submitting = true
   replacement.error = ''
   try {
@@ -367,10 +368,13 @@ async function replaceCertificate(): Promise<void> {
       certificate: replacement.certificate.trim(),
       privateKey: replacement.privateKey.trim(),
     })
+    if (editingSite.value?.id === saved.id) editingSite.value = saved
+    sites.value = sites.value.map((item) => item.id === saved.id ? saved : item)
+    await load(true)
+    const refreshed = error.value ? saved : sites.value.find((item) => item.id === saved.id) || saved
+    if (editingSite.value?.id === saved.id) editingSite.value = refreshed
     replacement.submitting = false
     closeCertificateReplacement()
-    await load(true)
-    selectedSite.value = sites.value.find((item) => item.id === saved.id) || saved
     toast.success(phrase('证书已更换'), saved.primaryDomain)
   } catch (error) {
     replacement.error = error instanceof Error ? localizeError(error) : phrase('更换证书失败，请刷新网站状态后重试。')
@@ -753,9 +757,10 @@ async function load(silent = false): Promise<void> {
 }
 
 function accessRulesChanged(version: string): void {
-  const current = selectedSite.value
+  const current = editingSite.value
   if (!current) return
-  selectedSite.value = { ...current, resourceVersion: version }
+  editingSite.value = { ...current, resourceVersion: version }
+  if (certificateSite.value?.id === current.id) certificateSite.value = { ...certificateSite.value, resourceVersion: version }
   sites.value = sites.value.map((site) => site.id === current.id ? { ...site, resourceVersion: version } : site)
 }
 
@@ -797,11 +802,13 @@ function openInstallationTask(): void {
 }
 
 function closeEditor(): void {
+  if (replacement.submitting || accessSaving.value) return
   const completedDomain =
     installProgress.value?.status === 'succeeded'
       ? installProgress.value.domain || form.primaryDomain
       : ''
   editorOpen.value = false
+  closeCertificateReplacement()
   accessDraft.value.password = ''
   showMoreTemplates.value = false
   if (completedDomain) void revealCreatedSite(completedDomain)
@@ -927,7 +934,7 @@ function pauseInstallationTracking(message = ''): void {
 }
 
 function openEdit(site: Site): void {
-  if (!serviceOptions.some((option) => option.type === site.type)) return
+  closeCertificateReplacement()
   editingSite.value = site
   form.primaryDomain = site.primaryDomain
   form.aliases = site.domains.filter((domain) => domain !== site.primaryDomain).join('\n')
@@ -950,7 +957,8 @@ function openEdit(site: Site): void {
 }
 
 async function submitSite(): Promise<void> {
-  if (submitting.value || (installTaskActive.value && installProgress.value?.id)) return
+  if (submitting.value || replacement.submitting || accessSaving.value || (installTaskActive.value && installProgress.value?.id)) return
+  if (editingSite.value && (!canEditSiteFields.value || panel.isReadOnly.value)) return
   formError.value = ''
   if (!formValid.value) {
     formError.value = customCertificateFormReason.value || '请检查域名和当前服务所需的配置。'
@@ -1340,11 +1348,8 @@ onBeforeUnmount(() => {
               <td class="table-actions">
                 <button class="button button--ghost button--small" type="button" @click="selectedSite = site">详情</button>
                 <button
-                  v-if="site.allowedActions?.includes('update')"
                   class="button button--secondary button--small"
                   type="button"
-                  :disabled="panel.isReadOnly.value || !canCreate"
-                  :title="!canCreate ? siteWriteReason : ''"
                   @click="openEdit(site)"
                 >
                   设置
@@ -1439,22 +1444,6 @@ onBeforeUnmount(() => {
           <p v-if="!canRenewCertificate">{{ certificateRenewCapability?.reason || phrase('当前脚本尚不支持手动申请证书，请先更新配套脚本。') }}</p>
         </section>
 
-        <section v-if="selectedSite.allowedActions?.includes('delete') && selectedSite.certificate" class="detail-section">
-          <button class="button button--secondary" type="button" :disabled="panel.isReadOnly.value || !canReplaceCertificate" @click="openCertificateReplacement(selectedSite)">
-            <KeyRound :size="16" /> {{ phrase('更换证书') }}
-          </button>
-          <p v-if="!canReplaceCertificate">{{ certificateReplaceCapability?.reason || phrase('当前脚本尚不支持更换证书，请先更新配套脚本。') }}</p>
-        </section>
-
-        <SiteAccessPasswordRules
-          :site-id="selectedSite.id"
-          :site-version="selectedSite.resourceVersion"
-          :allow-add="selectedSite.type !== 'redirect'"
-          :writable="capabilitiesLoaded && capabilities.some((item) => item.id === 'sites.access-password.write' && item.enabled) && !panel.isReadOnly.value"
-          :unavailable-reason="capabilitiesLoaded && !capabilities.some((item) => item.id === 'sites.access-password.write' && item.enabled) ? phrase('当前脚本不支持访问密码管理，请先更新配套脚本。') : ''"
-          @changed="accessRulesChanged"
-        />
-
         <section v-if="selectedSite.artifacts?.length" class="detail-section">
           <h3><FileCode2 :size="17" /> {{ phrase('实际配置与文件') }}</h3>
           <ul class="artifact-list">
@@ -1493,11 +1482,9 @@ onBeforeUnmount(() => {
         </button>
         <button class="button button--secondary" type="button" @click="selectedSite = undefined">{{ phrase('关闭') }}</button>
         <button
-          v-if="selectedSite?.allowedActions?.includes('update')"
+          v-if="selectedSite"
           class="button button--primary"
           type="button"
-          :disabled="panel.isReadOnly.value || !canCreate"
-          :title="!canCreate ? phrase(siteWriteReason) : ''"
           @click="openEdit(selectedSite)"
         >
           {{ phrase('编辑设置') }}
@@ -1529,9 +1516,10 @@ onBeforeUnmount(() => {
       :title="phrase(editorTitle)"
       :description="phrase(editorDescription)"
       size="large"
+      :close-disabled="replacement.submitting || accessSaving"
       @close="closeEditor"
     >
-      <form id="site-form" class="form-stack" @submit.prevent="submitSite">
+      <form v-if="!editingSite || canEditSiteFields" id="site-form" class="form-stack" @submit.prevent="submitSite">
         <div v-if="formError" class="inline-alert inline-alert--danger" role="alert">{{ phrase(formError) }}</div>
         <div
           v-if="installProgress && installationTaskView"
@@ -1881,6 +1869,48 @@ onBeforeUnmount(() => {
         </small>
         </template>
       </form>
+      <template v-if="editingSite && !installationTaskView">
+        <p>{{ phrase('证书和访问密码分别保存，保存后立即生效。') }}</p>
+        <section v-if="editingSite.allowedActions?.includes('delete') && editingSite.certificate" class="detail-section">
+          <h3>{{ phrase('HTTPS 证书') }}</h3>
+          <button class="button button--secondary button--small" type="button" :aria-expanded="Boolean(certificateSite)" :disabled="panel.isReadOnly.value || !canReplaceCertificate || submitting || accessSaving || replacement.submitting" @click="certificateSite ? closeCertificateReplacement() : openCertificateReplacement(editingSite)">
+            <KeyRound :size="16" /> {{ phrase(certificateSite ? '收起' : '更换证书') }}
+          </button>
+          <p v-if="!canReplaceCertificate">{{ certificateReplaceCapability?.reason || phrase('当前脚本尚不支持更换证书，请先更新配套脚本。') }}</p>
+          <form v-if="certificateSite" id="site-certificate-form" class="form-stack" @submit.prevent="replaceCertificate">
+            <p>{{ phrase('仅更换 HTTPS 证书，网站配置保持不变。证书须覆盖本站全部域名。') }}</p>
+            <label class="field">
+              <span>{{ phrase('公钥证书链（PEM）') }}</span>
+              <textarea v-model="replacement.certificate" rows="7" autocomplete="off" spellcheck="false" required :disabled="replacement.submitting" placeholder="-----BEGIN CERTIFICATE-----" />
+              <small>{{ phrase('证书链内容不能超过 16 KiB。') }}</small>
+            </label>
+            <label class="field">
+              <span>{{ phrase('私钥（PEM）') }}</span>
+              <textarea v-model="replacement.privateKey" rows="7" autocomplete="new-password" spellcheck="false" required :disabled="replacement.submitting" placeholder="-----BEGIN PRIVATE KEY-----" />
+              <small>{{ phrase('仅接受未加密私钥，必须与首个证书匹配。') }}</small>
+            </label>
+            <p>{{ phrase('私钥仅用于本次更换；不写入任务或审计，完成后清理临时副本。') }}</p>
+            <p>{{ phrase('自有证书需在到期前手动更换，脚本不会自动续签。') }}</p>
+            <p v-if="replacement.error" class="inline-alert inline-alert--danger" role="alert">{{ replacement.error }}</p>
+            <div class="site-certificate-actions">
+              <button class="button button--primary button--small" type="submit" :disabled="replacement.submitting || !replacementValid || !canReplaceCertificate || submitting || accessSaving">
+                <LoaderCircle v-if="replacement.submitting" class="spin" :size="16" />
+                {{ phrase(replacement.submitting ? '正在提交…' : '保存证书') }}
+              </button>
+              <button class="button button--secondary button--small" type="button" :disabled="replacement.submitting" @click="closeCertificateReplacement">{{ phrase('取消') }}</button>
+            </div>
+          </form>
+        </section>
+        <SiteAccessPasswordRules
+          :site-id="editingSite.id"
+          :site-version="editingSite.resourceVersion"
+          :allow-add="editingSite.type !== 'redirect'"
+          :writable="capabilitiesLoaded && accessPasswordCapability?.enabled === true && !panel.isReadOnly.value && !submitting && !replacement.submitting"
+          :unavailable-reason="capabilitiesLoaded && !accessPasswordCapability?.enabled ? phrase('当前脚本不支持访问密码管理，请先更新配套脚本。') : ''"
+          @changed="accessRulesChanged"
+          @busy="accessSaving = $event"
+        />
+      </template>
       <template #footer>
         <button
           v-if="installationTaskView"
@@ -1892,10 +1922,10 @@ onBeforeUnmount(() => {
           {{ phrase(installationTaskFinished ? '关闭窗口' : '转入后台') }}
         </button>
         <template v-else>
-          <button class="button button--secondary" type="button" @click="closeEditor">
+          <button class="button button--secondary" type="button" :disabled="replacement.submitting || accessSaving" @click="closeEditor">
             {{ phrase('取消') }}
           </button>
-          <button class="button button--primary" type="submit" form="site-form" :disabled="submitting || !canSubmit">
+          <button v-if="!editingSite || canEditSiteFields" class="button button--primary" type="submit" form="site-form" :disabled="panel.isReadOnly.value || submitting || replacement.submitting || accessSaving || !canSubmit">
           <LoaderCircle v-if="submitting" class="spin" :size="16" />
           {{
             submitting
@@ -1920,36 +1950,11 @@ onBeforeUnmount(() => {
         </template>
       </template>
     </ModalDialog>
-    <ModalDialog :open="Boolean(certificateSite)" :title="phrase('更换证书')" @close="closeCertificateReplacement">
-      <form id="site-certificate-form" class="form-stack" @submit.prevent="replaceCertificate">
-        <p>{{ certificateSite?.primaryDomain }}</p>
-        <p>{{ phrase('仅更换 HTTPS 证书，网站配置保持不变。证书须覆盖本站全部域名。') }}</p>
-        <label class="field">
-          <span>{{ phrase('公钥证书链（PEM）') }}</span>
-          <textarea v-model="replacement.certificate" rows="7" autocomplete="off" spellcheck="false" required :disabled="replacement.submitting" placeholder="-----BEGIN CERTIFICATE-----" />
-          <small>{{ phrase('证书链内容不能超过 16 KiB。') }}</small>
-        </label>
-        <label class="field">
-          <span>{{ phrase('私钥（PEM）') }}</span>
-          <textarea v-model="replacement.privateKey" rows="7" autocomplete="new-password" spellcheck="false" required :disabled="replacement.submitting" placeholder="-----BEGIN PRIVATE KEY-----" />
-          <small>{{ phrase('仅接受未加密私钥，必须与首个证书匹配。') }}</small>
-        </label>
-        <p>{{ phrase('私钥仅用于本次更换；不写入任务或审计，完成后清理临时副本。') }}</p>
-        <p>{{ phrase('自有证书需在到期前手动更换，脚本不会自动续签。') }}</p>
-        <p v-if="replacement.error" class="inline-alert inline-alert--danger" role="alert">{{ replacement.error }}</p>
-      </form>
-      <template #footer>
-        <button class="button button--secondary" type="button" :disabled="replacement.submitting" @click="closeCertificateReplacement">{{ phrase('取消') }}</button>
-        <button class="button button--primary" type="submit" form="site-certificate-form" :disabled="replacement.submitting || !replacementValid || !canReplaceCertificate">
-          <LoaderCircle v-if="replacement.submitting" class="spin" :size="16" />
-          {{ phrase(replacement.submitting ? '正在提交…' : '更换证书') }}
-        </button>
-      </template>
-    </ModalDialog>
   </div>
 </template>
 
 <style scoped>
+.site-certificate-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .site-service-card--fastadmin .site-service-card__content strong {
   font-size: 0.875rem;
 }

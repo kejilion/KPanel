@@ -2,6 +2,10 @@ import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
   ['配置的响应头可能在未认证时公开，请勿在响应头中放置敏感信息。', 'Configured response headers may be visible before authentication. Do not put sensitive information in them.'],
+  ['在此管理网站设置、证书和访问密码。', 'Manage site settings, certificates, and access passwords here.'],
+  ['证书和访问密码分别保存，保存后立即生效。', 'Certificates and access passwords are saved separately and take effect immediately.'],
+  ['HTTPS 证书', 'HTTPS certificate'],
+  ['保存证书', 'Save certificate'],
   ['删除规则', 'Delete rule'],
   ['添加规则', 'Add rule'],
   ['保护范围', 'Protection scope'],
