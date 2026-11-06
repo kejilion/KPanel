@@ -12,8 +12,8 @@
     "scripts/build-mcp-clients.sh": "29b0e82668f585aa46d10432912e1050954430cfac6a0550dd408d728979e113",
     "Makefile": "f651d8ce2f10adc487118e1ccb476615347661922a8c8ef529f1b8013da5d53e"
   },
-  "closureSha256": "809175a267e841ed87627dd6e590fb2fe9385553558a005f0527b77dd2db3b1e",
-  "firstPartySourceSha256": "d951f00a9c8d00d7dea0b2e831847e21af65e9e46f8bbfae4e1da6c0c794d69e",
+  "closureSha256": "d5a013df802f7107b32a38f0f18f31b11efcd472745e2c31fae4c227238d8c91",
+  "firstPartySourceSha256": "63cc60db551d502bb00fd855c8837be531a00d3e32cef5722aed0a2513dada98",
   "buildTargetHashEncoding": "UTF-8 with LF line endings",
   "closureEncoding": "SHA256 of JSON.stringify of ordered OS/architecture rows; packages sorted by import path; path, module and selected version; stdlib go1.27.3; main-module packages additionally bind relative sourceDirectory and sorted actual GoFiles.",
   "firstPartySourceEncoding": "SHA256 of JSON.stringify of all cmd/internal Go source path and SHA256 pairs sorted by relative path; contents normalized to UTF-8 LF. All actual main-module production GoFiles must be covered. Generated .pb.go and .proto files or symlinks require a new review.",
@@ -183,7 +183,9 @@
     "rc130Rc5IdentitySummary": "RC5 scope rebind: the repository productionClosure function reproduced the existing closure identity from exact CI outputs for all six targets. Dependency graph, source manifest and build targets remain unchanged; source identity is rebound to 1297 Go files. All 37 findings and dates are retained. Full scanners remain required; an earlier manual closure digest is superseded.",
     "rc130Rc5SupersededManualClosureEvidenceSha256": "5390e468927e1855389d316eea91ecb3b9f168ad1038bc5c89520192d4b40b0a",
     "rc130Rc6IdentityEvidenceSha256": "d74e39302dbe65ad1b025872f30e945331246ce248923c89172eaca9b461f8fc",
-    "rc130Rc6IdentitySummary": "RC6 version-only source rebind: the official firstPartySources helper recomputed 1,297 files as d951f00a9c8d00d7dea0b2e831847e21af65e9e46f8bbfae4e1da6c0c794d69e. Relative to the exact candidate base, the sole Go source change is the internal/version/version.go version literal from 1.30.0-rc.5-dev to 1.30.0-rc.6-dev; go.mod, go.sum, vendored torrent source and all release/build target inputs are unchanged. Existing findings and dispositions and the 2026-10-25 through 2026-11-08 observation window are preserved. This identity binding does not claim a scanner result; fresh six-target closure inventory, scanners, exact candidate CI and full L3 remain required."
+    "rc130Rc6IdentitySummary": "RC6 version-only source rebind: the official firstPartySources helper recomputed 1,297 files as d951f00a9c8d00d7dea0b2e831847e21af65e9e46f8bbfae4e1da6c0c794d69e. Relative to the exact candidate base, the sole Go source change is the internal/version/version.go version literal from 1.30.0-rc.5-dev to 1.30.0-rc.6-dev; go.mod, go.sum, vendored torrent source and all release/build target inputs are unchanged. Existing findings and dispositions and the 2026-10-25 through 2026-11-08 observation window are preserved. This identity binding does not claim a scanner result; fresh six-target closure inventory, scanners, exact candidate CI and full L3 remain required.",
+    "rc130Rc7IdentityEvidenceSha256": "efa3e81b8421d08562853be7c2ff51ecf9157ff0b7fce599e47ea082e9c82ca5",
+    "rc130Rc7IdentitySummary": "RC7 music source identity rebind: official firstPartySources observed 1303 Go files as 63cc60db551d502bb00fd855c8837be531a00d3e32cef5722aed0a2513dada98. Derived all six production rows from the exact RC6 GitHub L3 inventory using the repository productionClosure helper; Linux amd64/arm64 each add the panel music_metadata.go handler and internal/musicmetadata (qq.go, service.go), while four non-Linux/non-paneld rows are unchanged. go.mod/go.sum, selected module graph and release/build target files are unchanged. Existing 37 findings/dispositions and the 2026-10-25..2026-11-08 observation window are preserved. Derivation evidence records exact method; exact RC7 L3 must independently reobserve all six closures and run fresh scanners. No scanner, candidate CI or release result is implied."
   },
   "findings": [
     {
