@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from 'vue'
+import { ShieldCheck } from '@lucide/vue'
 import { api } from '@/lib/api'
 import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
 import type { SiteAccessPasswordRule } from '@/types/api'
+import SiteSettingsSection from './SiteSettingsSection.vue'
 
 const props = withDefaults(defineProps<{ siteId: string; siteVersion?: string; writable?: boolean; allowAdd?: boolean; unavailableReason?: string }>(), { siteVersion: '', writable: false, allowAdd: true, unavailableReason: '' })
 const emit = defineEmits<{ changed: [siteVersion: string]; busy: [value: boolean] }>()
@@ -164,14 +166,9 @@ onBeforeUnmount(() => { disposed = true; active?.abort(); editing.value = undefi
 </script>
 
 <template>
-  <section class="detail-section">
-    <div class="access-password-header">
-      <h3>{{ phrase('访问密码') }}</h3>
-      <button class="button button--secondary button--small" type="button" :aria-expanded="expanded" :disabled="saving" @click="toggle">
-        {{ phrase(expanded ? '收起' : '查看访问密码') }}
-      </button>
-    </div>
-    <div v-if="expanded" class="access-password-content">
+  <SiteSettingsSection :title="phrase('访问密码')" :description="phrase('为指定路径设置账号密码验证')" :expanded="expanded" :disabled="saving" @toggle="toggle">
+    <template #icon><ShieldCheck :size="16" /></template>
+    <div class="access-password-content">
       <p v-if="loading" role="status">{{ phrase('正在读取访问密码规则…') }}</p>
       <p v-else-if="error" role="alert">{{ phrase('读取失败，请重试。') }} <button class="button button--ghost button--small" type="button" @click="load">{{ phrase('重试') }}</button></p>
       <p v-else-if="rules.length === 0">{{ phrase('未发现可识别的访问密码规则') }}</p>
@@ -225,13 +222,11 @@ onBeforeUnmount(() => { disposed = true; active?.abort(); editing.value = undefi
       <p v-if="!writable && unavailableReason">{{ unavailableReason }}</p>
       <p v-if="notice" role="status">{{ notice }}</p>
     </div>
-  </section>
+  </SiteSettingsSection>
 </template>
 
 <style scoped>
-.access-password-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
-.access-password-header h3 { margin: 0; font-size: 16px; }
-.access-password-content { display: grid; gap: 12px; margin-top: 16px; }
+.access-password-content { display: grid; gap: 12px; }
 .access-password-content > p { margin: 0; }
 .access-password-content > button { justify-self: start; }
 .access-password-rules { display: grid; gap: 12px; padding: 0; margin: 0; list-style: none; }

@@ -429,6 +429,16 @@ describe('SitesView creation experience', () => {
     expect(view.replacement.privateKey).toBe('')
   })
 
+  it('clears a creation certificate draft when the window closes', () => {
+    const view = setupView()
+    view.editorOpen.value = true
+    view.form.certificate = 'unfinished-certificate'
+    view.form.privateKey = 'unfinished-private-key'
+    view.closeEditor()
+    expect(view.form.certificate).toBe('')
+    expect(view.form.privateKey).toBe('')
+  })
+
   it('opens settings for WordPress and unclassified sites without enabling unsupported site updates', async () => {
     const view = setupView()
     for (const type of ['wordpress', 'unknown'] as const) {

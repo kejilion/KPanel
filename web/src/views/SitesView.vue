@@ -47,6 +47,7 @@ import StatusBadge from '@/components/feedback/StatusBadge.vue'
 import SitesSectionTabs from '@/components/sites/SitesSectionTabs.vue'
 import SiteAccessPasswordRules from '@/components/sites/SiteAccessPasswordRules.vue'
 import SiteAccessPasswordCreate from '@/components/sites/SiteAccessPasswordCreate.vue'
+import SiteSettingsSection from '@/components/sites/SiteSettingsSection.vue'
 import SiteFavicon from '@/components/sites/SiteFavicon.vue'
 import SiteAppearanceName from '@/components/sites/SiteAppearanceName.vue'
 import SiteDeleteDialog from '@/components/sites/SiteDeleteDialog.vue'
@@ -328,6 +329,7 @@ const form = reactive({
   privateKey: '',
 })
 const accessDraft = ref({ enabled: false, path: '/', username: '', password: '' })
+const certificateExpanded = ref(false)
 const accessSaving = ref(false)
 const accessPasswordCapability = computed(() => capabilities.value.find((item) => item.id === 'sites.access-password.write'))
 const accessTemplateUnsupported = computed(() => form.type === 'redirect' || form.type === 'recipe' && ['bitwarden', 'halo'].includes(form.recipe))
@@ -345,14 +347,22 @@ function openCertificateReplacement(site: Site): void {
   replacement.privateKey = ''
   replacement.error = ''
   certificateSite.value = site
+  certificateExpanded.value = true
 }
 
 function closeCertificateReplacement(): void {
   if (replacement.submitting) return
+  certificateExpanded.value = false
   certificateSite.value = undefined
   replacement.certificate = ''
   replacement.privateKey = ''
   replacement.error = ''
+}
+
+function toggleCertificateReplacement(site: Site): void {
+  if (certificateExpanded.value) certificateExpanded.value = false
+  else if (certificateSite.value?.id === site.id) certificateExpanded.value = true
+  else openCertificateReplacement(site)
 }
 
 async function replaceCertificate(): Promise<void> {
@@ -786,6 +796,7 @@ function openCreate(): void {
   form.redirectCode = 301
   form.phpVersion = 'latest'
   form.certificateMode = 'automatic'
+  certificateExpanded.value = false
   form.certificate = ''
   form.privateKey = ''
   accessDraft.value = { enabled: false, path: '/', username: '', password: '' }
@@ -809,6 +820,8 @@ function closeEditor(): void {
       : ''
   editorOpen.value = false
   closeCertificateReplacement()
+  form.certificate = ''
+  form.privateKey = ''
   accessDraft.value.password = ''
   showMoreTemplates.value = false
   if (completedDomain) void revealCreatedSite(completedDomain)
@@ -1800,8 +1813,9 @@ onBeforeUnmount(() => {
           <textarea v-model="form.aliases" rows="3" placeholder="www.example.com&#10;api.example.com" />
           <small>{{ phrase('每行一个域名，最多 20 个；主域名不要重复填写。') }}</small>
         </label>
-        <fieldset v-if="!editingSite && !httpSiteAddress?.port" class="field site-certificate-options">
-          <legend><KeyRound :size="16" /> HTTPS 证书（可选）</legend>
+        <SiteSettingsSection v-if="!editingSite && !httpSiteAddress?.port" :title="phrase('HTTPS 证书')" :description="phrase('配置网站 HTTPS 证书')" :expanded="certificateExpanded" @toggle="certificateExpanded = !certificateExpanded">
+          <template #icon><KeyRound :size="16" /></template>
+          <fieldset class="field site-certificate-options">
           <div class="choice-pills">
             <button
               type="button"
@@ -1856,7 +1870,8 @@ onBeforeUnmount(() => {
             私钥只用于本次创建；不会写入任务状态、审计详情或终端输出，脚本完成后清理临时副本。
           </p>
           <small v-if="useCustomCertificate">{{ phrase('自有证书需在到期前手动更换，脚本不会自动续签。') }}</small>
-        </fieldset>
+          </fieldset>
+        </SiteSettingsSection>
         <SiteAccessPasswordCreate
           v-if="!editingSite"
           v-model="accessDraft"
@@ -1871,14 +1886,8 @@ onBeforeUnmount(() => {
       </form>
       <div v-if="editingSite && !installationTaskView" class="site-security-settings">
         <p class="site-security-settings__note">{{ phrase('证书和访问密码分别保存，保存后立即生效。') }}</p>
-        <section v-if="editingSite.allowedActions?.includes('delete') && editingSite.certificate" class="detail-section site-security-card">
-          <div class="site-security-card__header">
-            <h3>{{ phrase('HTTPS 证书') }}</h3>
-            <button class="button button--secondary button--small" type="button" :aria-expanded="Boolean(certificateSite)" :disabled="panel.isReadOnly.value || !canReplaceCertificate || submitting || accessSaving || replacement.submitting" @click="certificateSite ? closeCertificateReplacement() : openCertificateReplacement(editingSite)">
-              <KeyRound :size="16" /> {{ phrase(certificateSite ? '收起' : '更换证书') }}
-            </button>
-          </div>
-          <p v-if="!canReplaceCertificate">{{ certificateReplaceCapability?.reason || phrase('当前脚本尚不支持更换证书，请先更新配套脚本。') }}</p>
+        <SiteSettingsSection v-if="editingSite.allowedActions?.includes('delete') && editingSite.certificate" :title="phrase('HTTPS 证书')" :description="!canReplaceCertificate ? certificateReplaceCapability?.reason || phrase('当前脚本尚不支持更换证书，请先更新配套脚本。') : phrase('配置网站 HTTPS 证书')" :expanded="certificateExpanded" :disabled="panel.isReadOnly.value || !canReplaceCertificate || submitting || accessSaving || replacement.submitting" @toggle="toggleCertificateReplacement(editingSite)">
+          <template #icon><KeyRound :size="16" /></template>
           <form v-if="certificateSite" id="site-certificate-form" class="form-stack site-certificate-form" @submit.prevent="replaceCertificate">
             <p>{{ phrase('仅更换 HTTPS 证书，网站配置保持不变。证书须覆盖本站全部域名。') }}</p>
             <label class="field">
@@ -1902,9 +1911,8 @@ onBeforeUnmount(() => {
               <button class="button button--secondary button--small" type="button" :disabled="replacement.submitting" @click="closeCertificateReplacement">{{ phrase('取消') }}</button>
             </div>
           </form>
-        </section>
+        </SiteSettingsSection>
         <SiteAccessPasswordRules
-          class="site-security-card"
           :site-id="editingSite.id"
           :site-version="editingSite.resourceVersion"
           :allow-add="editingSite.type !== 'redirect'"
@@ -1959,10 +1967,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .site-security-settings { display: grid; gap: 12px; margin-top: 24px; }
 .site-security-settings__note { margin: 0 0 2px; color: var(--muted); font-size: 13px; line-height: 1.5; }
-.site-security-card { margin: 0; padding: 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-subtle); }
-.site-security-card__header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
-.site-security-card__header h3 { margin: 0; font-size: 16px; }
-.site-certificate-form { margin-top: 16px; }
+.site-certificate-form { margin-top: 0; }
 .site-certificate-form > p { margin: 0; }
 .site-certificate-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .site-service-card--fastadmin .site-service-card__content strong {

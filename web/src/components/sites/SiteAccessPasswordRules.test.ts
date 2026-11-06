@@ -2,6 +2,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import SiteAccessPasswordRules from './SiteAccessPasswordRules.vue'
+import SiteAccessPasswordCreate from './SiteAccessPasswordCreate.vue'
 
 const mocks = vi.hoisted(() => ({ accessPasswords: vi.fn(), updateAccessAccount: vi.fn(), updateAccessRule: vi.fn(), list: vi.fn() }))
 vi.mock('@/lib/api', () => ({ ApiError: class extends Error { status = 500 }, api: { sites: { accessPasswords: mocks.accessPasswords, updateAccessAccount: mocks.updateAccessAccount, updateAccessRule: mocks.updateAccessRule, list: mocks.list } } }))
@@ -9,6 +10,25 @@ vi.mock('@/lib/api', () => ({ ApiError: class extends Error { status = 500 }, ap
 beforeEach(() => { mocks.accessPasswords.mockReset(); mocks.updateAccessAccount.mockReset(); mocks.updateAccessRule.mockReset(); mocks.list.mockReset() })
 
 describe('SiteAccessPasswordRules', () => {
+  it('uses the same collapsed access-password entry for creation and later management', async () => {
+    mocks.accessPasswords.mockResolvedValue([])
+    const create = mount(SiteAccessPasswordCreate, { props: { modelValue: { enabled: false, path: '/', username: '', password: '' }, writable: true } })
+    const edit = mount(SiteAccessPasswordRules, { props: { siteId: 'first', writable: true } })
+    const createToggle = create.get('button')
+    const editToggle = edit.get('button')
+    expect(createToggle.text()).toBe(editToggle.text())
+    expect(createToggle.attributes('aria-expanded')).toBe('false')
+    expect(editToggle.attributes('aria-expanded')).toBe('false')
+    expect(mocks.accessPasswords).not.toHaveBeenCalled()
+    await createToggle.trigger('click')
+    await editToggle.trigger('click')
+    await flushPromises()
+    expect(createToggle.attributes('aria-expanded')).toBe('true')
+    expect(editToggle.attributes('aria-expanded')).toBe('true')
+    expect(create.find('input[type=checkbox]').exists()).toBe(true)
+    expect(edit.text()).toContain('未发现可识别的访问密码规则')
+  })
+
   it('reads on demand and displays paths and account names', async () => {
     mocks.accessPasswords.mockResolvedValue([{ id: 'rule', scope: 'location', path: '/admin/', usernames: ['alice'], accountsReadable: true }])
     const wrapper = mount(SiteAccessPasswordRules, { props: { siteId: 'first' } })

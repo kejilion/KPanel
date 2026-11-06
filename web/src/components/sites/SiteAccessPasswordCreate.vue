@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { ChevronDown, ShieldCheck } from '@lucide/vue'
+import { ShieldCheck } from '@lucide/vue'
 import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
+import SiteSettingsSection from './SiteSettingsSection.vue'
 
 interface SiteAccessPasswordDraft {
   enabled: boolean
@@ -25,21 +26,9 @@ function change<K extends keyof SiteAccessPasswordDraft>(key: K, value: SiteAcce
 </script>
 
 <template>
-  <section aria-label="访问密码">
-    <button
-      class="site-template-toggle"
-      type="button"
-      :aria-expanded="expanded"
-      aria-controls="site-create-access-password"
-      @click="expanded = !expanded"
-    >
-      <span>
-        <strong><ShieldCheck :size="16" /> {{ phrase('访问密码（可选）') }}</strong>
-        <small>{{ phrase('为指定路径设置账号密码验证') }}</small>
-      </span>
-      <ChevronDown :size="18" :class="{ 'is-open': expanded }" />
-    </button>
-    <div id="site-create-access-password" v-show="expanded" class="access-password-fields">
+  <SiteSettingsSection :title="phrase('访问密码')" :description="phrase('为指定路径设置账号密码验证')" :expanded="expanded" @toggle="expanded = !expanded">
+    <template #icon><ShieldCheck :size="16" /></template>
+    <div class="access-password-fields">
       <label class="access-password-enable">
         <input type="checkbox" :checked="modelValue.enabled" :disabled="!writable && !modelValue.enabled" @change="change('enabled', ($event.target as HTMLInputElement).checked)" />
         {{ phrase('开启访问密码') }}
@@ -65,11 +54,10 @@ function change<K extends keyof SiteAccessPasswordDraft>(key: K, value: SiteAcce
         <small>{{ phrase('配置的响应头可能在未认证时公开，请勿在响应头中放置敏感信息。') }}</small>
       </template>
     </div>
-  </section>
+  </SiteSettingsSection>
 </template>
 
 <style scoped>
-.access-password-fields { display: grid; gap: 12px; padding: 14px 2px 2px; }
+.access-password-fields { display: grid; gap: 12px; }
 .access-password-enable { display: flex; align-items: center; gap: 8px; }
-.site-template-toggle strong { display: flex; align-items: center; gap: 6px; }
 </style>
