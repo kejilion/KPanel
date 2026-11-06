@@ -14,12 +14,16 @@ func TestTextRedactsExactAuthKeysAndNestedAuths(t *testing.T) {
 		"auth: |\n  OPAQUE_BODY\n",
 		"AUTH=OPAQUE_BODY\n",
 		"request auth=OPAQUE_BODY completed\n",
+		"https://example.test/?auth=OPAQUE_BODY&safe=visible\n",
+		"https://example.test/?auths=OPAQUE_BODY&safe=visible\n",
+		"https://example.test/?%61uth=OPAQUE_BODY&safe=visible\n",
+		"https://example.test/?%61uths=OPAQUE_BODY&safe=visible\n",
 	} {
 		if output := Text(input); strings.Contains(output, "OPAQUE_BODY") {
 			t.Fatalf("auth credential exposed in %q: %q", input, output)
 		}
 	}
-	input := "ordinary authentication message\nauthority: visible\n"
+	input := "ordinary authentication message\nauthority: visible\nhttps://example.test/?author=visible\n"
 	if output := Text(input); output != input {
 		t.Fatalf("ordinary text changed: %q", output)
 	}

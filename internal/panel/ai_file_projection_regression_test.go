@@ -191,7 +191,7 @@ func TestApprovedAITailAndMCPRedactAuthViaRealAgent(t *testing.T) {
 	bridge := fileHandlerBridge{handler: handler}
 	server, _ := newTestServer(t)
 	server.agent = bridge
-	for _, content := range []string{"auth: OPAQUE_BODY\n", "auths:\n  registry.example:\n    auth: OPAQUE_BODY\n"} {
+	for _, content := range []string{"auth: OPAQUE_BODY\n", "auths:\n  registry.example:\n    auth: OPAQUE_BODY\n", "https://example.test/?auth=OPAQUE_BODY&safe=visible\n", "https://example.test/?auths=OPAQUE_BODY&safe=visible\n"} {
 		if err := os.WriteFile(filepath.Join(root, "fixture.yaml"), []byte(content), 0600); err != nil {
 			t.Fatal(err)
 		}

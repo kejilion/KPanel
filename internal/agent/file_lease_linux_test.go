@@ -111,7 +111,7 @@ func TestAITailRedactsTextAuthAssignment(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = manager.Close() })
 	server.files = manager
-	for _, value := range []string{"auth: OPAQUE_BODY\n", "auths:\n  registry.example:\n    auth: OPAQUE_BODY\n"} {
+	for _, value := range []string{"auth: OPAQUE_BODY\n", "auths:\n  registry.example:\n    auth: OPAQUE_BODY\n", "https://example.test/?auth=OPAQUE_BODY&safe=visible\n"} {
 		if err := os.WriteFile(filepath.Join(root, "fixture.yaml"), []byte(value), 0600); err != nil {
 			t.Fatal(err)
 		}

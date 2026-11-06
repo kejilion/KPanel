@@ -507,6 +507,9 @@ func redactLine(value string) string {
 }
 
 func isSensitiveURLQueryName(name string) bool {
+	if strings.EqualFold(name, "auth") || strings.EqualFold(name, "auths") {
+		return true
+	}
 	if sensitiveURLQueryName.MatchString(name) {
 		return true
 	}
