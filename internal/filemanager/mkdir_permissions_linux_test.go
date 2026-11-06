@@ -11,8 +11,10 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"unsafe"
 
 	"github.com/kejilion/kejilion-panel/internal/contract"
+	"golang.org/x/sys/unix"
 )
 
 func TestUploadedDirectoryPermissionsWithPrivateAgentUmask(t *testing.T) {
@@ -86,5 +88,82 @@ func TestMkdirDoesNotChangeExistingDirectoryOrFollowLinks(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(private, "images")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("created below a linked parent: %v", err)
+	}
+}
+
+func TestMkdirPublishesIntoWritableParentAfterSettingPermissions(t *testing.T) {
+	m, root := newTestManager(t)
+	parent := filepath.Join(root, "shared")
+	if err := os.Mkdir(parent, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(parent, 0777); err != nil {
+		t.Fatal(err)
+	}
+	// Watch the attacker-writable parent. Only an already-complete directory
+	// may appear there; mkdir followed by chmod would expose IN_CREATE/ATTRIB.
+	watcher, err := unix.InotifyInit1(unix.IN_NONBLOCK | unix.IN_CLOEXEC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unix.Close(watcher)
+	if _, err := unix.InotifyAddWatch(watcher, parent, unix.IN_CREATE|unix.IN_MOVED_TO|unix.IN_ATTRIB); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.mkdir("/shared", "images"); err != nil {
+		t.Fatal(err)
+	}
+	buffer := make([]byte, 4096)
+	n, err := unix.Read(watcher, buffer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var published bool
+	for offset := 0; offset+unix.SizeofInotifyEvent <= n; {
+		event := (*unix.InotifyEvent)(unsafe.Pointer(&buffer[offset]))
+		if event.Mask&(unix.IN_CREATE|unix.IN_ATTRIB) != 0 {
+			t.Fatalf("mutable creation exposed in writable parent: mask=%x", event.Mask)
+		}
+		published = published || event.Mask&unix.IN_MOVED_TO != 0
+		offset += unix.SizeofInotifyEvent + int(event.Len)
+	}
+	if !published {
+		t.Fatal("directory was not atomically published")
+	}
+	info, err := os.Stat(filepath.Join(parent, "images"))
+	if err != nil || info.Mode().Perm() != 0755 {
+		t.Fatalf("published mode: %v, %v", info, err)
+	}
+	if entries, err := os.ReadDir(root); err != nil || len(entries) != 1 {
+		t.Fatalf("staging directory leaked: %v, %v", entries, err)
+	}
+}
+
+func TestMkdirPreservesSetgidParentGroup(t *testing.T) {
+	m, root := newTestManager(t)
+	parent := filepath.Join(root, "shared-group")
+	if err := os.Mkdir(parent, 0700); err != nil {
+		t.Fatal(err)
+	}
+	group := os.Getegid()
+	if os.Geteuid() == 0 {
+		group = 65534
+	}
+	if err := os.Chown(parent, -1, group); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(parent, 0777|os.ModeSetgid); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.mkdir("/shared-group", "images"); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(filepath.Join(parent, "images"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	stat := info.Sys().(*syscall.Stat_t)
+	if int(stat.Gid) != group || info.Mode()&os.ModeSetgid == 0 || info.Mode().Perm() != 0755 {
+		t.Fatalf("destination group inheritance lost: gid=%d mode=%v", stat.Gid, info.Mode())
 	}
 }

@@ -5,40 +5,94 @@ package filemanager
 import (
 	"os"
 	"path"
+	"syscall"
 )
 
 // User-created directories must be traversable by web servers even when the
 // Agent runs with umask 0077. Keep the parent and chmod target pinned.
-func mkdirUserDirectory(root *fileRoot, name string) error {
-	parent, err := root.OpenRoot(path.Dir(name))
+func (m *Manager) mkdirUserDirectory(virtual string) error {
+	parentVirtual := path.Dir(virtual)
+	parent, info, err := m.openReceiveDirectory(parentVirtual, false)
 	if err != nil {
 		return err
 	}
 	defer parent.Close()
-	base := path.Base(name)
-	if err := parent.Mkdir(base, 0700); err != nil {
+	base := path.Base(virtual)
+	// mkdir cannot return an inode handle. Never reopen a new name in a
+	// directory where a local writer can replace it before chmod.
+	creation, name := parent, base
+	if !archiveWorkspaceProtected(info, parent) {
+		workspace, workspacePath, workspaceInfo, err := m.openArchiveWorkspace(parentVirtual, info)
+		if err != nil {
+			return err
+		}
+		stage := &fileCopyStage{workspace: workspace, workspacePath: workspacePath, workspaceInfo: workspaceInfo, name: ".kpanel-copy-" + randomID()}
+		defer stage.close()
+		if err := workspace.Mkdir(stage.name, 0700); err != nil {
+			return err
+		}
+		stage.info, err = workspace.Lstat(stage.name)
+		if err != nil {
+			return err
+		}
+		stage.root, err = workspace.OpenRoot(stage.name)
+		if err != nil {
+			return err
+		}
+		if err := stage.validate(m); err != nil {
+			return err
+		}
+		if err := inheritArchiveDestinationDefaults(stage.root, parent); err != nil {
+			return err
+		}
+		creation, name = stage.root, "directory"
+	}
+	if err := creation.Mkdir(name, 0700); err != nil {
 		return err
 	}
-	directory, err := parent.Open(base)
+	directory, err := creation.Open(name)
 	if err != nil {
 		return err
 	}
 	defer directory.Close()
-	info, err := directory.Stat()
+	created, err := directory.Stat()
 	if err != nil {
 		return err
 	}
-	if !info.IsDir() {
+	if !created.IsDir() {
 		return ErrConflict
 	}
-	if err := directory.Chmod(0755); err != nil {
+	mode := os.FileMode(0755)
+	if info.Mode()&os.ModeSetgid != 0 {
+		stat, ok := info.Sys().(*syscall.Stat_t)
+		if !ok {
+			return ErrConflict
+		}
+		if err := directory.Chown(-1, int(stat.Gid)); err != nil {
+			return err
+		}
+		mode |= os.ModeSetgid
+	} else if creation != parent {
+		if err := directory.Chown(-1, os.Getegid()); err != nil {
+			return err
+		}
+	}
+	if err := directory.Chmod(mode); err != nil {
 		return err
 	}
 	actual, err := directory.Stat()
 	if err != nil {
 		return err
 	}
-	visible, err := root.Lstat(name)
+	if creation != parent {
+		if err := m.verifyDirectoryIdentity(parentVirtual, info); err != nil {
+			return err
+		}
+		if err := publishReceiveObject(creation, name, parent, base, false); err != nil {
+			return err
+		}
+	}
+	visible, err := m.rootFS.Lstat(rootName(virtual))
 	if err != nil || !os.SameFile(actual, visible) || actual.Mode().Perm() != 0755 {
 		return ErrConflict
 	}

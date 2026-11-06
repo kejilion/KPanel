@@ -10,8 +10,8 @@ import (
 )
 
 // Windows keeps the destination's inherited ACL policy.
-func mkdirUserDirectory(root *fileRoot, name string) error {
-	return root.Mkdir(name, 0755)
+func (m *Manager) mkdirUserDirectory(virtual string) error {
+	return m.rootFS.Mkdir(rootName(virtual), 0755)
 }
 
 // Capture the effective DACL from the pinned source, and prevent the new
