@@ -43,9 +43,18 @@ describe('site settings entries', () => {
     const certificateLabel = createCertificate.text(), passwordLabel = createPassword.text()
     await createCertificate.trigger('click')
     expect(createCertificate.attributes('aria-expanded')).toBe('true')
+    expect(wrapper.get('fieldset.site-certificate-options legend.sr-only').text()).toBe('HTTPS 证书')
     expect(wrapper.text()).toContain('自动申请或复用')
+    await button('使用自定义证书').trigger('click')
+    await createCertificate.trigger('click')
+    expect(createCertificate.attributes('aria-expanded')).toBe('false')
+    expect(createCertificate.text()).toContain('自有证书信息未填写完整，请展开并完成后保存。')
+    expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeDefined()
+    await createCertificate.trigger('click')
+    expect(wrapper.find('textarea[placeholder="-----BEGIN CERTIFICATE-----"]').exists()).toBe(true)
     await button('取消').trigger('click')
     await button('设置').trigger('click')
+    expect(wrapper.get('.site-security-settings__note').text()).toContain('example.com')
     const editCertificate = wrapper.findAll('button').find((item) => item.text().startsWith('HTTPS 证书'))!
     const editPassword = wrapper.findAll('button').find((item) => item.text().startsWith('访问密码'))!
     expect(editCertificate.text()).toBe(certificateLabel)
@@ -63,6 +72,29 @@ describe('site settings entries', () => {
     expect(editCertificate.attributes('aria-expanded')).toBe('false')
     await editCertificate.trigger('click')
     expect((wrapper.get('textarea[placeholder="-----BEGIN PRIVATE KEY-----"]').element as HTMLTextAreaElement).value).toBe('synthetic-private-key')
+    wrapper.unmount()
+  })
+
+  it('identifies a site when only security settings are available', async () => {
+    mocks.list.mockResolvedValue({ items: [{
+      id: 'b'.repeat(32), primaryDomain: 'wordpress.example.com', domains: ['wordpress.example.com'], type: 'wordpress', enabled: true,
+      health: 'healthy', consistency: 'synced', access: 'managed', source: 'panel',
+      resourceVersion: `sha256:${'b'.repeat(64)}`, allowedActions: ['delete'], certificate: { status: 'valid' },
+    }], total: 1 })
+    mocks.capabilities.mockResolvedValue(['sites.certificate-replace', 'sites.access-password.write'].map((id) => ({ id, enabled: true })))
+    mocks.accessPasswords.mockResolvedValue([])
+    const wrapper = mount(SitesView, { global: { stubs: {
+      ModalDialog: { props: ['open', 'title'], template: '<div v-if="open"><h2>{{ title }}</h2><slot /><slot name="footer" /></div>' },
+      RouterLink: true, DnsResolutionGuide: true, AppInteractiveTerminal: true, ShortcutCommandTerminal: true,
+      SiteFavicon: true, SiteAppearanceName: true, SiteDeleteDialog: true, SiteCertificateRenewDialog: true, LocalWebServicePicker: true,
+    } } })
+    await flushPromises()
+    await wrapper.findAll('button').find((item) => item.text() === '设置')!.trigger('click')
+    expect(wrapper.find('#site-form').exists()).toBe(false)
+    expect(wrapper.get('.site-security-settings__note').text()).toContain('wordpress.example.com')
+    await wrapper.findAll('button').find((item) => item.text().startsWith('HTTPS 证书'))!.trigger('click')
+    expect(wrapper.text()).toContain('保存证书')
+    expect(wrapper.text()).toContain('访问密码')
     wrapper.unmount()
   })
 })

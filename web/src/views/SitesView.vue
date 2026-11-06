@@ -577,6 +577,11 @@ const customCertificateFormReason = computed(() => {
   return ''
 })
 const customCertificateFormValid = computed(() => !customCertificateFormReason.value)
+const certificateSectionDescription = computed(() =>
+  useCustomCertificate.value && !customCertificateFormValid.value
+    ? '自有证书信息未填写完整，请展开并完成后保存。'
+    : '配置网站 HTTPS 证书',
+)
 
 const filteredSites = computed(() => {
   const query = search.value.trim().toLowerCase()
@@ -1813,9 +1818,10 @@ onBeforeUnmount(() => {
           <textarea v-model="form.aliases" rows="3" placeholder="www.example.com&#10;api.example.com" />
           <small>{{ phrase('每行一个域名，最多 20 个；主域名不要重复填写。') }}</small>
         </label>
-        <SiteSettingsSection v-if="!editingSite && !httpSiteAddress?.port" :title="phrase('HTTPS 证书')" :description="phrase('配置网站 HTTPS 证书')" :expanded="certificateExpanded" @toggle="certificateExpanded = !certificateExpanded">
+        <SiteSettingsSection v-if="!editingSite && !httpSiteAddress?.port" :title="phrase('HTTPS 证书')" :description="phrase(certificateSectionDescription)" :expanded="certificateExpanded" @toggle="certificateExpanded = !certificateExpanded">
           <template #icon><KeyRound :size="16" /></template>
           <fieldset class="field site-certificate-options">
+          <legend class="sr-only">{{ phrase('HTTPS 证书') }}</legend>
           <div class="choice-pills">
             <button
               type="button"
@@ -1885,7 +1891,11 @@ onBeforeUnmount(() => {
         </template>
       </form>
       <div v-if="editingSite && !installationTaskView" class="site-security-settings">
-        <p class="site-security-settings__note">{{ phrase('证书和访问密码分别保存，保存后立即生效。') }}</p>
+        <div class="site-security-settings__note">
+          <strong>{{ phrase('当前网站') }}</strong>
+          <span>{{ editingSite.primaryDomain }}</span>
+          <small>{{ phrase('证书和访问密码分别保存，保存后立即生效。') }}</small>
+        </div>
         <SiteSettingsSection v-if="editingSite.allowedActions?.includes('delete') && editingSite.certificate" :title="phrase('HTTPS 证书')" :description="!canReplaceCertificate ? certificateReplaceCapability?.reason || phrase('当前脚本尚不支持更换证书，请先更新配套脚本。') : phrase('配置网站 HTTPS 证书')" :expanded="certificateExpanded" :disabled="panel.isReadOnly.value || !canReplaceCertificate || submitting || accessSaving || replacement.submitting" @toggle="toggleCertificateReplacement(editingSite)">
           <template #icon><KeyRound :size="16" /></template>
           <form v-if="certificateSite" id="site-certificate-form" class="form-stack site-certificate-form" @submit.prevent="replaceCertificate">
@@ -1966,7 +1976,8 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .site-security-settings { display: grid; gap: 12px; margin-top: 24px; }
-.site-security-settings__note { margin: 0 0 2px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.site-security-settings__note { display: grid; gap: 3px; margin: 0 0 2px; color: var(--muted); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.site-security-settings__note > strong { color: var(--text); font-size: 14px; }
 .site-certificate-form { margin-top: 0; }
 .site-certificate-form > p { margin: 0; }
 .site-certificate-actions { display: flex; flex-wrap: wrap; gap: 8px; }
