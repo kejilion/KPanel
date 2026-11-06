@@ -7,13 +7,13 @@
   "sourceManifestEncoding": "SHA256 of UTF-8 MODULE@VERSION followed by a space and the Go h1 module content checksum; go mod verify checks the downloaded archive and extracted module.",
   "selectedGraphSha256": "f53c70844f7bced63fc277cc505c4e4be11b207cfae1760bce0e843ec2043b64",
   "buildTargetFilesSha256": {
-    "Dockerfile": "9f4c4ae79dac64011162277dcf2bb7106fb70d5bfab837be35db371029764b90",
+    "Dockerfile": "f79d2d404aa91b8d56bf1401f2126bdf8b552c252fc38b5734c360a45c53161c",
     ".github/workflows/release.yml": "f2179cdc8358290e826f92c27316b265dade18275d1e9b89f83b0917f9d73bdc",
     "scripts/build-mcp-clients.sh": "29b0e82668f585aa46d10432912e1050954430cfac6a0550dd408d728979e113",
     "Makefile": "f651d8ce2f10adc487118e1ccb476615347661922a8c8ef529f1b8013da5d53e"
   },
-  "closureSha256": "a2af202ad97041fd4c23fb8ea775d276621cfcc056242288d29d7186eb09be15",
-  "firstPartySourceSha256": "92e24687c1095ed8f4eeca74c1b97584f97e03cc09358ee5c80caae8225ef158",
+  "closureSha256": "809175a267e841ed87627dd6e590fb2fe9385553558a005f0527b77dd2db3b1e",
+  "firstPartySourceSha256": "fd5a5af9e0c87f37817f0cce1cf2cb3ee5bf2b3f75f13c69ffa44567dcac0a50",
   "buildTargetHashEncoding": "UTF-8 with LF line endings",
   "closureEncoding": "SHA256 of JSON.stringify of ordered OS/architecture rows; packages sorted by import path; path, module and selected version; stdlib go1.27.3; main-module packages additionally bind relative sourceDirectory and sorted actual GoFiles.",
   "firstPartySourceEncoding": "SHA256 of JSON.stringify of all cmd/internal Go source path and SHA256 pairs sorted by relative path; contents normalized to UTF-8 LF. All actual main-module production GoFiles must be covered. Generated .pb.go and .proto files or symlinks require a new review.",
