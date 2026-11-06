@@ -15,6 +15,7 @@ import { mockOffers } from './mock-offers.mjs'
 import { handleMockSystemServices } from './mock-system-services.mjs'
 import { mockTutorials } from './mock-tutorials.mjs'
 import { mockArchiveFiles, mockArchiveZIP } from './mock-archive-download.mjs'
+import { handleMockSiteAccess, mockCreatedSiteAccess } from './mock-site-access.mjs'
 import { readFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -2174,6 +2175,7 @@ createServer(async (request, response) => {
       allowedActions: ['update', 'delete'],
     }
     mockCreatedSites.push(site)
+    mockCreatedSiteAccess(site.id, body.accessPassword)
     send(response, 201, site)
     return
   }
@@ -2891,7 +2893,9 @@ createServer(async (request, response) => {
     const input = await readJSON(request)
     if (!app?.capabilities.manage.enabled) return send(response, 409, { title: '应用没有可用的脚本管理入口' })
     if (input.resourceVersion !== app.runtime.resourceVersion) return send(response, 409, { title: '应用状态已变化，请刷新后重试' })
-    const id = `${Date.now().toString(16).padStart(16, '0')}${'b'.repeat(16)}`
+    if (input.jobId !== undefined && !/^[a-f0-9]{32}$/.test(input.jobId)) return send(response, 422, { title: '模拟任务身份无效' })
+    const id = input.jobId || `${Date.now().toString(16).padStart(16, '0')}${'b'.repeat(16)}`
+    if (appJobs.has(id)) return send(response, 409, { title: '模拟任务身份已存在' })
     const native = { id, appId: app.id, appName: app.name_zh, action: 'manage', interactive: true, inputOpen: true,
       status: 'running', stage: 'interactive', progress: 5, logs: ['模拟终端：未执行宿主机脚本'], createdAt: new Date().toISOString() }
     appJobs.set(id, { native, terminalOutput: `模拟数据 · ${app.name_zh}\r\n脚本管理终端已打开（未执行宿主机命令）\r\n1. 安装  2. 更新  3. 卸载  0. 返回\r\n请输入你的选择: ` })
@@ -3074,6 +3078,7 @@ createServer(async (request, response) => {
     send(response, 200, materializeSystemLogEntries(url))
     return
   }
+  if (await handleMockSiteAccess(request, response, url, readJSON, send)) return
   if (request.method === 'GET' && url.pathname === '/api/v1/sites') {
     send(response, 200, {
       items: [...mockCreatedSites, ...(domainSiteDeleted ? [] : [
@@ -3128,7 +3133,7 @@ createServer(async (request, response) => {
     return
   }
   if (request.method === 'GET' && url.pathname === '/api/v1/terminal-sessions') {
-    send(response, 200, { items: [...mockTerminalSessions.values()].filter(session => session.metadata?.retained && !session.exitedAt).map(session => session.metadata) })
+    send(response, 200, { items: [...mockTerminalSessions.values()].filter(session => !session.detached && (session.metadata?.retained || session.metadata?.closeRequested) && !session.exitedAt).map(session => session.metadata) })
     return
   }
   if (request.method === 'POST' && url.pathname === '/api/v1/terminal-sessions') {
@@ -3168,14 +3173,14 @@ createServer(async (request, response) => {
         return
       }
     }
-    if (mockTerminalSessions.size >= 4) {
+    if ([...mockTerminalSessions.values()].filter(session => !session.detached).length >= 4) {
       send(response, 429, { title: 'Terminal session limit reached', code: 'terminal_limit' })
       return
     }
     mockTerminalSessionCounter += 1
     const sessionId = `visual-terminal-${mockTerminalSessionCounter}`
     const createdAt = new Date().toISOString()
-    const metadata = { sessionId, hostId: input.hostId, offset: 0, createdAt, retained: input.retained === true, ...(shortcut ? { shortcutId: shortcut.id, title: shortcut.name } : {}), ...(siteManagement ? { purpose: input.purpose, title: 'k web' } : {}) }
+    const metadata = { sessionId, hostId: input.hostId, offset: 0, createdAt, retained: input.retained === true, detachable: true, workspaceVisible: !input.containerId, ...(shortcut ? { shortcutId: shortcut.id, title: shortcut.name } : {}), ...(siteManagement ? { purpose: input.purpose, title: 'k web' } : {}) }
     const launchCommand = shortcut?.command || (siteManagement ? 'k web' : '')
     mockTerminalSessions.set(sessionId, {
       metadata,
@@ -3188,7 +3193,7 @@ createServer(async (request, response) => {
     send(response, 201, metadata)
     return
   }
-  const terminalSessionMatch = url.pathname.match(/^\/api\/v1\/terminal-sessions\/([^/]+)\/(output|input-transport|input|resize|close)$/)
+  const terminalSessionMatch = url.pathname.match(/^\/api\/v1\/terminal-sessions\/([^/]+)\/(output|input-transport|input|resize|close|detach|launch-ack)$/)
   if (terminalSessionMatch) {
     const [, sessionId, action] = terminalSessionMatch
     const session = mockTerminalSessions.get(sessionId)
@@ -3261,6 +3266,11 @@ createServer(async (request, response) => {
       send(response, 200, { accepted: true })
       return
     }
+    if (request.method === 'POST' && action === 'launch-ack') {
+      await readJSON(request)
+      send(response, 200, { acknowledged: true })
+      return
+    }
     if (request.method === 'POST' && action === 'input-transport') {
       // Answer like an Agent without terminal-input-v1: the page falls back to /input.
       await readJSON(request)
@@ -3278,8 +3288,23 @@ createServer(async (request, response) => {
     }
     if (request.method === 'POST' && action === 'close') {
       await readJSON(request)
+      if (process.env.KPANEL_MOCK_TERMINAL_OFFLINE === '1' && !session.metadata.closeRequested) {
+        session.metadata.closeRequested = true
+        send(response, 502, { title: 'Mock terminal offline', code: 'terminal_close_failed' })
+        return
+      }
       mockTerminalSessions.delete(sessionId)
       send(response, 200, { closed: true })
+      return
+    }
+    if (request.method === 'POST' && action === 'detach') {
+      await readJSON(request)
+      if (!session.metadata.closeRequested || (!session.detached && [...mockTerminalSessions.values()].filter(item => item.detached).length >= 4)) {
+        send(response, 409, { title: 'Terminal cannot be detached', code: 'terminal_detach_unavailable' })
+        return
+      }
+      session.detached = true
+      send(response, 200, { detached: true })
       return
     }
     send(response, 405, { title: 'Request method not allowed', code: 'method_not_allowed' })
@@ -3540,6 +3565,7 @@ createServer(async (request, response) => {
         { id: 'sites.proxy.install', enabled: true, methods: ['POST'] },
         { id: 'sites.recipes.install', enabled: true, methods: ['POST'] },
         { id: 'sites.templates.install', enabled: true, methods: ['POST'] },
+        { id: 'sites.access-password.write', enabled: true, methods: ['POST'] },
         { id: 'sites.custom-certificate', enabled: true, methods: ['POST'] },
         { id: 'sites.certificate-replace', enabled: true, methods: ['PATCH'] },
         { id: 'sites.delete', enabled: true, methods: ['DELETE'] },
