@@ -105,7 +105,7 @@ describe('monitoring host selection', () => {
     expect(wrapper.find('.service-status-cell--success').exists()).toBe(true)
     expect(wrapper.find('.service-status-cell--failure').exists()).toBe(true)
     const chartLabels = (kind: string) => group(kind).findAllComponents(TrendChart)
-      .flatMap((chart) => chart.props('series').map((series: { label: string }) => series.label))
+      .flatMap((chart: VueWrapper) => chart.props('series').map((series: { label: string }) => series.label))
     expect(chartLabels('ping')).toEqual(['Ping 节点'])
     expect(chartLabels('tcp')).toEqual(['TCP 服务'])
     expect(chartLabels('http')).toEqual([])
