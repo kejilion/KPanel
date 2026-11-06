@@ -1332,11 +1332,15 @@ onBeforeUnmount(() => {
 .chart-switch button:hover, .chart-switch button.is-active { color: var(--brand-strong); background: var(--brand-soft); }
 .operator-latency-card { padding-bottom: 12px; }
 .service-check-card { display: grid; gap: 10px; }
+.service-check-card :deep(.trend-chart__tick) { font-size: 12px; }
+.service-check-card :deep(.trend-chart__axis), .service-check-card :deep(.trend-chart__tooltip time) { font-size: 13px; }
+.service-check-card :deep(.trend-chart__tooltip span) { font-size: 14px; }
 .operator-latency-icon {
   display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center;
   border-radius: 9px; color: var(--brand); background: var(--brand-soft);
 }
 .operator-latency-heading > div > span { display: grid; gap: 2px; }
+.operator-latency-heading strong { color: var(--text); font-size: 16px; }
 .operator-latency-heading small { color: var(--muted); font-size: 13px; font-weight: 400; }
 .service-check-heading__actions { display: flex !important; align-items: center; justify-content: flex-end; gap: 10px !important; }
 .service-check-heading__actions > span { color: var(--muted); font-size: 13px; }
@@ -1345,7 +1349,7 @@ onBeforeUnmount(() => {
 .operator-route {
   display: inline-flex; min-height: 30px; align-items: center; gap: 6px; padding: 0 9px;
   border: 1px solid var(--border); border-radius: 999px; color: var(--muted);
-  background: var(--surface-subtle); font-size: 13px; cursor: pointer;
+  background: var(--surface-subtle); font-size: 14px; cursor: pointer;
 }
 .operator-route:hover { border-color: color-mix(in srgb, var(--brand) 42%, var(--border)); color: var(--text); }
 .operator-route--active { border-color: color-mix(in srgb, var(--brand) 38%, var(--border)); color: var(--text); background: var(--brand-soft); }
@@ -1353,7 +1357,7 @@ onBeforeUnmount(() => {
 .operator-route--active i { opacity: 1; }
 .operator-route small { color: inherit; font-size: 12px; opacity: .72; }
 .operator-latency-actions { display: inline-flex; flex: 0 0 auto; gap: 3px; padding: 3px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-subtle); }
-.operator-latency-actions button { min-height: 30px; padding: 0 9px; border: 0; border-radius: 6px; color: var(--muted); background: transparent; font-size: 12px; cursor: pointer; }
+.operator-latency-actions button { min-height: 30px; padding: 0 9px; border: 0; border-radius: 6px; color: var(--muted); background: transparent; font-size: 14px; cursor: pointer; }
 .operator-latency-actions button:hover { color: var(--brand-strong); background: var(--brand-soft); }
 .operator-latency-note { margin: 0 0 2px; color: var(--muted); font-size: 13px; }
 .operator-latency-empty { display: grid; min-height: 210px; place-items: center; color: var(--muted); font-size: 14px; }
