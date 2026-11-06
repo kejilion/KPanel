@@ -1340,6 +1340,10 @@ export const api = {
     action: (input: VMRequest) => request<VMJob>('/virtual-machines/actions', { method: 'POST', body: input }),
     csrf: () => csrfToken,
   },
+  music: {
+    metadata: (body: import('./musicOnline').MusicQuery, signal?: AbortSignal): Promise<import('./musicOnline').OnlineMusic> =>
+      request('/music/metadata', { method: 'POST', body, signal }),
+  },
   tutorials: {
     videos: (platform: 'bilibili' | 'youtube', signal?: AbortSignal): Promise<TutorialVideoFeed> =>
       request<TutorialVideoFeed>('/tutorials/videos', { query: { platform }, signal }),

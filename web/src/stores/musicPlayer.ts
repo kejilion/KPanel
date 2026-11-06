@@ -1,4 +1,5 @@
 import { computed, reactive } from 'vue'
+import { matchOnlineMusic } from '@/lib/musicOnline'
 import { fileAPIForHost } from '@/lib/fileHostContext'
 import { MUSIC_LIMIT, trackKey, type Track } from '@/lib/music'
 import { readMusicTags, readableMusicTag } from '@/lib/musicTags'
@@ -8,6 +9,7 @@ interface PlayerDependencies {
   audio: () => HTMLAudioElement
   tags: typeof readMusicTags
   text: (track: Track, signal: AbortSignal) => Promise<string>
+  online: typeof matchOnlineMusic
   random: () => number
 }
 
@@ -16,13 +18,13 @@ export function createMusicPlayer(overrides: Partial<PlayerDependencies> = {}) {
   const deps: PlayerDependencies = {
     audio: () => new Audio(), tags: readMusicTags,
     text: (track, signal) => fileAPIForHost(track.hostId).text(track.lyrics!, signal),
-    random: Math.random, ...overrides,
+    online: matchOnlineMusic, random: Math.random, ...overrides,
   }
   const state = reactive({
     queue: [] as Track[], current: undefined as Track | undefined,
     playing: false, waiting: false, restored: false, position: 0, duration: 0, volume: 0.8, muted: false,
     repeat: 'off' as Repeat, shuffle: false, error: '' as '' | 'blocked' | 'network' | 'unsupported',
-    lyrics: '', lyricsLoading: false, lyricsFailed: false, embeddedCover: '', album: '',
+    lyrics: '', lyricsLoading: false, lyricsFailed: false, embeddedCover: '', onlineCover: '', onlineStatus: '' as '' | 'loading' | 'matched' | 'empty' | 'failed', album: '',
     viewCount: 0, notice: '' as '' | 'added' | 'next' | 'full',
   })
   let audio: HTMLAudioElement | undefined, controller: AbortController | undefined
@@ -31,7 +33,7 @@ export function createMusicPlayer(overrides: Partial<PlayerDependencies> = {}) {
   let cycle = new Set<string>(), priority = ''
   const key = (track: Track) => trackKey(track)
   const currentIndex = computed(() => state.current ? state.queue.findIndex(t => key(t) === key(state.current!)) : -1)
-  const cover = computed(() => state.embeddedCover || (state.current?.cover ? fileAPIForHost(state.current.hostId).contentUrl(state.current.cover) : ''))
+  const cover = computed(() => state.embeddedCover || (state.current?.cover ? fileAPIForHost(state.current.hostId).contentUrl(state.current.cover) : state.onlineCover))
   const owns = (candidate: HTMLAudioElement, id: number) => candidate === audio && id === sequence
 
   function releaseAudio() {
@@ -42,7 +44,7 @@ export function createMusicPlayer(overrides: Partial<PlayerDependencies> = {}) {
   function releaseMetadata() {
     controller?.abort(); controller = undefined; clearTimeout(timer)
     if (state.embeddedCover) URL.revokeObjectURL(state.embeddedCover)
-    state.embeddedCover = ''
+    state.embeddedCover = ''; state.onlineCover = ''; state.onlineStatus = ''
   }
   function mediaSession() { return typeof navigator !== 'undefined' ? navigator.mediaSession : undefined }
   function publishMetadata() {
@@ -111,7 +113,7 @@ export function createMusicPlayer(overrides: Partial<PlayerDependencies> = {}) {
       track.lyrics ? deps.text(track, signal) : Promise.resolve(''),
     ])
     if (id !== sequence || !state.current) return
-    clearTimeout(timer)
+    if (signal.aborted) { state.lyricsLoading = false; state.lyricsFailed = true; return }
     const embedded = tags.status === 'fulfilled' ? tags.value : {}
     state.current = { ...state.current, title: readableMusicTag(embedded.title, track.title), artist: readableMusicTag(embedded.artist, track.artist) }
     state.album = readableMusicTag(embedded.album, '')
@@ -119,6 +121,26 @@ export function createMusicPlayer(overrides: Partial<PlayerDependencies> = {}) {
     state.lyrics = ((sidecar.status === 'fulfilled' && sidecar.value) || embedded.lyrics || '').slice(0, 256 * 1024)
     state.lyricsFailed = Boolean(track.lyrics && sidecar.status === 'rejected' && !state.lyrics)
     state.lyricsLoading = false; publishMetadata()
+    clearTimeout(timer)
+    if (state.lyrics && cover.value) return
+    if (state.current.title.length > 256 || state.current.artist.length > 256 || state.album.length > 256) return
+    state.onlineStatus = 'loading'
+    // Separate budget: slow optional metadata never holds up audio playback.
+    const onlineController = new AbortController()
+    controller = onlineController
+    timer = setTimeout(() => onlineController.abort(), 12000)
+    try {
+      const result = await deps.online({ title: state.current.title, artist: state.current.artist, album: state.album, duration: state.duration }, onlineController.signal)
+      if (id !== sequence || onlineController.signal.aborted) return
+      if (!state.lyrics && result.lyrics) { state.lyrics = result.lyrics.slice(0, 128 * 1024); state.lyricsFailed = false }
+      if (!cover.value && result.cover && /^data:image\/(jpeg|png);base64,/.test(result.cover)) state.onlineCover = result.cover
+      state.onlineStatus = result.matched ? 'matched' : 'empty'
+      publishMetadata()
+    } catch {
+      if (id === sequence) state.onlineStatus = 'failed'
+    } finally {
+      if (id === sequence) clearTimeout(timer)
+    }
   }
   function play(track: Track, remember = true, startPosition = 0, autoplay = true) {
     if (remember && state.current && key(state.current) !== key(track)) history = [...history.slice(-199), { ...state.current }]

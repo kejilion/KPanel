@@ -4,6 +4,8 @@ import { flushPromises } from '@vue/test-utils'
 import { createMusicPlayer } from './musicPlayer'
 import type { Track } from '@/lib/music'
 import type { MusicTags } from '@/lib/musicTags'
+import type { OnlineMusic, matchOnlineMusic } from '@/lib/musicOnline'
+vi.mock('@/lib/musicOnline', () => ({ matchOnlineMusic: vi.fn(async () => ({ matched: false })) }))
 
 function track(name: string, hostId = ''): Track {
   return { hostId, title: name, artist: 'Artist', entry: { name: `${name}.flac`, path: `/music/${name}.flac`, kind: 'file', sizeBytes: 100, mode: '', owner: '', group: '', modifiedAt: '', resourceVersion: name, editable: false, previewable: true } }
@@ -20,11 +22,11 @@ class FakeAudio {
   removeAttribute = vi.fn(() => { this.src = '' })
 }
 const players: ReturnType<typeof createMusicPlayer>[] = []
-function setup(tags = vi.fn(async (): Promise<MusicTags> => ({})), text = vi.fn(async () => '')) {
+function setup(tags = vi.fn(async (): Promise<MusicTags> => ({})), text = vi.fn(async () => ''), online: typeof matchOnlineMusic = vi.fn(async (): Promise<OnlineMusic> => ({ matched: false }))) {
   const audios: FakeAudio[] = []
-  const player = createMusicPlayer({ audio: () => { const audio = new FakeAudio(); audios.push(audio); return audio as unknown as HTMLAudioElement }, tags, text, random: () => 0 })
+  const player = createMusicPlayer({ audio: () => { const audio = new FakeAudio(); audios.push(audio); return audio as unknown as HTMLAudioElement }, tags, text, online, random: () => 0 })
   players.push(player)
-  return { player, audios, tags, text }
+  return { player, audios, tags, text, online }
 }
 afterEach(() => { players.splice(0).forEach(player => player.stop()); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 describe('music listening session', () => {
@@ -193,5 +195,45 @@ describe('music listening session', () => {
     player.setVolume(-1); expect(audios[0]!.volume).toBe(0)
     player.mute(); expect(audios[0]!.muted).toBe(true)
     player.stop(); expect(player.state.current).toBeUndefined(); expect(player.state.queue).toEqual([]); expect(audios[0]!.src).toBe('')
+  })
+})
+
+describe('optional online metadata', () => {
+  it('fills missing lyrics and cover without delaying playback', async () => {
+    const online = vi.fn(async () => ({ matched: true, lyrics: '[00:01]online', cover: 'data:image/png;base64,AA==' }))
+    const { player, audios } = setup(undefined, undefined, online)
+    player.play(track('A')); expect(audios[0]!.play).toHaveBeenCalled()
+    await flushPromises()
+    expect(online).toHaveBeenCalledWith(expect.objectContaining({ title: 'A', artist: 'Artist' }), expect.any(AbortSignal))
+    expect(player.state.lyrics).toBe('[00:01]online'); expect(player.cover.value).toBe('data:image/png;base64,AA==')
+    expect(player.state.onlineStatus).toBe('matched')
+  })
+  it('keeps local resources and skips matching when both are present', async () => {
+    const { player, online } = setup(vi.fn(async () => ({ lyrics: 'local' })))
+    player.play({ ...track('A'), cover: '/cover.jpg' }); await flushPromises()
+    expect(player.state.lyrics).toBe('local'); expect(online).not.toHaveBeenCalled()
+  })
+  it('only fills the missing resource', async () => {
+    const { player } = setup(vi.fn(async () => ({ lyrics: 'local' })), undefined, vi.fn(async () => ({ matched: true, lyrics: 'online', cover: 'data:image/png;base64,AA==' })))
+    player.play(track('A')); await flushPromises()
+    expect(player.state.lyrics).toBe('local'); expect(player.cover.value).toBe('data:image/png;base64,AA==')
+  })
+  it('discards old results and cancels requests on a track change or stop', async () => {
+    let finish!: (value: OnlineMusic) => void
+    const online = vi.fn((_query: import('@/lib/musicOnline').MusicQuery, _signal: AbortSignal) => new Promise<OnlineMusic>(resolve => { finish = resolve }))
+    const { player } = setup(undefined, undefined, online)
+    player.play(track('A')); await flushPromises()
+    const oldSignal = online.mock.calls[0]?.[1] as AbortSignal | undefined
+    player.play(track('B')); finish({ matched: true, lyrics: 'old' }); await flushPromises()
+    expect(oldSignal?.aborted).toBe(true); expect(player.state.lyrics).toBe('')
+    player.stop(); finish({ matched: true, lyrics: 'late' }); await flushPromises()
+    expect(player.state.lyrics).toBe(''); expect(player.cover.value).toBe('')
+  })
+  it('leaves audio playing on a source failure and reports no-match separately', async () => {
+    const { player } = setup(undefined, undefined, vi.fn(async () => { throw Error('offline') }))
+    player.play(track('A')); await flushPromises()
+    expect(player.state.playing).toBe(true); expect(player.state.error).toBe(''); expect(player.state.onlineStatus).toBe('failed')
+    const { player: empty } = setup(); empty.play(track('B')); await flushPromises()
+    expect(empty.state.onlineStatus).toBe('empty'); expect(empty.state.playing).toBe(true)
   })
 })

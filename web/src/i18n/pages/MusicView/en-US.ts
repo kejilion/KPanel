@@ -1,5 +1,9 @@
 import type { PhraseCatalog } from '@/i18n/phrase'
 export default [
+  ["正在在线匹配歌词与封面…","Matching lyrics and artwork online…"],
+  ["在线补全来自网易云音乐","Online metadata from NetEase Cloud Music"],
+  ["未找到匹配的在线歌词或封面","No matching online lyrics or artwork found"],
+  ["在线匹配暂不可用，重新播放可重试","Online matching is unavailable. Play again to retry."],
   ["首歌曲", "songs"],
   [
     "音乐",
@@ -146,8 +150,8 @@ export default [
     "Lyrics"
   ],
   [
-    "暂无歌词：自动读取同名 LRC 文件",
-    "No lyrics yet. Matching LRC files are read automatically."
+    "暂无歌词：优先读取本地内容，再尝试在线匹配",
+    "No lyrics. Local metadata is read first, then online matching is attempted."
   ],
   [
     "已设为下一首",
