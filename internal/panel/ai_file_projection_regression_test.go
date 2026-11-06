@@ -67,13 +67,14 @@ func TestApprovedAIFileReadDoesNotExposeKubernetesSecretData(t *testing.T) {
 }
 
 func TestApprovedAIReadRedactsUnicodeFoldedJSONKey(t *testing.T) {
-	content := `{"ſecret":"OPAQUE_BODY"}`
-	body, _ := json.Marshal(map[string]any{"path": "/tmp/fixture.json", "content": content})
-	server, _ := newTestServer(t)
-	server.agent = &stubAgent{response: AgentResponse{StatusCode: http.StatusOK, Body: body}}
-	result, err := (&panelAITools{server: server}).Execute(context.Background(), ai.ToolExecutionContext{UserID: "admin", Approved: true}, "host_file_read", json.RawMessage(`{"path":"/tmp/fixture.json"}`))
-	if err != nil || strings.Contains(result, "OPAQUE_BODY") {
-		t.Fatalf("unicode key exposed result=%q err=%v", result, err)
+	for _, content := range []string{`{"ſecret":"OPAQUE_BODY"}`, "{\"pass\u200bword\":\"OPAQUE_BODY\"}"} {
+		body, _ := json.Marshal(map[string]any{"path": "/tmp/fixture.json", "content": content})
+		server, _ := newTestServer(t)
+		server.agent = &stubAgent{response: AgentResponse{StatusCode: http.StatusOK, Body: body}}
+		result, err := (&panelAITools{server: server}).Execute(context.Background(), ai.ToolExecutionContext{UserID: "admin", Approved: true}, "host_file_read", json.RawMessage(`{"path":"/tmp/fixture.json"}`))
+		if err != nil || strings.Contains(result, "OPAQUE_BODY") {
+			t.Fatalf("unicode key exposed result=%q err=%v", result, err)
+		}
 	}
 }
 
@@ -202,7 +203,7 @@ func TestApprovedAITailAndMCPRedactAuthViaRealAgent(t *testing.T) {
 	bridge := fileHandlerBridge{handler: handler}
 	server, _ := newTestServer(t)
 	server.agent = bridge
-	for _, content := range []string{"auth: OPAQUE_BODY\n", "auths:\n  registry.example:\n    auth: OPAQUE_BODY\n", "https://example.test/?auth=OPAQUE_BODY&safe=visible\n", "https://example.test/?auths=OPAQUE_BODY&safe=visible\n", `{"ſecret":"OPAQUE_BODY"}` + "\n"} {
+	for _, content := range []string{"auth: OPAQUE_BODY\n", "auths:\n  registry.example:\n    auth: OPAQUE_BODY\n", "https://example.test/?auth=OPAQUE_BODY&safe=visible\n", "https://example.test/?auths=OPAQUE_BODY&safe=visible\n", `{"ſecret":"OPAQUE_BODY"}` + "\n", "{\"pass\u200bword\":\"OPAQUE_BODY\"}\n"} {
 		if err := os.WriteFile(filepath.Join(root, "fixture.yaml"), []byte(content), 0600); err != nil {
 			t.Fatal(err)
 		}

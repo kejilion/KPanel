@@ -264,15 +264,28 @@ func TestConservativeLogTailYAMLDocumentAndDepthBoundaries(t *testing.T) {
 }
 
 func TestConservativeLogTailDistinguishesGenericWordsFromKeys(t *testing.T) {
-	ordinary := "ordinary author=alice filename=access.log metadata=present monkey=visible\nuser name changed; data value is available; kind response\n" + `{"name":"alice","data":"normal"}` + "\n" + `{"message":"password policy changed","email":"user@example.test","percent":"30%","path":"C:\\temp"}` + "\n"
+	ordinary := "ordinary author=alice filename=access.log metadata=present monkey=visible\nuser name changed; data value is available; kind response\npassword policy changed; token format documented\n" + `{"name":"alice","data":"normal"}` + "\n" + `{"message":"password policy changed","email":"user@example.test","percent":"30%","path":"C:\\temp"}` + "\n"
 	got, _, err := ConservativeLogTail(context.Background(), strings.NewReader(ordinary), 1024, 1024)
 	if err != nil || got != Text(ordinary) {
 		t.Fatalf("ordinary record=%q projected=%q err=%v", got, Text(ordinary), err)
 	}
+	access := `127.0.0.1 - - [06/Nov/2026:02:55:56 +0000] "GET / HTTP/1.1" 200 896 "-" "curl/8.0.0" "-"` + "\n"
+	got, _, err = ConservativeLogTail(context.Background(), strings.NewReader(access), 1024, 1024)
+	if err != nil || got != access {
+		t.Fatalf("ordinary curl access=%q err=%v", got, err)
+	}
 	for _, input := range []string{
 		"auth=OPAQUE_BODY\n",
+		"password=OPAQUE_BODY\n",
+		"token: OPAQUE_BODY\n",
+		"Bearer OPAQUE_BODY\n",
+		"tls.key=OPAQUE_BODY\n",
+		"curl -u user:OPAQUE_BODY https://example.test/\n",
+		"mysql -pOPAQUE_BODY\n",
 		`{"auth":"OPAQUE_BODY"}` + "\n",
 		`{"ſecret":"OPAQUE_BODY"}` + "\n",
+		"{\"pass\u200bword\":\"OPAQUE_BODY\"}\n",
+		`{"pass\u200bword":"OPAQUE_BODY"}` + "\n",
 		`{"passw\u006frd":"OPAQUE_BODY"}` + "\n",
 		`{"content":"{\"auth\":\"OPAQUE_BODY\"}"}` + "\n",
 		`{"name":"OPAQUE_BODY","name":"safe"}` + "\n",
@@ -291,6 +304,9 @@ func TestConservativeLogTailRejectsSplitStructuredKeys(t *testing.T) {
 	for _, input := range []string{
 		"{\"name\"\n: \"PASSWORD\",\n\"value\"\n: \"OPAQUE_BODY\"}\n",
 		"{\"kind\"\n: \"Secret\",\n\"data\"\n: {\"x\":\"OPAQUE_BODY\"}}\n",
+		"password\n=OPAQUE_BODY\n",
+		"token\n\n: OPAQUE_BODY\n",
+		"Bearer\n OPAQUE_BODY\n",
 	} {
 		for offset := 0; offset < 128; offset++ {
 			pad := strings.Repeat("x", (64<<10)-offset-1) + "\n"

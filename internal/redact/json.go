@@ -273,7 +273,7 @@ func (p *projection) decodeValue(decoder *json.Decoder, depth int) (any, error) 
 func normalizedJSONKey(key string) string {
 	key = terminalEscape.ReplaceAllString(key, "")
 	key = strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
 			return -1
 		}
 		return r

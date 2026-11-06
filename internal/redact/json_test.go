@@ -94,9 +94,9 @@ func TestJSONProjectionHandlesEncodedNamesAndNestedContent(t *testing.T) {
 }
 
 func TestJSONProjectionRecognizesUnicodeSimpleFoldAliases(t *testing.T) {
-	input := `{"ſecret":"OPAQUE_ONE","paſſword":"OPAQUE_TWO","apiKey":"OPAQUE_THREE","author":"visible"}`
+	input := "{\"ſecret\":\"OPAQUE_ONE\",\"paſſword\":\"OPAQUE_TWO\",\"apiKey\":\"OPAQUE_THREE\",\"pass\u200bword\":\"OPAQUE_FOUR\",\"author\":\"visible\",\"body\":\"a\u200bb\"}"
 	result, err := JSON([]byte(input))
-	if err != nil || strings.Contains(string(result), "OPAQUE_") || !strings.Contains(string(result), `"author":"visible"`) {
+	if err != nil || strings.Contains(string(result), "OPAQUE_") || !strings.Contains(string(result), `"author":"visible"`) || !strings.Contains(string(result), "a\u200bb") {
 		t.Fatalf("unicode credential projection result=%s err=%v", result, err)
 	}
 }

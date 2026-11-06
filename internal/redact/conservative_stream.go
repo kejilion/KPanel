@@ -14,11 +14,12 @@ import (
 )
 
 var (
-	ErrStreamAmbiguous  = errors.New("stream contains context-dependent or encoded content")
-	ErrStreamLimit      = errors.New("stream projection budget exceeded")
-	streamKeyNormalizer = strings.NewReplacer("_", "", "-", "", ".", "")
-	streamAccessLine    = regexp.MustCompile(`^([0-9A-Fa-f:.]+ - [A-Za-z0-9_.-]+ )\[([0-9]{2}/[A-Za-z]{3}/[0-9]{4}:[0-9]{2}:[0-9]{2}:[0-9]{2} [+-][0-9]{4})\]( "[^"\r\n]*" [1-5][0-9]{2} [0-9]+ "[^"\r\n]*" "[^"\r\n]*"(?: "[^"\r\n]*")?)$`)
-	streamUnsafeWords   = []string{"password", "passwd", "pwd", "token", "secret", "apikey", "accesskey", "authorization", "cookie", "credential", "privatekey", "tlskey", "密码", "口令", "令牌", "密钥", "私钥", "signature", "bearer", "basic", "mysql", "mariadb", "curl"}
+	ErrStreamAmbiguous    = errors.New("stream contains context-dependent or encoded content")
+	ErrStreamLimit        = errors.New("stream projection budget exceeded")
+	streamKeyNormalizer   = strings.NewReplacer("_", "", "-", "", ".", "")
+	streamAccessLine      = regexp.MustCompile(`^([0-9A-Fa-f:.]+ - [A-Za-z0-9_.-]+ )\[([0-9]{2}/[A-Za-z]{3}/[0-9]{4}:[0-9]{2}:[0-9]{2}:[0-9]{2} [+-][0-9]{4})\]( "[^"\r\n]*" [1-5][0-9]{2} [0-9]+ "[^"\r\n]*" "[^"\r\n]*"(?: "[^"\r\n]*")?)$`)
+	streamUnsafeWords     = []string{"password", "passwd", "pwd", "token", "secret", "apikey", "accesskey", "authorization", "cookie", "credential", "privatekey", "tlskey", "密码", "口令", "令牌", "密钥", "私钥", "signature", "bearer", "basic", "mysql", "mariadb", "curl"}
+	streamSensitiveSuffix = regexp.MustCompile(`(?i)(?:^|[^?&%\p{L}\p{N}_.-])(?:[\p{L}\p{N}_.-]*(?:` + secretNamePattern + `)[\p{L}\p{N}_.-]*|auths?|bearer|basic)[ \t]*$`)
 )
 
 // ConservativeLogTail is an experimental fail-closed projection for large
@@ -293,11 +294,18 @@ func independentPlainRecord(line []byte) ([]byte, []byte, bool) {
 	if streamHasContextWord(lower) {
 		unsafe = true
 	}
+	needsProjection := false
 	for _, word := range streamUnsafeWords {
 		if strings.Contains(normalized, word) {
-			unsafe = true
+			needsProjection = true
 			break
 		}
+	}
+	if needsProjection && (Text(string(view)) != string(view) || streamSensitiveSuffix.MatchString(strings.TrimSuffix(text, "\n"))) {
+		unsafe = true
+	}
+	if !needsProjection && strings.Contains(lower, "auth") && streamSensitiveSuffix.MatchString(strings.TrimSuffix(text, "\n")) {
+		unsafe = true
 	}
 	if unsafe {
 		if accessMatch == nil || streamMayContainStructure(string(view)) {
