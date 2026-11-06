@@ -58,6 +58,7 @@ import type {
   MonitoringHostPoint,
   MonitoringOperatorLatencySeries,
   MonitoringRange,
+  MonitoringCheckKind,
 } from '@/types/api'
 
 const ranges: Array<{ value: MonitoringRange; label: string }> = [
@@ -320,6 +321,7 @@ const operatorLatencyRoutes = allMonitoringChecks
 const operatorLatencyChart = computed<TrendSeries[]>(() => operatorLatencyRoutes.value
   .filter((series) => operatorLatencyVisibility.value[series.id])
   .map((series) => ({
+    id: series.id,
     label: operatorLatencyLabel(series),
     color: monitoringCheckColor(series.id),
     // The line is the median where recorded, with the band from lowest to
@@ -332,8 +334,6 @@ const operatorLatencyChart = computed<TrendSeries[]>(() => operatorLatencyRoutes
     }),
   }))
   .filter((series) => series.points.length > 0))
-const operatorLatencyVisibleCount = computed(() => operatorLatencyRoutes.value
-  .filter((series) => operatorLatencyVisibility.value[series.id]).length)
 const activeCheckSuccessCount = computed(() => operatorLatencyRoutes.value.filter((series) => latestOperatorLatency(series) != null).length)
 interface ServiceStatusRow {
   series: MonitoringOperatorLatencySeries
@@ -358,6 +358,18 @@ const serviceStatusRows = computed<ServiceStatusRow[]>(() => {
     }
   })
 })
+const serviceCheckGroups = computed(() => (['ping', 'tcp', 'http'] as const).map((kind) => {
+  const routes = allMonitoringChecks.value.filter((series) => (series.kind || 'ping') === kind)
+  const ids = new Set(routes.map((series) => series.id))
+  return {
+    kind,
+    label: kind === 'ping' ? 'Ping' : kind.toUpperCase(),
+    routes,
+    chart: operatorLatencyChart.value.filter((series) => ids.has(series.id || '')),
+    visibleCount: routes.filter((series) => operatorLatencyVisibility.value[series.id]).length,
+    statusRows: serviceStatusRows.value.filter((row) => ids.has(row.series.id)),
+  }
+}))
 const containerCPU = computed<TrendSeries[]>(() => selectedContainers.value.flatMap((container) => {
   const average = containerCPUMode.value === 'average'
   const points = average
@@ -506,11 +518,11 @@ function toggleOperatorLatency(id: string): void {
   }
 }
 
-function showAllOperatorLatency(visible: boolean): void {
+function showAllOperatorLatency(kind: MonitoringCheckKind, visible: boolean): void {
   operatorLatencyVisibility.value = Object.fromEntries(
     allMonitoringChecks.value.map((series) => [
       series.id,
-      visible,
+      (series.kind || 'ping') === kind ? visible : operatorLatencyVisibility.value[series.id] ?? true,
     ]),
   )
 }
@@ -1153,7 +1165,7 @@ onBeforeUnmount(() => {
         <header class="operator-latency-heading">
           <div>
             <span class="operator-latency-icon"><RadioTower :size="18" /></span>
-            <span><strong>服务检测</strong><small>统一展示 Ping、TCP 与 HTTP 检测，可自由增删改</small></span>
+            <span><strong>服务检测</strong><small>按 Ping、TCP、HTTP 分组展示，可自由增删改</small></span>
           </div>
           <div class="service-check-heading__actions">
             <span v-if="operatorLatencyRoutes.length && history.storage.lastOperatorLatencyAt">
@@ -1170,81 +1182,84 @@ onBeforeUnmount(() => {
             ><Settings2 :size="15" />管理检测项</button>
           </div>
         </header>
-        <template v-if="operatorLatencyRoutes.length">
-          <div class="operator-latency-controls">
-            <div class="operator-latency-routes" aria-label="检测项显示选择">
-              <button
-                v-for="series in operatorLatencyRoutes"
-                :key="series.id"
-                class="operator-route"
-                :class="{ 'operator-route--active': operatorLatencyVisibility[series.id] }"
-                type="button"
-                :aria-pressed="Boolean(operatorLatencyVisibility[series.id])"
-                :title="series.target || series.address"
-                @click="toggleOperatorLatency(series.id)"
-              >
-                <i :style="{ background: monitoringCheckColor(series.id) }" />
-                <span>{{ operatorLatencyLabel(series) }}</span>
-                <small>{{ latestLatencyLabel(series) }}</small>
-              </button>
+        <p class="operator-latency-note">每 5 分钟统一采样；超时记为缺测，不记作 0 ms。曲线是区间内的中位延迟，显示 3 条以内时色带标出最低到最高；曲线支持拖拽框选并沿用上方时间范围。</p>
+        <section v-for="group in serviceCheckGroups" :key="group.kind" class="service-check-group" :data-check-kind="group.kind" :aria-labelledby="`service-check-group-${group.kind}`">
+          <h3 :id="`service-check-group-${group.kind}`" class="service-check-group__title">{{ group.label }}<span>{{ group.routes.length }}</span></h3>
+          <template v-if="group.routes.length">
+            <div class="operator-latency-controls">
+              <div class="operator-latency-routes" aria-label="检测项显示选择">
+                <button
+                  v-for="series in group.routes"
+                  :key="series.id"
+                  class="operator-route"
+                  :class="{ 'operator-route--active': operatorLatencyVisibility[series.id] }"
+                  type="button"
+                  :aria-pressed="Boolean(operatorLatencyVisibility[series.id])"
+                  :title="series.target || series.address"
+                  @click="toggleOperatorLatency(series.id)"
+                >
+                  <i :style="{ background: monitoringCheckColor(series.id) }" />
+                  <span>{{ operatorLatencyLabel(series) }}</span>
+                  <small>{{ latestLatencyLabel(series) }}</small>
+                </button>
+              </div>
+              <div class="operator-latency-actions">
+                <button type="button" @click="showAllOperatorLatency(group.kind, true)">全显示</button>
+                <button type="button" @click="showAllOperatorLatency(group.kind, false)">全隐藏</button>
+              </div>
             </div>
-            <div class="operator-latency-actions">
-              <button type="button" @click="showAllOperatorLatency(true)">全显示</button>
-              <button type="button" @click="showAllOperatorLatency(false)">全隐藏</button>
-            </div>
+            <TrendChart
+              v-if="group.chart.length"
+              :series="group.chart"
+              :formatter="formatLatency"
+              :selectable="!updating"
+              :show-legend="false"
+              @select-range="zoomToRange"
+            />
+            <div v-else-if="group.visibleCount === 0" class="operator-latency-empty">已隐藏全部检测项，选择上方项目即可显示。</div>
+            <div v-else class="operator-latency-empty">等待首次检测采样。</div>
+            <section class="service-status-matrix" aria-label="可用性状态">
+              <header>
+                <div class="service-status-matrix__heading">
+                  <strong>可用性状态</strong>
+                  <span>当前时间范围 · 点击格子可放大</span>
+                </div>
+                <div class="service-status-legend" aria-hidden="true">
+                  <span><i class="service-status-cell--success" />正常</span>
+                  <span><i class="service-status-cell--partial" />部分失败</span>
+                  <span><i class="service-status-cell--failure" />失败</span>
+                  <span><i class="service-status-cell--missing" />无数据</span>
+                </div>
+              </header>
+              <div class="service-status-rows">
+                <div v-for="row in group.statusRows" :key="row.series.id" class="service-status-row">
+                  <div class="service-status-row__label" :title="row.series.target || row.series.address">
+                    <i :style="{ background: monitoringCheckColor(row.series.id) }" />
+                    <span>{{ operatorLatencyLabel(row.series) }}</span>
+                    <small>{{ serviceStatusRateLabel(row) }}</small>
+                  </div>
+                  <div class="service-status-cells" :style="serviceStatusGridStyle">
+                    <button
+                      v-for="(cell, index) in row.cells"
+                      :key="`${row.series.id}-${index}`"
+                      type="button"
+                      class="service-status-cell"
+                      :class="`service-status-cell--${cell.state}`"
+                      :disabled="updating"
+                      :title="serviceStatusCellDescription(row, cell)"
+                      :aria-label="serviceStatusCellDescription(row, cell)"
+                      @click="zoomToStatusCell(cell)"
+                    />
+                  </div>
+                </div>
+              </div>
+            </section>
+            </template>
+          <div v-else class="service-check-empty">
+            <strong>暂无检测项</strong>
+            <span>{{ isRemoteHost ? '请在该节点所属面板添加检测项。' : '点击“管理检测项”添加 Ping、TCP 或 HTTP 检测。' }}</span>
           </div>
-          <p class="operator-latency-note">每 5 分钟统一采样；超时记为缺测，不记作 0 ms。曲线是区间内的中位延迟，显示 3 条以内时色带标出最低到最高；曲线支持拖拽框选并沿用上方时间范围。</p>
-          <TrendChart
-            v-if="operatorLatencyChart.length"
-            :series="operatorLatencyChart"
-            :formatter="formatLatency"
-            :selectable="!updating"
-            :show-legend="false"
-            @select-range="zoomToRange"
-          />
-          <div v-else-if="operatorLatencyVisibleCount === 0" class="operator-latency-empty">已隐藏全部检测项，选择上方项目即可显示。</div>
-          <div v-else class="operator-latency-empty">等待首次检测采样。</div>
-          <section class="service-status-matrix" aria-label="可用性状态">
-            <header>
-              <div class="service-status-matrix__heading">
-                <strong>可用性状态</strong>
-                <span>当前时间范围 · 点击格子可放大</span>
-              </div>
-              <div class="service-status-legend" aria-hidden="true">
-                <span><i class="service-status-cell--success" />正常</span>
-                <span><i class="service-status-cell--partial" />部分失败</span>
-                <span><i class="service-status-cell--failure" />失败</span>
-                <span><i class="service-status-cell--missing" />无数据</span>
-              </div>
-            </header>
-            <div class="service-status-rows">
-              <div v-for="row in serviceStatusRows" :key="row.series.id" class="service-status-row">
-                <div class="service-status-row__label" :title="row.series.target || row.series.address">
-                  <i :style="{ background: monitoringCheckColor(row.series.id) }" />
-                  <span>{{ operatorLatencyLabel(row.series) }}</span>
-                  <small>{{ serviceStatusRateLabel(row) }}</small>
-                </div>
-                <div class="service-status-cells" :style="serviceStatusGridStyle">
-                  <button
-                    v-for="(cell, index) in row.cells"
-                    :key="`${row.series.id}-${index}`"
-                    type="button"
-                    class="service-status-cell"
-                    :class="`service-status-cell--${cell.state}`"
-                    :disabled="updating"
-                    :title="serviceStatusCellDescription(row, cell)"
-                    :aria-label="serviceStatusCellDescription(row, cell)"
-                    @click="zoomToStatusCell(cell)"
-                  />
-                </div>
-              </div>
-            </div>
-          </section>
-        </template>
-        <div v-else class="operator-latency-empty service-check-empty">
-          <strong>暂无检测项</strong>
-          <span>{{ isRemoteHost ? '请在该节点所属面板添加检测项。' : '点击“管理检测项”添加 Ping、TCP 或 HTTP 检测。' }}</span>
-        </div>
+        </section>
       </article>
 
       <footer class="monitoring-footnote">
@@ -1332,6 +1347,9 @@ onBeforeUnmount(() => {
 .chart-switch button:hover, .chart-switch button.is-active { color: var(--brand-strong); background: var(--brand-soft); }
 .operator-latency-card { padding-bottom: 12px; }
 .service-check-card { display: grid; gap: 10px; }
+.service-check-group { display: grid; min-width: 0; gap: 10px; padding-top: 16px; border-top: 1px solid var(--border); }
+.service-check-group__title { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--text); font-size: 16px; }
+.service-check-group__title > span { padding: 2px 7px; border-radius: 999px; color: var(--muted); background: var(--surface-subtle); font-size: 12px; font-weight: 400; }
 .service-check-card :deep(.trend-chart__tick) { font-size: 12px; }
 .service-check-card :deep(.trend-chart__axis), .service-check-card :deep(.trend-chart__tooltip time) { font-size: 13px; }
 .service-check-card :deep(.trend-chart__tooltip span) { font-size: 14px; }
@@ -1361,7 +1379,7 @@ onBeforeUnmount(() => {
 .operator-latency-actions button:hover { color: var(--brand-strong); background: var(--brand-soft); }
 .operator-latency-note { margin: 0 0 2px; color: var(--muted); font-size: 13px; }
 .operator-latency-empty { display: grid; min-height: 210px; place-items: center; color: var(--muted); font-size: 14px; }
-.service-check-empty { align-content: center; gap: 6px; text-align: center; }
+.service-check-empty { display: grid; align-content: center; gap: 6px; padding: 16px; color: var(--muted); text-align: center; font-size: 14px; }
 .service-check-empty strong { color: var(--text); font-size: 15px; }
 .service-status-matrix {
   display: grid; gap: 10px; margin-top: 2px; padding: 12px;

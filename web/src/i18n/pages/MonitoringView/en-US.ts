@@ -148,7 +148,7 @@ export default [
   ["主机", "Host"],
   ["容器", "Containers"],
   ["服务检测", "Service checks"],
-  ["统一展示 Ping、TCP 与 HTTP 检测，可自由增删改", "View all Ping, TCP, and HTTP checks together; all checks are editable"],
+  ["按 Ping、TCP、HTTP 分组展示，可自由增删改", "Checks are grouped by Ping, TCP, and HTTP; all checks are editable"],
   ["管理检测项", "Manage checks"],
   ["请在该节点所属面板管理检测项", "Manage checks from the panel that owns this node"],
   ["检测项显示选择", "Check visibility"],
