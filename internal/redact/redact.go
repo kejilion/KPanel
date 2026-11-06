@@ -15,10 +15,15 @@ const privateKeyReplacement = "[REDACTED PRIVATE KEY]"
 
 // These labels are emitted by the authoritative installation scripts as well
 // as English configuration keys. All display formats share this classifier.
-const secretNamePattern = `password|passwd|pwd|token|secret|api[_-]?key|access[_-]?key|authorization|cookie|credential|private[_-]?key|密码|口令|令牌|密钥|私钥`
+const secretNamePattern = `password|passwd|pwd|token|secret|api[_-]?key|access[_-]?key|authorization|cookie|credential|private[_-]?key|tls[._-]?key|密码|口令|令牌|密钥|私钥`
 
 var (
-	mysqlCommand                = regexp.MustCompile(`(?i:\b(?:mysql|mariadb|mysqldump|mariadb-dump|mysqladmin)\b)[^\r\n]*`)
+	mysqlCommand               = regexp.MustCompile(`(?i:\b(?:mysql|mariadb|mysqldump|mariadb-dump|mysqladmin)\b)[^\r\n]*`)
+	curlUserCommand            = regexp.MustCompile(`(?i:\bcurl\b)[^\r\n]*?(?:[ \t]-[a-zA-Z]*u(?:[ \t]|[^-\s])|[ \t]--user(?:[ \t]|=))[^\r\n]*`)
+	dockerLoginPasswordCommand = regexp.MustCompile(`(?i:\bdocker\b)[^\r\n]*?(?i:\blogin\b)[^\r\n]*?(?:[ \t]-p(?:[ \t]|[^-\s])|[ \t]--password(?:[ \t]|=))[^\r\n]*`)
+	// A kind value or even its quoted key can use YAML escapes and folded lines.
+	// Such inputs must reach the bounded parser (or its fail-closed fallback).
+	kubernetesYAMLSecretKind    = regexp.MustCompile(`(?mi)(?:^[ \t]*(?:-[ \t]+|(?:![^ \t\r\n]+|&[^ \t\r\n]+)[ \t]+)*|[{,][ \t]*)(?:["']?kind["']?[ \t]*:[ \t]*(?:(?:![^ \t\r\n]+|&[^ \t\r\n]+)[ \t]+)*(?:secret(?:list)?(?:[ \t#},\]]|$)|["'|>*&!]|$)|\?(?:[ \t]|$)|"(?:\\\r?\n[ \t]*)*(?:k|\\u006b|\\U0000006b|\\x6b)(?:\\\r?\n[ \t]*)*(?:i|\\u0069|\\U00000069|\\x69)(?:\\\r?\n[ \t]*)*(?:n|\\u006e|\\U0000006e|\\x6e)(?:\\\r?\n[ \t]*)*(?:d|\\u0064|\\U00000064|\\x64)(?:\\\r?\n[ \t]*)*"[ \t]*:)`)
 	jsonSecretAssignment        = regexp.MustCompile(`(?i)("(?:[^"\\]|\\.)*(?:` + secretNamePattern + `)(?:[^"\\]|\\.)*"\s*[:：]\s*)("(?:\\.|[^"\\])*"|[^,\s}\]]+)`)
 	secretLineAssignment        = regexp.MustCompile(`(?i)^([ \t]*(?:-[ \t]+)*(?:export[ \t]+)?["']?[\p{L}\p{N}_.-]*(?:` + secretNamePattern + `)[\p{L}\p{N}_.-]*["']?[ \t]*[:：=][ \t]*)[^\r\n]*$`)
 	secretAssignment            = regexp.MustCompile(`(?i)(^|[^?&%\p{L}\p{N}_.-])([\p{L}\p{N}_.-]*(?:` + secretNamePattern + `)[\p{L}\p{N}_.-]*)(\s*[:：=]\s*)((?:"(?:\\.|[^"\\])*"?|'[^']*'?|\\.|\\$|[^\s'"\\])+)`)
@@ -119,12 +124,14 @@ func redactRecords(values []string, literals ...string) ([]string, []bool) {
 	if len(values) > maxProjectionEntries {
 		return failClosed(errProjectionLimit)
 	}
-	nodes := make([]any, 0, len(values))
 	for _, value := range values {
 		if len(value) > maxProjectionInputBytes-inputBytes {
 			return failClosed(errProjectionLimit)
 		}
 		inputBytes += len(value)
+	}
+	nodes := make([]any, 0, len(values))
+	for _, value := range values {
 		node, err := p.text(value, 0)
 		if err != nil {
 			return failClosed(err)
@@ -413,6 +420,10 @@ func privateKeyMarkerOrder(value string) (bool, bool, bool) {
 }
 
 func redactLine(value string) string {
+	// Short options are command-specific; redact the remainder of those
+	// commands rather than trying to evaluate shell quoting or substitutions.
+	value = curlUserCommand.ReplaceAllString(value, "[REDACTED COMMAND]")
+	value = dockerLoginPasswordCommand.ReplaceAllString(value, "[REDACTED COMMAND]")
 	value = authorizationHeader.ReplaceAllString(value, "${1}${2}[REDACTED]")
 	value = authorizationFlag.ReplaceAllString(value, "${1}[REDACTED]")
 	value = cookieHeader.ReplaceAllString(value, "${1}${2}[REDACTED]")

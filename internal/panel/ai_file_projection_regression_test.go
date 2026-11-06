@@ -25,6 +25,21 @@ func TestAIToolUnavailableProjectionIsSafe(t *testing.T) {
 	}
 }
 
+func TestApprovedAIFileReadDoesNotExposeKubernetesSecretData(t *testing.T) {
+	content := `{"apiVersion":"v1","kind":"Secret","data":{"tls.key":"U1lOVEhFVElDX1BSSVZBVEU="}}`
+	body, _ := json.Marshal(map[string]any{"path": "/tmp/kube.json", "content": content})
+	server, _ := newTestServer(t)
+	server.agent = &stubAgent{response: AgentResponse{StatusCode: http.StatusOK, Body: body}}
+	tools := &panelAITools{server: server}
+	result, err := tools.Execute(context.Background(), ai.ToolExecutionContext{UserID: "admin", Approved: true}, "host_file_read", json.RawMessage(`{"path":"/tmp/kube.json"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(result, "U1lOVEhFVElDX1BSSVZBVEU=") {
+		t.Fatal("synthetic secret remains in tool result")
+	}
+}
+
 func TestAIFileProjectionOrdinarySource(t *testing.T) {
 	cases := map[string]string{
 		"go":                  "func main() {\n    println(\"hello\")\n}\n",

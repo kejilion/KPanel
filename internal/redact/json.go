@@ -71,21 +71,22 @@ func JSON(raw []byte) ([]byte, error) {
 // expanded before the shared PEM/configuration state machine sees any lines;
 // they never start another redactor with a fresh continuation state.
 type projection struct {
-	literals          []string
-	literalForms      []string
-	literalFormsReady bool
-	keyDepth          int
-	budget            projectionBudget
-	lines             []semanticLine
-	channel           int
-	indent            int
-	layer             int
-	source            int
-	sources           []lexicalSource
-	parents           []int
-	channels          map[channelKey]int
-	safe              []string
-	suppressed        []bool
+	literals           []string
+	literalForms       []string
+	literalFormsReady  bool
+	keyDepth           int
+	budget             projectionBudget
+	lines              []semanticLine
+	channel            int
+	indent             int
+	layer              int
+	source             int
+	sources            []lexicalSource
+	parents            []int
+	channels           map[channelKey]int
+	yamlSecretChannels map[int]bool
+	safe               []string
+	suppressed         []bool
 }
 
 type semanticLine struct {
@@ -131,7 +132,7 @@ type encodedJSON struct {
 type textSequence struct{ values []any }
 
 func newProjection(literals ...string) *projection {
-	return &projection{literals: literals, channels: make(map[channelKey]int), parents: []int{-1}, source: -1}
+	return &projection{literals: literals, channels: make(map[channelKey]int), yamlSecretChannels: make(map[int]bool), parents: []int{-1}, source: -1}
 }
 
 // A complete known credential can itself be structured JSON. Its canonical
@@ -281,7 +282,7 @@ func normalizedJSONKey(key string) string {
 }
 
 func secretNormalizedJSONKey(key string) bool {
-	if key == "auth" || key == "auths" || key == "key" || key == "stringdata" {
+	if key == "auth" || key == "auths" || key == "key" || key == "tlskey" || key == "stringdata" {
 		return true
 	}
 	for _, part := range []string{"password", "passwd", "pwd", "token", "secret", "apikey", "accesskey", "authorization", "cookie", "credential", "privatekey", "密码", "口令", "令牌", "密钥", "私钥"} {
@@ -328,6 +329,18 @@ func (p *projection) jsonValue(value any, depth int) (projected any, err error) 
 		if len(typed) == 0 {
 			return p.scalar(value, "{}")
 		}
+		// Kubernetes Secret data contains arbitrary user-chosen keys whose
+		// values are merely base64-encoded credentials. Inspect the entire map
+		// before visiting its sorted fields so field order cannot bypass masking.
+		kubernetesSecret, kubernetesSecretList := false, false
+		for key, item := range typed {
+			if normalizedJSONKey(key) == "kind" {
+				if kind, ok := item.(string); ok {
+					kubernetesSecret = kubernetesSecret || strings.EqualFold(strings.TrimSpace(kind), "secret")
+					kubernetesSecretList = kubernetesSecretList || strings.EqualFold(strings.TrimSpace(kind), "secretlist")
+				}
+			}
+		}
 		keys := make([]string, 0, len(typed))
 		names := make(map[string]string, len(typed))
 		named := false
@@ -356,7 +369,7 @@ func (p *projection) jsonValue(value any, depth int) (projected any, err error) 
 			if err != nil {
 				return nil, err
 			}
-			if secretNormalizedJSONKey(names[key]) || (named && names[key] == "value") {
+			if secretNormalizedJSONKey(names[key]) || (kubernetesSecret && names[key] == "data") || (kubernetesSecretList && names[key] == "items") || (named && names[key] == "value") {
 				// Hiding a value must not discard source markers or its hidden
 				// state. Otherwise a credential field makes a private record look
 				// partly visible and leaves a sibling's private key name intact.
@@ -412,7 +425,7 @@ func (p *projection) scalar(value any, text string) (any, error) {
 }
 
 func looksLikeJSON(value string) bool {
-	value = strings.TrimSpace(value)
+	value = strings.TrimLeftFunc(value, unicode.IsSpace)
 	if len(value) == 0 {
 		return false
 	}
@@ -422,7 +435,9 @@ func looksLikeJSON(value string) bool {
 	if value[0] != '[' {
 		return false
 	}
-	if end := strings.IndexByte(value, ']'); end > 1 {
+	// The longest recognized log level is eight bytes. Searching the entire
+	// remaining input at every '[' makes ordinary output quadratic.
+	if end := strings.IndexByte(value[:min(len(value), 10)], ']'); end > 1 {
 		switch strings.ToLower(value[1:end]) {
 		case "notice", "trace", "debug", "info", "warn", "warning", "error", "err", "critical", "crit", "fatal", "alert", "emerg", "panic":
 			return false
@@ -430,7 +445,7 @@ func looksLikeJSON(value string) bool {
 	}
 	// Bracketed log prefixes such as [INFO] are ordinary text. An array starts
 	// with a JSON value token; malformed array-shaped data is fail closed.
-	tail := strings.TrimSpace(value[1:])
+	tail := strings.TrimLeftFunc(value[1:], unicode.IsSpace)
 	return len(tail) == 0 || strings.ContainsRune("{[\"]-0123456789ntf", rune(tail[0]))
 }
 
@@ -448,13 +463,22 @@ func (p *projection) text(value string, depth int) (any, error) {
 		if err == nil || errors.Is(err, errProjectionLimit) {
 			return safe, err
 		}
+		p.markPossibleKubernetesYAML(value)
 		normalized := normalizeRecordValue(value)
 		if normalized == value {
 			return p.unstructuredText(value, depth, true)
 		}
 		return p.normalizedText(normalized, depth)
 	}
+	p.markPossibleKubernetesYAML(value)
 	return p.normalizedText(normalizeRecordValue(value), depth)
+}
+
+func (p *projection) markPossibleKubernetesYAML(value string) {
+	if kubernetesYAMLSecretKind.MatchString(normalizeRecordValue(value)) {
+		// A YAML document may be split across adjacent records in this channel.
+		p.yamlSecretChannels[p.channel] = true
+	}
 }
 
 func (p *projection) encodedText(value string, depth int) (any, error) {
@@ -547,6 +571,7 @@ func (p *projection) leaf(value string) (any, error) {
 }
 
 func (p *projection) redact() error {
+	p.markPossibleKubernetesYAMLRecords()
 	if err := p.projectIdentities(); err != nil {
 		return err
 	}
@@ -560,6 +585,7 @@ func (p *projection) redact() error {
 		}
 	}
 	p.safe, p.suppressed = redactPhysicalLines(p.lines, p.parents, p.sources, logical, logicalHidden)
+	p.redactKubernetesYAML()
 	return nil
 }
 
