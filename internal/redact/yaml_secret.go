@@ -8,6 +8,21 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
+func decodeYAMLQuotedKey(raw string) (string, bool) {
+	if len(raw) > 64<<10 {
+		return "", false
+	}
+	var document yaml.Node
+	if err := yaml.Unmarshal([]byte(raw), &document); err != nil || len(document.Content) != 1 {
+		return "", false
+	}
+	scalar := document.Content[0]
+	if scalar.Kind != yaml.ScalarNode || scalar.Tag != "!!str" {
+		return "", false
+	}
+	return scalar.Value, true
+}
+
 func (p *projection) markPossibleKubernetesYAMLRecords() {
 	channels := make(map[int]*strings.Builder)
 	for _, line := range p.lines {

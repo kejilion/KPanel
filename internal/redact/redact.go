@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -21,6 +22,7 @@ var (
 	mysqlCommand               = regexp.MustCompile(`(?i:\b(?:mysql|mariadb|mysqldump|mariadb-dump|mysqladmin)\b)[^\r\n]*`)
 	curlUserCommand            = regexp.MustCompile(`(?i:\bcurl\b)[^\r\n]*?(?:[ \t]-[a-zA-Z]*u(?:[ \t]|[^-\s])|[ \t]--user(?:[ \t]|=))[^\r\n]*`)
 	dockerLoginPasswordCommand = regexp.MustCompile(`(?i:\bdocker\b)[^\r\n]*?(?i:\blogin\b)[^\r\n]*?(?:[ \t]-p(?:[ \t]|[^-\s])|[ \t]--password(?:[ \t]|=))[^\r\n]*`)
+	yamlEscapedKeyAssignment   = regexp.MustCompile(`^([ \t]*(?:-[ \t]+)*)(?:(?:![^ \t\r\n]+|&[^ \t\r\n]+)[ \t]+)*("(?:[^"\\]|\\.)*")([ \t]*[:：][ \t]*)([^\r\n]*)$`)
 	// A kind value or even its quoted key can use YAML escapes and folded lines.
 	// Such inputs must reach the bounded parser (or its fail-closed fallback).
 	kubernetesYAMLSecretKind    = regexp.MustCompile(`(?mi)(?:^[ \t]*(?:-[ \t]+|(?:![^ \t\r\n]+|&[^ \t\r\n]+)[ \t]+)*|[{,][ \t]*)(?:["']?kind["']?[ \t]*:[ \t]*(?:(?:![^ \t\r\n]+|&[^ \t\r\n]+)[ \t]+)*(?:secret(?:list)?(?:[ \t#},\]]|$)|["'|>*&!]|$)|\?(?:[ \t]|$)|"(?:\\\r?\n[ \t]*)*(?:k|\\u006b|\\U0000006b|\\x6b)(?:\\\r?\n[ \t]*)*(?:i|\\u0069|\\U00000069|\\x69)(?:\\\r?\n[ \t]*)*(?:n|\\u006e|\\U0000006e|\\x6e)(?:\\\r?\n[ \t]*)*(?:d|\\u0064|\\U00000064|\\x64)(?:\\\r?\n[ \t]*)*"[ \t]*:)`)
@@ -355,7 +357,7 @@ func redactConfigurations(sources []lexicalSource, parents []int, privateHidden,
 			if joined, ok := logical[index]; ok {
 				value = joined
 			}
-			configuration.begin(value, source.indent, inlineSensitive[index] || source.sensitive || logicalHidden[index])
+			configuration.begin(normalizeEscapedYAMLKey(value), source.indent, inlineSensitive[index] || source.sensitive || logicalHidden[index])
 			// A regex token boundary is insufficient for an inline compound
 			// shell value, even if it closes within this physical record.
 			hidden[index] = hidden[index] || configuration.inlineCompound
@@ -419,7 +421,30 @@ func privateKeyMarkerOrder(value string) (bool, bool, bool) {
 	return firstIsEnd, lastIsBegin, true
 }
 
+// YAML double-quoted mapping keys can encode sensitive field names. Decode
+// their spelling for the shared classifier and continuation state machine.
+func normalizeEscapedYAMLKey(value string) string {
+	parts := yamlEscapedKeyAssignment.FindStringSubmatch(value)
+	if len(parts) != 5 || !strings.Contains(parts[2], `\`) {
+		return value
+	}
+	key, ok := decodeYAMLQuotedKey(parts[2])
+	if !ok {
+		// Unsupported YAML escapes in a key are ambiguous; hide its value.
+		key = "secret"
+	}
+	if !secretNormalizedJSONKey(normalizedJSONKey(key)) {
+		return value
+	}
+	normalized := parts[1] + strconv.Quote(key) + parts[3] + parts[4]
+	if secretLineAssignment.MatchString(normalized) {
+		return normalized
+	}
+	return parts[1] + `"secret"` + parts[3] + parts[4]
+}
+
 func redactLine(value string) string {
+	value = normalizeEscapedYAMLKey(value)
 	// Short options are command-specific; redact the remainder of those
 	// commands rather than trying to evaluate shell quoting or substitutions.
 	value = curlUserCommand.ReplaceAllString(value, "[REDACTED COMMAND]")

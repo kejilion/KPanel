@@ -40,6 +40,18 @@ func TestApprovedAIFileReadDoesNotExposeKubernetesSecretData(t *testing.T) {
 	}
 }
 
+func TestApprovedAIReadRedactsEscapedYAMLCredentialKey(t *testing.T) {
+	content := `- "pass\u0077ord": OPAQUE_SYNTHETIC` + "\n  safe: ordinary-visible\n"
+	body, _ := json.Marshal(map[string]any{"path": "/tmp/fixture.yaml", "content": content})
+	server, _ := newTestServer(t)
+	server.agent = &stubAgent{response: AgentResponse{StatusCode: http.StatusOK, Body: body}}
+	tools := &panelAITools{server: server}
+	result, err := tools.Execute(context.Background(), ai.ToolExecutionContext{UserID: "admin", Approved: true}, "host_file_read", json.RawMessage(`{"path":"/tmp/fixture.yaml"}`))
+	if err != nil || strings.Contains(result, "OPAQUE_SYNTHETIC") || !strings.Contains(result, "ordinary-visible") {
+		t.Fatalf("escaped credential projection failed: %v", err)
+	}
+}
+
 func TestAIFileProjectionOrdinarySource(t *testing.T) {
 	cases := map[string]string{
 		"go":                  "func main() {\n    println(\"hello\")\n}\n",

@@ -220,3 +220,43 @@ func TestKubernetesYAMLEscapedIdentityAndNestedChannels(t *testing.T) {
 		}
 	}
 }
+
+func TestYAMLEscapedSensitiveKeyDoesNotExposeValue(t *testing.T) {
+	value := `- "pass\u0077ord": OPAQUE_SYNTHETIC` + "\n  safe: ordinary-visible\n"
+	for name, got := range map[string]string{"text": Text(value), "records": strings.Join(Records(strings.Split(value, "\n")), "\n")} {
+		if strings.Contains(got, "OPAQUE_SYNTHETIC") || !strings.Contains(got, "ordinary-visible") {
+			t.Errorf("%s failed to redact escaped YAML key", name)
+		}
+	}
+}
+
+func TestYAMLEscapedSensitiveKeysContinueAcrossBlocks(t *testing.T) {
+	for _, value := range []string{
+		`- "pass\u0077ord": |` + "\n    OPAQUE_SYNTHETIC\n  safe: ordinary-visible\n",
+		`- "\u0061uth": OPAQUE_SYNTHETIC` + "\n  safe: ordinary-visible\n",
+		`- "\u006bey": >-` + "\n    OPAQUE_SYNTHETIC\n  safe: ordinary-visible\n",
+		`- !!str "pass\u0077ord": OPAQUE_SYNTHETIC` + "\n  safe: ordinary-visible\n",
+		`- &anchor "pass\u0077ord": OPAQUE_SYNTHETIC` + "\n  safe: ordinary-visible\n",
+		`- !!str "pass\u0077ord": |` + "\n    OPAQUE_SYNTHETIC\n  safe: ordinary-visible\n",
+	} {
+		got := Text(value)
+		if strings.Contains(got, "OPAQUE_SYNTHETIC") || !strings.Contains(got, "ordinary-visible") {
+			t.Error("escaped YAML key bypassed redaction or hid unrelated data")
+		}
+	}
+}
+
+func TestYAMLEscapedOrdinaryKeyRemainsReadable(t *testing.T) {
+	value := `- "some\ key": ordinary-visible` + "\n"
+	if !strings.Contains(Text(value), "ordinary-visible") {
+		t.Fatal("ordinary YAML escaped key was hidden")
+	}
+}
+
+func TestInlineYAMLMappingEscapedSensitiveKey(t *testing.T) {
+	value := `INFO {"pass\u0077ord": OPAQUE_SYNTHETIC, safe: ordinary-visible}`
+	got := Text(value)
+	if strings.Contains(got, "OPAQUE_SYNTHETIC") {
+		t.Fatalf("inline escaped YAML key was not safely projected: %q", got)
+	}
+}
