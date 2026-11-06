@@ -165,11 +165,13 @@ onBeforeUnmount(() => { disposed = true; active?.abort(); editing.value = undefi
 
 <template>
   <section class="detail-section">
-    <h3>{{ phrase('访问密码') }}</h3>
-    <button class="button button--secondary button--small" type="button" :aria-expanded="expanded" :disabled="saving" @click="toggle">
-      {{ phrase(expanded ? '收起' : '查看访问密码') }}
-    </button>
-    <template v-if="expanded">
+    <div class="access-password-header">
+      <h3>{{ phrase('访问密码') }}</h3>
+      <button class="button button--secondary button--small" type="button" :aria-expanded="expanded" :disabled="saving" @click="toggle">
+        {{ phrase(expanded ? '收起' : '查看访问密码') }}
+      </button>
+    </div>
+    <div v-if="expanded" class="access-password-content">
       <p v-if="loading" role="status">{{ phrase('正在读取访问密码规则…') }}</p>
       <p v-else-if="error" role="alert">{{ phrase('读取失败，请重试。') }} <button class="button button--ghost button--small" type="button" @click="load">{{ phrase('重试') }}</button></p>
       <p v-else-if="rules.length === 0">{{ phrase('未发现可识别的访问密码规则') }}</p>
@@ -222,12 +224,17 @@ onBeforeUnmount(() => { disposed = true; active?.abort(); editing.value = undefi
       </form>
       <p v-if="!writable && unavailableReason">{{ unavailableReason }}</p>
       <p v-if="notice" role="status">{{ notice }}</p>
-    </template>
+    </div>
   </section>
 </template>
 
 <style scoped>
-.access-password-rules { display: grid; gap: 8px; padding: 0; margin: 12px 0 0; list-style: none; }
+.access-password-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.access-password-header h3 { margin: 0; font-size: 16px; }
+.access-password-content { display: grid; gap: 12px; margin-top: 16px; }
+.access-password-content > p { margin: 0; }
+.access-password-content > button { justify-self: start; }
+.access-password-rules { display: grid; gap: 12px; padding: 0; margin: 0; list-style: none; }
 .access-password-rules li { display: grid; gap: 8px; }
 .access-password-account { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .access-password-edit { display: grid; gap: 10px; }

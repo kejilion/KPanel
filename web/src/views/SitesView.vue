@@ -1869,15 +1869,17 @@ onBeforeUnmount(() => {
         </small>
         </template>
       </form>
-      <template v-if="editingSite && !installationTaskView">
-        <p>{{ phrase('证书和访问密码分别保存，保存后立即生效。') }}</p>
-        <section v-if="editingSite.allowedActions?.includes('delete') && editingSite.certificate" class="detail-section">
-          <h3>{{ phrase('HTTPS 证书') }}</h3>
-          <button class="button button--secondary button--small" type="button" :aria-expanded="Boolean(certificateSite)" :disabled="panel.isReadOnly.value || !canReplaceCertificate || submitting || accessSaving || replacement.submitting" @click="certificateSite ? closeCertificateReplacement() : openCertificateReplacement(editingSite)">
-            <KeyRound :size="16" /> {{ phrase(certificateSite ? '收起' : '更换证书') }}
-          </button>
+      <div v-if="editingSite && !installationTaskView" class="site-security-settings">
+        <p class="site-security-settings__note">{{ phrase('证书和访问密码分别保存，保存后立即生效。') }}</p>
+        <section v-if="editingSite.allowedActions?.includes('delete') && editingSite.certificate" class="detail-section site-security-card">
+          <div class="site-security-card__header">
+            <h3>{{ phrase('HTTPS 证书') }}</h3>
+            <button class="button button--secondary button--small" type="button" :aria-expanded="Boolean(certificateSite)" :disabled="panel.isReadOnly.value || !canReplaceCertificate || submitting || accessSaving || replacement.submitting" @click="certificateSite ? closeCertificateReplacement() : openCertificateReplacement(editingSite)">
+              <KeyRound :size="16" /> {{ phrase(certificateSite ? '收起' : '更换证书') }}
+            </button>
+          </div>
           <p v-if="!canReplaceCertificate">{{ certificateReplaceCapability?.reason || phrase('当前脚本尚不支持更换证书，请先更新配套脚本。') }}</p>
-          <form v-if="certificateSite" id="site-certificate-form" class="form-stack" @submit.prevent="replaceCertificate">
+          <form v-if="certificateSite" id="site-certificate-form" class="form-stack site-certificate-form" @submit.prevent="replaceCertificate">
             <p>{{ phrase('仅更换 HTTPS 证书，网站配置保持不变。证书须覆盖本站全部域名。') }}</p>
             <label class="field">
               <span>{{ phrase('公钥证书链（PEM）') }}</span>
@@ -1902,6 +1904,7 @@ onBeforeUnmount(() => {
           </form>
         </section>
         <SiteAccessPasswordRules
+          class="site-security-card"
           :site-id="editingSite.id"
           :site-version="editingSite.resourceVersion"
           :allow-add="editingSite.type !== 'redirect'"
@@ -1910,7 +1913,7 @@ onBeforeUnmount(() => {
           @changed="accessRulesChanged"
           @busy="accessSaving = $event"
         />
-      </template>
+      </div>
       <template #footer>
         <button
           v-if="installationTaskView"
@@ -1954,6 +1957,13 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.site-security-settings { display: grid; gap: 12px; margin-top: 24px; }
+.site-security-settings__note { margin: 0 0 2px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.site-security-card { margin: 0; padding: 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-subtle); }
+.site-security-card__header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.site-security-card__header h3 { margin: 0; font-size: 16px; }
+.site-certificate-form { margin-top: 16px; }
+.site-certificate-form > p { margin: 0; }
 .site-certificate-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .site-service-card--fastadmin .site-service-card__content strong {
   font-size: 0.875rem;
