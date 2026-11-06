@@ -10,7 +10,7 @@ KPanel.
 | --- | --- | --- | --- |
 | [DB-IP IP to Country Lite](https://db-ip.com/db/download/ip-to-country-lite) | October 2026 (unmodified) | CC-BY-4.0 | [`LICENSES/CC-BY-4.0.txt`](LICENSES/CC-BY-4.0.txt) |
 | `github.com/containrrr/shoutrrr` | `v0.8.0` | MIT | [`LICENSES/shoutrrr-MIT.txt`](LICENSES/shoutrrr-MIT.txt) |
-| `kejilion.sh` | `f031d1206224de3743845d2fc81c4801ecda32f4` | Apache-2.0 | [`LICENSES/Apache-2.0.txt`](LICENSES/Apache-2.0.txt) |
+| `kejilion.sh` | `1faee13f3faef164efbfa899e244fc19ad58aaff` | Apache-2.0 | [`LICENSES/Apache-2.0.txt`](LICENSES/Apache-2.0.txt) |
 | `github.com/flynn/noise` | `v1.1.0` | BSD-3-Clause | [`LICENSES/flynn-noise-BSD-3-Clause.txt`](LICENSES/flynn-noise-BSD-3-Clause.txt) |
 | `github.com/minio/minio-go/v7` | `v7.3.0` | Apache-2.0 | [`LICENSES/Apache-2.0.txt`](LICENSES/Apache-2.0.txt) |
 | `github.com/coder/websocket` | `v1.8.15` | ISC | [`LICENSES/coder-websocket-ISC.txt`](LICENSES/coder-websocket-ISC.txt) |
