@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"os"
@@ -644,20 +645,35 @@ func reasonUnless(ok bool, reason string) string {
 
 func (s *Service) readMarkers() (map[string]bool, string) {
 	result := make(map[string]bool)
-	path := filepath.Join(s.appRoot, "appno.txt")
-	info, err := os.Lstat(path)
+	before, err := os.Stat(s.appRoot)
 	if errors.Is(err, os.ErrNotExist) {
 		return result, ""
 	}
-	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Size() > maxAppMarkersBytes {
+	if err != nil || !before.IsDir() {
 		return result, "无法安全读取 /home/docker/appno.txt"
 	}
-	file, err := os.Open(path)
+	root, err := os.OpenRoot(s.appRoot)
 	if err != nil {
 		return result, "无法读取 /home/docker/appno.txt"
 	}
+	defer root.Close()
+	openedRoot, err := root.Stat(".")
+	if err != nil || !openedRoot.IsDir() || !os.SameFile(before, openedRoot) {
+		return result, "无法安全读取 /home/docker/appno.txt"
+	}
+	file, err := openMarkerFile(root)
+	if errors.Is(err, os.ErrNotExist) {
+		return result, ""
+	}
+	if err != nil {
+		return result, "无法安全读取 /home/docker/appno.txt"
+	}
 	defer file.Close()
-	scanner := bufio.NewScanner(file)
+	data, err := readMarkerContent(file)
+	if err != nil {
+		return result, "读取 /home/docker/appno.txt 时发生错误"
+	}
+	scanner := bufio.NewScanner(strings.NewReader(string(data)))
 	scanner.Buffer(make([]byte, 1024), maxAppMarkersBytes)
 	for scanner.Scan() {
 		value := strings.TrimSpace(scanner.Text())
@@ -669,6 +685,14 @@ func (s *Service) readMarkers() (map[string]bool, string) {
 		return result, "读取 /home/docker/appno.txt 时发生错误"
 	}
 	return result, ""
+}
+
+func readMarkerContent(reader io.Reader) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(reader, maxAppMarkersBytes+1))
+	if err != nil || len(data) > maxAppMarkersBytes {
+		return nil, errors.New("application marker exceeds its read limit")
+	}
+	return data, nil
 }
 
 func (s *Service) Find(ctx context.Context, id string) (Summary, error) {
