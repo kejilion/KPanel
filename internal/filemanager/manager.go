@@ -756,7 +756,7 @@ func (m *Manager) mkdir(parentVirtual, name string) (contract.FileEntry, error) 
 	if err := m.mutationError(targetVirtual); err != nil {
 		return contract.FileEntry{}, err
 	}
-	if err := m.rootFS.Mkdir(rootName(targetVirtual), 0755); err != nil {
+	if err := mkdirUserDirectory(m.rootFS, rootName(targetVirtual)); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return contract.FileEntry{}, ErrAlreadyExists
 		}

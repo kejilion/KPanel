@@ -65,6 +65,7 @@ import FileShareManagerDialog from '@/components/files/FileShareManagerDialog.vu
 import FileMediaMenu from '@/components/files/FileMediaMenu.vue'
 import FileArchiveTools from '@/components/files/FileArchiveTools.vue'
 import { ApiError, api } from '@/lib/api'
+import { commonPermissionValue } from '@/lib/filePermissions'
 import {
   applyClusterHostOrderPreference,
   readClusterHostOrder,
@@ -1973,7 +1974,7 @@ function openDialog(action: DialogAction, entry?: FileEntry): void {
     dialogNewType.value = undefined
   }
   else if (action === 'rename') dialogValue.value = dialogEntries.value[0]?.name || ''
-  else if (action === 'chmod') dialogValue.value = '644'
+  else if (action === 'chmod') dialogValue.value = commonPermissionValue(dialogEntries.value)
   else if (action === 'compress') {
     dialogFormat.value = 'tar.gz'
     dialogValue.value = dialogEntries.value.length === 1
@@ -2129,7 +2130,7 @@ async function pasteClipboard(target = currentPath.value): Promise<void> {
 async function submitDialog(): Promise<void> {
   const hostId = fileHostId.value
   const action = dialogAction.value
-  if (!action) return
+  if (!action || (action === 'chmod' && !dialogValue.value.trim())) return
   const controller = action === 'compress' || action === 'extract'
     ? new AbortController()
     : undefined
@@ -4091,6 +4092,9 @@ onBeforeUnmount(() => {
             @keydown.enter="submitDialog"
           />
         </label>
+        <small v-if="dialogAction === 'chmod' && dialogEntries.length > 1 && !commonPermissionValue(dialogEntries)">
+          {{ i18n.t('files.permissions.mixed') }}
+        </small>
         <label v-if="dialogAction === 'compress'">
           <span>{{ phrase('压缩格式') }}</span>
           <select v-model="dialogFormat">

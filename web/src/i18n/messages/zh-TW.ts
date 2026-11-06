@@ -3,6 +3,7 @@ import { passkeyZhTW } from '../passkeys'
 import { panelAccessZhTW } from '../panelAccess'
 
 export const zhTWMessages = {
+  'files.permissions.mixed': '所選項目權限不同或無法識別，請輸入要統一設定的權限。',
   'route.browser': '瀏覽器',
   'desktop.internalBrowserOpen': '在內建瀏覽器中開啟',
   'route.virtualMachines': '虛擬機',

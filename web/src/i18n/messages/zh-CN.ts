@@ -2,6 +2,7 @@ import { passkeyZhCN } from '../passkeys'
 import { panelAccessZhCN } from '../panelAccess'
 
 export const zhCNMessages = {
+  'files.permissions.mixed': '所选项目权限不同或无法识别，请输入要统一设置的权限。',
   'route.browser': '浏览器',
   'desktop.internalBrowserOpen': '在内置浏览器中打开',
   'route.virtualMachines': '虚拟机',

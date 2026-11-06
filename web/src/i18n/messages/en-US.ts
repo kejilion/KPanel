@@ -3,6 +3,7 @@ import { passkeyEnUS } from '../passkeys'
 import { panelAccessEnUS } from '../panelAccess'
 
 export const enUSMessages = {
+  'files.permissions.mixed': 'Selected permissions differ or cannot be read. Enter the permissions to apply to all selected items.',
   'route.browser': 'Browser',
   'desktop.internalBrowserOpen': 'Open in built-in browser',
   'route.virtualMachines': 'Virtual machines',

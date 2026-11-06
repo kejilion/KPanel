@@ -9,6 +9,11 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+// Windows keeps the destination's inherited ACL policy.
+func mkdirUserDirectory(root *fileRoot, name string) error {
+	return root.Mkdir(name, 0755)
+}
+
 // Capture the effective DACL from the pinned source, and prevent the new
 // directory's inheritance from widening it. Supplying this at NtCreateFile is
 // essential: tightening access after creation cannot revoke handles already

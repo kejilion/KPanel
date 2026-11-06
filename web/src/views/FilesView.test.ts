@@ -2036,6 +2036,27 @@ describe('FilesView directory loading', () => {
     }, undefined, '')
   })
 
+  it('reads a directory permission instead of prefilling the file default', () => {
+    const view = setupView()
+    const directory = { ...testEntry('images'), kind: 'directory' as const, mode: 'drwxr-xr-x' }
+    view.directory.value = { path: '/', entries: [directory] }
+    view.openDialog('chmod', directory)
+    expect(view.dialogValue.value).toBe('755')
+  })
+
+  it('requires explicit input for mixed permissions, including Enter submission', async () => {
+    const view = setupView()
+    const directory = { ...testEntry('images'), kind: 'directory' as const, mode: 'drwxr-xr-x' }
+    const file = testEntry('index.html')
+    view.directory.value = { path: '/', entries: [directory, file] }
+    view.selected.value = new Set([directory.path, file.path])
+    view.openDialog('chmod', directory)
+    expect(view.dialogValue.value).toBe('')
+    await view.submitDialog()
+    expect(mocks.action).not.toHaveBeenCalled()
+    expect(view.dialogAction.value).toBe('chmod')
+  })
+
   it('submits every selected entry and resource version for batch chmod', async () => {
     const view = setupView()
     const first = testEntry('first.txt')

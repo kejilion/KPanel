@@ -2,7 +2,48 @@
 
 package filemanager
 
-import "os"
+import (
+	"os"
+	"path"
+)
+
+// User-created directories must be traversable by web servers even when the
+// Agent runs with umask 0077. Keep the parent and chmod target pinned.
+func mkdirUserDirectory(root *fileRoot, name string) error {
+	parent, err := root.OpenRoot(path.Dir(name))
+	if err != nil {
+		return err
+	}
+	defer parent.Close()
+	base := path.Base(name)
+	if err := parent.Mkdir(base, 0700); err != nil {
+		return err
+	}
+	directory, err := parent.Open(base)
+	if err != nil {
+		return err
+	}
+	defer directory.Close()
+	info, err := directory.Stat()
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return ErrConflict
+	}
+	if err := directory.Chmod(0755); err != nil {
+		return err
+	}
+	actual, err := directory.Stat()
+	if err != nil {
+		return err
+	}
+	visible, err := root.Lstat(name)
+	if err != nil || !os.SameFile(actual, visible) || actual.Mode().Perm() != 0755 {
+		return ErrConflict
+	}
+	return nil
+}
 
 func openAccessTarget(root *fileRoot, name string) (*os.File, error) { return root.Open(name) }
 
