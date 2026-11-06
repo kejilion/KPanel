@@ -336,8 +336,9 @@ func (p *projection) jsonValue(value any, depth int) (projected any, err error) 
 		for key, item := range typed {
 			if normalizedJSONKey(key) == "kind" {
 				if kind, ok := item.(string); ok {
-					kubernetesSecret = kubernetesSecret || strings.EqualFold(strings.TrimSpace(kind), "secret")
-					kubernetesSecretList = kubernetesSecretList || strings.EqualFold(strings.TrimSpace(kind), "secretlist")
+					kind = removeFormatCharacters(strings.TrimSpace(kind))
+					kubernetesSecret = kubernetesSecret || strings.EqualFold(kind, "secret")
+					kubernetesSecretList = kubernetesSecretList || strings.EqualFold(kind, "secretlist")
 				}
 			}
 		}
@@ -475,7 +476,7 @@ func (p *projection) text(value string, depth int) (any, error) {
 }
 
 func (p *projection) markPossibleKubernetesYAML(value string) {
-	if kubernetesYAMLSecretKind.MatchString(normalizeRecordValue(value)) {
+	if kubernetesYAMLSecretKind.MatchString(removeFormatCharacters(normalizeRecordValue(value))) {
 		// A YAML document may be split across adjacent records in this channel.
 		p.yamlSecretChannels[p.channel] = true
 	}

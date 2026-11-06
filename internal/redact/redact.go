@@ -39,7 +39,9 @@ var (
 	basicSecret                 = regexp.MustCompile(`(?i)\bBasic\s+[A-Za-z0-9_+/=-]{4,}`)
 	openAISecret                = regexp.MustCompile(`(?i)\bsk-[A-Za-z0-9._~+/=-]{4,}`)
 	urlCredentials              = regexp.MustCompile(`([a-zA-Z][a-zA-Z0-9+.-]*://)[^/\s@]+@`)
-	urlQueryParameter           = regexp.MustCompile(`(?i)([?&]((?:[A-Za-z0-9_.-]|%[0-9a-f]{2})+)=)([^&#\s]*)`)
+	urlQueryParameter           = regexp.MustCompile(`(?i)([?&]((?:[A-Za-z0-9_.-]|\p{Cf}|%[0-9a-f]{2})+)=)([^&#\s]*)`)
+	formatAssignmentKey         = regexp.MustCompile(`(^|[^?&%\p{L}\p{N}_.\p{Cf}-])([\p{L}\p{N}_.\p{Cf}-]+)(["']?[ \t]*[:：=][ \t]*)`)
+	formatFlagKey               = regexp.MustCompile(`(^|[^\p{L}\p{N}_.\p{Cf}-])(--?[\p{L}\p{N}_.\p{Cf}-]+)([ \t]+)`)
 	sensitiveURLQueryName       = regexp.MustCompile(`(?i)(?:` + secretNamePattern + `|signature)`)
 	terminalEscape              = regexp.MustCompile(`\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\))`)
 	privateKeyBegin             = regexp.MustCompile(`(?i)-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----`)
@@ -357,7 +359,7 @@ func redactConfigurations(sources []lexicalSource, parents []int, privateHidden,
 			if joined, ok := logical[index]; ok {
 				value = joined
 			}
-			configuration.begin(normalizeEscapedYAMLKey(value), source.indent, inlineSensitive[index] || source.sensitive || logicalHidden[index])
+			configuration.begin(normalizeEscapedYAMLKey(normalizeFormatSensitiveKey(value)), source.indent, inlineSensitive[index] || source.sensitive || logicalHidden[index])
 			// A regex token boundary is insufficient for an inline compound
 			// shell value, even if it closes within this physical record.
 			hidden[index] = hidden[index] || configuration.inlineCompound
@@ -411,6 +413,7 @@ func redactPhysicalLines(values []semanticLine, parents []int, sources []lexical
 }
 
 func privateKeyMarkerOrder(value string) (bool, bool, bool) {
+	value = removeFormatCharacters(value)
 	begins := privateKeyBegin.FindAllStringIndex(value, -1)
 	ends := privateKeyEnd.FindAllStringIndex(value, -1)
 	if len(begins) == 0 && len(ends) == 0 {
@@ -419,6 +422,15 @@ func privateKeyMarkerOrder(value string) (bool, bool, bool) {
 	firstIsEnd := len(ends) > 0 && (len(begins) == 0 || ends[0][0] < begins[0][0])
 	lastIsBegin := len(begins) > 0 && (len(ends) == 0 || begins[len(begins)-1][0] > ends[len(ends)-1][0])
 	return firstIsEnd, lastIsBegin, true
+}
+
+func removeFormatCharacters(value string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.Is(unicode.Cf, r) {
+			return -1
+		}
+		return r
+	}, value)
 }
 
 // YAML double-quoted mapping keys can encode sensitive field names. Decode
@@ -443,6 +455,42 @@ func normalizeEscapedYAMLKey(value string) string {
 	return parts[1] + `"secret"` + parts[3] + parts[4]
 }
 
+// formatSensitiveKey finds a credential label containing invisible format
+// characters. Only the key is normalized for classification; the original
+// spelling and all non-key content are kept until the value is redacted.
+func formatSensitiveKey(value string) (int, int, int, bool) {
+	if strings.IndexFunc(value, func(r rune) bool { return unicode.Is(unicode.Cf, r) }) < 0 {
+		return 0, 0, 0, false
+	}
+	bestStart, bestEnd, bestValue := 0, 0, len(value)+1
+	for _, pattern := range []*regexp.Regexp{formatAssignmentKey, formatFlagKey} {
+		for _, match := range pattern.FindAllStringSubmatchIndex(value, -1) {
+			key := value[match[4]:match[5]]
+			if strings.IndexFunc(key, func(r rune) bool { return unicode.Is(unicode.Cf, r) }) < 0 || !secretNormalizedJSONKey(normalizedJSONKey(key)) {
+				continue
+			}
+			if match[1] < bestValue {
+				bestStart, bestEnd, bestValue = match[4], match[5], match[1]
+			}
+		}
+	}
+	return bestStart, bestEnd, bestValue, bestValue <= len(value)
+}
+
+func normalizeFormatSensitiveKey(value string) string {
+	start, end, _, ok := formatSensitiveKey(value)
+	if !ok {
+		return value
+	}
+	key := strings.Map(func(r rune) rune {
+		if unicode.Is(unicode.Cf, r) {
+			return -1
+		}
+		return r
+	}, value[start:end])
+	return value[:start] + key + value[end:]
+}
+
 func redactLine(value string) string {
 	value = normalizeEscapedYAMLKey(value)
 	// Short options are command-specific; redact the remainder of those
@@ -463,6 +511,15 @@ func redactLine(value string) string {
 		}
 		return parts[1] + "[REDACTED]"
 	})
+	if _, _, valueStart, ok := formatSensitiveKey(value); ok {
+		value = value[:valueStart] + "[REDACTED]"
+	}
+	if strings.IndexFunc(value, func(r rune) bool { return unicode.Is(unicode.Cf, r) }) >= 0 {
+		view := removeFormatCharacters(value)
+		if redactLine(view) != view {
+			return "[REDACTED]"
+		}
+	}
 	// Standalone configuration assignments (YAML/.env) may contain unquoted
 	// spaces; shell-token matching alone would expose the rest of the value.
 	value = secretLineAssignment.ReplaceAllString(value, "${1}[REDACTED]")
@@ -507,6 +564,9 @@ func redactLine(value string) string {
 }
 
 func isSensitiveURLQueryName(name string) bool {
+	if secretNormalizedJSONKey(normalizedJSONKey(name)) {
+		return true
+	}
 	if strings.EqualFold(name, "auth") || strings.EqualFold(name, "auths") {
 		return true
 	}

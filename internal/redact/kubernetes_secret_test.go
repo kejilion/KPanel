@@ -1,6 +1,7 @@
 package redact
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -64,6 +65,46 @@ func TestKubernetesYAMLSecretIsNotProjected(t *testing.T) {
 	for name, got := range checks {
 		if strings.Contains(got, "OPAQUE_SYNTHETIC") || strings.Contains(got, "OTHER_SYNTHETIC") {
 			t.Errorf("%s retained YAML secret", name)
+		}
+	}
+}
+
+func TestKubernetesYAMLFormatCharactersInKindKey(t *testing.T) {
+	for _, value := range []string{
+		"ki\u200bnd: Secret\ndata:\n  opaque: OPAQUE_BODY\n",
+		"da\u200bta:\n  opaque: OPAQUE_BODY\nki\u200bnd: Secret\n",
+		"kind: Sec\u200bret\ndata:\n  opaque: OPAQUE_BODY\n",
+	} {
+		if got := Text(value); strings.Contains(got, "OPAQUE_BODY") {
+			t.Fatalf("format kind key leaked result=%q", got)
+		}
+		got, _, err := ConservativeLogTail(context.Background(), strings.NewReader(value), 1<<20, 4096)
+		if strings.Contains(got, "OPAQUE_BODY") || (err != nil && got != "") {
+			t.Fatalf("stream format kind key leaked result=%q err=%v", got, err)
+		}
+	}
+}
+
+func TestKubernetesJSONFormatCharactersInKind(t *testing.T) {
+	value := "{\"ki\u200bnd\":\"Sec\u200bret\",\"data\":{\"opaque\":\"OPAQUE_BODY\"}}"
+	got, err := JSON([]byte(value))
+	if err != nil || strings.Contains(string(got), "OPAQUE_BODY") {
+		t.Fatalf("format JSON kind leaked result=%s err=%v", got, err)
+	}
+}
+
+func TestOrdinaryKindAndMetadataRemainReadable(t *testing.T) {
+	for _, input := range []string{
+		"kind: Pod\nmetadata: present\n",
+		`{"kind":"Pod","metadata":"present"}` + "\n",
+	} {
+		projected := Text(input)
+		if !strings.Contains(projected, "Pod") || !strings.Contains(projected, "present") {
+			t.Fatalf("ordinary projection=%q", projected)
+		}
+		got, _, err := ConservativeLogTail(context.Background(), strings.NewReader(input), 1<<20, 4096)
+		if err != nil || !strings.Contains(got, "Pod") || !strings.Contains(got, "present") {
+			t.Fatalf("ordinary stream=%q err=%v", got, err)
 		}
 	}
 }

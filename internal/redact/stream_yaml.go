@@ -25,7 +25,9 @@ type streamYAMLState struct {
 // data subtree only at a top-level recognized metadata field or document
 // separator with no outstanding quote or flow container.
 func (s *streamYAMLState) consume(line string) (bool, bool, error) {
-	body := strings.TrimSuffix(line, "\n")
+	// Format characters are ignored only in the classifier's view. The source
+	// record itself is never rewritten or returned while this state masks it.
+	body := removeFormatCharacters(strings.TrimSuffix(line, "\n"))
 	if !s.active {
 		if strings.TrimSpace(body) == "---" && s.secretDocument {
 			s.secretDocument = false

@@ -29,6 +29,29 @@ func TestTextRedactsExactAuthKeysAndNestedAuths(t *testing.T) {
 	}
 }
 
+func TestTextRedactsFormatCharactersInSensitiveKeysOnly(t *testing.T) {
+	for _, input := range []string{
+		"pass\u200bword=OPAQUE_BODY\n",
+		"pass\u200bword: OPAQUE_BODY\n",
+		"pass\u200bword: |\n  OPAQUE_BODY\n",
+		"--pass\u200bword OPAQUE_BODY\n",
+		"Authori\u200bzation: Bearer OPAQUE_BODY\n",
+		"B\u200bearer OPAQUE_BODY\n",
+		"Ba\u200bsic dXNlcjpQQVNT\n",
+		"-----BEGIN PRI\u200bVATE KEY-----\nOPAQUE_BODY\n-----END PRI\u200bVATE KEY-----\n",
+		"https://example.test/?pass\u200bword=OPAQUE_BODY&safe=visible\n",
+		"https://example.test/?pass%E2%80%8Bword=OPAQUE_BODY&safe=visible\n",
+	} {
+		if got := Text(input); strings.Contains(got, "OPAQUE_BODY") || strings.Contains(got, "dXNlcjpQQVNT") {
+			t.Fatalf("format-key leaked input=%q result=%q", input, got)
+		}
+	}
+	ordinary := "author\u200b=visible metadata=present body=a\u200bb\n"
+	if got := Text(ordinary); got != ordinary {
+		t.Fatalf("ordinary content changed: %q", got)
+	}
+}
+
 func TestTextRedactsCredentialFamiliesAndKeepsSafeURLFields(t *testing.T) {
 	input := strings.Join([]string{
 		`refresh_token=refresh-secret`,

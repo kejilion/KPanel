@@ -90,6 +90,10 @@ func ConservativeLogTail(ctx context.Context, source io.Reader, maxInput, maxOut
 			}
 			var view, display []byte
 			trimmed := strings.TrimSpace(string(line))
+			markerView := removeFormatCharacters(trimmed)
+			if markerView != trimmed && (privateKeyBegin.MatchString(markerView) || privateKeyEnd.MatchString(markerView)) {
+				return "", false, ErrStreamAmbiguous
+			}
 			begin := privateKeyBegin.FindStringIndex(trimmed)
 			end := privateKeyEnd.FindStringIndex(trimmed)
 			standaloneBegin := begin != nil && begin[0] == 0 && begin[1] == len(trimmed)
@@ -282,11 +286,19 @@ func independentPlainRecord(line []byte) ([]byte, []byte, bool) {
 	if strings.Contains(text, `\`) || strings.Contains(text, "-----") {
 		return nil, nil, false
 	}
+	if strings.IndexFunc(text, func(r rune) bool { return unicode.Is(unicode.Cf, r) }) >= 0 && Text(string(view)) != string(view) {
+		unsafe = true
+	}
 	lower := strings.ToLower(text)
 	if !ascii {
 		lower = simpleFoldForSecrets(text)
 	}
-	if (strings.Contains(lower, "kind") || strings.ContainsRune(text, '?')) && kubernetesYAMLSecretKind.MatchString(text) {
+	kindView := removeFormatCharacters(text)
+	kindLower := lower
+	if kindView != text {
+		kindLower = simpleFoldForSecrets(kindView)
+	}
+	if (strings.Contains(kindLower, "kind") || strings.ContainsRune(kindView, '?')) && kubernetesYAMLSecretKind.MatchString(kindView) {
 		return nil, nil, false
 	}
 	if strings.Contains(lower, "sk-") || strings.Contains(lower, "sig=") || strings.Contains(lower, "docker") && strings.Contains(lower, "login") {

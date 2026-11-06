@@ -35,7 +35,7 @@ func (p *projection) markPossibleKubernetesYAMLRecords() {
 		builder.WriteByte('\n')
 	}
 	for channel, value := range channels {
-		if kubernetesYAMLSecretKind.MatchString(value.String()) {
+		if kubernetesYAMLSecretKind.MatchString(removeFormatCharacters(value.String())) {
 			p.yamlSecretChannels[channel] = true
 		}
 	}
@@ -129,7 +129,7 @@ func maskYAMLNode(node *yaml.Node, end int, mask []bool, depth int) bool {
 	if depth > 128 || node == nil || node.Anchor != "" || node.Kind == yaml.AliasNode || node.Line < 1 || node.Line > len(mask) || end < node.Line || end > len(mask)+1 {
 		return false
 	}
-	if node.Kind == yaml.ScalarNode && kubernetesYAMLSecretKind.MatchString(node.Value) {
+	if node.Kind == yaml.ScalarNode && kubernetesYAMLSecretKind.MatchString(removeFormatCharacters(node.Value)) {
 		return false
 	}
 	if node.Kind == yaml.MappingNode {
@@ -146,7 +146,7 @@ func maskYAMLNode(node *yaml.Node, end int, mask []bool, depth int) bool {
 				if value.Kind != yaml.ScalarNode || value.Tag != "!!str" || value.Anchor != "" {
 					return false
 				}
-				kind := strings.TrimSpace(value.Value)
+				kind := removeFormatCharacters(strings.TrimSpace(value.Value))
 				secret = secret || strings.EqualFold(kind, "secret")
 				secretList = secretList || strings.EqualFold(kind, "secretlist")
 			}

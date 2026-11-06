@@ -278,6 +278,12 @@ func TestConservativeLogTailDistinguishesGenericWordsFromKeys(t *testing.T) {
 	for _, input := range []string{
 		"auth=OPAQUE_BODY\n",
 		"password=OPAQUE_BODY\n",
+		"pass\u200bword=OPAQUE_BODY\n",
+		"--pass\u200bword OPAQUE_BODY\n",
+		"Authori\u200bzation: Bearer OPAQUE_BODY\n",
+		"B\u200bearer OPAQUE_BODY\n",
+		"-----BEGIN PRI\u200bVATE KEY-----\nOPAQUE_BODY\n-----END PRI\u200bVATE KEY-----\n",
+		"https://example.test/?pass%E2%80%8Bword=OPAQUE_BODY\n",
 		"token: OPAQUE_BODY\n",
 		"Bearer OPAQUE_BODY\n",
 		"tls.key=OPAQUE_BODY\n",

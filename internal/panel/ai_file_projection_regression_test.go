@@ -203,12 +203,12 @@ func TestApprovedAITailAndMCPRedactAuthViaRealAgent(t *testing.T) {
 	bridge := fileHandlerBridge{handler: handler}
 	server, _ := newTestServer(t)
 	server.agent = bridge
-	for _, content := range []string{"auth: OPAQUE_BODY\n", "auths:\n  registry.example:\n    auth: OPAQUE_BODY\n", "https://example.test/?auth=OPAQUE_BODY&safe=visible\n", "https://example.test/?auths=OPAQUE_BODY&safe=visible\n", `{"ſecret":"OPAQUE_BODY"}` + "\n", "{\"pass\u200bword\":\"OPAQUE_BODY\"}\n"} {
+	for _, content := range []string{"auth: OPAQUE_BODY\n", "auths:\n  registry.example:\n    auth: OPAQUE_BODY\n", "https://example.test/?auth=OPAQUE_BODY&safe=visible\n", "https://example.test/?auths=OPAQUE_BODY&safe=visible\n", `{"ſecret":"OPAQUE_BODY"}` + "\n", "{\"pass\u200bword\":\"OPAQUE_BODY\"}\n", "pass\u200bword=OPAQUE_BODY\n", "https://example.test/?pass%E2%80%8Bword=OPAQUE_BODY\n", "--pass\u200bword OPAQUE_BODY\n", "Authori\u200bzation: Bearer OPAQUE_BODY\n", "B\u200bearer OPAQUE_BODY\n", "ki\u200bnd: Secret\ndata:\n  opaque: OPAQUE_BODY\n"} {
 		if err := os.WriteFile(filepath.Join(root, "fixture.yaml"), []byte(content), 0600); err != nil {
 			t.Fatal(err)
 		}
 		result, err := (&panelAITools{server: server}).Execute(context.Background(), ai.ToolExecutionContext{UserID: "admin", Approved: true}, "host_file_tail", json.RawMessage(`{"path":"/fixture.yaml"}`))
-		if err != nil || strings.Contains(result, "OPAQUE_BODY") || !strings.Contains(result, "[REDACTED]") {
+		if err != nil || strings.Contains(result, "OPAQUE_BODY") || !strings.Contains(result, "[REDACTED") {
 			t.Fatalf("AI tail projection result=%q err=%v", result, err)
 		}
 		response, err := bridge.Get(context.Background(), "/v1/files/ai-tail", "path=%2Ffixture.yaml", "")
@@ -220,7 +220,7 @@ func TestApprovedAITailAndMCPRedactAuthViaRealAgent(t *testing.T) {
 			t.Fatal(err)
 		}
 		display, err := mcpDisplayJSON(body)
-		if err != nil || strings.Contains(string(display), "OPAQUE_BODY") || !strings.Contains(string(display), "[REDACTED]") {
+		if err != nil || strings.Contains(string(display), "OPAQUE_BODY") || !strings.Contains(string(display), "[REDACTED") {
 			t.Fatalf("MCP tail projection result=%q err=%v", display, err)
 		}
 	}
