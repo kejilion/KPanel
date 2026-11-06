@@ -3193,7 +3193,7 @@ createServer(async (request, response) => {
     send(response, 201, metadata)
     return
   }
-  const terminalSessionMatch = url.pathname.match(/^\/api\/v1\/terminal-sessions\/([^/]+)\/(output|input-transport|input|resize|close|detach)$/)
+  const terminalSessionMatch = url.pathname.match(/^\/api\/v1\/terminal-sessions\/([^/]+)\/(output|input-transport|input|resize|close|detach|launch-ack)$/)
   if (terminalSessionMatch) {
     const [, sessionId, action] = terminalSessionMatch
     const session = mockTerminalSessions.get(sessionId)

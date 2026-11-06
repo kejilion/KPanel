@@ -67,7 +67,7 @@ export function qualifyGovernance({ repo, probe = spawnSync, checkSources = vali
     });
     if (missing.length) throw new Error('missing or out-of-repository inputs: ' + missing.join(', '));
   });
-  check('vendor-source-bytes', () => checkSources(root));
+  check('upstream-source-bytes', () => checkSources(root, environment));
   return { schemaVersion: 1, phase: 'governance', status: failures.length ? 'failed' : 'passed', checks, failures,
     durationMs: Math.round(performance.now() - started), qualificationOnly: true, permissionsGranted: false };
 }

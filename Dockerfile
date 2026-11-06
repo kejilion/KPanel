@@ -24,7 +24,6 @@ ARG TARGETARCH
 ARG VERSION=dev
 WORKDIR /src
 COPY go.mod go.sum ./
-COPY third_party/torrent/ ./third_party/torrent/
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=secret,id=https_proxy,required=false \
     sh -eu -c 'if [ -f /run/secrets/https_proxy ]; then export HTTPS_PROXY="$(cat /run/secrets/https_proxy)"; fi; go mod download'

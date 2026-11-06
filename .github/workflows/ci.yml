@@ -56,6 +56,9 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
+      - name: Fetch the pinned Go module graph for offline governance preflight
+        run: go mod download
+
       - name: Run change-aware verification
         env:
           GOVERNANCE_CI_TOKEN: ${{ github.token }}

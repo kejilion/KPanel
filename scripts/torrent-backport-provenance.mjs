@@ -7,7 +7,7 @@ import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { baselineMod, validateBackport } from './torrent-backport-baseline.mjs';
+import { baselineMod, verifyUpstream } from './torrent-backport-baseline.mjs';
 
 const IMAGE = 'docker.io/kjlion/kejilion-panel';
 const REGISTRY = 'https://registry-1.docker.io';
@@ -16,6 +16,8 @@ const DIGEST = /^sha256:[a-f0-9]{64}$/;
 const SHA = /^[a-f0-9]{40}$/;
 const ARCHES = ['amd64', 'arm64'];
 const MODULE = 'github.com/anacrolix/torrent';
+const TORRENT_VERSION = 'v1.61.1-0.20260911233437-76452a2c8a2f';
+const TORRENT_SUM = 'h1:Qd2S/HI+0pR+EMyPS58AB573G3W92zSngOmH/e0qqP8=';
 const MAIN = 'github.com/kejilion/kejilion-panel';
 const INDEX_TYPES = ['application/vnd.oci.image.index.v1+json', 'application/vnd.docker.distribution.manifest.list.v2+json'];
 const MANIFEST_TYPES = ['application/vnd.oci.image.manifest.v1+json', 'application/vnd.docker.distribution.manifest.v2+json'];
@@ -149,13 +151,12 @@ export function parseGoBuildInfo(raw, arch, executable) {
   requireValue(deps.length <= 1, 'Duplicate torrent binary dependency');
   if (deps.length) {
     const { row, index } = deps[0];
-    requireValue(row[2] === 'v1.61.0' && rows[index + 1]?.[0] === '=>'
-      && rows[index + 1]?.[1] === './third_party/torrent' && rows[index + 1]?.[2] === '(devel)', 'Binary torrent replacement mismatch');
+    requireValue(row[2] === TORRENT_VERSION && row[3] === TORRENT_SUM && rows[index + 1]?.[0] !== '=>', 'Binary upstream torrent identity mismatch');
   }
-  requireValue(executable !== 'paneld' || deps.length === 1, 'Panel binary does not link the approved torrent backport');
+  requireValue(executable !== 'paneld' || deps.length === 1, 'Panel binary does not link the approved upstream torrent');
   return { mainPackage: MAIN + '/cmd/' + executable, mainModule: MAIN, goos: 'linux', goarch: arch,
-    torrent: deps.length ? { module: MODULE, version: 'v1.61.0', replacement: './third_party/torrent' } : null,
-    torrentStatus: deps.length ? 'approved-local-backport-linked' : 'not-linked', rawUTF8: raw, sha256: hash(raw) };
+    torrent: deps.length ? { module: MODULE, version: TORRENT_VERSION, sum: TORRENT_SUM } : null,
+    torrentStatus: deps.length ? 'approved-upstream-linked' : 'not-linked', rawUTF8: raw, sha256: hash(raw) };
 }
 
 function command(program, argv, cwd) {
@@ -283,13 +284,12 @@ export async function main(argv) {
   requireValue(command('git', ['rev-parse', 'HEAD'], options.repo).trim() === options.candidate
     && readFileSync(join(options.repo, 'VERSION'), 'utf8').trim() === options.version, 'Checkout candidate or version mismatch');
   command('git', ['diff', '--quiet', 'HEAD', '--'], options.repo);
-  const provenance = validateBackport(options.repo);
+  const { provenance } = verifyUpstream(options.repo);
   baselineMod(readFileSync(join(options.repo, 'go.mod'), 'utf8'));
-  const provenanceOriginal = record(readFileSync(join(options.repo, 'third_party/torrent/KPANEL_BACKPORT.json')));
   const image = await collectImage(options, await registryClient());
   const artifact = { schemaVersion: 1, kind: 'kpanel-modified-components', candidateCommit: options.candidate,
-    version: options.version, generatedAt: new Date().toISOString(), component: { ...provenance, originalManifest: provenanceOriginal }, image,
-    interpretation: 'Supplementary local-backport identity. Original registry SBOM/SLSA bytes are preserved and remain unmodified; absent Git materials are explicitly recorded.' };
+    version: options.version, generatedAt: new Date().toISOString(), component: { ...provenance, modifications: [] }, image,
+    interpretation: 'Upstream component identity; no local torrent modifications. Original registry SBOM/SLSA bytes are preserved and remain unmodified; absent Git materials are explicitly recorded.' };
   const directory = join(options.repo, 'release');
   if (!existsSync(directory)) mkdirSync(directory);
   requireValue(lstatSync(directory).isDirectory() && !lstatSync(directory).isSymbolicLink(), 'Unsafe release output directory');

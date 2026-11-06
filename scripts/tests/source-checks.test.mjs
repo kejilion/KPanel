@@ -18,22 +18,19 @@ function fixture() {
 }
 const lane = (id, code) => ({ id, argv: [process.execPath, '-e', code] });
 
-test('torrent baseline removes only the exact replacement and preserves every other declaration', () => {
-  const replacement = 'replace github.com/anacrolix/torrent v1.61.0 => ./third_party/torrent\n';
-  const rest = 'module example.test/panel\n\ngo 1.27.3\nrequire github.com/anacrolix/torrent v1.61.0\nreplace example.test/other v1.0.0 => example.test/other v1.0.1\n';
-  assert.equal(baselineMod(rest + replacement), rest);
-  assert.throws(() => baselineMod(rest), /one exact/);
-  assert.throws(() => baselineMod(rest + replacement + replacement), /one exact/);
-  assert.throws(() => baselineMod(rest + replacement.replace(' v1.61.0 =>', ' =>')), /one exact/);
-  assert.throws(() => baselineMod(rest + replacement.replace('v1.61.0 =>', 'v1.62.0 =>')), /one exact/);
+const torrentVersion = 'v1.61.1-0.20260911233437-76452a2c8a2f';
+test('torrent baseline requires the exact upstream version and rejects local replacements', () => {
+  const source = `module example.test/panel\n\ngo 1.27.3\nrequire github.com/anacrolix/torrent ${torrentVersion}\n`;
+  assert.equal(baselineMod(source), source);
+  assert.throws(() => baselineMod(source.replace(torrentVersion, 'v1.61.0')), /exact unmodified/);
+  assert.throws(() => baselineMod(source + `replace github.com/anacrolix/torrent ${torrentVersion} => ./third_party/torrent\n`), /exact unmodified/);
 });
 
 function moduleDeclarations() {
   // Shape observed from the fixed Go 1.27.3 `go mod edit -json`: empty Replace is omitted.
   const baseline = { Module: { Path: 'example.test/panel' }, Go: '1.27.3',
-    Require: [{ Path: 'github.com/anacrolix/torrent', Version: 'v1.61.0' }, { Path: 'example.test/other', Version: 'v1.0.0', Indirect: true }] };
-  const replacement = { Old: { Path: 'github.com/anacrolix/torrent', Version: 'v1.61.0' }, New: { Path: './third_party/torrent' } };
-  return { baseline, actual: { ...structuredClone(baseline), Replace: [replacement] } };
+    Require: [{ Path: 'github.com/anacrolix/torrent', Version: torrentVersion }, { Path: 'example.test/other', Version: 'v1.0.0', Indirect: true }] };
+  return { baseline, actual: structuredClone(baseline) };
 }
 
 test('torrent declaration comparison accepts only equivalent empty Replace representations', () => {
@@ -42,7 +39,7 @@ test('torrent declaration comparison accepts only equivalent empty Replace repre
     assert.doesNotThrow(() => verifyModuleDeclarations(actual, empty));
   }
   assert.equal(Object.hasOwn(baseline, 'Replace'), false, 'comparison must not mutate input');
-  assert.equal(actual.Replace.length, 1);
+  assert.equal(Object.hasOwn(actual, 'Replace'), false);
   for (const Replace of ['', {}, false, 0]) {
     assert.throws(() => verifyModuleDeclarations(actual, { ...baseline, Replace }), /Invalid replacement declarations/);
   }
@@ -51,20 +48,13 @@ test('torrent declaration comparison accepts only equivalent empty Replace repre
 test('torrent declaration comparison preserves every other field and replacement exactly', () => {
   const { actual, baseline } = moduleDeclarations();
   const otherReplacement = { Old: { Path: 'example.test/other', Version: 'v1.0.0' }, New: { Path: 'example.test/fork', Version: 'v1.0.1' } };
-  actual.Replace.push(otherReplacement);
-  baseline.Replace = [structuredClone(otherReplacement)];
-  assert.doesNotThrow(() => verifyModuleDeclarations(actual, baseline));
+  assert.throws(() => verifyModuleDeclarations({ ...actual, Replace: [otherReplacement] }, baseline), /Unexpected torrent module declaration/);
   for (const key of ['Module', 'Go', 'Toolchain', 'Require', 'Exclude', 'Retract', 'Tool', 'Godebug', 'FutureField']) {
     const changed = { ...structuredClone(baseline), [key]: { changed: true } };
     assert.throws(() => verifyModuleDeclarations(actual, changed), /changed other module declarations/, key);
   }
   const changedPin = structuredClone(baseline); changedPin.Require[1].Version = 'v1.0.1';
   assert.throws(() => verifyModuleDeclarations(actual, changedPin), /changed other module declarations/);
-  const changedReplacement = structuredClone(baseline); changedReplacement.Replace[0].New.Version = 'v1.0.2';
-  assert.throws(() => verifyModuleDeclarations(actual, changedReplacement), /changed other module declarations/);
-  for (const Replace of [undefined, null, []]) {
-    assert.throws(() => verifyModuleDeclarations(actual, { ...baseline, Replace }), /changed other module declarations/);
-  }
   // Even another field's null/empty/omitted distinction remains strict.
   assert.throws(() => verifyModuleDeclarations({ ...actual, Exclude: [] }, baseline), /changed other module declarations/);
   assert.throws(() => verifyModuleDeclarations({ ...actual, Exclude: null }, { ...baseline, Exclude: [] }), /changed other module declarations/);
@@ -72,33 +62,30 @@ test('torrent declaration comparison preserves every other field and replacement
 
 test('torrent declaration comparison rejects missing, duplicate and changed torrent identities', () => {
   const { actual, baseline } = moduleDeclarations();
-  for (const Replace of [undefined, null, [], {}, [actual.Replace[0], actual.Replace[0]]]) {
+  for (const Replace of [[{ Old: { Path: 'github.com/anacrolix/torrent', Version: torrentVersion }, New: { Path: './third_party/torrent' } }]]) {
     assert.throws(() => verifyModuleDeclarations({ ...actual, Replace }, baseline), /Unexpected torrent module declaration/);
   }
   for (const mutate of [
-    value => { value.Replace[0].Old.Version = 'v1.62.0'; },
-    value => { value.Replace[0].New.Path = './other'; },
-    value => { value.Replace[0].New.Version = 'v1.61.0'; },
     value => { value.Require[0].Version = 'v1.62.0'; },
     value => { value.Require.shift(); },
+    value => { value.Require.push(structuredClone(value.Require[0])); },
   ]) {
     const changed = structuredClone(actual); mutate(changed);
     assert.throws(() => verifyModuleDeclarations(changed, baseline), /Unexpected torrent module declaration/);
   }
-  assert.throws(() => verifyModuleDeclarations(actual, actual), /changed other module declarations/);
+  assert.doesNotThrow(() => verifyModuleDeclarations(actual, actual));
 });
 
 test('torrent graph qualification rejects missing identities, other dependency changes and malformed output', () => {
-  const original = [{ Path: 'example.test/panel', Main: true }, { Path: 'github.com/anacrolix/torrent', Version: 'v1.61.0' }, { Path: 'example.test/other', Version: 'v1.0.0' }];
+  const original = [{ Path: 'example.test/panel', Main: true }, { Path: 'github.com/anacrolix/torrent', Version: torrentVersion }, { Path: 'example.test/other', Version: 'v1.0.0' }];
   const actual = structuredClone(original);
-  actual[1].Replace = { Path: './third_party/torrent', Dir: '/private/source' };
   assert.match(verifyModuleGraphs(actual, original), /^[a-f0-9]{64}$/);
   assert.deepEqual(parseModuleJSON(original.map(x => JSON.stringify(x, null, 2)).join('\n')), original);
   assert.throws(() => verifyModuleGraphs(actual, []), /identity mismatch/);
   const changed = structuredClone(original); changed[2].Version = 'v1.0.1';
   assert.throws(() => verifyModuleGraphs(actual, changed), /changed the dependency graph/);
   changed[2] = { ...original[2], Replace: { Path: 'example.test/fork', Version: 'v1.0.0' } };
-  assert.throws(() => verifyModuleGraphs(actual, changed), /changed the dependency graph/);
+  assert.throws(() => verifyModuleGraphs(actual, changed), /Invalid module graph/);
   assert.throws(() => verifyModuleGraphs(actual, [...original, original[1]]), /Invalid module graph/);
   for (const malformed of ['', '{', '{}junk', '{"Path":"unfinished}', '}']) assert.throws(() => parseModuleJSON(malformed), /module graph/);
 });
@@ -113,10 +100,11 @@ test('baseline Go flags quote the whole modfile argument and reject conflicting 
   assert.throws(() => moduleEnvironment('/tmp/"bad/baseline.mod', {}), /Unsupported module-file path/);
 });
 
-test('torrent provenance and conservative scanner inventory retain the original module identity', () => {
+test('torrent provenance and scanner inventory retain the upstream module identity', () => {
   const provenance = validateBackport(repo);
-  assert.equal(provenance.files.length, 453);
-  assert.equal(provenance.patches.length, 2);
+  assert.equal(provenance.source, 'unmodified-upstream');
+  assert.equal(provenance.version, torrentVersion);
+  assert.equal(provenance.sourceManifestSha256, createHash('sha256').update(`${provenance.module}@${provenance.version} ${provenance.moduleSum}`).digest('hex'));
   const makefile = readFileSync(join(repo, 'Makefile'), 'utf8');
   assert.match(makefile, /security-audit-go:\s+\$\(GO\) run golang\.org\/x\/vuln\/cmd\/govulncheck@v1\.6\.0 \.\/\.\.\.\s+node scripts\/torrent-backport-baseline\.mjs govuln/);
   for (const workflow of ['ci.yml', 'release.yml']) assert.match(readFileSync(join(repo, '.github/workflows', workflow), 'utf8'), /run: make security-audit-go/);
@@ -131,7 +119,7 @@ test('torrent provenance and conservative scanner inventory retain the original 
 
 test('production closure retains exact selected versions and rejects incomplete or missing entry points', () => {
   const main = { Path: 'github.com/kejilion/kejilion-panel', Main: true, Dir: '/repo' };
-  const dependency = { Path: 'github.com/anacrolix/torrent', Version: 'v1.61.0', Replace: { Path: './third_party/torrent' } };
+  const dependency = { Path: 'github.com/anacrolix/torrent', Version: torrentVersion };
   const selected = [main, dependency];
   const target = { goos: 'linux', goarch: 'amd64', targets: ['./cmd/paneld'] };
   const packages = [
@@ -356,7 +344,8 @@ test('fixed lanes preserve source command coverage and stop on an early failed c
     const run = (id, extra = {}) => spawnSync(resolveBash(), ['scripts/verify-source-lane.sh', id], { cwd: f.root, encoding: 'utf8', env: { ...process.env, BASH_ENV: envPath, CHECK_COMMANDS: log, ...extra } });
     for (const id of ['web', 'go', 'deploy']) assert.equal(run(id).status, 0);
     const torrentRegression = 'go test -race github.com/anacrolix/torrent -run ^TestMsgWriter(BroadcastDuringFillWakesWriter|KeepAliveTimerRearmed)$ -count=1 -timeout=1m';
-    assert.deepEqual(readFileSync(log, 'utf8').trim().split('\n'), ['npm ci', 'npm run typecheck', 'npm test', 'npm run build', 'go test ./...', 'go test -race ./internal/panel ./internal/auth ./internal/dockerx', torrentRegression, 'go vet ./...', 'deploy-check']);
+    const bencodeRegression = 'go test -race github.com/anacrolix/torrent/bencode -run ^TestDecodeMaxDepth -count=1 -timeout=1m';
+    assert.deepEqual(readFileSync(log, 'utf8').trim().split('\n'), ['npm ci', 'npm run typecheck', 'npm test', 'npm run build', 'go test ./...', 'go test -race ./internal/panel ./internal/auth ./internal/dockerx', torrentRegression, bencodeRegression, 'go vet ./...', 'deploy-check']);
     writeFileSync(log, '');
     assert.notEqual(run('web', { FAIL_TYPECHECK: '1' }).status, 0);
     assert.equal(readFileSync(log, 'utf8').trim(), 'npm ci\nnpm run typecheck');
