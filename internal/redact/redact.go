@@ -27,8 +27,8 @@ var (
 	// Such inputs must reach the bounded parser (or its fail-closed fallback).
 	kubernetesYAMLSecretKind    = regexp.MustCompile(`(?mi)(?:^[ \t]*(?:-[ \t]+|(?:![^ \t\r\n]+|&[^ \t\r\n]+)[ \t]+)*|[{,][ \t]*)(?:["']?kind["']?[ \t]*:[ \t]*(?:(?:![^ \t\r\n]+|&[^ \t\r\n]+)[ \t]+)*(?:secret(?:list)?(?:[ \t#},\]]|$)|["'|>*&!]|$)|\?(?:[ \t]|$)|"(?:\\\r?\n[ \t]*)*(?:k|\\u006b|\\U0000006b|\\x6b)(?:\\\r?\n[ \t]*)*(?:i|\\u0069|\\U00000069|\\x69)(?:\\\r?\n[ \t]*)*(?:n|\\u006e|\\U0000006e|\\x6e)(?:\\\r?\n[ \t]*)*(?:d|\\u0064|\\U00000064|\\x64)(?:\\\r?\n[ \t]*)*"[ \t]*:)`)
 	jsonSecretAssignment        = regexp.MustCompile(`(?i)("(?:[^"\\]|\\.)*(?:` + secretNamePattern + `)(?:[^"\\]|\\.)*"\s*[:：]\s*)("(?:\\.|[^"\\])*"|[^,\s}\]]+)`)
-	secretLineAssignment        = regexp.MustCompile(`(?i)^([ \t]*(?:-[ \t]+)*(?:export[ \t]+)?["']?[\p{L}\p{N}_.-]*(?:` + secretNamePattern + `)[\p{L}\p{N}_.-]*["']?[ \t]*[:：=][ \t]*)[^\r\n]*$`)
-	secretAssignment            = regexp.MustCompile(`(?i)(^|[^?&%\p{L}\p{N}_.-])([\p{L}\p{N}_.-]*(?:` + secretNamePattern + `)[\p{L}\p{N}_.-]*)(\s*[:：=]\s*)((?:"(?:\\.|[^"\\])*"?|'[^']*'?|\\.|\\$|[^\s'"\\])+)`)
+	secretLineAssignment        = regexp.MustCompile(`(?i)^([ \t]*(?:-[ \t]+)*(?:export[ \t]+)?["']?(?:[\p{L}\p{N}_.-]*(?:` + secretNamePattern + `)[\p{L}\p{N}_.-]*|auths?)["']?[ \t]*[:：=][ \t]*)[^\r\n]*$`)
+	secretAssignment            = regexp.MustCompile(`(?i)(^|[^?&%\p{L}\p{N}_.-])((?:[\p{L}\p{N}_.-]*(?:` + secretNamePattern + `)[\p{L}\p{N}_.-]*|auths?))(\s*[:：=]\s*)((?:"(?:\\.|[^"\\])*"?|'[^']*'?|\\.|\\$|[^\s'"\\])+)`)
 	secretFlag                  = regexp.MustCompile(`(?i)(--?[\p{L}\p{N}_.-]*(?:` + secretNamePattern + `)[\p{L}\p{N}_.-]*\s+)((?:"(?:\\.|[^"\\])*"?|'[^']*'?|\\.|\\$|[^\s'"\\])+)`)
 	mysqlPasswordAttachedOption = regexp.MustCompile(`(\s-p)((?:"(?:\\.|[^"\\])*"?|'[^']*'?|\\.|[^\s;&|'"\\])+)`)
 	mysqlPasswordSpacedOption   = regexp.MustCompile(`(\s-p)(\s+)((?:"(?:\\.|[^"\\])*"?|'[^']*'?|\\.|[^\s;&|'"\\-])(?:"(?:\\.|[^"\\])*"?|'[^']*'?|\\.|[^\s;&|'"\\])*)`)

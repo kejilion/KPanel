@@ -102,6 +102,26 @@ func TestAITailPathRevalidationUsesExistingDownloadSlot(t *testing.T) {
 	}
 }
 
+func TestAITailRedactsTextAuthAssignment(t *testing.T) {
+	server := testServer(t)
+	root := t.TempDir()
+	manager, err := filemanager.New(filemanager.Config{Root: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = manager.Close() })
+	server.files = manager
+	for _, value := range []string{"auth: OPAQUE_BODY\n", "auths:\n  registry.example:\n    auth: OPAQUE_BODY\n"} {
+		if err := os.WriteFile(filepath.Join(root, "fixture.yaml"), []byte(value), 0600); err != nil {
+			t.Fatal(err)
+		}
+		response := fileRequest(server, http.MethodGet, "/v1/files/ai-tail?path=%2Ffixture.yaml", "")
+		if response.Code != http.StatusOK || strings.Contains(response.Body.String(), "OPAQUE_BODY") {
+			t.Fatalf("auth value exposed status=%d body=%s", response.Code, response.Body.String())
+		}
+	}
+}
+
 func TestAITailPathRevalidationRejectsReplacement(t *testing.T) {
 	root := t.TempDir()
 	manager, err := filemanager.New(filemanager.Config{Root: root})

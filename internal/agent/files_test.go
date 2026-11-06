@@ -587,7 +587,7 @@ func TestAITailProjectsFullContextBeforeTruncation(t *testing.T) {
 	if response.Code != http.StatusUnprocessableEntity || strings.Contains(response.Body.String(), strings.Repeat("x", 1024)) {
 		t.Fatalf("oversized response status=%d", response.Code)
 	}
-	for name, value := range map[string]string{"long.log": strings.Repeat("x", (64<<10)+1), "many.log": strings.Repeat("x\n", 50001)} {
+	for name, value := range map[string]string{"long.log": strings.Repeat("x", (64<<10)+1)} {
 		if err := os.WriteFile(filepath.Join(root, name), []byte(value), 0600); err != nil {
 			t.Fatal(err)
 		}
@@ -595,6 +595,13 @@ func TestAITailProjectsFullContextBeforeTruncation(t *testing.T) {
 		if response.Code != http.StatusUnprocessableEntity {
 			t.Fatalf("%s status=%d", name, response.Code)
 		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "many.log"), []byte(strings.Repeat("x\n", 50001)), 0600); err != nil {
+		t.Fatal(err)
+	}
+	response = fileRequest(server, http.MethodGet, "/v1/files/ai-tail?path=%2Fmany.log", "")
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"truncated":true`) {
+		t.Fatalf("many short records status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 

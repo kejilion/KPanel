@@ -55,3 +55,29 @@ func TestAITailStreamsLargeStableLogAndRejectsSensitiveContext(t *testing.T) {
 		t.Fatalf("sensitive tail status=%d body=%s", response.Code, response.Body.String())
 	}
 }
+
+func TestAITailStreamsManyShortStableLogRecords(t *testing.T) {
+	server := testServer(t)
+	root := t.TempDir()
+	manager, err := filemanager.New(filemanager.Config{Root: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = manager.Close() })
+	server.files = manager
+	var log strings.Builder
+	for i := 0; i < 60000; i++ {
+		fmt.Fprintf(&log, "127.0.0.1 - - [06/Nov/2026:02:55:56 +0000] \"GET /sample-%06d HTTP/1.1\" 200 896 \"-\" \"Wget\" \"-\"\n", i)
+	}
+	log.WriteString("127.0.0.1 - - [06/Nov/2026:02:55:56 +0000] \"GET /search?token=OPAQUE_BODY HTTP/1.1\" 200 896 \"-\" \"Wget\" \"-\"\n")
+	if log.Len() >= 8<<20 {
+		t.Fatal("fixture must remain under the snapshot threshold")
+	}
+	if err := os.WriteFile(filepath.Join(root, "many.log"), []byte(log.String()), 0600); err != nil {
+		t.Fatal(err)
+	}
+	response := fileRequest(server, http.MethodGet, "/v1/files/ai-tail?path=%2Fmany.log&maxBytes=1024", "")
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "sample-059999") || !strings.Contains(response.Body.String(), "[REDACTED LOG RECORD]") || strings.Contains(response.Body.String(), "OPAQUE_BODY") {
+		t.Fatalf("many-record tail status=%d body=%s", response.Code, response.Body.String())
+	}
+}

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -152,6 +153,9 @@ func TestApprovedAITailProjectsNginxNoticeLog(t *testing.T) {
 }
 
 func TestApprovedAITailRealAgentFileHandler(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("stable read leases require Linux")
+	}
 	root := t.TempDir()
 	content := "apiVersion: v1\nkind: Secret\nmetadata:\n  name: fixture\ndata:\n" + strings.Repeat("  filler: value\n", 200) + "  opaque: SYNTHETIC_PRIVATE\n"
 	if err := os.WriteFile(filepath.Join(root, "manifest.log"), []byte(content), 0600); err != nil {
@@ -169,6 +173,44 @@ func TestApprovedAITailRealAgentFileHandler(t *testing.T) {
 	result, err := (&panelAITools{server: server}).Execute(context.Background(), ai.ToolExecutionContext{UserID: "admin", Approved: true}, "host_file_tail", json.RawMessage(`{"path":"/manifest.log","maxBytes":1024}`))
 	if err != nil || strings.Contains(result, "SYNTHETIC_PRIVATE") || !strings.Contains(result, "full-context-v1") || !strings.Contains(result, `"truncated":true`) {
 		t.Fatalf("unsafe Agent-to-Panel result=%q err=%v", result, err)
+	}
+}
+
+func TestApprovedAITailAndMCPRedactAuthViaRealAgent(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("stable read leases require Linux")
+	}
+	root := t.TempDir()
+	manager, err := filemanager.New(filemanager.Config{Root: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = manager.Close() })
+	handler, stop := agent.NewCachedFileHandler(manager, t.TempDir())
+	t.Cleanup(stop)
+	bridge := fileHandlerBridge{handler: handler}
+	server, _ := newTestServer(t)
+	server.agent = bridge
+	for _, content := range []string{"auth: OPAQUE_BODY\n", "auths:\n  registry.example:\n    auth: OPAQUE_BODY\n"} {
+		if err := os.WriteFile(filepath.Join(root, "fixture.yaml"), []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+		result, err := (&panelAITools{server: server}).Execute(context.Background(), ai.ToolExecutionContext{UserID: "admin", Approved: true}, "host_file_tail", json.RawMessage(`{"path":"/fixture.yaml"}`))
+		if err != nil || strings.Contains(result, "OPAQUE_BODY") || !strings.Contains(result, "[REDACTED]") {
+			t.Fatalf("AI tail projection result=%q err=%v", result, err)
+		}
+		response, err := bridge.Get(context.Background(), "/v1/files/ai-tail", "path=%2Ffixture.yaml", "")
+		if err != nil || response.StatusCode != http.StatusOK {
+			t.Fatalf("Agent response=%v err=%v", response.StatusCode, err)
+		}
+		body, err := mcpFileReadProjection("host_file_tail", response.Body, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		display, err := mcpDisplayJSON(body)
+		if err != nil || strings.Contains(string(display), "OPAQUE_BODY") || !strings.Contains(string(display), "[REDACTED]") {
+			t.Fatalf("MCP tail projection result=%q err=%v", display, err)
+		}
 	}
 }
 

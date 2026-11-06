@@ -507,27 +507,34 @@ func (s *Server) fileAITail(w http.ResponseWriter, r *http.Request) {
 			writeProblem(w, requestID, http.StatusUnprocessableEntity, "text_preview_unavailable", "File is not valid UTF-8 text", "")
 			return
 		}
-		if bytes.Count(content, []byte("\n")) > 50000 {
-			writeProblem(w, requestID, http.StatusUnprocessableEntity, "projection_unavailable", "File exceeds the AI-safe projection budget", "")
-			return
-		}
-		for _, line := range bytes.Split(content, []byte("\n")) {
-			if len(line) > 64<<10 {
-				writeProblem(w, requestID, http.StatusUnprocessableEntity, "projection_unavailable", "File exceeds the AI-safe projection budget", "")
-				return
-			}
-		}
 		// Project after copying; the opened file remains leased until the final
 		// identity check, so no writer can alter this snapshot while it is read.
-		projected = []byte(redact.Text(string(content)))
-		truncated = len(projected) > int(maxBytes)
-		if truncated {
-			projected = projected[len(projected)-int(maxBytes):]
-			if newline := bytes.IndexByte(projected, '\n'); newline >= 0 {
-				projected = projected[newline+1:]
+		if bytes.Count(content, []byte("\n")) > 50000 {
+			// Many short records can fit below the snapshot size threshold.
+			// Use the bounded stream projector rather than rejecting such logs.
+			tail, wasTruncated, streamErr := redact.ConservativeLogTail(ctx, bytes.NewReader(content), len(content), int(maxBytes))
+			if streamErr != nil {
+				writeProblem(w, requestID, http.StatusUnprocessableEntity, "projection_unavailable", "The file could not be safely projected; try a smaller stable plain-text copy with shorter lines", "")
+				return
 			}
-			for len(projected) > 0 && !utf8.Valid(projected) {
-				projected = projected[1:]
+			projected, truncated = []byte(tail), wasTruncated
+		} else {
+			for _, line := range bytes.Split(content, []byte("\n")) {
+				if len(line) > 64<<10 {
+					writeProblem(w, requestID, http.StatusUnprocessableEntity, "projection_unavailable", "File exceeds the AI-safe projection budget", "")
+					return
+				}
+			}
+			projected = []byte(redact.Text(string(content)))
+			truncated = len(projected) > int(maxBytes)
+			if truncated {
+				projected = projected[len(projected)-int(maxBytes):]
+				if newline := bytes.IndexByte(projected, '\n'); newline >= 0 {
+					projected = projected[newline+1:]
+				}
+				for len(projected) > 0 && !utf8.Valid(projected) {
+					projected = projected[1:]
+				}
 			}
 		}
 	} else {

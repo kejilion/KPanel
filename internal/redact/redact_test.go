@@ -5,6 +5,26 @@ import (
 	"testing"
 )
 
+func TestTextRedactsExactAuthKeysAndNestedAuths(t *testing.T) {
+	for _, input := range []string{
+		"auth: OPAQUE_BODY\n",
+		"'auth': OPAQUE_BODY\n",
+		`"\u0061uth": OPAQUE_BODY` + "\n",
+		"auths:\n  registry.example:\n    auth: OPAQUE_BODY\n",
+		"auth: |\n  OPAQUE_BODY\n",
+		"AUTH=OPAQUE_BODY\n",
+		"request auth=OPAQUE_BODY completed\n",
+	} {
+		if output := Text(input); strings.Contains(output, "OPAQUE_BODY") {
+			t.Fatalf("auth credential exposed in %q: %q", input, output)
+		}
+	}
+	input := "ordinary authentication message\nauthority: visible\n"
+	if output := Text(input); output != input {
+		t.Fatalf("ordinary text changed: %q", output)
+	}
+}
+
 func TestTextRedactsCredentialFamiliesAndKeepsSafeURLFields(t *testing.T) {
 	input := strings.Join([]string{
 		`refresh_token=refresh-secret`,
