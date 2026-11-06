@@ -86,7 +86,7 @@
 
 ## 隔离真机与浏览器验收
 
-- 主机/发行版/架构/运行时版本：GitHub-hosted Ubuntu 24.04.5，L3 runner image `20261101.360.1`，amd64；公开容器在 linux/amd64、linux/arm64 验收。Go 1.27.3、Node v24.22.1、Docker 28.0.4。
+- 主机/发行版/架构/运行时版本：GitHub-hosted Ubuntu 24.04.5，L3 runner image `20261101.360.1`，amd64；公开 OCI index 核对了 linux/amd64 与 linux/arm64 两个平台，容器 E2E 在本次 amd64 runner 执行，未做 ARM64 原生运行。Go 1.27.3、Node v24.22.1、Docker 28.0.4。
 - 环境策略 ID 与允许用途：未使用登记的 SSH 真机；GitHub-hosted runner 仅用于仓库 L3 与公开产物隔离验收。
 - 使用的精确候选或公开产物：`1ce188d610d1415e463e9ece44843ee413bb25da` 及公开 OCI index `sha256:df8cb94c7575b4c2ba9061481cd3f735de7d5308121bd1b96f5f7add91996544`。
 - 后台作业 ID、终态、退出码、超时、证据目录、命令规格路径及 SHA-256：L3 run `42237526046` / job `127959071568`；公开验收同一 run / job `127988334597`；均成功。L3 source timeout `2700000 ms`，lanes exit 0。命令 `scripts/verify-change.sh`；artifact 与日志摘要见自动门禁。公开测试输出保存在 run `42237526046` artifact `public-42237526046-1`。
@@ -128,7 +128,7 @@
 - 部署命令/入口：未运行。
 - 部署后版本、Panel/Agent 状态、重启、日志、数据完整性和公网入口：未验证（无生产部署）。
 - 生产已执行写操作：否。
-- 仅在隔离真机执行、未在生产执行的场景：GitHub-hosted L3、双架构容器和公开浏览器验收。
+- 仅在隔离真机执行、未在生产执行的场景：GitHub-hosted L3、双架构 OCI 清单核对、amd64 容器和公开浏览器验收。
 
 ## 回滚
 
