@@ -59,6 +59,28 @@ func TestTerminalCleanupRetriesDetachedSessionAfterRecovery(t *testing.T) {
 	}
 }
 
+func TestTerminalCleanupRetriesUnreturnedSessionWhenDetachedCapacityIsFull(t *testing.T) {
+	s, _ := newTestServer(t)
+	agent := &recoveringTerminalCleanupAgent{}
+	s.agent = agent
+	s.terminalSessions["pending"] = panelTerminalSession{ID: "pending", HostID: "local", BackendSessionID: "old", CloseRequested: true, Unreturned: true}
+	s.scheduleTerminalCleanup()
+	s.terminalMu.Lock()
+	done := s.terminalCleanupDone
+	s.terminalMu.Unlock()
+	select {
+	case <-done:
+	case <-time.After(8 * time.Second):
+		t.Fatal("cleanup did not retry the unreturned session")
+	}
+	s.terminalMu.Lock()
+	_, exists := s.terminalSessions["pending"]
+	s.terminalMu.Unlock()
+	if exists || agent.calls.Load() != 2 {
+		t.Fatalf("pending=%v calls=%d", exists, agent.calls.Load())
+	}
+}
+
 func (a *shutdownTerminalCleanupAgent) Do(ctx context.Context, method, path, query, requestID string, body []byte) (AgentResponse, error) {
 	if strings.HasSuffix(path, "/close") {
 		if a.calls.Add(1) == 1 {

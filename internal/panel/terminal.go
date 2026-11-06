@@ -50,6 +50,7 @@ type panelTerminalSession struct {
 	CloseRequested   bool
 	Detached         bool
 	Detachable       bool
+	Unreturned       bool
 	WorkspaceVisible bool
 	ReliableInput    bool
 	InputClaimed     bool
@@ -987,7 +988,7 @@ func (s *Server) scheduleTerminalCleanup() {
 			s.terminalMu.Lock()
 			pendingDetached := false
 			for _, item := range s.terminalSessions {
-				if item.CloseRequested && (item.Detached || item.HostID != cluster.LocalHostID && !s.cluster.HostRemoteAccess(item.HostID).EffectiveTerminalEnabled) {
+				if item.CloseRequested && (item.Unreturned || item.Detached || item.HostID != cluster.LocalHostID && !s.cluster.HostRemoteAccess(item.HostID).EffectiveTerminalEnabled) {
 					pendingDetached = true
 					break
 				}

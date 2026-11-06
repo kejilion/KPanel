@@ -188,11 +188,14 @@ func (s *Server) registerTerminalSession(item panelTerminalSession) bool {
 	denied := item.HostID != cluster.LocalHostID && !s.cluster.HostRemoteAccess(item.HostID).EffectiveTerminalEnabled
 	if denied {
 		item.CloseRequested = true
+		item = s.detachUnreturnedTerminalLocked(item)
 	}
 	s.terminalSessions[item.ID] = item
 	s.terminalMu.Unlock()
 	if denied {
-		_ = s.closeDisabledRemoteTerminals(context.Background(), item.HostID)
+		if s.closeDisabledRemoteTerminals(context.Background(), item.HostID) > 0 {
+			s.scheduleTerminalCleanup()
+		}
 	}
 	return !denied
 }
@@ -204,6 +207,29 @@ func (s *Server) rememberRemoteTerminalOpen(user, hostID string, opened cluster.
 	identity := sha256.Sum256([]byte(user + "\x00" + hostID + "\x00" + opened.SessionID))
 	item := panelTerminalSession{ID: hex.EncodeToString(identity[:]), UserID: user, HostID: hostID, BackendSessionID: opened.SessionID, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(), Retained: opened.Retained, CloseRequested: true}
 	s.terminalMu.Lock()
+	item = s.detachUnreturnedTerminalLocked(item)
 	s.terminalSessions[item.ID] = item
 	s.terminalMu.Unlock()
+	s.scheduleTerminalCleanup()
+}
+
+// The client never received these sessions, so it cannot request detachment.
+// Retain their backend identities for retry, using the same bounded detached
+// capacity as explicit detachment. If that capacity is full, keep consuming an
+// interactive slot rather than losing an uncertain backend process.
+// Caller holds terminalMu.
+func (s *Server) detachUnreturnedTerminalLocked(item panelTerminalSession) panelTerminalSession {
+	item.Unreturned = true
+	count, own := 0, 0
+	for id, session := range s.terminalSessions {
+		if id == item.ID || !session.Detached {
+			continue
+		}
+		count++
+		if session.UserID == item.UserID {
+			own++
+		}
+	}
+	item.Detached = count < maxPanelTerminals && own < maxPanelTerminalsByUser
+	return item
 }

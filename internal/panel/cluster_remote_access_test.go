@@ -2,6 +2,7 @@ package panel
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -100,5 +101,33 @@ func TestRemoteAccessRemembersFailedOpenCleanupWithoutChangingLocalSessions(t *t
 		if !item.CloseRequested || item.BackendSessionID != opened.SessionID || item.UserID != "owner" || item.HostID != "remote" {
 			t.Fatal(item)
 		}
+	}
+}
+
+func TestUnreturnedRemoteOpenUsesBoundedCleanupCapacity(t *testing.T) {
+	s, _ := newTestServer(t)
+	s.terminalMu.Lock()
+	item := panelTerminalSession{ID: "unreturned", UserID: "owner", HostID: "remote", BackendSessionID: "backend", CloseRequested: true}
+	item = s.detachUnreturnedTerminalLocked(item)
+	if !item.Detached || !item.CloseRequested || item.BackendSessionID != "backend" {
+		s.terminalMu.Unlock()
+		t.Fatalf("unreturned session was not preserved in cleanup capacity: %+v", item)
+	}
+	s.terminalSessions[item.ID] = item
+	s.terminalMu.Unlock()
+	if !s.reserveTerminalOpen(item.UserID) {
+		t.Fatal("unreturned session consumed an interactive slot")
+	}
+	s.releaseTerminalOpen(item.UserID)
+
+	s.terminalMu.Lock()
+	for i := 1; i < maxPanelTerminalsByUser; i++ {
+		id := fmt.Sprintf("detached-%d", i)
+		s.terminalSessions[id] = panelTerminalSession{ID: id, UserID: item.UserID, Detached: true}
+	}
+	full := s.detachUnreturnedTerminalLocked(panelTerminalSession{ID: "full", UserID: item.UserID, CloseRequested: true})
+	s.terminalMu.Unlock()
+	if full.Detached || !full.CloseRequested {
+		t.Fatal("full cleanup capacity did not retain the interactive reservation")
 	}
 }
