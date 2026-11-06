@@ -45,7 +45,7 @@ const activeLine = computed(() => { let active = -1; lyrics.value.forEach((line,
 const currentHost = computed(() => fileHostLabel(state.current?.hostId, hosts.value, phrase('本机')))
 const repeatLabel = computed(() => state.repeat === 'off' ? phrase('顺序播放') : state.repeat === 'all' ? phrase('列表循环') : phrase('单曲循环'))
 const notice = computed(() => state.notice === 'next' ? phrase('已设为下一首') : state.notice === 'added' ? phrase('已加入播放队列') : state.notice === 'full' ? phrase('队列已满，请先移除部分歌曲') : '')
-const onlineNotice = computed(() => state.onlineStatus === 'loading' ? phrase('正在在线匹配歌词与封面…') : state.onlineStatus === 'matched' ? phrase('在线补全来自网易云音乐') : state.onlineStatus === 'empty' ? phrase('未找到匹配的在线歌词或封面') : state.onlineStatus === 'failed' ? phrase('在线匹配暂不可用，重新播放可重试') : '')
+const onlineNotice = computed(() => state.onlineStatus === 'loading' ? phrase('正在在线匹配歌词与封面…') : state.onlineStatus === 'matched' ? phrase(state.onlineSource === 'qq' ? '在线补全来自 QQ 音乐' : '在线补全来自网易云音乐') : state.onlineStatus === 'empty' ? phrase('未找到匹配的在线歌词或封面') : state.onlineStatus === 'failed' ? phrase('在线匹配暂不可用，重新播放可重试') : '')
 const playbackError = computed(() => state.error === 'blocked' ? phrase('浏览器暂停了自动播放，点击播放继续') : state.error === 'network' ? phrase('音乐连接中断，请检查来源主机后重试') : state.error ? phrase('当前浏览器无法解码此音频，可下载原文件播放') : '')
 let listing: AbortController | undefined, destroyed = false
 async function loadHosts() {

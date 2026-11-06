@@ -1,5 +1,6 @@
 import type { PhraseCatalog } from '@/i18n/phrase'
 export default [
+["在线补全来自 QQ 音乐","Online metadata from QQ Music"],
   ["正在在线匹配歌词与封面…","Matching lyrics and artwork online…"],
   ["在线补全来自网易云音乐","Online metadata from NetEase Cloud Music"],
   ["未找到匹配的在线歌词或封面","No matching online lyrics or artwork found"],

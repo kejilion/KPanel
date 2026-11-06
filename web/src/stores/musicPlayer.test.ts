@@ -237,3 +237,26 @@ describe('optional online metadata', () => {
     expect(empty.state.onlineStatus).toBe('empty'); expect(empty.state.playing).toBe(true)
   })
 })
+
+it('waits for duration when only a local filename is available', async () => {
+  const { player, audios, online } = setup()
+  player.play({ ...track('Song'), artist: '' }); await flushPromises()
+  expect(online).not.toHaveBeenCalled()
+  audios[0]!.duration = 205; audios[0]!.onloadedmetadata?.(); await flushPromises()
+  expect(online).toHaveBeenCalledWith(expect.objectContaining({ artist: '', duration: 205 }), expect.any(AbortSignal))
+})
+it('cancels the duration wait when switching tracks', async () => {
+  const { player, online } = setup()
+  player.play({ ...track('Old'), artist: '' }); await flushPromises()
+  player.play(track('New')); await flushPromises()
+  expect(online).toHaveBeenCalledTimes(1)
+  expect(online).toHaveBeenCalledWith(expect.objectContaining({ title: 'New' }), expect.any(AbortSignal))
+})
+it('ends the metadata wait within its budget', async () => {
+  vi.useFakeTimers()
+  try {
+    const { player, online } = setup()
+    player.play({ ...track('Song'), artist: '' }); await vi.advanceTimersByTimeAsync(1500)
+    expect(online).toHaveBeenCalledWith(expect.objectContaining({ duration: 0 }), expect.any(AbortSignal))
+  } finally { vi.useRealTimers() }
+})

@@ -53,8 +53,24 @@ type Service struct {
 	cache  map[Query]cached
 }
 
+type metadataClient struct{ client *http.Client }
+
+func (c metadataClient) Open(ctx context.Context, raw string) (*http.Response, error) {
+	r, err := http.NewRequestWithContext(ctx, http.MethodGet, raw, nil)
+	if err != nil {
+		return nil, err
+	}
+	r.Header.Set("User-Agent", "KPanel-Music-Metadata/1")
+	if r.URL.Host == "c.y.qq.com" {
+		r.Header.Set("Referer", "https://y.qq.com/")
+	}
+	return c.client.Do(r)
+}
+
 func New() *Service {
-	return &Service{client: remotedownload.NewClient(remotedownload.Config{RejectRedirects: true, ConnectTimeout: 3 * time.Second, ResponseHeaderTimeout: 4 * time.Second, IdleTimeout: 3 * time.Second}), active: make(chan struct{}, 2), cache: make(map[Query]cached)}
+	public := remotedownload.NewClient(remotedownload.Config{ConnectTimeout: 3 * time.Second})
+	client := &http.Client{Timeout: 4 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }, Transport: &http.Transport{Proxy: nil, DialContext: public.DialPublic, TLSHandshakeTimeout: 3 * time.Second, ResponseHeaderTimeout: 3 * time.Second, MaxConnsPerHost: 2, MaxIdleConns: 4, MaxIdleConnsPerHost: 2, IdleConnTimeout: 30 * time.Second}}
+	return &Service{client: metadataClient{client}, active: make(chan struct{}, 2), cache: make(map[Query]cached)}
 }
 
 func (q Query) Valid() bool {
@@ -90,9 +106,20 @@ func (s *Service) Match(ctx context.Context, q Query) (Result, error) {
 	default:
 		return Result{}, ErrBusy
 	}
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 12*time.Second)
 	defer cancel()
-	result, err := s.fetch(ctx, q)
+	first, firstCancel := context.WithTimeout(ctx, 6*time.Second)
+	result, err := s.fetch(first, q)
+	firstCancel()
+	if !result.Matched && ctx.Err() == nil {
+		fallback, fallbackErr := s.fetchQQ(ctx, q)
+		if fallbackErr == nil {
+			result = fallback
+			err = nil
+		} else if err == nil {
+			err = fallbackErr
+		}
+	}
 	if err != nil || ctx.Err() != nil {
 		if err == nil {
 			err = ctx.Err()
@@ -160,7 +187,7 @@ func score(q Query, s song) int {
 			parts[i] = normalize(parts[i])
 		}
 		sort.Strings(parts)
-		if strings.Join(parts, "/") != strings.Join(artists, "/") {
+		if normalize(q.Artist) != normalize(strings.Join(artists, "")) && strings.Join(parts, "/") != strings.Join(artists, "/") {
 			return -1
 		}
 	} else if q.Duration == 0 {

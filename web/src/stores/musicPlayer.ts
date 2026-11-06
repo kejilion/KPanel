@@ -1,4 +1,4 @@
-import { computed, reactive } from 'vue'
+import { computed, reactive, watch } from 'vue'
 import { matchOnlineMusic } from '@/lib/musicOnline'
 import { fileAPIForHost } from '@/lib/fileHostContext'
 import { MUSIC_LIMIT, trackKey, type Track } from '@/lib/music'
@@ -24,7 +24,7 @@ export function createMusicPlayer(overrides: Partial<PlayerDependencies> = {}) {
     queue: [] as Track[], current: undefined as Track | undefined,
     playing: false, waiting: false, restored: false, position: 0, duration: 0, volume: 0.8, muted: false,
     repeat: 'off' as Repeat, shuffle: false, error: '' as '' | 'blocked' | 'network' | 'unsupported',
-    lyrics: '', lyricsLoading: false, lyricsFailed: false, embeddedCover: '', onlineCover: '', onlineStatus: '' as '' | 'loading' | 'matched' | 'empty' | 'failed', album: '',
+    lyrics: '', lyricsLoading: false, lyricsFailed: false, embeddedCover: '', onlineCover: '', onlineSource: '', onlineStatus: '' as '' | 'loading' | 'matched' | 'empty' | 'failed', album: '',
     viewCount: 0, notice: '' as '' | 'added' | 'next' | 'full',
   })
   let audio: HTMLAudioElement | undefined, controller: AbortController | undefined
@@ -44,7 +44,7 @@ export function createMusicPlayer(overrides: Partial<PlayerDependencies> = {}) {
   function releaseMetadata() {
     controller?.abort(); controller = undefined; clearTimeout(timer)
     if (state.embeddedCover) URL.revokeObjectURL(state.embeddedCover)
-    state.embeddedCover = ''; state.onlineCover = ''; state.onlineStatus = ''
+    state.embeddedCover = ''; state.onlineCover = ''; state.onlineSource = ''; state.onlineStatus = ''
   }
   function mediaSession() { return typeof navigator !== 'undefined' ? navigator.mediaSession : undefined }
   function publishMetadata() {
@@ -125,15 +125,25 @@ export function createMusicPlayer(overrides: Partial<PlayerDependencies> = {}) {
     if (state.lyrics && cover.value) return
     if (state.current.title.length > 256 || state.current.artist.length > 256 || state.album.length > 256) return
     state.onlineStatus = 'loading'
+    if (!state.current.artist && !state.duration) {
+      await new Promise<void>(resolve => {
+        const finish = () => { clearTimeout(waitTimer); unwatch(); signal.removeEventListener('abort', finish); resolve() }
+        const unwatch = watch(() => state.duration, value => { if (value > 0) finish() })
+        const waitTimer = setTimeout(finish, 1500)
+        signal.addEventListener('abort', finish, { once: true })
+      })
+      if (id !== sequence || signal.aborted) return
+    }
     // Separate budget: slow optional metadata never holds up audio playback.
     const onlineController = new AbortController()
     controller = onlineController
-    timer = setTimeout(() => onlineController.abort(), 12000)
+    timer = setTimeout(() => onlineController.abort(), 14000)
     try {
       const result = await deps.online({ title: state.current.title, artist: state.current.artist, album: state.album, duration: state.duration }, onlineController.signal)
       if (id !== sequence || onlineController.signal.aborted) return
       if (!state.lyrics && result.lyrics) { state.lyrics = result.lyrics.slice(0, 128 * 1024); state.lyricsFailed = false }
       if (!cover.value && result.cover && /^data:image\/(jpeg|png);base64,/.test(result.cover)) state.onlineCover = result.cover
+      state.onlineSource = result.source ?? ''
       state.onlineStatus = result.matched ? 'matched' : 'empty'
       publishMetadata()
     } catch {

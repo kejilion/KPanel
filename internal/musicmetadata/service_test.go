@@ -28,6 +28,8 @@ func fixture(t *testing.T) (*Service, *int) {
 	s.client = openFunc(func(ctx context.Context, u string) (*http.Response, error) {
 		*calls++
 		switch {
+		case strings.Contains(u, "c.y.qq.com/soso/"):
+			return response(`{"code":0,"data":{"song":{"list":[]}}}`), nil
 		case strings.Contains(u, "/search/get?"):
 			return response(`{"code":200,"result":{"songs":[{"id":1,"name":"Song (Live)","duration":200000,"artists":[{"name":"Artist"}]},{"id":2,"name":"Song","duration":200000,"artists":[{"name":"Artist"}],"album":{"name":"Album"}}]}}`), nil
 		case strings.Contains(u, "/song/lyric?id=2"):
@@ -106,7 +108,10 @@ func TestConcurrencyCancellationAndCacheBound(t *testing.T) {
 	if _, err := s.Match(ctx, Query{Title: "Song"}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancel error: %v", err)
 	}
-	s.client = openFunc(func(context.Context, string) (*http.Response, error) {
+	s.client = openFunc(func(_ context.Context, u string) (*http.Response, error) {
+		if strings.Contains(u, "c.y.qq.com") {
+			return response(`{"code":0,"data":{"song":{"list":[]}}}`), nil
+		}
 		return response(`{"code":200,"result":{"songs":[]}}`), nil
 	})
 	for i := range 20 {
