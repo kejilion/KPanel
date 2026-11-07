@@ -486,7 +486,7 @@ onBeforeUnmount(() => {
 .cinema-detail__info h2 { overflow-wrap: anywhere; }
 .cinema-detail .cinema-detail__content { align-items: start; }
 .cinema-detail__more { position: relative; }.cinema-detail__more > summary { list-style: none; cursor: pointer; }.cinema-detail__more > summary::-webkit-details-marker { display: none; }
-.cinema-detail__menu { position: absolute; top: calc(100% + 8px); inset-inline-end: 0; display: grid; gap: 6px; min-width: 170px; padding: 8px; z-index: 5; border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius-md); box-shadow: 0 8px 24px #0006; }
+.cinema-detail__menu { position: absolute; top: calc(100% + 8px); inset-inline-end: 0; display: grid; gap: 6px; min-width: 170px; padding: 8px; z-index: 5; border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius-md); box-shadow: var(--shadow-md); }
 .cinema-detail__backdrop > .cinema-detail__ambient { filter: blur(16px); transform: scale(1.06); opacity: .65; }
 .cinema-page { display: block; container-type: inline-size; padding: clamp(14px, 2vw, 24px); border: 1px solid var(--border); border-radius: var(--radius-lg); background: #0c0e12; color: var(--text); --surface: #15181e; --surface-raised: #20242c; --surface-subtle: #111319; --text: #f3f4f6; --text-soft: #b8bfca; --border: #343a46; --danger: #ffaaaa; }
 .cinema-heading, .cinema-feature__actions, .cinema-source, .cinema-folders, .cinema-toolbar, .cinema-toolbar__controls, .cinema-layout, .cinema-card__footer { display: flex; align-items: center; gap: 10px; }
