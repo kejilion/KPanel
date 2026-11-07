@@ -485,9 +485,9 @@ onBeforeUnmount(() => {
               <span v-if="preferences.featured === item.entry.path" class="cinema-card__featured">{{ phrase('精选影片') }}</span>
               <span class="cinema-card__format">{{ galleryFileExtension(item.entry.name).toUpperCase() }}</span>
               <span class="cinema-card__watch">{{ phrase('查看详情') }}</span>
+              <progress v-if="checkpoint(item)" class="cinema-card__progress" :value="checkpoint(item)!.completed ? checkpoint(item)!.duration : checkpoint(item)!.position" :max="checkpoint(item)!.duration" :aria-label="phrase('观看进度')" />
             </span>
             <strong>{{ cinemaTitle(item.entry.name) }}</strong>
-            <progress v-if="checkpoint(item)" class="cinema-card__progress" :value="checkpoint(item)!.completed ? checkpoint(item)!.duration : checkpoint(item)!.position" :max="checkpoint(item)!.duration" :aria-label="phrase('观看进度')" />
           </button>
           <div class="cinema-card__footer">
             <span v-if="checkpoint(item)">{{ checkpoint(item)!.completed ? phrase('已看完') : formatGalleryDuration(checkpoint(item)!.position) + ' / ' + formatGalleryDuration(checkpoint(item)!.duration) }}</span>
@@ -616,6 +616,9 @@ p { color: var(--text-soft); line-height: 1.55; }
 .cinema-filters button[aria-pressed=true] { background: #e3f2f8; color: #111820; border-color: #e3f2f8; }
 .cinema-filters button:focus-visible { outline: 2px solid #a7d8ee; outline-offset: 3px; }
 .cinema-filters span { font-size: 12px; }
-.cinema-card__progress { display: block; width: calc(100% - 8px); height: 4px; margin: 6px 4px; accent-color: #a7d8ee; }
+.cinema-card__progress { position: absolute; inset: auto 0 0; display: block; width: 100%; height: 4px; margin: 0; border: 0; appearance: none; background: rgb(255 255 255 / 24%); color: #a7d8ee; }
+.cinema-card__progress::-webkit-progress-bar { background: rgb(255 255 255 / 24%); }
+.cinema-card__progress::-webkit-progress-value { background: #a7d8ee; }
+.cinema-card__progress::-moz-progress-bar { background: #a7d8ee; }
 .cinema-resume-note { margin-top: 16px; color: #c9d2de; font-size: 14px; }
 </style>
