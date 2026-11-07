@@ -32,6 +32,7 @@ const route = useRoute()
 const router = useRouter()
 const i18n = useI18n()
 const windowVisible = inject(desktopWindowVisibleKey, undefined)
+const windowed = Boolean(windowVisible)
 const explicitLocation = computed(() => typeof route.query.path === 'string' || typeof route.query.hostId === 'string')
 const hostId = computed(() => explicitLocation.value ? (typeof route.query.hostId === 'string' ? route.query.hostId : '') : mediaLocations.cinemaLocation?.hostId ?? '')
 const path = computed(() => typeof route.query.path === 'string' ? (route.query.path === '/' ? '/' : normalizeGalleryRoot(route.query.path) ?? CINEMA_ROOT) : explicitLocation.value ? CINEMA_ROOT : mediaLocations.cinemaLocation?.path ?? CINEMA_ROOT)
@@ -322,7 +323,7 @@ onBeforeUnmount(() => {
 
 <template>
   <main class="page cinema-page" :inert="Boolean(playingPath)">
-    <header v-show="!selectedFilm" class="cinema-heading">
+    <header v-if="!windowed" v-show="!selectedFilm" class="cinema-heading">
       <img class="cinema-heading__icon" :src="'/desktop-icons/cinema-kpanel-flat-v3.webp'" alt="" />
       <div>
         <span class="cinema-wordmark">KPanel <span>CINEMA</span></span>
@@ -333,7 +334,7 @@ onBeforeUnmount(() => {
         <FolderOpen :size="17" /> {{ phrase('文件管理') }}
       </button>
     </header>
-
+    <h1 v-else class="sr-only">{{ i18n.t('route.cinema') }}</h1>
 
     <details v-show="!selectedFilm" class="cinema-source-panel">
       <summary><FolderOpen :size="16" /> {{ phrase('影片来源') }}<span>{{ fileHostLabel(hostId, hosts, phrase('本机')) }} · {{ path }}</span></summary>
@@ -350,6 +351,7 @@ onBeforeUnmount(() => {
       </form>
       <button class="icon-button" type="button" :aria-label="phrase('上级目录')" :title="phrase('上级目录')" :disabled="path === '/' || saving" @click="browse(galleryParentPath(path))"><FolderOpen :size="17" /></button>
       <button class="icon-button" type="button" :aria-label="phrase('刷新')" :title="phrase('刷新')" :disabled="loading || saving" @click="load"><RefreshCw :size="17" /></button>
+      <button v-if="windowed" class="button button--secondary" type="button" @click="openFiles()"><FolderOpen :size="17" /> {{ phrase('文件管理') }}</button>
     </section>
 
     </details>
