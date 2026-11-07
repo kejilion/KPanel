@@ -500,7 +500,7 @@ onBeforeUnmount(() => {
     </section>
 
   </main>
-  <CinemaPlayer v-if="viewerIndex >= 0" :key="hostId + playingPath" :start-position="playbackSession?.startPosition" :on-progress="playbackSession?.save" :src="content(films[viewerIndex]!, 'inline')" :poster="viewerSources(films[viewerIndex]!).preview"
+  <CinemaPlayer v-if="viewerIndex >= 0" :key="hostId + playingPath" :start-position="playbackSession?.startPosition" v-on="{ progress: playbackSession?.save }" :src="content(films[viewerIndex]!, 'inline')" :poster="viewerSources(films[viewerIndex]!).preview"
     :title="cinemaTitle(films[viewerIndex]!.entry.name)" :back-label="phrase('返回影片详情')" :fullscreen-label="phrase('全屏')"
     :fallback-label="phrase('未能自动全屏，可点击右上角全屏按钮。')" :error-label="phrase('影片无法播放，请检查文件或浏览器支持的格式。')"
     :labels="{ play: phrase('播放'), pause: phrase('暂停'), loading: phrase('正在加载影片'), retry: phrase('重试'), blocked: phrase('点击播放以继续'), rewind: phrase('后退 10 秒'), forward: phrase('前进 10 秒'), mute: phrase('静音'), unmute: phrase('取消静音'), volume: phrase('音量'), seek: phrase('播放进度'), speed: phrase('播放速度'), exitFullscreen: phrase('退出全屏') }"

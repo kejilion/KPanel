@@ -9,15 +9,17 @@ vi.mock('@/lib/fileHostContext', () => ({ fileAPIForHost: () => ({ list: harness
 vi.mock('@/stores/musicPlayer', () => ({ useMusicPlayer: () => ({ state: { playing: true }, pause: harness.pause }) }))
 vi.mock('@/lib/api', () => ({ api: { cluster: { hosts: async () => ({ items: [] }) } } }))
 import CinemaView from './CinemaView.vue'
+import { cinemaPlayback, setCinemaPlaybackOwner } from '@/lib/cinemaPlayback'
 
 let view: VueWrapper | undefined
-afterEach(() => { view?.unmount(); localStorage.clear(); vi.clearAllMocks() })
+afterEach(() => { view?.unmount(); setCinemaPlaybackOwner(''); localStorage.clear(); vi.clearAllMocks() })
 it('opens details before playback, returns to the same film, and preserves library search', async () => {
+  setCinemaPlaybackOwner('admin')
   const entry: FileEntry = { name: 'Journey.mp4', path: '/home/videos/Journey.mp4', kind: 'file', sizeBytes: 2048, modifiedAt: '2026-11-06T00:00:00Z', mode: '-rw-r--r--', owner: 'root', group: 'root', resourceVersion: 'v1', editable: false, previewable: true }
   harness.list.mockResolvedValue({ entries: [entry] })
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/cinema', name: 'cinema', component: CinemaView }] })
   await router.push('/cinema'); await router.isReady()
-  view = mount(CinemaView, { global: { plugins: [router], stubs: { HostSwitcher: true, GalleryVideo: true, CinemaPlayer: { template: '<button class="test-player" @click="$emit(\'close\')">exit</button>' } } }, attachTo: document.body })
+  view = mount(CinemaView, { global: { plugins: [router], stubs: { HostSwitcher: true, GalleryVideo: true, CinemaPlayer: { inheritAttrs: false, props: ['labels'], emits: ['progress', 'close'], template: '<button class="test-player" @click="$emit(\'progress\', { position: 3, duration: 10, completed: false }, true); $emit(\'close\')">exit</button>' } } }, attachTo: document.body })
   await flushPromises()
   expect(view.find('.cinema-feature').exists()).toBe(false)
   expect(view.find('.cinema-detail').exists()).toBe(false)
@@ -37,6 +39,7 @@ it('opens details before playback, returns to the same film, and preserves libra
   await view.get('.cinema-feature__play').trigger('click')
   await view.get('.test-player').trigger('click')
   expect(view.find('.test-player').exists()).toBe(false)
+  expect(cinemaPlayback.entries[0]?.position).toBe(3)
   expect(view.get('.cinema-detail h2').text()).toBe('Journey')
   await view.get('.cinema-detail__back').trigger('click'); await new Promise(resolve => setTimeout(resolve, 10)); await flushPromises()
   expect(view.find('.cinema-detail').exists()).toBe(false)
