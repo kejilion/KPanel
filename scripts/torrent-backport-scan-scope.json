@@ -12,8 +12,8 @@
     "scripts/build-mcp-clients.sh": "29b0e82668f585aa46d10432912e1050954430cfac6a0550dd408d728979e113",
     "Makefile": "f651d8ce2f10adc487118e1ccb476615347661922a8c8ef529f1b8013da5d53e"
   },
-  "closureSha256": "2c626d3cbe28d03a0f65dde974bc735383565e855f95870b456344b29f36b657",
-  "firstPartySourceSha256": "433fcf562b9283557e5af5325d418187532679812063f3d7b800e2df546d791d",
+  "closureSha256": "b2c4acdc527857b4a7e04884dff04c62599408c675f088f3153a93291ebb8aa9",
+  "firstPartySourceSha256": "0e0d309dc7a212f9c2cd596871512a7e3134fe661a4138cebec719b0386c260f",
   "buildTargetHashEncoding": "UTF-8 with LF line endings",
   "closureEncoding": "SHA256 of JSON.stringify of ordered OS/architecture rows; packages sorted by import path; path, module and selected version; stdlib go1.27.3; main-module packages additionally bind relative sourceDirectory and sorted actual GoFiles.",
   "firstPartySourceEncoding": "SHA256 of JSON.stringify of all cmd/internal Go source path and SHA256 pairs sorted by relative path; contents normalized to UTF-8 LF. All actual main-module production GoFiles must be covered. Generated .pb.go and .proto files or symlinks require a new review.",
@@ -194,7 +194,9 @@
     "cinemaMetadataSourceObservationSha256": "4a4444cef358b98d878d667d36d0a152b379f2edbc476cbe5a31627592063e02",
     "cinemaMetadataSourceSummary": "Independent read-only Go 1.27.3 qualification reproduced the original bf4b175d source and closure observations, then verified 1307 first-party Go sources against exact Git blobs and all six actual/original production closures for metadata candidate 9e6f3388 and UI candidate 174f08bb. Only the two Linux closures add cinemametadata and Panel cinema_metadata.go; four other targets, 113 production modules, selected graph, module/vendor and build-target inputs are unchanged. Rebind only the two derived source/closure identities. All 38 findings, dispositions and original 2026-11-06 through 2026-11-20 observation window remain unchanged. This qualification does not claim new scanning, CI, L2/L3, release or deployment success.",
     "cinemaPlaybackSourceEvidenceSha256": "36a689e84f3c729aaa0d25f972b488e28537837a1333dab0ec7faaa4dff9e8ea",
-    "cinemaPlaybackSourceSummary": "Cinema per-film resume preference extension: exact previous source identity reproduced from base 01bd0f73; five Go implementation/test files changed, including one new production store file. Canonical productionClosure confirms six-platform actual/original inventories equal. Rebinds source and GoFiles closure only; module graph, build contracts, finding dispositions and original observation/expiry are unchanged. No vulnerability scan, CI, L3 or publication success is implied."
+    "cinemaPlaybackSourceSummary": "Cinema per-film resume preference extension: exact previous source identity reproduced from base 01bd0f73; five Go implementation/test files changed, including one new production store file. Canonical productionClosure confirms six-platform actual/original inventories equal. Rebinds source and GoFiles closure only; module graph, build contracts, finding dispositions and original observation/expiry are unchanged. No vulnerability scan, CI, L3 or publication success is implied.",
+    "rc130Rc8IdentityEvidenceSha256": "403e708ecbc554e9c70bf13c517decbed823304d55221cfcda9104bf7423da89",
+    "rc130Rc8IdentitySummary": "RC8 assembly identity refresh: repository helpers with Go 1.27.3 observed 1309 first-party Go sources, 113 production modules and 473 selected modules; all six production actual/original closures matched. Source and closure identities are rebound to the combined music queue, cinema metadata/playback code and v1.30.0-rc.8 version literal. All 38 existing findings, dispositions and the 2026-11-06 through 2026-11-20 observation window remain unchanged. This identity record does not assert vulnerability scanners, exact-SHA CI, L2/L3 or publication success."
   },
   "findings": [
     {
