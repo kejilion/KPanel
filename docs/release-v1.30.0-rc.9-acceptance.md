@@ -189,6 +189,3 @@ Windows ConPTY 测试 TestWindowsConPTYUnicodeResizeAndNaturalExit 首轮等待 
 - 已实现待实机准入：AI 文件投影在可证明稳定读取时返回；活动写入或不支持的文件系统可能 fail-closed，AI 助手其他功能不因此整体关闭。
 - 不阻断本版的理由：RC9 没有新增产品代码；候选 CI、主线 CI、精确 L3、双架构 Release、公开验收均通过；稳定默认与生产未变化。
 - 后续应进入的自动门禁或专项工作流：稳定发布前先完成 source-identity 自动预检和旧摘要故障夹具；复核 ConPTY 超时根因后决定是否调整测试。
-
-
-
