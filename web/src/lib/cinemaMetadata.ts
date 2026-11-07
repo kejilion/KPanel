@@ -27,9 +27,12 @@ export interface CinemaQuery {
 }
 export function cinemaSearchTitle(name: string) {
   const stem = name.replace(/\.[a-z0-9]{2,5}$/i, '')
-  const year = stem.match(/\b((?:19|20)\d{2})\b/)?.[1]
+  const normalizedStem = stem.replace(/[._]/g, ' ')
+  const release = [...normalizedStem.matchAll(/\b((?:19|20)\d{2})\b/g)].filter(match =>
+    match.index! > 0 && normalizedStem.slice(0, match.index).trim() && Number(match[1]) <= new Date().getFullYear() + 2).at(-1)
+  const year = release?.[1]
   const episode = /\bS\d{1,2}E\d{1,3}\b|第.{1,3}[季集]/i.test(stem)
-  const title = stem.replace(/[._]/g, ' ').replace(/\b(?:19|20)\d{2}\b.*$/, '')
+  const title = (release ? normalizedStem.slice(0, release.index) : normalizedStem)
     .replace(/\bS\d{1,2}(?:E\d{1,3})?\b.*$/i, '')
     .replace(/\b(?:2160p|1080p|720p|480p|WEB[ -]?DL|BluRay|BDRip|HDRip|x26[45]|HEVC|AVC)\b.*$/i, '')
     .replace(/[\[【].*?[\]】]/g, '').replace(/[()（）]/g, ' ').trim()

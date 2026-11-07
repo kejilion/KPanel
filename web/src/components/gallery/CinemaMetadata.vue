@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { api, ApiError } from '@/lib/api'
 import { siThemoviedatabase } from 'simple-icons'
+import GalleryImage from './GalleryImage.vue'
 import { useI18n } from '@/i18n'
 import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
 import { automaticCinemaMatch, cinemaMetadataImage, cinemaMetadataKey, cinemaSearchTitle, cinemaSourceURL, readCinemaMetadataCache, saveCinemaMetadataCache, type CinemaMetadata, type CinemaProvider } from '@/lib/cinemaMetadata'
@@ -138,7 +139,7 @@ publish()
       <p v-if="error" role="alert">{{ error }}</p><p v-if="status" role="status">{{ status }}</p>
       <ul v-if="results.length" class="metadata__results">
         <li v-for="item in results" :key="`${item.provider}:${item.id}`">
-          <img v-if="item.poster" :src="cinemaMetadataImage(item)" alt="" loading="lazy" @error="($event.target as HTMLImageElement).hidden = true" />
+          <GalleryImage v-if="item.poster" :src="cinemaMetadataImage(item)!" />
           <div><strong>{{ item.title }} {{ item.year }}</strong><p>{{ item.overview.slice(0, 280) }}</p>
             <div class="metadata__controls"><button class="button button--secondary" type="button" :disabled="busy" @click="choose(item)">{{ phrase('使用此资料') }}</button><a :href="cinemaSourceURL(item)" target="_blank" rel="noopener noreferrer">{{ item.provider }}</a></div>
           </div>

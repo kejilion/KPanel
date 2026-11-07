@@ -61,10 +61,12 @@ type cached struct {
 	expires time.Time
 }
 type Service struct {
-	client *http.Client
-	gate   chan struct{}
-	mu     sync.Mutex
-	cache  map[[32]byte]cached
+	client     *http.Client
+	gate       chan struct{}
+	imageGate  chan struct{}
+	imageQueue chan struct{}
+	mu         sync.Mutex
+	cache      map[[32]byte]cached
 }
 
 func New() *Service {
@@ -80,7 +82,7 @@ func New() *Service {
 		dial = (&net.Dialer{Timeout: 3 * time.Second}).DialContext
 	}
 	return &Service{client: &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-		Transport: &http.Transport{Proxy: proxyFunc, DialContext: dial, TLSHandshakeTimeout: 3 * time.Second, ResponseHeaderTimeout: 5 * time.Second, MaxResponseHeaderBytes: 64 << 10, MaxConnsPerHost: 2, MaxIdleConns: 4, MaxIdleConnsPerHost: 2, IdleConnTimeout: 30 * time.Second}}, gate: make(chan struct{}, 2), cache: make(map[[32]byte]cached)}
+		Transport: &http.Transport{Proxy: proxyFunc, DialContext: dial, TLSHandshakeTimeout: 3 * time.Second, ResponseHeaderTimeout: 5 * time.Second, MaxResponseHeaderBytes: 64 << 10, MaxConnsPerHost: 2, MaxIdleConns: 4, MaxIdleConnsPerHost: 2, IdleConnTimeout: 30 * time.Second}}, gate: make(chan struct{}, 2), imageGate: make(chan struct{}, 2), imageQueue: make(chan struct{}, 32), cache: make(map[[32]byte]cached)}
 }
 func (q Query) Valid() bool {
 	if q.Kind != "movie" && q.Kind != "tv" {
@@ -217,6 +219,20 @@ func year(s string) string {
 }
 
 var markup = regexp.MustCompile(`<[^>]*>`)
+var wikipediaRelease = regexp.MustCompile(`(?i)\b(?:is|was) (?:an? )?((?:19|20)\d{2})\b|(?:於|于)((?:19|20)\d{2})年(?:上映|发行|發行|首播|播出)|(?:是|為|为)(?:一部|一套|一齣|一出)?((?:19|20)\d{2})年`)
+
+func wikipediaYear(extract string) string {
+	match := wikipediaRelease.FindStringSubmatch(text(extract, 400))
+	if len(match) < 2 {
+		return ""
+	}
+	for _, value := range match[1:] {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
 
 func plain(s string) string { return text(html.UnescapeString(markup.ReplaceAllString(s, " ")), 6000) }
 
@@ -277,11 +293,20 @@ func (s *Service) Image(ctx context.Context, provider, path, size string) ([]byt
 	if raw == "" {
 		return nil, "", errors.New("invalid cinema image")
 	}
-	release, err := s.acquire(ctx)
-	if err != nil {
-		return nil, "", err
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	select {
+	case s.imageQueue <- struct{}{}:
+		defer func() { <-s.imageQueue }()
+	default:
+		return nil, "", ErrBusy
 	}
-	defer release()
+	select {
+	case s.imageGate <- struct{}{}:
+		defer func() { <-s.imageGate }()
+	case <-ctx.Done():
+		return nil, "", ctx.Err()
+	}
 	body, _, err := s.request(ctx, raw, "", 4<<20)
 	if err != nil {
 		return nil, "", err
@@ -483,10 +508,13 @@ func (s *Service) wikipedia(ctx context.Context, q Query) (Result, error) {
 	result := Result{}
 	sort.SliceStable(data.Query.Pages, func(i, j int) bool { return data.Query.Pages[i].Index < data.Query.Pages[j].Index })
 	for _, p := range data.Query.Pages {
+		if len(result.Items) >= 5 {
+			break
+		}
 		if p.ID <= 0 || p.Title == "" {
 			continue
 		}
-		releaseYear := regexp.MustCompile(`\b(?:19|20)\d{2}\b`).FindString(text(p.Extract, 180))
+		releaseYear := wikipediaYear(p.Extract)
 		alias := ""
 		if strings.Contains(text(p.Extract, 200), "《"+q.Title+"》") {
 			alias = q.Title

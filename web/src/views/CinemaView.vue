@@ -5,6 +5,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { Clapperboard, Film, Folder, FolderOpen, Image as ImageIcon, LayoutGrid, Pencil, Play, RefreshCw, Search, X } from '@lucide/vue'
 import HostSwitcher from '@/components/common/HostSwitcher.vue'
 import GalleryVideo from '@/components/gallery/GalleryVideo.vue'
+import GalleryImage from '@/components/gallery/GalleryImage.vue'
 import GalleryViewer from '@/components/gallery/GalleryViewer.vue'
 import CinemaMetadataPanel from '@/components/gallery/CinemaMetadata.vue'
 import { cinemaMetadataImage, cinemaSourceURL, type CinemaMetadata } from '@/lib/cinemaMetadata'
@@ -100,8 +101,7 @@ function coverUrl(item: GalleryItem, backdrop = false): string | undefined {
   const url = image ? files.value.contentUrl(image.path, 'inline') : meta ? cinemaMetadataImage(meta, backdrop) : undefined
   return url && !failedCovers.value.has(url) ? url : undefined
 }
-function coverError(event: Event) {
-  const url = (event.target as HTMLImageElement).getAttribute('src')
+function coverError(url: string | undefined) {
   if (url) failedCovers.value.add(url)
 }
 function viewerSources(item: GalleryItem) {
@@ -339,7 +339,7 @@ onBeforeUnmount(() => {
     <section v-if="featured" class="cinema-feature" :aria-label="phrase('精选影片')">
       <div class="cinema-feature__art" aria-hidden="true">
         <Film :size="84" />
-        <img v-if="coverUrl(featured, true)" :key="coverUrl(featured, true)" :src="coverUrl(featured, true)" alt="" decoding="async" @error="coverError" />
+        <GalleryImage v-if="coverUrl(featured, true)" :key="coverUrl(featured, true)" :src="coverUrl(featured, true)!" eager @error="coverError(coverUrl(featured, true))" />
         <GalleryVideo v-else-if="galleryBrowserCanShow(featured)" :src="content(featured, 'inline')" :poster-key="posterKey(featured)" :suspended="windowVisible === false" />
       </div>
       <div class="cinema-feature__body">
@@ -413,7 +413,7 @@ onBeforeUnmount(() => {
           <button class="cinema-card__play" type="button" :aria-label="phrase('播放影片') + ' ' + cinemaTitle(item.entry.name)" @click="play(item)">
             <span class="cinema-card__poster">
               <Film :size="38" />
-              <img v-if="coverUrl(item)" :key="coverUrl(item)" :src="coverUrl(item)" alt="" loading="lazy" decoding="async" @error="coverError" />
+              <GalleryImage v-if="coverUrl(item)" :key="coverUrl(item)" :src="coverUrl(item)!" @error="coverError(coverUrl(item))" />
               <GalleryVideo v-else-if="galleryBrowserCanShow(item)" :src="content(item, 'inline')" :poster-key="posterKey(item)" :suspended="windowVisible === false" />
               <span class="cinema-card__format">{{ galleryFileExtension(item.entry.name).toUpperCase() }}</span>
               <span class="cinema-card__watch"><Play :size="22" /></span>

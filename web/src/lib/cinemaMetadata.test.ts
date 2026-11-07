@@ -14,6 +14,13 @@ describe('cinema source matching', () => {
     expect(automaticCinemaMatch('Inception.mkv', [movie, { ...movie, id: 2 }])).toBeUndefined()
     expect(automaticCinemaMatch('Inception.mkv', [{ ...movie, title: 'Inception sequel', originalTitle: '' }])).toBeUndefined()
   })
+  it('preserves numeric titles and uses the separate release year', () => {
+    expect(cinemaSearchTitle('Blade.Runner.2049.2017.mkv')).toMatchObject({ title: 'Blade Runner 2049', year: '2017' })
+    expect(cinemaSearchTitle('2001.A.Space.Odyssey.1968.mkv')).toMatchObject({ title: '2001 A Space Odyssey', year: '1968' })
+    expect(cinemaSearchTitle('1917.2019.mkv')).toMatchObject({ title: '1917', year: '2019' })
+    expect(cinemaSearchTitle('1917.mkv')).toMatchObject({ title: '1917', year: undefined })
+    expect(cinemaSearchTitle('Blade.Runner.2049.mkv')).toMatchObject({ title: 'Blade Runner 2049', year: undefined })
+  })
   it('uses same-origin artwork and constructs trusted source links', () => {
     expect(cinemaMetadataImage(movie)).toContain('/api/v1/cinema/image?provider=tmdb&path=%2Fp.jpg&size=poster')
     expect(cinemaSourceURL({ ...movie, url: 'javascript:evil' })).toBe('https://www.themoviedb.org/movie/27205')
