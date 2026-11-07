@@ -92,6 +92,7 @@ func TestMusicPlaybackPreferencesAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 	checkpoint := map[string]any{"path": "/music/song.mp3", "hostId": "edge-1", "position": 42.5, "playing": true, "repeat": "all", "shuffle": true}
+	checkpoint["queue"] = []store.MusicQueueItem{{Path: "/music/later.mp3", HostID: "offline"}, {Path: "/music/song.mp3", HostID: "edge-1"}}
 	body, _ := json.Marshal(map[string]any{"musicPlayback": checkpoint, "expectedResourceVersion": initial.ResourceVersion})
 	if r := authenticatedSiteRequest(s, session, csrf, http.MethodPut, preferencesPath, body, false); r.Code != 403 {
 		t.Fatalf("CSRF: %d", r.Code)
@@ -109,6 +110,18 @@ func TestMusicPlaybackPreferencesAPI(t *testing.T) {
 	}
 	if state.MusicPlayback == nil || state.MusicPlayback.Path != "/music/song.mp3" || state.MusicPlayback.Position != 42.5 {
 		t.Fatalf("checkpoint not saved: %+v", state.MusicPlayback)
+	}
+	login := loginRequest(s, "a-strong-password-1")
+	other, otherCSRF := authCookies(t, login)
+	shared := authenticatedSiteRequest(s, other, otherCSRF, http.MethodGet, preferencesPath, nil, false)
+	var second preferencesResponse
+	if err := json.Unmarshal(shared.Body.Bytes(), &second); err != nil || !reflect.DeepEqual(second.MusicPlayback.Queue, state.MusicPlayback.Queue) {
+		t.Fatalf("queue not shared across sessions: %s", shared.Body.String())
+	}
+	checkpoint["queue"] = []store.MusicQueueItem{{Path: "/music/../secret", HostID: "edge-1"}}
+	badQueue, _ := json.Marshal(map[string]any{"musicPlayback": checkpoint, "expectedResourceVersion": state.ResourceVersion})
+	if r := authenticatedSiteRequest(s, other, otherCSRF, http.MethodPut, preferencesPath, badQueue, true); r.Code != 422 {
+		t.Fatalf("invalid queue: %d", r.Code)
 	}
 	checkpoint["path"] = "/music/../secret.mp3"
 	invalid, _ := json.Marshal(map[string]any{"musicPlayback": checkpoint, "expectedResourceVersion": state.ResourceVersion})

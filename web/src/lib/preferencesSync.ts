@@ -5,7 +5,7 @@ import { useToast } from '@/stores/toast'
 import { applyMediaLocation, legacyGalleryLocation, mediaLocationKeys, parseMediaLocation } from '@/lib/mediaLocations'
 import { watch, type WatchStopHandle } from 'vue'
 import { fileAPIForHost } from '@/lib/fileHostContext'
-import { isMusic, readMusicTrack } from '@/lib/music'
+import { isMusic, readMusicTrack, musicQueueTrack, MUSIC_LIMIT, trackKey } from '@/lib/music'
 import { useMusicPlayer } from '@/stores/musicPlayer'
 import type { MusicPlaybackPreference, UserPreferences, UserPreferencesPatch } from '@/types/api'
 
@@ -41,12 +41,25 @@ function parseMusicPlayback(value: unknown): MusicPlaybackPreference | undefined
   if (m.path === '') {
     if (m.hostId || m.position || m.playing) return undefined
   } else if (!m.path.startsWith('/') || /[\x00-\x1f\x7f\\]/u.test(m.path) || m.path.slice(1).split('/').some(p => !p || p === '.' || p === '..')) return undefined
-  return { path: m.path, hostId: m.hostId, position: m.position, playing: m.playing, repeat: m.repeat as MusicPlaybackPreference['repeat'], shuffle: m.shuffle }
+  let queue: MusicPlaybackPreference['queue']
+  if (m.queue != null) {
+    if (!Array.isArray(m.queue) || m.queue.length > MUSIC_LIMIT) return undefined
+    queue = []; const keys = new Set<string>(); let bytes = 0
+    for (const item of m.queue) {
+      if (!item || typeof item.path !== 'string' || !item.path || new TextEncoder().encode(item.path).length > 4096 || !item.path.startsWith('/') || /[\x00-\x1f\x7f\\]/u.test(item.path) || item.path.slice(1).split('/').some((p: string) => !p || p === '.' || p === '..') || typeof item.hostId !== 'string' || !/^[A-Za-z0-9_-]{0,128}$/.test(item.hostId)) return undefined
+      const key = JSON.stringify([item.hostId, item.path])
+      if (keys.has(key)) return undefined
+      keys.add(key); bytes += new TextEncoder().encode(item.path).length + item.hostId.length
+      if (bytes > 256 * 1024) return undefined
+      queue.push({ path: item.path, hostId: item.hostId })
+    }
+  }
+  return { path: m.path, hostId: m.hostId, position: m.position, playing: m.playing, repeat: m.repeat as MusicPlaybackPreference['repeat'], shuffle: m.shuffle, ...(queue ? { queue } : {}) }
 }
 
 function musicSnapshot(): MusicPlaybackPreference {
   const state = useMusicPlayer().state
-  return { path: state.current?.entry.path ?? '', hostId: state.current?.hostId ?? '', position: state.current ? Math.min(31536000, Math.max(0, Number.isFinite(state.position) ? state.position : 0)) : 0, playing: !!state.current && state.playing, repeat: state.repeat, shuffle: state.shuffle }
+  return { path: state.current?.entry.path ?? '', hostId: state.current?.hostId ?? '', position: state.current ? Math.min(31536000, Math.max(0, Number.isFinite(state.position) ? state.position : 0)) : 0, playing: !!state.current && state.playing, repeat: state.repeat, shuffle: state.shuffle, queue: state.queue.map(track => ({ path: track.entry.path, hostId: track.hostId })) }
 }
 
 function watchMusic(sync: Sync): void {
@@ -57,11 +70,10 @@ function watchMusic(sync: Sync): void {
     sync.lastMusicProgress = Date.now()
     const musicPlayback = parseMusicPlayback(musicSnapshot())
     if (musicPlayback) changed(new CustomEvent('kpanel:preferences-changed', { detail: { musicPlayback } }))
+    else failed(sync)
   }
   sync.musicWatchers.push(watch([() => state.current?.entry.path, () => state.current?.hostId, () => state.playing, () => state.repeat, () => state.shuffle], update, { flush: 'sync' }))
-  sync.musicWatchers.push(watch(() => state.queue.map(track => `${track.hostId}\u0000${track.entry.path}`), () => {
-    if (current === sync && !sync.restoringMusic) sync.musicTouched = true
-  }, { flush: 'sync' }))
+  sync.musicWatchers.push(watch(() => JSON.stringify(state.queue.map(trackKey)), update, { flush: 'sync' }))
   sync.musicWatchers.push(watch(() => state.position, () => {
     if (!state.current || sync.restoringMusic) return
     if (state.playing && Date.now() - sync.lastMusicProgress >= 30000) update()
@@ -74,6 +86,14 @@ async function restoreMusic(sync: Sync, value: MusicPlaybackPreference | undefin
   const serial = ++sync.musicRestoreSerial
   const music = useMusicPlayer()
   if (sync.musicTouched || (music.state.current && (!music.state.restored || music.state.playing))) return
+  if (value?.queue) {
+    const queue = value.queue.map(item => musicQueueTrack(item.path, item.hostId))
+    const track = value.path ? queue.find(item => item.entry.path === value.path && item.hostId === value.hostId) ?? musicQueueTrack(value.path, value.hostId) : undefined
+    sync.restoringMusic = true
+    try { music.restore(track, value.position, value.repeat, value.shuffle, queue); sync.lastMusicRestore = value }
+    finally { sync.restoringMusic = false; sync.lastMusicProgress = Date.now() }
+    return
+  }
   if (!value?.path) {
     if (value && music.state.restored) {
       sync.restoringMusic = true
@@ -112,7 +132,7 @@ function refreshMusic(sync: Sync): void {
 function readPending(owner: string): UserPreferencesPatch {
   try {
     const raw = sessionStorage.getItem(pendingKey)
-    if (!raw || raw.length > 64000) return {}
+    if (!raw || new TextEncoder().encode(raw).length > 1024 * 1024) return {}
     const value = JSON.parse(raw)
     if (value.owner !== owner) return {}
     const patch: UserPreferencesPatch = {}

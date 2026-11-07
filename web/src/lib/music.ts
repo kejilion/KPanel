@@ -6,7 +6,12 @@ export const MUSIC_LIMIT = 2000
 const extensions = new Set(['mp3', 'flac', 'wav', 'm4a', 'aac', 'ogg', 'opus', 'aiff', 'aif', 'ape', 'alac', 'wma', 'dsf', 'dff'])
 export function musicExtension(name: string): string { return name.split('.').pop()?.toLowerCase() ?? '' }
 export function isMusic(entry: FileEntry): boolean { return entry.kind === 'file' && extensions.has(musicExtension(entry.name)) }
-export interface Track { entry: FileEntry; hostId: string; title: string; artist: string; cover?: string; lyrics?: string }
+export interface Track { entry: FileEntry; hostId: string; title: string; artist: string; cover?: string; lyrics?: string; needsRefresh?: boolean }
+/** Queue references survive offline hosts; resolve file metadata only when selected. */
+export function musicQueueTrack(path: string, hostId: string): Track {
+  const name = path.slice(path.lastIndexOf('/') + 1), stem = name.replace(/\.[^.]+$/, ''), split = stem.indexOf(' - ')
+  return { hostId, needsRefresh: true, title: split > 0 ? stem.slice(split + 3) : stem, artist: split > 0 ? stem.slice(0, split) : '', entry: { path, name, kind: 'file', sizeBytes: 0, mode: '', owner: '', group: '', modifiedAt: '', resourceVersion: '', editable: false, previewable: true } }
+}
 /** Lyrics are media sidecars, including .lrc files not classified by the text editor. */
 export async function readMusicLyrics(track: Track, signal: AbortSignal): Promise<string> {
   signal.throwIfAborted()

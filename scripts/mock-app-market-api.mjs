@@ -2043,7 +2043,18 @@ createServer(async (request, response) => {
         send(response, 422, { title: 'Preferences are invalid', code: 'preferences_invalid' })
         return
       }
-      changes.musicPlayback = { path: value.path, hostId: value.hostId, position: value.position, playing: value.playing, repeat: value.repeat, shuffle: value.shuffle }
+      let queue
+      if (value.queue != null) {
+        const seen = new Set(); let bytes = 0
+        if (!Array.isArray(value.queue) || value.queue.length > 2000 || value.queue.some(item => {
+          if (!item || typeof item.path !== 'string' || !item.path.startsWith('/') || Buffer.byteLength(item.path) > 4096 || /[\u0000-\u001f\u007f\\]/u.test(item.path) || item.path.slice(1).split('/').some(part => !part || part === '.' || part === '..') || typeof item.hostId !== 'string' || !/^[A-Za-z0-9_-]{0,128}$/.test(item.hostId)) return true
+          const key = JSON.stringify([item.hostId, item.path]); bytes += Buffer.byteLength(item.path) + item.hostId.length
+          if (seen.has(key) || bytes > 256 * 1024) return true
+          seen.add(key); return false
+        })) { send(response, 422, { title: 'Preferences are invalid', code: 'preferences_invalid' }); return }
+        queue = value.queue.map(item => ({ path: item.path, hostId: item.hostId }))
+      }
+      changes.musicPlayback = { path: value.path, hostId: value.hostId, position: value.position, playing: value.playing, repeat: value.repeat, shuffle: value.shuffle, ...(queue ? { queue } : {}) }
     }
     if (!Object.keys(changes).length) {
       send(response, 422, { title: 'Preferences are invalid', code: 'preferences_invalid' })

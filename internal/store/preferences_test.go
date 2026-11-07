@@ -268,19 +268,24 @@ func TestMusicCheckpointPersistsAndRejectsInvalidInput(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, version := s.Preferences()
-	checkpoint := &MusicPlaybackPreference{Path: "/music/风歌.mp3", HostID: "edge-1", Position: 23.5, Playing: true, Repeat: "all", Shuffle: true}
+	checkpoint := &MusicPlaybackPreference{Path: "/music/风歌.mp3", HostID: "edge-1", Position: 23.5, Playing: true, Repeat: "all", Shuffle: true, Queue: []MusicQueueItem{{Path: "/music/offline.mp3", HostID: "offline"}, {Path: "/music/风歌.mp3", HostID: "edge-1"}}}
 	if err = s.PatchPreferences(version, Preferences{MusicPlayback: checkpoint}); err != nil {
 		t.Fatal(err)
 	}
 	checkpoint.Path = "/changed"
+	checkpoint.Queue[0].Path = "/mutated"
 	value, version := s.Preferences()
 	if value.MusicPlayback.Path != "/music/风歌.mp3" {
 		t.Fatal("checkpoint aliases input")
 	}
 	value.MusicPlayback.Path = "/other"
+	value.MusicPlayback.Queue[0].Path = "/snapshot-mutated"
 	value, _ = s.Preferences()
 	if value.MusicPlayback.Path != "/music/风歌.mp3" {
 		t.Fatal("checkpoint aliases snapshot")
+	}
+	if value.MusicPlayback.Queue[0].Path != "/music/offline.mp3" {
+		t.Fatal("queue aliases caller or snapshot")
 	}
 	if err = s.PatchPreferences("stale", Preferences{MusicPlayback: &MusicPlaybackPreference{Repeat: "off"}}); !errors.Is(err, ErrConflict) {
 		t.Fatalf("expected conflict: %v", err)
@@ -303,6 +308,9 @@ func TestMusicCheckpointPersistsAndRejectsInvalidInput(t *testing.T) {
 	value, _ = s.Preferences()
 	if value.MusicPlayback.Position != 23.5 || value.MusicPlayback.HostID != "edge-1" {
 		t.Fatalf("restart lost checkpoint: %+v", value.MusicPlayback)
+	}
+	if len(value.MusicPlayback.Queue) != 2 || value.MusicPlayback.Queue[0].HostID != "offline" {
+		t.Fatal("restart lost queue order or host")
 	}
 	destination, err := Open(filepath.Join(t.TempDir(), "restore.json"))
 	if err != nil {
@@ -354,5 +362,34 @@ func TestMediaLocationAndPlaybackRemainIndependent(t *testing.T) {
 	got, _ = s.Preferences()
 	if got.MusicLocation.Path != "/music" || got.MusicPlayback.Position != 42 || got.CinemaLocation.Path != "/films" {
 		t.Fatalf("lost media preference after update: %+v", got)
+	}
+}
+
+func TestMusicQueueBoundsAndExplicitEmpty(t *testing.T) {
+	base := MusicPlaybackPreference{Repeat: "off"}
+	for _, queue := range [][]MusicQueueItem{
+		{{Path: "/../a", HostID: ""}}, {{Path: "/music/a.mp3", HostID: "bad/host"}},
+		{{Path: "/music/a.mp3"}, {Path: "/music/a.mp3"}}, make([]MusicQueueItem, 2001),
+	} {
+		base.Queue = queue
+		if ValidatePreferences(Preferences{MusicPlayback: &base}) == nil {
+			t.Fatal("invalid queue accepted")
+		}
+	}
+	base.Queue = nil
+	for i := 0; i < 70; i++ {
+		base.Queue = append(base.Queue, MusicQueueItem{Path: "/" + strings.Repeat("a", 3990) + time.Duration(i).String()})
+	}
+	if ValidatePreferences(Preferences{MusicPlayback: &base}) == nil {
+		t.Fatal("oversize queue accepted")
+	}
+	base.Queue = []MusicQueueItem{{Path: "/music/a.mp3", HostID: "a"}, {Path: "/music/a.mp3", HostID: "b"}}
+	if err := ValidatePreferences(Preferences{MusicPlayback: &base}); err != nil {
+		t.Fatal("different hosts must remain distinct", err)
+	}
+	base.Queue = []MusicQueueItem{}
+	cloned := clonePreferences(Preferences{MusicPlayback: &base})
+	if cloned.MusicPlayback.Queue == nil {
+		t.Fatal("empty queue became legacy omitted queue")
 	}
 }

@@ -2482,7 +2482,8 @@ export interface UserPreferences {
 
 export interface MediaLocation { path: string; hostId: string }
 export type UserPreferencesPatch = Partial<Pick<UserPreferences, 'locale' | 'desktop' | 'browser' | 'galleryLocation' | 'musicLocation' | 'cinemaLocation' | 'musicPlayback'>>
-export interface MusicPlaybackPreference { path: string; hostId: string; position: number; playing: boolean; repeat: 'off' | 'all' | 'one'; shuffle: boolean }
+export interface MusicQueueItem { path: string; hostId: string }
+export interface MusicPlaybackPreference { path: string; hostId: string; position: number; playing: boolean; repeat: 'off' | 'all' | 'one'; shuffle: boolean; queue?: MusicQueueItem[] }
 
 export interface AppearanceSettings {
   branding?: SiteBranding

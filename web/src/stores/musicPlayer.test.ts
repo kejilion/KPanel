@@ -31,6 +31,21 @@ function setup(tags = vi.fn(async (): Promise<MusicTags> => ({})), text = vi.fn(
   return { player, audios, tags, text, online, save }
 }
 afterEach(() => { players.splice(0).forEach(player => player.stop()); vi.unstubAllGlobals(); vi.restoreAllMocks() })
+it('resolves restored queue resources only when selected and keeps offline references on failure', async () => {
+  const actual = { ...track('B', 'edge'), lyrics: '/music/B.lrc', cover: '/music/B.jpg' }
+  const resolve = vi.fn(async () => actual), text = vi.fn(async () => 'local lyrics'), online = vi.fn(async () => ({ matched: false }))
+  const player = createMusicPlayer({ audio: () => new FakeAudio() as unknown as HTMLAudioElement, resolve, tags: async () => ({}), text, online })
+  players.push(player)
+  const restored = { ...actual, cover: undefined, lyrics: undefined, needsRefresh: true }
+  player.restore(track('A'), 10, 'off', false, [track('A'), restored])
+  await flushPromises(); expect(resolve).not.toHaveBeenCalled()
+  player.choose(restored); await flushPromises()
+  expect(resolve).toHaveBeenCalledOnce(); expect(text).toHaveBeenCalledWith(actual, expect.any(AbortSignal))
+  expect(player.state.lyrics).toBe('local lyrics'); expect(player.state.current?.cover).toBe(actual.cover)
+  online.mockClear(); resolve.mockRejectedValueOnce(new Error('offline'))
+  player.choose({ ...track('C'), needsRefresh: true }); await flushPromises()
+  expect(player.state.queue).toHaveLength(3); expect(player.state.current?.needsRefresh).toBe(true); expect(online).not.toHaveBeenCalled()
+})
 describe('music listening session', () => {
   it('retries a failed restored track at its saved position', () => {
     const { player, audios } = setup()

@@ -2,13 +2,14 @@ import { computed, reactive, watch } from 'vue'
 import { matchOnlineMusic } from '@/lib/musicOnline'
 import { saveMusicSidecars, type MusicSidecars } from '@/lib/musicSidecars'
 import { fileAPIForHost } from '@/lib/fileHostContext'
-import { MUSIC_LIMIT, readMusicLyrics, trackKey, type Track } from '@/lib/music'
+import { MUSIC_LIMIT, readMusicLyrics, readMusicTrack, isMusic, trackKey, type Track } from '@/lib/music'
 import { readMusicTags, readableMusicTag } from '@/lib/musicTags'
 
 type Repeat = 'off' | 'all' | 'one'
 interface PlayerDependencies {
   audio: () => HTMLAudioElement
   tags: typeof readMusicTags
+  resolve: (track: Track, signal: AbortSignal) => Promise<Track | undefined>
   text: (track: Track, signal: AbortSignal) => Promise<string>
   save: typeof saveMusicSidecars
   online: typeof matchOnlineMusic
@@ -19,6 +20,11 @@ interface PlayerDependencies {
 export function createMusicPlayer(overrides: Partial<PlayerDependencies> = {}) {
   const deps: PlayerDependencies = {
     audio: () => new Audio(), tags: readMusicTags,
+    resolve: async (track, signal) => {
+      const entry = await fileAPIForHost(track.hostId).entry(track.entry.path, signal)
+      if (entry.path !== track.entry.path || !isMusic(entry)) return undefined
+      return readMusicTrack(entry, track.hostId, signal)
+    },
     text: readMusicLyrics,
     save: saveMusicSidecars, online: matchOnlineMusic, random: Math.random, ...overrides,
   }
@@ -138,6 +144,16 @@ export function createMusicPlayer(overrides: Partial<PlayerDependencies> = {}) {
 
   async function metadata(track: Track, id: number, signal: AbortSignal) {
     state.lyricsLoading = true
+    if (track.needsRefresh) {
+      let refreshed: Track | undefined
+      try { refreshed = await deps.resolve(track, signal) } catch { /* Keep offline references for a later retry. */ }
+      if (id !== sequence || !state.current) return
+      if (!refreshed || signal.aborted) { state.lyricsLoading = false; state.lyricsFailed = true; return }
+      track = refreshed
+      state.current = { ...refreshed }
+      const queued = state.queue.find(item => key(item) === key(track))
+      if (queued) Object.assign(queued, refreshed, { needsRefresh: false })
+    }
     // Independent optional resources: a broken sidecar does not discard embedded lyrics.
     const [tags, sidecar] = await Promise.allSettled([
       deps.tags(fileAPIForHost(track.hostId).contentUrl(track.entry.path), signal),
@@ -212,10 +228,12 @@ export function createMusicPlayer(overrides: Partial<PlayerDependencies> = {}) {
     controller = new AbortController(); timer = setTimeout(() => controller?.abort(), 8000)
     void metadata(track, id, controller.signal)
   }
-  function restore(track: Track, position: number, repeat: Repeat, shuffle: boolean) {
-    state.queue = [track]; history = []; remaining = []; cycle.clear(); priority = ''
+  function restore(track: Track | undefined, position: number, repeat: Repeat, shuffle: boolean, queue?: Track[]) {
+    if (!track) stop()
+    state.queue = queue ?? (track ? [track] : []); history = []; remaining = []; cycle.clear(); priority = ''
     state.repeat = repeat; state.shuffle = shuffle
-    play(track, false, position, false)
+    if (track) play(track, false, position, false)
+    else state.restored = true
   }
   function retry() { if (state.current) play(state.current, false, state.position) }
   function replaceQueue(tracks: Track[], start?: Track) {

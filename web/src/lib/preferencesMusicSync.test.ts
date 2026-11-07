@@ -11,6 +11,7 @@ vi.mock('@/stores/toast', () => ({ useToast: () => ({ danger: mocks.danger }) })
 import { startPreferencesSync, stopPreferencesSync } from './preferencesSync'
 import { mediaLocations, setMediaLocation } from './mediaLocations'
 import { useMusicPlayer } from '@/stores/musicPlayer'
+import { musicQueueTrack } from './music'
 
 const entry: FileEntry = { name: 'Song.mp3', path: '/music/Song.mp3', kind: 'file', sizeBytes: 100, mode: '', owner: '', group: '', modifiedAt: '', resourceVersion: 'v1', editable: false, previewable: true }
 const saved: MusicPlaybackPreference = { path: entry.path, hostId: 'edge', position: 42, playing: true, repeat: 'all', shuffle: true }
@@ -162,4 +163,59 @@ it('preserves a queue edited while a remote checkpoint is loading', async () => 
   finish(entry); await vi.advanceTimersByTimeAsync(1)
   expect(useMusicPlayer().state.queue.map(t => t.entry.path)).toEqual([queued.entry.path])
   expect(useMusicPlayer().state.current).toBeUndefined()
+})
+
+it('restores an ordered cross-host queue without eagerly probing offline songs or autoplaying', async () => {
+  const queue = [{ path: '/music/offline.mp3', hostId: 'offline' }, { path: entry.path, hostId: 'edge' }, { path: entry.path, hostId: '' }]
+  mocks.get.mockResolvedValue({ ...remote(), musicPlayback: { ...saved, queue } })
+  await startPreferencesSync('admin'); await vi.advanceTimersByTimeAsync(1)
+  const state = useMusicPlayer().state
+  expect(state.queue.map(track => ({ path: track.entry.path, hostId: track.hostId }))).toEqual(queue)
+  expect(state.current?.hostId).toBe('edge'); expect(state.position).toBe(42)
+  expect(mocks.entry).toHaveBeenCalledTimes(1)
+  expect(mocks.play).not.toHaveBeenCalled(); expect(mocks.update).not.toHaveBeenCalled()
+})
+
+it('saves queue-only edits, reordering and clearing while keeping the current song independent', async () => {
+  await startPreferencesSync('admin'); await vi.advanceTimersByTimeAsync(1)
+  const music = useMusicPlayer(), extra = musicQueueTrack('/music/extra.mp3', 'other')
+  music.enqueue(extra); await vi.advanceTimersByTimeAsync(500)
+  expect(mocks.update.mock.calls.at(-1)?.[0].musicPlayback.queue).toEqual([{ path: entry.path, hostId: 'edge' }, { path: extra.entry.path, hostId: 'other' }])
+  music.move(extra, -1); await vi.advanceTimersByTimeAsync(500)
+  expect(mocks.update.mock.calls.at(-1)?.[0].musicPlayback.queue[0].path).toBe(extra.entry.path)
+  music.clearQueue(); music.remove(music.state.current!); await vi.advanceTimersByTimeAsync(500)
+  expect(mocks.update.mock.calls.at(-1)?.[0].musicPlayback).toMatchObject({ path: entry.path, queue: [] })
+})
+
+it('restores an empty queue independently of a current song, and a queue with no selected song', async () => {
+  mocks.get.mockResolvedValue({ ...remote(), musicPlayback: { ...saved, queue: [] } })
+  await startPreferencesSync('admin'); await vi.advanceTimersByTimeAsync(1)
+  expect(useMusicPlayer().state.queue).toEqual([]); expect(useMusicPlayer().state.current?.entry.path).toBe(entry.path)
+  stopPreferencesSync(); useMusicPlayer().stop()
+  mocks.get.mockResolvedValue({ ...remote(), musicPlayback: { ...saved, path: '', hostId: '', playing: false, position: 0, queue: [{ path: entry.path, hostId: 'edge' }] } })
+  await startPreferencesSync('admin'); await vi.advanceTimersByTimeAsync(1)
+  expect(useMusicPlayer().state.current).toBeUndefined(); expect(useMusicPlayer().state.queue).toHaveLength(1)
+  expect(mocks.play).not.toHaveBeenCalled()
+})
+
+it('preserves unavailable queue references and refreshes a passive remote reorder on focus', async () => {
+  const queue = [{ path: entry.path, hostId: 'edge' }, { path: '/music/later.mp3', hostId: 'offline' }]
+  mocks.entry.mockRejectedValue(new Error('offline'))
+  mocks.get.mockResolvedValue({ ...remote(), musicPlayback: { ...saved, queue } })
+  await startPreferencesSync('admin'); await vi.advanceTimersByTimeAsync(1)
+  expect(useMusicPlayer().state.queue).toHaveLength(2); expect(mocks.update).not.toHaveBeenCalled()
+  mocks.get.mockResolvedValue({ ...remote(), resourceVersion: 'v2', musicPlayback: { ...saved, queue: [...queue].reverse() } })
+  window.dispatchEvent(new Event('focus')); await vi.advanceTimersByTimeAsync(1)
+  expect(useMusicPlayer().state.queue[0]?.hostId).toBe('offline'); expect(mocks.play).not.toHaveBeenCalled()
+})
+
+it('keeps a pending queue larger than the old64KB storage limit and rejects invalid remote references', async () => {
+  const queue = Array.from({ length: 800 }, (_, i) => ({ path: '/music/' + 'long-name-'.repeat(9) + i + '.mp3', hostId: 'edge' }))
+  sessionStorage.setItem('kpanel:preferences-pending:v1', JSON.stringify({ owner: 'admin', patch: { musicPlayback: { ...saved, queue } } }))
+  await startPreferencesSync('admin'); await vi.advanceTimersByTimeAsync(1)
+  expect(useMusicPlayer().state.queue).toHaveLength(800)
+  stopPreferencesSync(); useMusicPlayer().stop()
+  mocks.get.mockResolvedValue({ ...remote(), musicPlayback: { ...saved, queue: [{ path: '/../secret', hostId: '' }] } })
+  await startPreferencesSync('other'); await vi.advanceTimersByTimeAsync(1)
+  expect(useMusicPlayer().state.current).toBeUndefined(); expect(useMusicPlayer().state.queue).toEqual([])
 })

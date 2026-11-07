@@ -58,12 +58,18 @@ func validMediaLocation(value *MediaLocation, allowRoot bool) bool {
 
 // MusicPlaybackPreference is a bounded resume checkpoint, not an audio stream.
 type MusicPlaybackPreference struct {
-	Path     string  `json:"path"`
-	HostID   string  `json:"hostId"`
-	Position float64 `json:"position"`
-	Playing  bool    `json:"playing"`
-	Repeat   string  `json:"repeat"`
-	Shuffle  bool    `json:"shuffle"`
+	Path     string           `json:"path"`
+	HostID   string           `json:"hostId"`
+	Position float64          `json:"position"`
+	Playing  bool             `json:"playing"`
+	Repeat   string           `json:"repeat"`
+	Shuffle  bool             `json:"shuffle"`
+	Queue    []MusicQueueItem `json:"queue"`
+}
+
+type MusicQueueItem struct {
+	Path   string `json:"path"`
+	HostID string `json:"hostId"`
 }
 
 var musicHostPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{0,128}$`)
@@ -72,16 +78,34 @@ func validMusicPlayback(m *MusicPlaybackPreference) bool {
 	if m == nil {
 		return true
 	}
+	if len(m.Queue) > 2000 {
+		return false
+	}
+	seen, bytes := make(map[MusicQueueItem]bool, len(m.Queue)), 0
+	for _, item := range m.Queue {
+		if item.Path == "" || !validMusicReference(item.Path, item.HostID) || seen[item] {
+			return false
+		}
+		seen[item] = true
+		bytes += len(item.Path) + len(item.HostID)
+		if bytes > 256*1024 {
+			return false
+		}
+	}
 	if !musicHostPattern.MatchString(m.HostID) || math.IsNaN(m.Position) || math.IsInf(m.Position, 0) || m.Position < 0 || m.Position > 31536000 || (m.Repeat != "off" && m.Repeat != "all" && m.Repeat != "one") {
 		return false
 	}
 	if m.Path == "" {
 		return m.HostID == "" && m.Position == 0 && !m.Playing
 	}
-	if !utf8.ValidString(m.Path) || len(m.Path) > 4096 || !strings.HasPrefix(m.Path, "/") || strings.Contains(m.Path, "\\") || strings.IndexFunc(m.Path, func(r rune) bool { return r < 32 || r == 127 }) >= 0 {
+	return validMusicReference(m.Path, m.HostID)
+}
+
+func validMusicReference(path, host string) bool {
+	if !musicHostPattern.MatchString(host) || !utf8.ValidString(path) || len(path) > 4096 || !strings.HasPrefix(path, "/") || strings.Contains(path, "\\") || strings.IndexFunc(path, func(r rune) bool { return r < 32 || r == 127 }) >= 0 {
 		return false
 	}
-	for _, part := range strings.Split(m.Path[1:], "/") {
+	for _, part := range strings.Split(path[1:], "/") {
 		if part == "" || part == "." || part == ".." {
 			return false
 		}
@@ -182,6 +206,9 @@ func ValidatePreferences(value Preferences) error {
 func clonePreferences(value Preferences) Preferences {
 	if value.MusicPlayback != nil {
 		v := *value.MusicPlayback
+		if v.Queue != nil {
+			v.Queue = append([]MusicQueueItem{}, v.Queue...)
+		}
 		value.MusicPlayback = &v
 	}
 	if value.GalleryLocation != nil {
