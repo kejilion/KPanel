@@ -1,4 +1,5 @@
 export default [
+  ["文件信息","File information"],
   ["影片详情","Film details"],
   ["返回片库","Back to library"],
   ["查看详情","View details"],

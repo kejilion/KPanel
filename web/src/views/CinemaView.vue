@@ -32,7 +32,6 @@ const route = useRoute()
 const router = useRouter()
 const i18n = useI18n()
 const windowVisible = inject(desktopWindowVisibleKey, undefined)
-const windowed = Boolean(windowVisible)
 const explicitLocation = computed(() => typeof route.query.path === 'string' || typeof route.query.hostId === 'string')
 const hostId = computed(() => explicitLocation.value ? (typeof route.query.hostId === 'string' ? route.query.hostId : '') : mediaLocations.cinemaLocation?.hostId ?? '')
 const path = computed(() => typeof route.query.path === 'string' ? (route.query.path === '/' ? '/' : normalizeGalleryRoot(route.query.path) ?? CINEMA_ROOT) : explicitLocation.value ? CINEMA_ROOT : mediaLocations.cinemaLocation?.path ?? CINEMA_ROOT)
@@ -323,9 +322,10 @@ onBeforeUnmount(() => {
 
 <template>
   <main class="page cinema-page" :inert="Boolean(playingPath)">
-    <header v-if="!windowed" class="cinema-heading">
+    <header v-show="!selectedFilm" class="cinema-heading">
       <img class="cinema-heading__icon" :src="'/desktop-icons/cinema-kpanel-flat-v3.webp'" alt="" />
       <div>
+        <span class="cinema-wordmark">KPanel <span>CINEMA</span></span>
         <h1>{{ i18n.t('route.cinema') }}</h1>
         <p>{{ phrase('自己的片库，随时开场') }}</p>
       </div>
@@ -333,9 +333,11 @@ onBeforeUnmount(() => {
         <FolderOpen :size="17" /> {{ phrase('文件管理') }}
       </button>
     </header>
-    <h1 v-else class="sr-only">{{ i18n.t('route.cinema') }}</h1>
 
-    <section v-show="!selectedFilm" class="cinema-source" :aria-label="phrase('影片来源')">
+
+    <details v-show="!selectedFilm" class="cinema-source-panel">
+      <summary><FolderOpen :size="16" /> {{ phrase('影片来源') }}<span>{{ fileHostLabel(hostId, hosts, phrase('本机')) }} · {{ path }}</span></summary>
+    <section class="cinema-source" :aria-label="phrase('影片来源')">
       <HostSwitcher
         ref="picker" :hosts="hosts" :active-id="selectedHost?.id ?? hostId"
         :label="fileHostLabel(hostId, hosts, phrase('本机'))" :loading="hostsLoading" :error="hostsError"
@@ -348,8 +350,9 @@ onBeforeUnmount(() => {
       </form>
       <button class="icon-button" type="button" :aria-label="phrase('上级目录')" :title="phrase('上级目录')" :disabled="path === '/' || saving" @click="browse(galleryParentPath(path))"><FolderOpen :size="17" /></button>
       <button class="icon-button" type="button" :aria-label="phrase('刷新')" :title="phrase('刷新')" :disabled="loading || saving" @click="load"><RefreshCw :size="17" /></button>
-      <button v-if="windowed" class="button button--secondary" type="button" @click="openFiles()"><FolderOpen :size="17" /> {{ phrase('文件管理') }}</button>
     </section>
+
+    </details>
 
     <section v-if="selectedFilm" class="cinema-detail" :aria-label="phrase('影片详情')" @keydown.esc.stop="!editing && closeDetail()">
       <div class="cinema-detail__backdrop" aria-hidden="true">
@@ -371,11 +374,14 @@ onBeforeUnmount(() => {
             <button class="button cinema-feature__play" type="button" @click="play(selectedFilm)"><Play :size="19" /> {{ phrase('播放影片') }}</button>
             <button class="button cinema-feature__edit" type="button" @click="edit(selectedFilm)"><Pencil :size="16" /> {{ phrase('编辑影片') }}</button>
           </div>
+          <details class="cinema-detail__technical">
+          <summary>{{ phrase('文件信息') }}</summary>
           <dl class="cinema-detail__metadata">
             <div><dt>{{ phrase('文件名') }}</dt><dd>{{ selectedFilm.entry.name }}</dd></div>
             <div><dt>{{ phrase('所在目录') }}</dt><dd>{{ selectedFilm.folder }}</dd></div>
             <div v-if="selectedFilm.time"><dt>{{ phrase('修改时间') }}</dt><dd>{{ formatDateTime(selectedFilm.entry.modifiedAt) }}</dd></div>
           </dl>
+          </details>
         </div>
       </div>
     </section>
@@ -460,18 +466,22 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.cinema-page { display: block; container-type: inline-size; padding: clamp(14px, 2vw, 24px); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); color: var(--text); }
+.cinema-page { display: block; container-type: inline-size; padding: clamp(14px, 2vw, 24px); border: 1px solid var(--border); border-radius: var(--radius-lg); background: #0c0e12; color: var(--text); --surface: #15181e; --surface-raised: #20242c; --surface-subtle: #111319; --text: #f3f4f6; --text-soft: #b8bfca; --border: #343a46; }
 .cinema-heading, .cinema-feature__actions, .cinema-source, .cinema-folders, .cinema-toolbar, .cinema-toolbar__controls, .cinema-layout, .cinema-card__footer { display: flex; align-items: center; gap: 10px; }
-.cinema-heading { flex-wrap: wrap; margin-bottom: 20px; }
-.cinema-heading__icon { width: 52px; height: 52px; border-radius: 22%; }
+.cinema-heading { flex-wrap: wrap; margin-bottom: 24px; padding-bottom: 22px; border-bottom: 1px solid #252a33; }
+.cinema-heading__icon { width: 46px; height: 46px; border-radius: 22%; }
 .cinema-heading__files { margin-inline-start: auto; }
 h1, h2, h3, p { margin: 0; }
-h1 { font-size: 26px; }
+h1 { display: inline; margin-inline-end: 12px; font-size: 22px; }
 p { color: var(--text-soft); line-height: 1.55; }
 .cinema-heading p, .cinema-toolbar p, .cinema-note { font-size: 14px; }
-.cinema-feature__actions { flex-wrap: wrap; margin-top: 16px; }
-.cinema-feature__play { background: #d9f4f5; color: #142c36; }
-.cinema-feature__edit { background: #233441; border-color: #5c707e; color: #fff; }
+.cinema-heading p { display: inline; }
+.cinema-wordmark { display: block; margin-bottom: 5px; color: #f5f7fb; font-size: 13px; font-weight: 700; }
+.cinema-wordmark span { margin-inline-start: 7px; color: #8bc9e0; font-size: 12px; letter-spacing: .16em; }
+.cinema-feature__actions { flex-wrap: wrap; gap: 12px; margin-top: 28px; }
+.cinema-feature__play { min-height: 48px; padding-inline: 25px; border-color: #fff; background: #fff; color: #111820; font-size: 16px; font-weight: 700; }
+.cinema-feature__play :deep(svg) { fill: currentColor; }
+.cinema-feature__edit { min-height: 48px; padding-inline: 18px; background: #26313dd9; border-color: #7b8795; color: #fff; font-size: 14px; }
 .cinema-source, .cinema-folders { margin-top: 14px; flex-wrap: wrap; }
 .cinema-source { margin-bottom: 16px; }
 .cinema-location { flex: 1 1 220px; display: flex; gap: 8px; min-width: 0; }
@@ -485,7 +495,7 @@ p { color: var(--text-soft); line-height: 1.55; }
 .cinema-search { display: flex; align-items: center; gap: 7px; }
 .cinema-layout { gap: 4px; }
 .cinema-layout [aria-pressed=true] { background: var(--brand-soft); color: var(--text); border-color: var(--brand); }
-.cinema-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(145px, 100%), 1fr)); gap: 22px 16px; margin: 0; padding: 0; list-style: none; }
+.cinema-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(145px, 100%), 1fr)); gap: 24px 18px; margin: 0; padding: 0; list-style: none; }
 .cinema-grid--wide { grid-template-columns: repeat(auto-fill, minmax(min(235px, 100%), 1fr)); }
 .cinema-card { min-width: 0; border: 1px solid transparent; border-radius: var(--radius-md); background: transparent; }
 .cinema-card__play { display: block; width: 100%; text-align: start; padding: 0; background: none; color: var(--text); border: 0; font: inherit; cursor: pointer; }
@@ -514,26 +524,26 @@ p { color: var(--text-soft); line-height: 1.55; }
   .cinema-search { flex: 1 1 100%; }
   .cinema-search input { flex: 1; }
 }
-.cinema-detail { position: relative; isolation: isolate; overflow: hidden; border-radius: var(--radius-lg); background: #101923; color: #f6f8fb; min-height: 510px; }
+.cinema-detail { position: relative; isolation: isolate; overflow: hidden; border-radius: var(--radius-lg); background: #0c0e12; color: #f6f8fb; min-height: 590px; }
 .cinema-detail__backdrop { position: absolute; z-index: -2; inset: 0; background: linear-gradient(135deg, #173c46, #101923); }
-.cinema-detail__backdrop > img { width: 100%; height: 100%; object-fit: cover; opacity: .48; }
-.cinema-detail::before { content: ''; position: absolute; z-index: -1; inset: 0; background: linear-gradient(90deg, rgb(9 16 24 / 70%), rgb(9 16 24 / 78%)), linear-gradient(0deg, #101923, transparent); }
+.cinema-detail__backdrop > img { width: 100%; height: 100%; object-fit: cover; opacity: .92; }
+.cinema-detail::before { content: ''; position: absolute; z-index: -1; inset: 0; background: linear-gradient(90deg, #0c0e12 0%, rgb(12 14 18 / 92%) 24%, rgb(12 14 18 / 63%) 57%, rgb(12 14 18 / 12%) 100%), linear-gradient(0deg, #0c0e12 0%, transparent 75%); }
 .cinema-detail__back { margin: 20px; background: #1d2b39; border-color: #677888; color: #fff; }
-.cinema-detail__content { display: grid; grid-template-columns: minmax(140px, 220px) minmax(0, 1fr); align-items: center; gap: clamp(24px, 5cqi, 58px); padding: 16px clamp(22px, 5cqi, 56px) 48px; }
+.cinema-detail__content { display: grid; grid-template-columns: minmax(140px, 210px) minmax(0, 1fr); align-items: center; gap: clamp(24px, 5cqi, 58px); padding: 60px clamp(22px, 5cqi, 56px) 64px; }
 .cinema-detail__poster { position: relative; display: grid; place-items: center; aspect-ratio: 2 / 3; overflow: hidden; border: 1px solid #657786; border-radius: var(--radius-md); background: #1c2d3c; color: #a8d1dc; box-shadow: var(--shadow-lg); }
 .cinema-detail__poster > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .cinema-detail__info { min-width: 0; }
 .cinema-detail__eyebrow { display: flex; align-items: center; gap: 8px; color: #bbdce2; font-size: 13px; }
-.cinema-detail h2 { margin: 14px 0; font-size: clamp(28px, 4cqi, 46px); line-height: 1.2; overflow-wrap: anywhere; }
+.cinema-detail h2 { margin: 14px 0; max-width: 18ch; font-size: clamp(30px, 5cqi, 58px); font-weight: 700; line-height: 1.2; overflow-wrap: anywhere; }
 .cinema-detail__tags { display: flex; flex-wrap: wrap; gap: 8px; }
 .cinema-detail__tags span { padding: 5px 9px; border: 1px solid #73828e; border-radius: var(--radius-sm); color: #e1e9ee; font-size: 13px; }
-.cinema-detail__metadata { display: grid; gap: 14px; margin: 28px 0 0; padding-top: 22px; border-top: 1px solid #52616e; font-size: 14px; }
+.cinema-detail__metadata { display: grid; gap: 14px; margin: 18px 0 0; padding-top: 16px; border-top: 1px solid #52616e; font-size: 14px; }
 .cinema-detail__metadata div { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 12px; }
 .cinema-detail__metadata dt { color: #b7c4ce; }
 .cinema-detail__metadata dd { margin: 0; overflow-wrap: anywhere; line-height: 1.5; }
 .cinema-card__poster { transition: transform var(--motion-duration-fast) var(--motion-ease-standard), box-shadow var(--motion-duration-fast) var(--motion-ease-standard); }
 .cinema-card__poster > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.cinema-card__play:is(:hover,:focus-visible) .cinema-card__poster { transform: translateY(-3px); box-shadow: var(--shadow-md); }
+.cinema-card__play:is(:hover,:focus-visible) .cinema-card__poster { transform: translateY(-4px) scale(1.02); box-shadow: var(--shadow-lg); }
 .cinema-card__play:focus-visible { outline: 2px solid var(--brand); outline-offset: 4px; border-radius: var(--radius-md); }
 @container (max-width: 560px) {
   .cinema-detail__content { grid-template-columns: 100px minmax(0, 1fr); align-items: start; gap: 18px; padding: 8px 18px 28px; }
@@ -544,4 +554,19 @@ p { color: var(--text-soft); line-height: 1.55; }
 @container (max-width: 360px) { .cinema-detail__content { grid-template-columns: 1fr; } .cinema-detail__poster { width: 120px; } }
 @media (prefers-reduced-motion: reduce) { .cinema-card__poster { transition: none; } }
 .cinema-card__featured { position: absolute; top: 8px; left: 8px; padding: 4px 7px; border-radius: var(--radius-sm); background: #d9f4f5; color: #142c36; font-size: 12px; }
+.cinema-source-panel { margin-bottom: 20px; border-bottom: 1px solid #252a33; }
+.cinema-source-panel > summary { display: flex; align-items: center; gap: 10px; min-height: 44px; padding-bottom: 12px; cursor: pointer; color: #e1e6ee; font-size: 14px; }
+.cinema-source-panel > summary::after { content: '+'; margin-inline-start: auto; font-size: 20px; }
+.cinema-source-panel[open] > summary::after { content: '−'; }
+.cinema-source-panel > summary span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #aeb8c6; font-size: 13px; }
+.cinema-source-panel summary:focus-visible, .cinema-detail__technical summary:focus-visible { outline: 2px solid #a7d8ee; outline-offset: 3px; }
+.cinema-detail__technical { margin-top: 32px; max-width: 520px; }
+.cinema-detail__technical > summary { width: fit-content; min-height: 44px; padding: 12px 0; color: #c9d2de; font-size: 14px; cursor: pointer; }
+.cinema-detail__tags span { background: #111820b3; }
+@container (max-width: 560px) {
+  .cinema-detail::before { background: linear-gradient(0deg, #0c0e12 40%, rgb(12 14 18 / 48%) 100%); }
+  .cinema-detail__content { padding-top: 32px; }
+  .cinema-source-panel > summary span { display: none; }
+  .cinema-heading p { display: block; margin-top: 4px; }
+}
 </style>
