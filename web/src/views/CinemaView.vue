@@ -61,6 +61,7 @@ const editFeatured = ref(false)
 const editError = ref('')
 const saving = ref(false)
 const metadata = ref(new Map<string, CinemaMetadata>())
+const metadataPanel = ref<InstanceType<typeof CinemaMetadataPanel>>()
 function filmTitle(item: GalleryItem) { return metadata.value.get(item.entry.path)?.title ?? cinemaTitle(item.entry.name) }
 function filmMetadata(item: GalleryItem) { return metadata.value.get(item.entry.path) }
 let listing: AbortController | undefined
@@ -334,7 +335,7 @@ onBeforeUnmount(() => {
       <button v-if="windowed" class="button button--secondary" type="button" @click="openFiles()"><FolderOpen :size="17" /> {{ phrase('文件管理') }}</button>
     </section>
 
-    <CinemaMetadataPanel :items="films" :host="hostId" :selected="editing" :scanning="loading" :visible="windowVisible !== false" @update="metadata = $event" />
+    <CinemaMetadataPanel ref="metadataPanel" :items="films" :host="hostId" :selected="editing" :scanning="loading" :visible="windowVisible !== false" @update="metadata = $event" />
     <section v-if="featured" class="cinema-feature" :aria-label="phrase('精选影片')">
       <div class="cinema-feature__art" aria-hidden="true">
         <Film :size="84" />
@@ -362,6 +363,7 @@ onBeforeUnmount(() => {
 
     <form v-if="editing" class="cinema-editor" :aria-label="phrase('编辑影片')" @submit.prevent="save" @keydown.esc.stop="!saving && (editing = undefined)">
       <header><h2>{{ phrase('编辑影片') }}</h2><button class="icon-button" type="button" :aria-label="phrase('关闭')" :disabled="saving" @click="editing = undefined"><X :size="18" /></button></header>
+      <button class="button button--secondary" type="button" @click="metadataPanel?.focusSearch()">{{ phrase('搜索资料') }}</button>
       <label>{{ phrase('影片名称') }}<input ref="editorTitle" v-model="editTitle" required maxlength="240" :disabled="saving" /></label>
       <p>{{ phrase('改名会同步修改服务器上的视频文件名，保留扩展名。') }}</p>
       <label>{{ phrase('影片封面') }}

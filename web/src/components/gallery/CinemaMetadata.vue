@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { api, ApiError } from '@/lib/api'
 import { siThemoviedatabase } from 'simple-icons'
 import { useI18n } from '@/i18n'
@@ -18,6 +18,7 @@ const provider = ref<CinemaProvider>('wikipedia')
 const kind = ref<'movie' | 'tv'>('movie')
 const credential = ref('')
 const title = ref('')
+const searchInput = ref<HTMLInputElement>()
 const results = ref<CinemaMetadata[]>([])
 const cache = ref(readCinemaMetadataCache())
 const busy = ref(false)
@@ -98,6 +99,8 @@ watch(() => props.scanning, value => { if (!value && enabled.value) void scan() 
 watch(enabled, value => { if (value) void scan(); else stop() })
 watch(credential, () => { stop(); results.value = [] })
 onBeforeUnmount(() => { stop(); credential.value = '' })
+async function focusSearch() { open.value = true; await nextTick(); searchInput.value?.focus(); searchInput.value?.scrollIntoView?.({ block: 'center', behavior: 'auto' }) }
+defineExpose({ focusSearch })
 publish()
 </script>
 
@@ -120,7 +123,7 @@ publish()
       </div>
       <p>{{ phrase('每轮最多处理前 48 部影片，仅自动应用片名和年份明确匹配的结果。编辑影片可手动选择或清除资料。') }}</p>
       <form v-if="target" class="metadata__controls" @submit.prevent="search">
-        <label>{{ phrase('匹配片名') }}<input v-model="title" maxlength="240" required /></label>
+        <label>{{ phrase('匹配片名') }}<input ref="searchInput" v-model="title" maxlength="240" required /></label>
         <button class="button button--primary" :disabled="busy || (provider === 'tmdb' && !credential.trim())">{{ phrase('搜索资料') }}</button>
         <button class="button button--secondary" type="button" :disabled="busy" @click="remove">{{ phrase('清除匹配') }}</button>
       </form>
