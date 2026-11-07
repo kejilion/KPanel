@@ -105,6 +105,7 @@ async function lyricsSetup() {
 }
 it('keeps programmatic following active and pauses only after actual lyric scrolling', async () => {
   const { player, view, panel, following } = await lyricsSetup()
+  await view.findAll('.music-tabs button')[1]!.trigger('click'); await flushPromises()
   player.state.position = 6; await flushPromises()
   expect(panel.element.scrollTop).toBe(210)
   await panel.trigger('scroll'); expect(following()).toBe('true')
@@ -113,6 +114,17 @@ it('keeps programmatic following active and pauses only after actual lyric scrol
   player.state.position = 8; await flushPromises(); expect(panel.element.scrollTop).toBe(300)
   await view.get('.music-lyric-section .music-section-heading button').trigger('click'); await flushPromises()
   expect(following()).toBe('true'); expect(panel.element.scrollTop).toBe(290)
+})
+it('always follows sidebar lyrics, including after leaving a paused focused view', async () => {
+  const { player, view, panel } = await lyricsSetup()
+  expect(view.find('.music-section-heading button[aria-pressed]').exists()).toBe(false)
+  player.state.position = 6; await flushPromises(); expect(panel.element.scrollTop).toBe(210)
+  panel.element.scrollTop = 300; await panel.trigger('scroll'); await flushPromises()
+  expect(panel.element.scrollTop).toBe(210)
+  await view.findAll('.music-tabs button')[1]!.trigger('click'); await flushPromises()
+  panel.element.scrollTop = 300; await panel.trigger('scroll')
+  await view.findAll('.music-tabs button')[0]!.trigger('click'); await flushPromises()
+  player.state.position = 8; await flushPromises(); expect(panel.element.scrollTop).toBe(290)
 })
 it('re-centers on entering focused view and resumes following when selecting a lyric', async () => {
   const { player, view, panel, following } = await lyricsSetup()
