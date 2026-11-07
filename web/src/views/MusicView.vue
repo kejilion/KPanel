@@ -164,13 +164,11 @@ onBeforeUnmount(() => { destroyed = true; listing?.abort(); lyricResize?.disconn
     </header>
     <h1 v-else class="sr-only">{{ i18n.t('route.music') }}</h1>
     <nav class="music-tabs" :aria-label="phrase('音乐导航')"><button :aria-current="tab === 'library' ? 'page' : undefined" @click="tab = 'library'"><Disc3 :size="18" /> 音乐库</button><button :aria-current="tab === 'listen' ? 'page' : undefined" @click="tab = 'listen'"><Music2 :size="18" /> 正在播放</button><button :aria-current="tab === 'queue' ? 'page' : undefined" @click="tab = 'queue'"><ListMusic :size="18" /> 播放队列 <span>{{ state.queue.length }}</span></button></nav>
-    <template v-if="tab === 'library'">
-      <div class="music-location"><div class="music-location__source"><HostSwitcher ref="picker" :hosts="hosts" :active-id="activeHost?.id || hostId" :label="hostLabel" :error="hostsError" :status-of="h => ({ ...fileHostStatus(h), label: phrase(fileHostStatus(h).label) })" @select="selectHost" @refresh="loadHosts" /><button class="music-text-button" :title="path" @click="locationOpen = !locationOpen" :aria-expanded="locationOpen"><FolderOpen :size="16" /><span>{{ path }}</span><ChevronRight :size="15" /></button></div><div class="music-location__actions"><button class="button button--secondary" :aria-label="phrase('刷新')" :disabled="loading" @click="load"><RefreshCw :size="17" /></button><button class="music-text-button" @click="files">文件管理</button></div></div>
-      <form v-if="locationOpen" class="music-location-form" @submit.prevent="openLocation"><input ref="locationInput" v-model="location" :aria-label="phrase('音乐文件夹')" spellcheck="false" /><button class="button button--secondary" type="submit">打开</button><button class="button button--secondary" type="button" :disabled="path === '/'" @click="navigate(galleryParentPath(path))">上级文件夹</button></form>
-    </template>
     <div class="music-layout" :class="{ 'music-layout--focus': tab === 'listen' }">
       <section v-if="tab !== 'listen'" class="music-library">
         <template v-if="tab === 'library'">
+          <div class="music-location"><div class="music-location__source"><HostSwitcher ref="picker" :hosts="hosts" :active-id="activeHost?.id || hostId" :label="hostLabel" :error="hostsError" :status-of="h => ({ ...fileHostStatus(h), label: phrase(fileHostStatus(h).label) })" @select="selectHost" @refresh="loadHosts" /><button class="music-text-button" :title="path" @click="locationOpen = !locationOpen" :aria-expanded="locationOpen"><FolderOpen :size="16" /><span>{{ path }}</span><ChevronRight :size="15" /></button></div><div class="music-location__actions"><button class="button button--secondary" :aria-label="phrase('刷新')" :disabled="loading" @click="load"><RefreshCw :size="17" /></button><button class="music-text-button" @click="files">文件管理</button></div></div>
+          <form v-if="locationOpen" class="music-location-form" @submit.prevent="openLocation"><input ref="locationInput" v-model="location" :aria-label="phrase('音乐文件夹')" spellcheck="false" /><button class="button button--secondary" type="submit">打开</button><button class="button button--secondary" type="button" :disabled="path === '/'" @click="navigate(galleryParentPath(path))">上级文件夹</button></form>
           <div class="music-library__hero"><div class="music-library__hero-info"><h2>{{ path.split('/').filter(Boolean).pop() || phrase('音乐库') }}</h2><p>{{ allTracks.length }} {{ phrase('首歌曲') }} <span v-if="folders.length"> · {{ folders.length }} {{ phrase('个文件夹') }}</span></p></div><div class="music-library__hero-actions"><button class="button button--primary" :disabled="!tracks.length" @click="player.shuffle(false); player.replaceQueue(tracks)"><Play :size="17" /> 播放全部</button><button class="music-icon-button" :aria-label="phrase('随机播放全部')" :disabled="!tracks.length" @click="player.shuffle(true); player.replaceQueue(tracks, tracks[Math.floor(Math.random() * tracks.length)])"><Shuffle :size="19" /></button></div></div>
           <div class="music-search"><label><Search :size="18" /><input v-model="search" type="search" :placeholder="phrase('搜索歌曲或歌手')" :aria-label="phrase('搜索歌曲或歌手')" /></label><select v-model="sort" :aria-label="phrase('歌曲排序')"><option value="name">按歌名</option><option value="artist">按歌手</option></select></div>
           <p v-if="loading" role="status" class="music-empty">正在读取音乐…</p>
@@ -347,10 +345,13 @@ input[type=range] { accent-color:var(--music-accent); cursor:pointer; min-height
 .music-library:has(.music-empty),.music-library:has(.music-error) { overflow-y:auto; overscroll-behavior:contain; }
 .music-tracks,.music-queue { flex:1 1 0; min-height:0; max-height:none; overscroll-behavior:contain; }
 .music-library .music-folders { max-height:30%; overflow-y:auto; }
-.music-layout:not(.music-layout--focus) .music-now { display:flex; flex-direction:column; min-height:0; overflow:hidden; }
-.music-layout:not(.music-layout--focus) .music-now__album { display:grid; grid-template-rows:minmax(0,1fr); grid-auto-rows:max-content; justify-items:center; flex:0 0 65%; min-height:0; overflow-y:auto; overscroll-behavior:contain; }
-.music-layout:not(.music-layout--focus) .music-cover { width:auto; height:100%; max-width:100%; max-height:180px; margin-bottom:8px; }
-.music-layout:not(.music-layout--focus) .music-provenance { gap:4px; margin:8px 0; }
+.music-layout:not(.music-layout--focus) .music-now { padding:16px; display:flex; flex-direction:column; min-height:0; overflow:hidden; }
+.music-layout:not(.music-layout--focus) .music-now__album { display:grid; grid-template-rows:minmax(0,248px); grid-auto-rows:max-content; justify-items:center; align-content:center; flex:0 0 75%; min-height:0; overflow-y:auto; overscroll-behavior:contain; }
+.music-layout:not(.music-layout--focus) .music-cover { width:auto; height:calc(100% - 8px); max-width:100%; max-height:240px; margin-bottom:8px; }
+.music-layout:not(.music-layout--focus) .music-provenance { gap:4px; margin:4px 0; }
+.music-layout:not(.music-layout--focus) .music-now__album > .music-eyebrow { display:none; }
+.music-layout:not(.music-layout--focus) .music-now__album h2 { font-size:18px; margin-block:2px; }
+.music-layout:not(.music-layout--focus) .music-now__album > p { font-size:13px; margin-block:2px; }
 .music-layout:not(.music-layout--focus) .music-lyric-section { display:flex; flex-direction:column; flex:1 1 0; min-height:0; margin-top:12px; padding-top:10px; }
 .music-layout:not(.music-layout--focus) .music-lyrics { flex:1 1 0; min-height:0; max-height:none; overscroll-behavior:contain; }
 @container (max-width:680px) {
