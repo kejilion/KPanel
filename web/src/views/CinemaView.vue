@@ -333,6 +333,7 @@ watch([path, hostId], () => {
 }, { immediate: true })
 watch([search, order, filmState], () => { shown.value = 48 })
 watch(selectedPath, async (value, previous) => {
+  if (value !== previous) playingPath.value = ''
   if (!value && previous) {
     editing.value = undefined
     await nextTick()
