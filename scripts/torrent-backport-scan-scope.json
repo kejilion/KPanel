@@ -12,12 +12,15 @@
     "scripts/build-mcp-clients.sh": "29b0e82668f585aa46d10432912e1050954430cfac6a0550dd408d728979e113",
     "Makefile": "f651d8ce2f10adc487118e1ccb476615347661922a8c8ef529f1b8013da5d53e"
   },
-  "closureSha256": "2c626d3cbe28d03a0f65dde974bc735383565e855f95870b456344b29f36b657",
-  "firstPartySourceSha256": "63cc60db551d502bb00fd855c8837be531a00d3e32cef5722aed0a2513dada98",
+  "closureSha256": "c942ed6d186f8f6ad2cf3a6ca86c4c0f033623a887dc3cda8ba24e8b47b76391",
+  "firstPartySourceSha256": "71b20391a5c7327671bcef3f5147b4447fe76620ad7097e06fd609b2e753ed73",
   "buildTargetHashEncoding": "UTF-8 with LF line endings",
   "closureEncoding": "SHA256 of JSON.stringify of ordered OS/architecture rows; packages sorted by import path; path, module and selected version; stdlib go1.27.3; main-module packages additionally bind relative sourceDirectory and sorted actual GoFiles.",
   "firstPartySourceEncoding": "SHA256 of JSON.stringify of all cmd/internal Go source path and SHA256 pairs sorted by relative path; contents normalized to UTF-8 LF. All actual main-module production GoFiles must be covered. Generated .pb.go and .proto files or symlinks require a new review.",
   "review": {
+    "cinemaMetadataSourceQualificationSha256": "f17bb7b5517923b1baa567d4edb4bb3e3c866a96fb7573b8a728c6ff8d71c9a2",
+    "cinemaMetadataSourceObservationSha256": "4a4444cef358b98d878d667d36d0a152b379f2edbc476cbe5a31627592063e02",
+    "cinemaMetadataSourceSummary": "Independent read-only Go 1.27.3 qualification reproduced the original bf4b175d source and closure observations, then verified 1307 first-party Go sources against exact Git blobs and all six actual/original production closures for metadata candidate 9e6f3388 and UI candidate 174f08bb. Only the two Linux closures add cinemametadata and Panel cinema_metadata.go; four other targets, 113 production modules, selected graph, module/vendor and build-target inputs are unchanged. Rebind only the two derived source/closure identities. All 38 findings, dispositions and original 2026-11-06 through 2026-11-20 observation window remain unchanged. This qualification does not claim new scanning, CI, L2/L3, release or deployment success.",
     "transportFixtureEvidenceSha256": "6aa253aa313d8146a107598633bcc3642e3d5143da277b6909ad07564ee27687",
     "transportFixtureSummary": "Independent blind read-only review qualified the existing monitoring memory test fixture transport correction: browser center declares its actual local HTTP transport; remote TLS/Noise remains intact. Explicit 200 admission and unconditional failure cleanup preserve two-slot/429/cancellation/recovery assertions. Canonical firstPartySources changes only this existing test; all six saved production GoFiles and immutable module/build inputs are unchanged. Closure, findings and original dates remain unchanged. This is fixture/source binding qualification only; final full L2 remains required.",
     "architectureClosureEvidenceSha256": "75c1954d44e865fa228e65876b886dd5dcade292a4f8de2669a93d0e3e91a445",
