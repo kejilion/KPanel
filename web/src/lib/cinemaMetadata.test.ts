@@ -1,12 +1,17 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from 'vitest'
-import { automaticCinemaMatch, cinemaSearchTitle, cinemaMetadataImage, cinemaSourceURL, readCinemaMetadataCache, saveCinemaMetadataCache, readCinemaMetadataSettings, saveCinemaMetadataSettings, readCinemaMetadataAttempts, saveCinemaMetadataAttempts, type CinemaMetadata } from './cinemaMetadata'
+import { automaticCinemaMatch, cinemaQueryTitle, cinemaSearchTitle, cinemaMetadataImage, cinemaSourceURL, readCinemaMetadataCache, saveCinemaMetadataCache, readCinemaMetadataSettings, saveCinemaMetadataSettings, readCinemaMetadataAttempts, recordCinemaMetadataAttempt, saveCinemaMetadataAttempts, type CinemaMetadata } from './cinemaMetadata'
 const movie: CinemaMetadata = { provider: 'tmdb', id: 27205, kind: 'movie', title: '盗梦空间', originalTitle: 'Inception', year: '2010', overview: 'A dream', poster: '/p.jpg', url: 'https://www.themoviedb.org/movie/27205' }
 beforeEach(() => localStorage.clear())
 describe('cinema source matching', () => {
   it('extracts title/year/episode without sending paths', () => {
     expect(cinemaSearchTitle('Inception.2010.1080p.BluRay.x264.mkv')).toEqual({ title: 'Inception', year: '2010', kind: 'movie' })
     expect(cinemaSearchTitle('The.Expanse.S01E02.1080p.mkv')).toEqual({ title: 'The Expanse', year: undefined, kind: 'tv' })
+  })
+  it('fits Chinese and emoji titles to the server UTF8 limit without splitting characters', () => {
+    expect(cinemaSearchTitle('影'.repeat(81) + '.mp4').title).toBe('影'.repeat(80))
+    expect(cinemaQueryTitle('🎬'.repeat(61))).toBe('🎬'.repeat(60))
+    expect(cinemaQueryTitle(' A\nB ')).toBe('A B')
   })
   it('requires an unambiguous exact title and matching year', () => {
     expect(automaticCinemaMatch('Inception.2010.mkv', [movie])).toEqual(movie)
@@ -53,5 +58,12 @@ describe('cinema source matching', () => {
     localStorage.setItem('kpanel:cinema-metadata-attempts:v1', JSON.stringify([['old', 1], ['bad', 'forever'], ['good', Date.now() + 60_000]]))
     expect([...readCinemaMetadataAttempts().keys()]).toEqual(['good'])
     localStorage.setItem('kpanel:cinema-metadata-attempts:v1', '{bad'); expect(readCinemaMetadataAttempts().size).toBe(0)
+  })
+  it('also bounds live cooldown memory across directory changes and expires old entries', () => {
+    const records = new Map([['expired', 1]])
+    for (let i = 0; i < 1200; i++) recordCinemaMetadataAttempt(records, `key${i}`, Date.now() + 60_000)
+    expect(records.size).toBe(1000); expect(records.has('expired')).toBe(false); expect(records.has('key1199')).toBe(true)
+    for (let i = 0; i < 100; i++) recordCinemaMetadataAttempt(records, 'x'.repeat(4900) + i, Date.now() + 60_000)
+    expect(JSON.stringify([...records]).length).toBeLessThanOrEqual(256 * 1024)
   })
 })

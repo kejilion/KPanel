@@ -25,6 +25,16 @@ export interface CinemaQuery {
   credential?: string
   id?: number
 }
+export function cinemaQueryTitle(title: string) {
+  const encoder = new TextEncoder()
+  let value = ''; let bytes = 0
+  for (const character of title.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').trim()) {
+    bytes += encoder.encode(character).length
+    if (bytes > 240) break
+    value += character
+  }
+  return value.trim()
+}
 export function cinemaSearchTitle(name: string) {
   const stem = name.replace(/\.[a-z0-9]{2,5}$/i, '')
   const normalizedStem = stem.replace(/[._]/g, ' ')
@@ -36,7 +46,7 @@ export function cinemaSearchTitle(name: string) {
     .replace(/\bS\d{1,2}(?:E\d{1,3})?\b.*$/i, '')
     .replace(/\b(?:2160p|1080p|720p|480p|WEB[ -]?DL|BluRay|BDRip|HDRip|x26[45]|HEVC|AVC)\b.*$/i, '')
     .replace(/[\[【].*?[\]】]/g, '').replace(/[()（）]/g, ' ').trim()
-  return { title: title.slice(0, 240), year, kind: episode ? 'tv' as const : 'movie' as const }
+  return { title: cinemaQueryTitle(title), year, kind: episode ? 'tv' as const : 'movie' as const }
 }
 function normalized(title: string) {
   return title.replace(/\s*[（(](?:\d{4}\s*)?(?:film|TV series|电影|電影|电视剧|電視劇)[）)]$/i, '')
@@ -121,4 +131,16 @@ export function saveCinemaMetadataAttempts(attempts: ReadonlyMap<string, number>
   let raw = JSON.stringify(entries)
   while (raw.length > 256 * 1024 && entries.length) { entries.shift(); raw = JSON.stringify(entries) }
   try { localStorage.setItem(ATTEMPTS_KEY, raw); return true } catch { return false }
+}
+// Bound the live map as well as its serialized copy across directory/host changes.
+export function recordCinemaMetadataAttempt(attempts: Map<string, number>, key: string, until: number) {
+  const now = Date.now()
+  for (const [identity, deadline] of attempts) if (deadline <= now) attempts.delete(identity)
+  attempts.delete(key); attempts.set(key, until)
+  while (attempts.size > 1000) attempts.delete(attempts.keys().next().value!)
+  let size = 2
+  for (const [identity, deadline] of [...attempts].reverse()) {
+    size += JSON.stringify([identity, deadline]).length + 1
+    if (size > 256 * 1024) attempts.delete(identity)
+  }
 }

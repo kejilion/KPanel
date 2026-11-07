@@ -5,10 +5,10 @@ import { siThemoviedatabase } from 'simple-icons'
 import GalleryImage from './GalleryImage.vue'
 import { useI18n } from '@/i18n'
 import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
-import { automaticCinemaMatch, cinemaExactMatches, cinemaMetadataImage, cinemaMetadataKey, cinemaSearchTitle, cinemaSourceURL, readCinemaMetadataAttempts, readCinemaMetadataCache, readCinemaMetadataSettings, saveCinemaMetadataAttempts, saveCinemaMetadataCache, saveCinemaMetadataSettings, type CinemaMetadata, type CinemaProvider } from '@/lib/cinemaMetadata'
+import { automaticCinemaMatch, cinemaExactMatches, cinemaMetadataImage, cinemaMetadataKey, cinemaQueryTitle, cinemaSearchTitle, cinemaSourceURL, readCinemaMetadataAttempts, readCinemaMetadataCache, readCinemaMetadataSettings, recordCinemaMetadataAttempt, saveCinemaMetadataAttempts, saveCinemaMetadataCache, saveCinemaMetadataSettings, type CinemaMetadata, type CinemaProvider } from '@/lib/cinemaMetadata'
 import type { GalleryItem } from '@/lib/gallery'
 
-const props = defineProps<{ items: GalleryItem[]; host: string; selected?: GalleryItem; scanning: boolean; visible: boolean; limit?: number }>()
+const props = defineProps<{ items: GalleryItem[]; candidates?: GalleryItem[]; host: string; selected?: GalleryItem; scanning: boolean; visible: boolean; limit?: number }>()
 const emit = defineEmits<{ update: [metadata: Map<string, CinemaMetadata>] }>()
 const i18n = useI18n()
 function phrase(value: string) { phraseCatalogVersion.value; return translatePhrase(value) }
@@ -62,7 +62,7 @@ async function lookup(name: string, type: 'movie' | 'tv', signal: AbortSignal, m
   const sources: CinemaProvider[] = provider.value === 'auto' ? type === 'tv' ? ['tvmaze', 'wikipedia'] : ['wikipedia'] : [provider.value]
   const items: CinemaMetadata[] = []; let failure: unknown; let succeeded = false
   for (const source of sources) {
-    const query = { provider: source, title: name, kind: source === 'tvmaze' ? 'tv' as const : type, language: language.value, ...(source === 'tmdb' ? { credential: credential.value.trim() } : {}) }
+    const query = { provider: source, title: cinemaQueryTitle(name), kind: source === 'tvmaze' ? 'tv' as const : type, language: language.value, ...(source === 'tmdb' ? { credential: credential.value.trim() } : {}) }
     const memoKey = JSON.stringify(query)
     try {
       const hit = memo.get(memoKey)
@@ -79,7 +79,7 @@ async function lookup(name: string, type: 'movie' | 'tv', signal: AbortSignal, m
 }
 async function detailed(item: CinemaMetadata, signal: AbortSignal) {
   if (item.provider !== 'tmdb') return item
-  const detail = await api.cinema.metadata({ provider: 'tmdb', kind: item.kind, title: item.title, language: language.value, credential: credential.value.trim(), id: item.id }, signal)
+  const detail = await api.cinema.metadata({ provider: 'tmdb', kind: item.kind, title: cinemaQueryTitle(item.title), language: language.value, credential: credential.value.trim(), id: item.id }, signal)
   return detail.items[0] ?? item
 }
 function apply(film: GalleryItem, item: CinemaMetadata) {
@@ -97,19 +97,24 @@ async function scan(refresh = false) {
   if (provider.value === 'tmdb' && !credential.value.trim()) return
   if (refresh) memo.clear()
   const run = new AbortController(); automatic = run; autoBusy.value = true
-  const items = [...(props.selected ? [props.selected] : []), ...props.items.slice(0, props.limit ?? 48)]
+  const items = [...(props.selected ? [props.selected] : []), ...(props.candidates ?? props.items.slice(0, props.limit ?? 48))]
   const seen = new Set<string>(); let count = 0
   try {
     for (const film of items) {
       const identity = key(film); if (seen.has(identity)) continue; seen.add(identity)
       if (!refresh && (cache.value.has(identity) || sessionMatches.has(identity) || Math.max(attempts.get(attemptKey(film)) ?? 0, attempts.get(clearedKey(film)) ?? 0) > Date.now())) continue
       const parsed = cinemaSearchTitle(film.entry.name)
-      const found = await lookup(parsed.title || film.entry.name, parsed.kind, run.signal, film.entry.name)
-      let item = automaticCinemaMatch(film.entry.name, found)
-      if (item) item = await detailed(item, run.signal)
-      run.signal.throwIfAborted()
-      if (item) { apply(film, item); count++ }
-      else attempts.set(attemptKey(film), Date.now() + 24 * 60 * 60 * 1000)
+      try {
+        const found = await lookup(parsed.title || film.entry.name, parsed.kind, run.signal, film.entry.name)
+        let item = automaticCinemaMatch(film.entry.name, found)
+        if (item) item = await detailed(item, run.signal)
+        run.signal.throwIfAborted()
+        if (item) { apply(film, item); count++ }
+        else recordCinemaMetadataAttempt(attempts, attemptKey(film), Date.now() + 24 * 60 * 60 * 1000)
+      } catch (cause) {
+        if (run.signal.aborted || !(cause instanceof ApiError) || cause.status !== 400) throw cause
+        recordCinemaMetadataAttempt(attempts, attemptKey(film), Date.now() + 24 * 60 * 60 * 1000)
+      }
     }
     if (count) status.value = phrase('影片资料已自动更新')
   } catch (cause) {
@@ -134,12 +139,15 @@ async function choose(item: CinemaMetadata) {
   catch (cause) { if (!run.signal.aborted) error.value = errorText(cause) }
   finally { if (manual === run) { busy.value = false; manual = undefined } }
 }
-function remove() { if (target.value) { cache.value.delete(key(target.value)); sessionMatches.delete(key(target.value)); attempts.set(clearedKey(target.value), Date.now() + 30 * 24 * 60 * 60 * 1000); saveCinemaMetadataAttempts(attempts); persist(); status.value = phrase('已恢复本地影片信息。') } }
+function remove() { if (target.value) { cache.value.delete(key(target.value)); sessionMatches.delete(key(target.value)); recordCinemaMetadataAttempt(attempts, clearedKey(target.value), Date.now() + 30 * 24 * 60 * 60 * 1000); saveCinemaMetadataAttempts(attempts); persist(); status.value = phrase('已恢复本地影片信息。') } }
 watch(() => props.selected, (item, previous) => { stop(); results.value = []; error.value = ''; status.value = ''; if (previous && item?.entry.path !== previous.entry.path) open.value = false; if (item) { const parsed = cinemaSearchTitle(item.entry.name); title.value = parsed.title; kind.value = parsed.kind } schedule() }, { immediate: true })
 watch([() => props.host, language], () => { stop(); credential.value = ''; memo.clear(); sessionMatches.clear(); retryAt = 0; results.value = []; publish(); schedule() })
 watch([provider, credential], () => { stop(); memo.clear(); retryAt = 0; results.value = []; error.value = ''; saveCinemaMetadataSettings({ enabled: enabled.value, provider: provider.value }); schedule() })
 watch(enabled, value => { stopAuto(); saveCinemaMetadataSettings({ enabled: value, provider: provider.value }); if (value) schedule() })
 watch([() => props.items, () => props.limit, () => props.scanning, () => props.visible], () => { stopAuto(); publish(); schedule() }, { immediate: true })
+// Compare identities: publishing a title can recompute the filtered array without
+// changing the visible cards; that must not abort the active scan or republish.
+watch(() => JSON.stringify(props.candidates?.map(key)), () => { stopAuto(); schedule() })
 watch(open, value => { if (value && target.value) stopAuto(); if (!value) { stopManual(); results.value = []; schedule() } })
 onBeforeUnmount(() => { disposed = true; stop(); credential.value = ''; memo.clear() })
 async function focusSearch() { open.value = true; await nextTick(); searchInput.value?.focus(); searchInput.value?.scrollIntoView?.({ block: 'center', behavior: 'auto' }) }

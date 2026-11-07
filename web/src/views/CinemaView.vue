@@ -57,6 +57,7 @@ const picker = ref<InstanceType<typeof HostSwitcher>>()
 const playingPath = ref('')
 const selectedPath = ref('')
 const detailHeading = ref<HTMLElement>()
+const detailPanel = ref<HTMLElement>()
 let cardOpener: HTMLElement | null = null
 let libraryScroll: { element: Element; top: number } | undefined
 const editing = ref<GalleryItem>()
@@ -127,7 +128,7 @@ async function openDetail(item: GalleryItem, event: Event) {
   selectedPath.value = item.entry.path
   await nextTick()
   detailHeading.value?.focus({ preventScroll: true })
-  detailHeading.value?.scrollIntoView?.({ block: 'start' })
+  detailPanel.value?.scrollIntoView?.({ block: 'start' })
 }
 async function closeDetail() {
   selectedPath.value = ''
@@ -364,7 +365,7 @@ onBeforeUnmount(() => {
 
     </details>
 
-    <section v-if="selectedFilm" class="cinema-detail" :aria-label="phrase('影片详情')" @keydown.esc.stop="!editing && closeDetail()">
+    <section v-if="selectedFilm" ref="detailPanel" class="cinema-detail" :aria-label="phrase('影片详情')" @keydown.esc.stop="!editing && closeDetail()">
       <div class="cinema-detail__backdrop" aria-hidden="true">
         <GalleryImage v-if="coverUrl(selectedFilm, true)" :src="coverUrl(selectedFilm, true)!" eager :class="{ 'cinema-detail__ambient': !filmMetadata(selectedFilm)?.backdrop }" @error="coverError(coverUrl(selectedFilm, true))" />
         <GalleryVideo v-else-if="galleryBrowserCanShow(selectedFilm)" :src="content(selectedFilm, 'inline')" :poster-key="posterKey(selectedFilm)" :suspended="windowVisible === false" />
@@ -397,7 +398,7 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <CinemaMetadataPanel ref="metadataPanel" :items="films" :host="hostId" :selected="editing ?? selectedFilm" :limit="shown" :scanning="loading" :visible="windowVisible !== false && !playingPath" @update="metadata = $event" />
+    <CinemaMetadataPanel ref="metadataPanel" :items="films" :candidates="visibleFilms.slice(0, shown)" :host="hostId" :selected="editing ?? selectedFilm" :limit="shown" :scanning="loading" :visible="windowVisible !== false && !playingPath" @update="metadata = $event" />
     <nav v-show="!selectedFilm" v-if="snapshot?.folders.length" class="cinema-folders" :aria-label="phrase('影视目录')">
       <button v-for="folder in snapshot.folders.slice(0, 24)" :key="folder.path" class="button button--secondary button--small" type="button" :disabled="saving" @click="browse(folder.path)"><Folder :size="15" />{{ folder.name }}</button>
     </nav>

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { api } from '@/lib/api'
+import { api, ApiError } from '@/lib/api'
 import type { GalleryItem } from '@/lib/gallery'
 import type { CinemaMetadata } from '@/lib/cinemaMetadata'
 import CinemaMetadataPanel from './CinemaMetadata.vue'
@@ -47,6 +47,20 @@ describe('automatic cinema metadata', () => {
     const fetch = vi.spyOn(api.cinema, 'metadata').mockImplementation(async q => ({ items: [{ ...movie, title: q.title, year: undefined }] }))
     setup({ items: films, limit: 48 }); await tick(); expect(fetch).toHaveBeenCalledTimes(48)
     await wrapper.setProps({ limit: 49 }); await tick(); expect(fetch).toHaveBeenCalledTimes(49)
+  })
+  it('prioritizes filtered visible cards and ignores identity-equivalent recomputations', async () => {
+    const films = Array.from({ length: 60 }, (_, i) => ({ ...film, entry: { ...film.entry, name: `Film ${i}.mp4`, path: `/home/videos/Film ${i}.mp4` } }))
+    const fetch = vi.spyOn(api.cinema, 'metadata').mockImplementation(async q => ({ items: [{ ...movie, title: q.title, year: undefined }] }))
+    setup({ items: films, candidates: [films[59]!] }); await tick()
+    expect(fetch).toHaveBeenCalledTimes(1); expect(fetch.mock.calls[0]![0].title).toBe('Film 59')
+    await wrapper.setProps({ candidates: [...[films[59]!]] }); await tick(); expect(fetch).toHaveBeenCalledTimes(1)
+  })
+  it('skips a permanently invalid file query so later visible cards still receive metadata', async () => {
+    const invalid = { ...film, entry: { ...film.entry, name: 'Invalid.mp4', path: '/home/videos/Invalid.mp4' } }
+    const fetch = vi.spyOn(api.cinema, 'metadata').mockRejectedValueOnce(new ApiError('invalid', 400)).mockResolvedValue({ items: [movie] })
+    setup({ items: [invalid, film] }); await tick()
+    expect(fetch).toHaveBeenCalledTimes(2); expect((wrapper.emitted('update')!.at(-1)![0] as Map<string, CinemaMetadata>).get(film.entry.path)?.id).toBe(movie.id)
+    await tick(60_000); expect(fetch).toHaveBeenCalledTimes(2)
   })
   it('pauses when hidden and rejects responses from a previous host', async () => {
     let resolve!: (v: { items: CinemaMetadata[] }) => void
