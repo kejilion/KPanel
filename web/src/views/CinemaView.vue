@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { mediaLocations, setMediaLocation } from '@/lib/mediaLocations'
+import { cinemaCheckpoint, cinemaPlayback, recordCinemaCheckpoint } from '@/lib/cinemaPlayback'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Clapperboard, Film, Folder, FolderOpen, Image as ImageIcon, LayoutGrid, Pencil, Play, RefreshCw, Search, X } from '@lucide/vue'
 import HostSwitcher from '@/components/common/HostSwitcher.vue'
@@ -16,10 +17,10 @@ import { fileAPIForHost } from '@/lib/fileHostContext'
 import { fileHostLabel, fileHostStatus } from '@/lib/fileHostStatus'
 import { notifyFileDirectoriesChanged } from '@/lib/fileWindowTransfer'
 import { formatBytes, formatDateTime } from '@/lib/format'
-import { galleryBaseName, galleryBrowserCanShow, galleryFileExtension, galleryParentPath, nextGalleryUploadName, normalizeGalleryRoot, type GalleryItem } from '@/lib/gallery'
+import { formatGalleryDuration, galleryBaseName, galleryBrowserCanShow, galleryFileExtension, galleryParentPath, nextGalleryUploadName, normalizeGalleryRoot, type GalleryItem } from '@/lib/gallery'
 import { galleryPosterKey, readGalleryPoster } from '@/lib/galleryPosters'
 import { useMusicPlayer } from '@/stores/musicPlayer'
-import type { ClusterHost } from '@/types/api'
+import type { CinemaCheckpoint, ClusterHost } from '@/types/api'
 
 usePhraseCatalog(locale => locale === 'en-US' ? import('@/i18n/pages/GalleryView/en-US').then(m => m.default) : import('@/i18n/pages/GalleryView/zh-TW').then(m => m.default))
 usePhraseCatalog(locale => locale === 'en-US' ? import('@/i18n/pages/CinemaView/en-US').then(m => m.default) : import('@/i18n/pages/CinemaView/zh-TW').then(m => m.default))
@@ -51,7 +52,13 @@ const hostsLoading = ref(false)
 const hostsError = ref(false)
 const picker = ref<InstanceType<typeof HostSwitcher>>()
 const playingPath = ref('')
-const selectedPath = ref('')
+const selectedPath = computed({
+  get: () => typeof route.query.film === 'string' ? route.query.film : '',
+  set: value => { void router.replace({ query: { ...route.query, film: value || undefined } }) },
+})
+const filmState = ref<'all' | 'resume' | 'watched'>('all')
+const playbackSession = ref<{ startPosition: number; save: (value: Pick<CinemaCheckpoint, 'position' | 'duration' | 'completed'>, flush: boolean) => void }>()
+let openedFromLibrary = false
 const detailHeading = ref<HTMLElement>()
 let cardOpener: HTMLElement | null = null
 let libraryScroll: { element: Element; top: number } | undefined
@@ -69,7 +76,13 @@ let disposed = false
 const selectedHost = computed(() => hosts.value.find(host => hostId.value ? host.id === hostId.value : host.isLocal))
 const films = computed(() => [...(snapshot.value?.films ?? [])].sort((a, b) =>
   (order.value === 'newest' ? b.time - a.time : 0) || a.entry.name.localeCompare(b.entry.name, undefined, { numeric: true })))
-const visibleFilms = computed(() => films.value.filter(item => item.entry.name.toLocaleLowerCase().includes(search.value.trim().toLocaleLowerCase())))
+function checkpoint(item: GalleryItem) { return cinemaCheckpoint(item.entry, hostId.value) }
+function canResume(item: GalleryItem) { const saved = checkpoint(item); return Boolean(saved && !saved.completed && saved.position > 0) }
+const resumeFilms = computed(() => films.value.filter(canResume))
+const watchedFilms = computed(() => films.value.filter(item => checkpoint(item)?.completed))
+const visibleFilms = computed(() => films.value.filter(item =>
+  (filmState.value === 'all' || (filmState.value === 'resume' ? canResume(item) : checkpoint(item)?.completed))
+  && item.entry.name.toLocaleLowerCase().includes(search.value.trim().toLocaleLowerCase())))
 const selectedFilm = computed(() => films.value.find(item => item.entry.path === selectedPath.value))
 const viewerIndex = computed(() => films.value.findIndex(item => item.entry.path === playingPath.value))
 const folderCounts = computed(() => {
@@ -116,21 +129,27 @@ async function openDetail(item: GalleryItem, event: Event) {
   }
   const element = parent ?? document.scrollingElement
   libraryScroll = element ? { element, top: element.scrollTop } : undefined
-  selectedPath.value = item.entry.path
+  openedFromLibrary = true
+  await router.push({ name: 'cinema', query: { ...location(path.value), film: item.entry.path } })
   await nextTick()
   detailHeading.value?.focus({ preventScroll: true })
   detailHeading.value?.scrollIntoView?.({ block: 'start' })
 }
 async function closeDetail() {
-  selectedPath.value = ''
   editing.value = undefined
-  await nextTick()
-  cardOpener?.focus({ preventScroll: true })
-  if (libraryScroll) libraryScroll.element.scrollTop = libraryScroll.top
+  if (openedFromLibrary) { openedFromLibrary = false; router.back() }
+  else await router.replace({ query: { ...route.query, film: undefined } })
 }
-function play(item: GalleryItem) {
+function play(item: GalleryItem, fromStart = false) {
   const music = useMusicPlayer()
   if (music.state.playing || music.state.waiting) music.pause()
+  const saved = checkpoint(item)
+  const identity = { path: item.entry.path, hostId: hostId.value, fileVersion: item.entry.resourceVersion }
+  const owner = cinemaPlayback.owner
+  playbackSession.value = {
+    startPosition: !fromStart && saved && !saved.completed ? saved.position : 0,
+    save: (value, flush) => recordCinemaCheckpoint({ ...identity, ...value }, owner, flush),
+  }
   playingPath.value = item.entry.path
 }
 
@@ -302,16 +321,25 @@ function setLayout(layout: 'poster' | 'wide') {
 watch([path, hostId], () => {
   directory.value = path.value
   search.value = ''
+  filmState.value = 'all'
+  openedFromLibrary = false
   shown.value = 48
   playingPath.value = ''
-  selectedPath.value = ''
   editing.value = undefined
   snapshot.value = undefined
   notice.value = ''
   preferences.value = readCinemaPreferences(hostId.value, path.value)
   void load()
 }, { immediate: true })
-watch([search, order], () => { shown.value = 48 })
+watch([search, order, filmState], () => { shown.value = 48 })
+watch(selectedPath, async (value, previous) => {
+  if (!value && previous) {
+    editing.value = undefined
+    await nextTick()
+    cardOpener?.focus({ preventScroll: true })
+    if (libraryScroll) libraryScroll.element.scrollTop = libraryScroll.top
+  }
+})
 watch(() => windowVisible?.value, visible => { if (visible === false) playingPath.value = '' })
 onMounted(loadHosts)
 onBeforeUnmount(() => {
@@ -373,9 +401,11 @@ onBeforeUnmount(() => {
           <h2 ref="detailHeading" tabindex="-1">{{ cinemaTitle(selectedFilm.entry.name) }}</h2>
           <div class="cinema-detail__tags"><span>{{ galleryFileExtension(selectedFilm.entry.name).toUpperCase() }}</span><span>{{ formatBytes(selectedFilm.entry.sizeBytes) }}</span></div>
           <div class="cinema-feature__actions">
-            <button class="button cinema-feature__play" type="button" @click="play(selectedFilm)"><Play :size="19" /> {{ phrase('播放影片') }}</button>
+            <button class="button cinema-feature__play" type="button" @click="play(selectedFilm)"><Play :size="19" /> {{ phrase(canResume(selectedFilm) ? '继续播放' : checkpoint(selectedFilm)?.completed ? '重新播放' : '播放影片') }}</button>
+            <button v-if="canResume(selectedFilm)" class="button cinema-feature__edit" type="button" @click="play(selectedFilm, true)">{{ phrase('从头播放') }}</button>
             <button class="button cinema-feature__edit" type="button" @click="edit(selectedFilm)"><Pencil :size="16" /> {{ phrase('编辑影片') }}</button>
           </div>
+          <p v-if="checkpoint(selectedFilm)" class="cinema-resume-note">{{ phrase(checkpoint(selectedFilm)!.completed ? '已看完' : '已观看') }} · {{ formatGalleryDuration(checkpoint(selectedFilm)!.position) }} / {{ formatGalleryDuration(checkpoint(selectedFilm)!.duration) }}</p>
           <details class="cinema-detail__technical">
           <summary>{{ phrase('文件信息') }}</summary>
           <dl class="cinema-detail__metadata">
@@ -388,6 +418,7 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
+    <div v-if="selectedPath && !selectedFilm && !loading && !error" class="cinema-empty" role="status"><p>{{ phrase('当前片库中未找到该影片') }}</p><button class="button button--secondary" @click="closeDetail">{{ phrase('返回片库') }}</button></div>
     <nav v-show="!selectedFilm" v-if="snapshot?.folders.length" class="cinema-folders" :aria-label="phrase('影视目录')">
       <button v-for="folder in snapshot.folders.slice(0, 24)" :key="folder.path" class="button button--secondary button--small" type="button" :disabled="saving" @click="browse(folder.path)"><Folder :size="15" />{{ folder.name }}</button>
     </nav>
@@ -417,8 +448,13 @@ onBeforeUnmount(() => {
     <p v-if="notice" class="cinema-note" role="status">{{ notice }}</p>
 
     <section v-show="!selectedFilm" class="cinema-library" :aria-label="phrase('海报墙')">
+      <nav class="cinema-filters" :aria-label="phrase('观看状态')">
+        <button type="button" :aria-pressed="filmState === 'all'" @click="filmState = 'all'">{{ phrase('全部影片') }} <span>{{ films.length }}</span></button>
+        <button type="button" :aria-pressed="filmState === 'resume'" @click="filmState = 'resume'">{{ phrase('继续观看') }} <span>{{ resumeFilms.length }}</span></button>
+        <button type="button" :aria-pressed="filmState === 'watched'" @click="filmState = 'watched'">{{ phrase('已看完') }} <span>{{ watchedFilms.length }}</span></button>
+      </nav>
       <div class="cinema-toolbar">
-        <div><h2>{{ phrase('全部影片') }}</h2><p>{{ visibleFilms.length }} {{ phrase('部影片') }}</p></div>
+        <div><h2>{{ phrase(filmState === 'resume' ? '继续观看' : filmState === 'watched' ? '已看完' : '全部影片') }}</h2><p>{{ visibleFilms.length }} {{ phrase('部影片') }}</p></div>
         <div class="cinema-toolbar__controls">
           <label class="cinema-search"><Search :size="17" /><input v-model="search" type="search" :aria-label="phrase('搜索影片')" :placeholder="phrase('搜索影片')" /></label>
           <select v-model="order" :aria-label="phrase('排序')"><option value="newest">{{ phrase('最近更新') }}</option><option value="name">{{ phrase('按名称') }}</option></select>
@@ -433,10 +469,10 @@ onBeforeUnmount(() => {
       <p v-if="snapshot?.truncated || snapshot?.unreadable" class="cinema-note">{{ phrase('目录较大或有子目录无法读取，当前显示已扫描的影片。') }}</p>
       <div v-if="!loading && !error && !visibleFilms.length" class="cinema-empty">
         <Clapperboard :size="36" />
-        <h3>{{ phrase(search ? '没有匹配的影片' : '你的影院还没有影片') }}</h3>
-        <p v-if="!search">{{ phrase('选择存有视频的目录，或打开文件管理添加影片。') }}</p>
+        <h3>{{ phrase(search ? '没有匹配的影片' : filmState === 'all' ? '你的影院还没有影片' : '暂无观看记录') }}</h3>
+        <p v-if="!search && filmState === 'all'">{{ phrase('选择存有视频的目录，或打开文件管理添加影片。') }}</p>
         <button v-if="search" class="button button--secondary" @click="search = ''">{{ phrase('清除搜索') }}</button>
-        <button v-else class="button button--secondary" @click="openFiles()">{{ phrase('文件管理') }}</button>
+        <button v-else-if="filmState === 'all'" class="button button--secondary" @click="openFiles()">{{ phrase('文件管理') }}</button>
       </div>
       <ul v-if="visibleFilms.length" class="cinema-grid" :class="{ 'cinema-grid--wide': preferences.layout === 'wide' }">
         <li v-for="item in visibleFilms.slice(0, shown)" :key="posterKey(item)" class="cinema-card">
@@ -450,9 +486,11 @@ onBeforeUnmount(() => {
               <span class="cinema-card__watch">{{ phrase('查看详情') }}</span>
             </span>
             <strong>{{ cinemaTitle(item.entry.name) }}</strong>
+            <progress v-if="checkpoint(item)" class="cinema-card__progress" :value="checkpoint(item)!.completed ? checkpoint(item)!.duration : checkpoint(item)!.position" :max="checkpoint(item)!.duration" :aria-label="phrase('观看进度')" />
           </button>
           <div class="cinema-card__footer">
-            <span>{{ item.folder === path ? formatBytes(item.entry.sizeBytes) : galleryBaseName(item.folder) }}</span>
+            <span v-if="checkpoint(item)">{{ checkpoint(item)!.completed ? phrase('已看完') : formatGalleryDuration(checkpoint(item)!.position) + ' / ' + formatGalleryDuration(checkpoint(item)!.duration) }}</span>
+            <span v-else>{{ item.folder === path ? formatBytes(item.entry.sizeBytes) : galleryBaseName(item.folder) }}</span>
             <button class="icon-button icon-button--small" type="button" :aria-label="phrase('编辑影片') + ' ' + cinemaTitle(item.entry.name)" :title="phrase('编辑影片')" :disabled="saving" @click="edit(item)"><Pencil :size="15" /></button>
           </div>
         </li>
@@ -461,9 +499,10 @@ onBeforeUnmount(() => {
     </section>
 
   </main>
-  <CinemaPlayer v-if="viewerIndex >= 0" :src="content(films[viewerIndex]!, 'inline')" :poster="viewerSources(films[viewerIndex]!).preview"
+  <CinemaPlayer v-if="viewerIndex >= 0" :key="hostId + playingPath" :start-position="playbackSession?.startPosition" :on-progress="playbackSession?.save" :src="content(films[viewerIndex]!, 'inline')" :poster="viewerSources(films[viewerIndex]!).preview"
     :title="cinemaTitle(films[viewerIndex]!.entry.name)" :back-label="phrase('返回影片详情')" :fullscreen-label="phrase('全屏')"
     :fallback-label="phrase('未能自动全屏，可点击右上角全屏按钮。')" :error-label="phrase('影片无法播放，请检查文件或浏览器支持的格式。')"
+    :labels="{ play: phrase('播放'), pause: phrase('暂停'), loading: phrase('正在加载影片'), retry: phrase('重试'), blocked: phrase('点击播放以继续'), rewind: phrase('后退 10 秒'), forward: phrase('前进 10 秒'), mute: phrase('静音'), unmute: phrase('取消静音'), volume: phrase('音量'), seek: phrase('播放进度'), speed: phrase('播放速度'), exitFullscreen: phrase('退出全屏') }"
     @close="playingPath = ''" />
 </template>
 
@@ -571,4 +610,11 @@ p { color: var(--text-soft); line-height: 1.55; }
   .cinema-source-panel > summary span { display: none; }
   .cinema-heading p { display: block; margin-top: 4px; }
 }
+.cinema-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 22px; }
+.cinema-filters button { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 8px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text-soft); font: inherit; font-size: 14px; cursor: pointer; }
+.cinema-filters button[aria-pressed=true] { background: #e3f2f8; color: #111820; border-color: #e3f2f8; }
+.cinema-filters button:focus-visible { outline: 2px solid #a7d8ee; outline-offset: 3px; }
+.cinema-filters span { font-size: 12px; }
+.cinema-card__progress { display: block; width: calc(100% - 8px); height: 4px; margin: 6px 4px; accent-color: #a7d8ee; }
+.cinema-resume-note { margin-top: 16px; color: #c9d2de; font-size: 14px; }
 </style>

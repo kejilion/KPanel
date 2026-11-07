@@ -15,13 +15,14 @@ import (
 // Preferences is bounded Panel-owned UI state, shared by the single administrator.
 // Nil sections have not been configured and may be migrated once by a client.
 type Preferences struct {
-	Browser         *BrowserPreferences      `json:"browser,omitempty"`
-	Locale          string                   `json:"locale,omitempty"`
-	Desktop         *DesktopPreferences      `json:"desktop,omitempty"`
-	GalleryLocation *MediaLocation           `json:"galleryLocation,omitempty"`
-	MusicLocation   *MediaLocation           `json:"musicLocation,omitempty"`
-	CinemaLocation  *MediaLocation           `json:"cinemaLocation,omitempty"`
-	MusicPlayback   *MusicPlaybackPreference `json:"musicPlayback,omitempty"`
+	CinemaPlayback  *CinemaPlaybackPreference `json:"cinemaPlayback,omitempty"`
+	Browser         *BrowserPreferences       `json:"browser,omitempty"`
+	Locale          string                    `json:"locale,omitempty"`
+	Desktop         *DesktopPreferences       `json:"desktop,omitempty"`
+	GalleryLocation *MediaLocation            `json:"galleryLocation,omitempty"`
+	MusicLocation   *MediaLocation            `json:"musicLocation,omitempty"`
+	CinemaLocation  *MediaLocation            `json:"cinemaLocation,omitempty"`
+	MusicPlayback   *MusicPlaybackPreference  `json:"musicPlayback,omitempty"`
 }
 
 type MediaLocation struct {
@@ -135,7 +136,7 @@ func validDimension(value float64) bool {
 }
 
 func ValidatePreferences(value Preferences) error {
-	if !validMusicPlayback(value.MusicPlayback) {
+	if !validMusicPlayback(value.MusicPlayback) || !validCinemaPlayback(value.CinemaPlayback) {
 		return ErrInvalidRecord
 	}
 	if !validMediaLocation(value.GalleryLocation, false) || (value.GalleryLocation != nil && value.GalleryLocation.HostID != "") || !validMediaLocation(value.MusicLocation, true) || !validMediaLocation(value.CinemaLocation, true) {
@@ -180,6 +181,9 @@ func ValidatePreferences(value Preferences) error {
 }
 
 func clonePreferences(value Preferences) Preferences {
+	if value.CinemaPlayback != nil {
+		value.CinemaPlayback = &CinemaPlaybackPreference{Entries: append([]CinemaCheckpoint{}, value.CinemaPlayback.Entries...)}
+	}
 	if value.MusicPlayback != nil {
 		v := *value.MusicPlayback
 		value.MusicPlayback = &v
@@ -248,6 +252,9 @@ func (s *Store) PatchPreferences(expected string, patch Preferences) error {
 	}
 	if patch.CinemaLocation != nil {
 		s.data.Preferences.CinemaLocation = clonePreferences(patch).CinemaLocation
+	}
+	if patch.CinemaPlayback != nil {
+		s.data.Preferences.CinemaPlayback = mergeCinemaPlayback(s.data.Preferences.CinemaPlayback, patch.CinemaPlayback)
 	}
 	if patch.MusicPlayback != nil {
 		s.data.Preferences.MusicPlayback = clonePreferences(patch).MusicPlayback

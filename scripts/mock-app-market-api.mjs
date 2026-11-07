@@ -2006,6 +2006,16 @@ createServer(async (request, response) => {
     const changes = {}
     if (input.browser && typeof input.browser.startURL === 'string') changes.browser = input.browser
     if (['zh-CN', 'zh-TW', 'en-US'].includes(input.locale)) changes.locale = input.locale
+    if (input.cinemaPlayback !== undefined) {
+      const entries = input.cinemaPlayback?.entries
+      const keys = new Set()
+      const valid = Array.isArray(entries) && entries.length <= 50 && entries.every(item => {
+        if (!item || typeof item.path !== 'string' || !item.path.startsWith('/') || Buffer.byteLength(item.path) > 4096 || /[\u0000-\u001f\u007f\\]/u.test(item.path) || item.path.slice(1).split('/').some(p => !p || p === '.' || p === '..') || typeof item.hostId !== 'string' || !/^[A-Za-z0-9_-]{0,128}$/.test(item.hostId) || typeof item.fileVersion !== 'string' || !item.fileVersion || Buffer.byteLength(item.fileVersion) > 256 || /[\u0000-\u001f\u007f]/u.test(item.fileVersion) || typeof item.completed !== 'boolean' || !Number.isFinite(item.position) || !Number.isFinite(item.duration) || item.position < 0 || item.duration <= 0 || item.duration > 31536000 || item.position > item.duration) return false
+        const key = JSON.stringify([item.hostId, item.path]); if (keys.has(key)) return false; keys.add(key); return true
+      })
+      if (!valid) { send(response, 422, { title: 'Preferences are invalid', code: 'preferences_invalid' }); return }
+      changes.cinemaPlayback = { entries: [...entries.map(({path,hostId,fileVersion,position,duration,completed})=>({path,hostId,fileVersion,position,duration,completed})), ...(mockPreferences.cinemaPlayback?.entries ?? []).filter(item => !keys.has(JSON.stringify([item.hostId,item.path])))].slice(0,50) }
+    }
     if (input.desktop && Array.isArray(input.desktop.windows) && input.desktop.windows.length <= 8
       && Array.isArray(input.desktop.windowSizes) && input.desktop.windowSizes.length <= 32) changes.desktop = input.desktop
     for (const key of ['galleryLocation', 'musicLocation', 'cinemaLocation']) {
