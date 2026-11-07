@@ -30,6 +30,7 @@ import (
 	"github.com/kejilion/kejilion-panel/internal/backup"
 	"github.com/kejilion/kejilion-panel/internal/backupremote"
 	"github.com/kejilion/kejilion-panel/internal/bittorrent"
+	"github.com/kejilion/kejilion-panel/internal/cinemametadata"
 	"github.com/kejilion/kejilion-panel/internal/cluster"
 	"github.com/kejilion/kejilion-panel/internal/contract"
 	"github.com/kejilion/kejilion-panel/internal/desktopwallpapers"
@@ -104,6 +105,7 @@ type Server struct {
 	tutorialMetadataCache   map[string]tutorialMetadataCacheEntry
 	tutorialFeeds           [2]tutorialFeedCache
 	musicMetadata           *musicmetadata.Service
+	cinemaMetadata          *cinemametadata.Service
 	fileShareRateMu         sync.Mutex
 	fileShareRates          map[string]fileShareRateEntry
 	fileShareValidationMu   sync.Mutex
@@ -319,6 +321,7 @@ func NewServer(config Config, authService *auth.Service, storage *store.Store, a
 		remoteDownloadJobs:      remoteDownloadJobs,
 		remoteDownloadCancels:   make(map[string]context.CancelCauseFunc),
 		musicMetadata:           musicmetadata.New(),
+		cinemaMetadata:          cinemametadata.New(),
 		offers:                  offers.Open(filepath.Join(config.DataDir, "offers"), nil),
 	}
 	server.terminalBatches, err = terminalbatch.Open(filepath.Join(config.DataDir, "terminal-batches"), batchTerminalDriver{server}, terminalbatch.Options{})
@@ -528,6 +531,10 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		s.handleKPanelRelease(w, r)
 	case r.URL.Path == musicMetadataPath:
 		s.handleMusicMetadata(w, r)
+	case r.URL.Path == cinemaMetadataPath:
+		s.handleCinemaMetadata(w, r)
+	case r.URL.Path == cinemaImagePath:
+		s.handleCinemaImage(w, r)
 	case r.URL.Path == tutorialFeedPath:
 		s.handleTutorialFeed(w, r)
 	case r.URL.Path == tutorialMetadataPath:

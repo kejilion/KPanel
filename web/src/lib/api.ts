@@ -1329,6 +1329,10 @@ async function resizeAppTerminal(id: string, rows: number, columns: number): Pro
 }
 
 export const api = {
+  cinema: {
+    metadata: (query: import('./cinemaMetadata').CinemaQuery, signal?: AbortSignal) =>
+      request<{ items: import('./cinemaMetadata').CinemaMetadata[] }>('/cinema/metadata', { method: 'POST', body: query, signal }),
+  },
   browser: {
     component: (signal?: AbortSignal) => request<import('./webBrowser').BrowserComponent>('/browser/component', { signal }),
     componentAction: (action: import('./webBrowser').BrowserComponentAction, expectedResourceVersion: string) => request<import('./webBrowser').BrowserComponentJob>('/browser/component/actions', { method: 'POST', body: { action, expectedResourceVersion } }),

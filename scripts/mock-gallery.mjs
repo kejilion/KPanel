@@ -71,6 +71,11 @@ async function seedFrom(directory, virtual, depth) {
 
 async function seed() {
   addDirectory('/home', '2026-08-01T00:00:00Z')
+  addDirectory('/home/videos')
+  for (const name of ['Inception.2010.mkv', 'The.Expanse.S01E01.mkv']) {
+    const path = `/home/videos/${name}`
+    nodes.set(path, { entry: makeEntry(path, 'file', 0, '2026-08-01T00:00:00Z'), data: Buffer.alloc(0) })
+  }
   const sample = process.env.KPANEL_MOCK_GALLERY_DIR
   if (sample) {
     await seedFrom(resolve(sample), ROOT, 0)
@@ -95,7 +100,7 @@ await seed()
 export const mockGalleryRootEntries = [nodes.get('/home').entry]
 
 function inScope(path) {
-  return typeof path === 'string' && (path === '/home' || path === ROOT || path.startsWith(`${ROOT}/`))
+  return typeof path === 'string' && (path === '/home' || path === ROOT || path.startsWith(`${ROOT}/`) || path === '/home/videos' || path.startsWith('/home/videos/'))
 }
 
 function children(path) {
@@ -195,6 +200,20 @@ const receive = createGalleryReceiver({
 })
 
 export async function mockGallery(request, response, url, send, readJSON) {
+  // Deterministic UI fixtures only; live provider verification uses the Go service.
+  if (request.method === 'POST' && url.pathname === '/api/v1/cinema/metadata') {
+    const body = await readJSON(request)
+    if (body.title === 'network-failure') { send(response, 502, { code: 'cinema_metadata_unavailable', title: 'Mock source unavailable' }); return true }
+    if (body.provider === 'tmdb' && !body.credential) { send(response, 400, { code: 'invalid_cinema_query', title: 'Missing mock credential' }); return true }
+    const tv = body.kind === 'tv'
+    send(response, 200, { items: [{ provider: body.provider, id: tv ? 1825 : 23270459, kind: body.kind, title: tv ? 'The Expanse' : 'Inception', year: tv ? '2015' : '2010', overview: 'Mock metadata for local interface preview.', rating: tv ? 8.7 : 0, genres: tv ? ['Science-Fiction'] : [], poster: '/mock.jpg', url: body.provider === 'wikipedia' ? 'https://en.wikipedia.org/?curid=23270459' : 'https://www.tvmaze.com/shows/1825' }] })
+    return true
+  }
+  if (request.method === 'GET' && url.pathname === '/api/v1/cinema/image') {
+    const name = (await readdir(join(repoRoot, 'web', 'public', 'wallpapers'))).find(name => name.endsWith('.webp'))
+    const body = await readFile(join(repoRoot, 'web', 'public', 'wallpapers', name))
+    response.writeHead(200, { 'Content-Type': 'image/webp' }); response.end(body); return true
+  }
   if (await receive(request, response, url, send, readJSON)) return true
   const path = url.searchParams.get('path')
   const acceptsPath = inScope
