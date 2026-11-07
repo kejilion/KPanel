@@ -64,3 +64,22 @@ it('keeps failed writes through reload and does not leak them to another owner',
   await startPreferencesSync('admin'); await vi.advanceTimersByTimeAsync(1)
   expect(cinemaPlayback.entries[0]?.position).toBe(88)
 })
+
+it('acknowledges each film separately when another local edit arrives during a batch write', async () => {
+  await startPreferencesSync('admin')
+  let finish!: (value: UserPreferences) => void
+  const normal = mocks.update.getMockImplementation()!
+  mocks.update.mockImplementationOnce(() => new Promise<UserPreferences>(resolve => { finish = resolve }))
+    .mockImplementationOnce(async () => {
+      server = { ...server, resourceVersion: 'remote-v3', cinemaPlayback: { entries: [point('/films/b.mp4', 90), point('/films/a.mp4', 10)] } }
+      throw new ApiError('conflict', 409)
+    }).mockImplementation(normal)
+  recordCinemaCheckpoint(point('/films/a.mp4', 10), 'admin')
+  recordCinemaCheckpoint(point('/films/b.mp4', 10), 'admin', true)
+  recordCinemaCheckpoint(point('/films/a.mp4', 20), 'admin')
+  finish({ ...server, resourceVersion: 'saved-v2', cinemaPlayback: { entries: [point('/films/b.mp4', 10), point('/films/a.mp4', 10)] } })
+  await vi.advanceTimersByTimeAsync(1)
+  expect(mocks.update.mock.calls.at(-1)?.[0].cinemaPlayback.entries).toEqual([point('/films/a.mp4', 20)])
+  expect(server.cinemaPlayback?.entries).toContainEqual(point('/films/b.mp4', 90))
+  expect(server.cinemaPlayback?.entries).toContainEqual(point('/films/a.mp4', 20))
+})

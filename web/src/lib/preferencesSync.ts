@@ -238,6 +238,15 @@ function save(sync: Sync, migration: UserPreferencesPatch = {}): Promise<void> {
           sync.server = result
           migration = {}
           for (const key of Object.keys(patch) as (keyof UserPreferencesPatch)[]) {
+            if (key === 'cinemaPlayback') {
+              // A write may acknowledge B while a newer local edit to A is in
+              // flight. Retrying the whole old batch would overwrite remote B.
+              const sent = new Map((patch.cinemaPlayback?.entries ?? []).map(item => [JSON.stringify([item.hostId, item.path]), JSON.stringify(item)]))
+              const remaining = (sync.pending.cinemaPlayback?.entries ?? []).filter(item => sent.get(JSON.stringify([item.hostId, item.path])) !== JSON.stringify(item))
+              if (remaining.length) sync.pending.cinemaPlayback = { entries: remaining }
+              else delete sync.pending.cinemaPlayback
+              continue
+            }
             if (sameSection(key, sync.pending[key], patch[key])) delete sync.pending[key]
           }
           applyCinemaPlayback(result.cinemaPlayback, sync.pending.cinemaPlayback)
