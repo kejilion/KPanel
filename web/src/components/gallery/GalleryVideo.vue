@@ -4,7 +4,7 @@ import { loadGalleryPoster, readGalleryPoster } from '@/lib/galleryPosters'
 import { galleryIntersectionRoot, galleryMediaPausedKey } from '@/lib/galleryMedia'
 import { galleryRenderPolicyKey } from '@/lib/galleryRenderPolicy'
 
-const props = defineProps<{ src: string; posterKey: string; preview?: boolean; suspended?: boolean }>()
+const props = defineProps<{ src: string; posterKey: string; preview?: boolean; suspended?: boolean; metadataOnly?: boolean }>()
 const mediaPaused = inject(galleryMediaPausedKey, computed(() => false))
 const policy = inject(galleryRenderPolicyKey, undefined)
 const paused = computed(() => props.suspended || mediaPaused.value || policy?.pauseVideos.value)
@@ -18,12 +18,13 @@ let stopped = false
 
 async function load(): Promise<void> {
   controller?.abort()
-  if (!near || stopped || paused.value || poster.value) return
+  const cached = readGalleryPoster(props.posterKey)
+  if (!near || stopped || paused.value || (props.metadataOnly ? cached?.width && cached.height : poster.value)) return
   const current = new AbortController()
   controller = current
   try {
     for (let attempt = 0; ; attempt += 1) {
-      try { await loadGalleryPoster(props.posterKey, props.src, current.signal); break }
+      try { await loadGalleryPoster(props.posterKey, props.src, current.signal, props.metadataOnly); break }
       catch (error) {
         if (current.signal.aborted || attempt >= 2) throw error
         // Decoder/network failures are bounded and release the shared slot between attempts.
@@ -35,7 +36,7 @@ async function load(): Promise<void> {
   }
 }
 
-watch(() => [props.src, props.posterKey, paused.value], () => { void load() })
+watch(() => [props.src, props.posterKey, props.metadataOnly, paused.value], () => { void load() })
 onMounted(() => {
   if (typeof IntersectionObserver === 'undefined') { near = true; void load(); return }
   observer = new IntersectionObserver((entries) => {
@@ -50,8 +51,8 @@ onBeforeUnmount(() => { stopped = true; observer?.disconnect(); controller?.abor
 
 <template>
   <span ref="root" class="gallery-video">
-    <img v-if="poster" :src="poster" alt="" decoding="async" draggable="false" />
-    <video v-if="preview && !paused" :src="src" :poster="poster" muted loop playsinline autoplay preload="metadata" aria-hidden="true" tabindex="-1" />
+    <img v-if="poster && !metadataOnly" :src="poster" alt="" decoding="async" draggable="false" />
+    <video v-if="preview && !paused && !metadataOnly" :src="src" :poster="poster" muted loop playsinline autoplay preload="metadata" aria-hidden="true" tabindex="-1" />
   </span>
 </template>
 

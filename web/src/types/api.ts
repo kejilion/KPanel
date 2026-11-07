@@ -2477,13 +2477,16 @@ export interface UserPreferences {
   galleryLocation?: MediaLocation
   musicLocation?: MediaLocation
   cinemaLocation?: MediaLocation
+  cinemaPlayback?: CinemaPlaybackPreference
   musicPlayback?: MusicPlaybackPreference
 }
 
 export interface MediaLocation { path: string; hostId: string }
-export type UserPreferencesPatch = Partial<Pick<UserPreferences, 'locale' | 'desktop' | 'browser' | 'galleryLocation' | 'musicLocation' | 'cinemaLocation' | 'musicPlayback'>>
+export type UserPreferencesPatch = Partial<Pick<UserPreferences, 'locale' | 'desktop' | 'browser' | 'galleryLocation' | 'musicLocation' | 'cinemaLocation' | 'musicPlayback' | 'cinemaPlayback'>>
 export interface MusicQueueItem { path: string; hostId: string }
 export interface MusicPlaybackPreference { path: string; hostId: string; position: number; playing: boolean; repeat: 'off' | 'all' | 'one'; shuffle: boolean; queue?: MusicQueueItem[] }
+export interface CinemaCheckpoint { path: string; hostId: string; fileVersion: string; position: number; duration: number; completed: boolean }
+export interface CinemaPlaybackPreference { entries: CinemaCheckpoint[] }
 
 export interface AppearanceSettings {
   branding?: SiteBranding

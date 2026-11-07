@@ -1,3 +1,4 @@
+import { applyCinemaPlayback, mergeCinemaPlayback, parseCinemaPlayback, setCinemaPlaybackOwner } from '@/lib/cinemaPlayback'
 import { api, ApiError } from '@/lib/api'
 import { applySyncedLocale, getLocale, t } from '@/i18n'
 import { applyDesktopPreferences, desktopPreferencesSnapshot, parseDesktopSessionPreferences } from '@/stores/desktopMode'
@@ -116,14 +117,15 @@ async function restoreMusic(sync: Sync, value: MusicPlaybackPreference | undefin
 
 function refreshMusic(sync: Sync): void {
   const music = useMusicPlayer()
-  if (!sync.loaded || !sync.server || sync.musicRefreshing || sync.saving || sync.musicTouched || sync.pending.musicPlayback || (music.state.current && !music.state.restored)) return
+  if (!sync.loaded || !sync.server || sync.musicRefreshing || sync.saving) return
   const previous = sync.server
   sync.musicRefreshing = (async () => {
     try {
       const server = await api.preferences.get(requestSignal(sync))
-      if (current !== sync || sync.server !== previous || sync.saving || sync.musicTouched || sync.pending.musicPlayback) return
+      if (current !== sync || sync.server !== previous || sync.saving) return
       sync.server = server
-      if (!sameSection('musicPlayback', sync.lastMusicRestore, server.musicPlayback)) await restoreMusic(sync, parseMusicPlayback(server.musicPlayback))
+      applyCinemaPlayback(server.cinemaPlayback, sync.pending.cinemaPlayback)
+      if (!sync.musicTouched && !sync.pending.musicPlayback && (!music.state.current || music.state.restored) && !sameSection('musicPlayback', sync.lastMusicRestore, server.musicPlayback)) await restoreMusic(sync, parseMusicPlayback(server.musicPlayback))
     } catch { /* A later focus or login can retry without interrupting playback. */ }
     finally { sync.musicRefreshing = undefined }
   })()
@@ -143,6 +145,8 @@ function readPending(owner: string): UserPreferencesPatch {
       const location = parseMediaLocation(key, value.patch?.[key])
       if (location) patch[key] = location
     }
+    const cinemaPlayback = parseCinemaPlayback(value.patch?.cinemaPlayback)
+    if (cinemaPlayback) patch.cinemaPlayback = cinemaPlayback
     const musicPlayback = parseMusicPlayback(value.patch?.musicPlayback)
     if (musicPlayback) patch.musicPlayback = musicPlayback
     return patch
@@ -162,6 +166,10 @@ function requestSignal(sync: Sync): AbortSignal {
 
 function sameSection(key: keyof UserPreferencesPatch, left: unknown, right: unknown): boolean {
   if (key === 'locale') return left === right
+  if (key === 'cinemaPlayback') {
+    const a = parseCinemaPlayback(left), b = parseCinemaPlayback(right)
+    return a !== undefined && b !== undefined && JSON.stringify(a) === JSON.stringify(b)
+  }
   if (key === 'musicPlayback') {
     const a = parseMusicPlayback(left), b = parseMusicPlayback(right)
     return a !== undefined && b !== undefined && JSON.stringify(a) === JSON.stringify(b)
@@ -211,6 +219,7 @@ async function load(sync: Sync): Promise<void> {
         if (!server[key] && sync.initial[key]) migration[key] = sync.initial[key]
         applyMediaLocation(key, sync.pending[key] ?? server[key] ?? migration[key])
       }
+      applyCinemaPlayback(server.cinemaPlayback, sync.pending.cinemaPlayback)
       sync.loaded = true
       void restoreMusic(sync, parseMusicPlayback(sync.pending.musicPlayback ?? server.musicPlayback))
       const locale = sync.pending.locale ?? sync.server?.locale ?? migration.locale
@@ -250,8 +259,18 @@ function save(sync: Sync, migration: UserPreferencesPatch = {}): Promise<void> {
           sync.server = result
           migration = {}
           for (const key of Object.keys(patch) as (keyof UserPreferencesPatch)[]) {
+            if (key === 'cinemaPlayback') {
+              // A write may acknowledge B while a newer local edit to A is in
+              // flight. Retrying the whole old batch would overwrite remote B.
+              const sent = new Map((patch.cinemaPlayback?.entries ?? []).map(item => [JSON.stringify([item.hostId, item.path]), JSON.stringify(item)]))
+              const remaining = (sync.pending.cinemaPlayback?.entries ?? []).filter(item => sent.get(JSON.stringify([item.hostId, item.path])) !== JSON.stringify(item))
+              if (remaining.length) sync.pending.cinemaPlayback = { entries: remaining }
+              else delete sync.pending.cinemaPlayback
+              continue
+            }
             if (sameSection(key, sync.pending[key], patch[key])) delete sync.pending[key]
           }
+          applyCinemaPlayback(result.cinemaPlayback, sync.pending.cinemaPlayback)
           persist(sync)
         } catch (error) {
           if (current !== sync) return
@@ -259,6 +278,7 @@ function save(sync: Sync, migration: UserPreferencesPatch = {}): Promise<void> {
           const server = await api.preferences.get(requestSignal(sync))
           if (current !== sync) return
           sync.server = server
+          applyCinemaPlayback(server.cinemaPlayback, sync.pending.cinemaPlayback)
           if (server.locale) delete migration.locale
           if (server.desktop) delete migration.desktop
           for (const key of mediaLocationKeys) if (server[key]) {
@@ -286,7 +306,10 @@ function changed(event: Event): void {
   if (!sync) return
   const patch = (event as CustomEvent<UserPreferencesPatch>).detail
   if (patch.desktop) sync.restoreDesktop = false
-  Object.assign(sync.pending, patch)
+  const { cinemaPlayback, ...other } = patch
+  Object.assign(sync.pending, other)
+  const cinema = parseCinemaPlayback(cinemaPlayback)
+  if (cinema) sync.pending.cinemaPlayback = mergeCinemaPlayback(sync.pending.cinemaPlayback, cinema)
   // Do not erase an undo while an older write is in flight: its response may
   // soon change the server away from the value the user just restored.
   if (!sync.saving && sync.server) {
@@ -302,6 +325,12 @@ function changed(event: Event): void {
     return
   }
   schedule(sync)
+}
+
+function flush(): void {
+  if (!current) return
+  if (current.loaded) void save(current)
+  else void load(current)
 }
 
 function retry(): void {
@@ -321,8 +350,10 @@ export function startPreferencesSync(owner: string): Promise<void> {
     restoreDesktop: true, musicTouched: false, restoringMusic: false, musicWatchers: [], lastMusicProgress: Date.now(), musicRestoreSerial: 0,
   }
   current = sync
+  setCinemaPlaybackOwner(owner)
   for (const key of mediaLocationKeys) applyMediaLocation(key, sync.pending[key] ?? sync.initial[key])
   window.addEventListener('kpanel:preferences-changed', changed)
+  window.addEventListener('kpanel:preferences-flush', flush)
   window.addEventListener('online', retry)
   window.addEventListener('focus', retry)
   watchMusic(sync)
@@ -337,8 +368,10 @@ export function stopPreferencesSync(): void {
     if (current.musicSeek) window.removeEventListener('kpanel:music-seek', current.musicSeek)
   }
   current = undefined
+  setCinemaPlaybackOwner('')
   for (const key of mediaLocationKeys) applyMediaLocation(key, undefined)
   window.removeEventListener('kpanel:preferences-changed', changed)
+  window.removeEventListener('kpanel:preferences-flush', flush)
   window.removeEventListener('online', retry)
   window.removeEventListener('focus', retry)
 }

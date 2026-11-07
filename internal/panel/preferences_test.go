@@ -182,3 +182,36 @@ func TestMediaDesktopWindowsSharedBetweenSessions(t *testing.T) {
 		t.Fatalf("invalid route: %d", r.Code)
 	}
 }
+
+func TestCinemaPlaybackPreferencesAPI(t *testing.T) {
+	s, tokenPath := newTestServer(t)
+	session, csrf := bootstrapCookies(t, s, tokenPath)
+	read := authenticatedSiteRequest(s, session, csrf, http.MethodGet, preferencesPath, nil, false)
+	var state preferencesResponse
+	if err := json.Unmarshal(read.Body.Bytes(), &state); err != nil {
+		t.Fatal(err)
+	}
+	point := map[string]any{"path": "/films/a.mp4", "hostId": "edge", "fileVersion": "v1", "position": 42.5, "duration": 120, "completed": false}
+	body, _ := json.Marshal(map[string]any{"cinemaPlayback": map[string]any{"entries": []any{point}}, "expectedResourceVersion": state.ResourceVersion})
+	if r := authenticatedSiteRequest(s, session, csrf, http.MethodPut, preferencesPath, body, false); r.Code != 403 {
+		t.Fatalf("CSRF: %d", r.Code)
+	}
+	saved := authenticatedSiteRequest(s, session, csrf, http.MethodPut, preferencesPath, body, true)
+	if saved.Code != 200 {
+		t.Fatalf("save: %d %s", saved.Code, saved.Body.String())
+	}
+	if err := json.Unmarshal(saved.Body.Bytes(), &state); err != nil {
+		t.Fatal(err)
+	}
+	if state.CinemaPlayback == nil || state.CinemaPlayback.Entries[0].Position != 42.5 {
+		t.Fatal("checkpoint not saved")
+	}
+	if r := authenticatedSiteRequest(s, session, csrf, http.MethodPut, preferencesPath, body, true); r.Code != 409 {
+		t.Fatalf("conflict: %d", r.Code)
+	}
+	point["path"] = "/films/../secret"
+	body, _ = json.Marshal(map[string]any{"cinemaPlayback": map[string]any{"entries": []any{point}}, "expectedResourceVersion": state.ResourceVersion})
+	if r := authenticatedSiteRequest(s, session, csrf, http.MethodPut, preferencesPath, body, true); r.Code != 422 {
+		t.Fatalf("invalid: %d", r.Code)
+	}
+}

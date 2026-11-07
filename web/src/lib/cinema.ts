@@ -8,6 +8,17 @@ const ENTRY_LIMIT = 4000
 const SETTINGS_KEY = 'kpanel:cinema:v1'
 const IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp', 'avif'])
 
+export function cinemaResolution(width?: number, height?: number): string | undefined {
+  if (!width || !height || !Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 0 || height < 0) return undefined
+  const edge = Math.max(width, height)
+  if (edge >= 7680) return '8K'
+  if (edge >= 3840) return '4K'
+  if (edge >= 2048) return '2K'
+  if (edge >= 1920) return '1080p'
+  if (edge >= 1280) return '720p'
+  return `${Math.min(width, height)}p`
+}
+
 export function cinemaTitle(name: string): string {
   const dot = name.lastIndexOf('.')
   return dot > 0 ? name.slice(0, dot) : name
