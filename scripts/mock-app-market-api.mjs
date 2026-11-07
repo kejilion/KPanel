@@ -1,3 +1,4 @@
+import { mockMusic } from './mock-music.mjs'
 import { handleMockVirtualMachines } from './mock-virtual-machines.mjs'
 import { mockBrowserComponent } from './mock-browser-component.mjs'
 import { createServer } from 'node:http'
@@ -1869,7 +1870,13 @@ async function handleMockLocalApps(request, response, url) {
   return true
 }
 
+const jsonBodies = new WeakMap()
 async function readJSON(request, maxBytes = 65_536) {
+  const cached = jsonBodies.get(request)
+  if (cached) {
+    if (cached.length > maxBytes) throw new Error('request body exceeds visual mock limit')
+    return JSON.parse(cached.toString('utf8') || '{}')
+  }
   const chunks = []
   let size = 0
   for await (const chunk of request) {
@@ -1877,7 +1884,9 @@ async function readJSON(request, maxBytes = 65_536) {
     if (size > maxBytes) throw new Error('request body exceeds visual mock limit')
     chunks.push(chunk)
   }
-  return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
+  const bytes = Buffer.concat(chunks)
+  jsonBodies.set(request, bytes)
+  return JSON.parse(bytes.toString('utf8') || '{}')
 }
 
 let mockMonitoringCheckRevision = 1
@@ -1983,6 +1992,7 @@ async function mockAIApproval(request, response, url) {
 
 createServer(async (request, response) => {
   const url = new URL(request.url, 'http://127.0.0.1:8080')
+  if (await mockMusic(request, response, url, send, readJSON)) return
   if (await mockBrowserComponent(request, response, url, send, readJSON)) return
   if (await mockAIApproval(request, response, url)) return
   if (await mockSiteMonitoring(request, response, url, send, readJSON)) return
@@ -2006,6 +2016,16 @@ createServer(async (request, response) => {
     const changes = {}
     if (input.browser && typeof input.browser.startURL === 'string') changes.browser = input.browser
     if (['zh-CN', 'zh-TW', 'en-US'].includes(input.locale)) changes.locale = input.locale
+    if (input.cinemaPlayback !== undefined) {
+      const entries = input.cinemaPlayback?.entries
+      const keys = new Set()
+      const valid = Array.isArray(entries) && entries.length <= 50 && entries.every(item => {
+        if (!item || typeof item.path !== 'string' || !item.path.startsWith('/') || Buffer.byteLength(item.path) > 4096 || /[\u0000-\u001f\u007f\\]/u.test(item.path) || item.path.slice(1).split('/').some(p => !p || p === '.' || p === '..') || typeof item.hostId !== 'string' || !/^[A-Za-z0-9_-]{0,128}$/.test(item.hostId) || typeof item.fileVersion !== 'string' || !item.fileVersion || Buffer.byteLength(item.fileVersion) > 256 || /[\u0000-\u001f\u007f]/u.test(item.fileVersion) || typeof item.completed !== 'boolean' || !Number.isFinite(item.position) || !Number.isFinite(item.duration) || item.position < 0 || item.duration <= 0 || item.duration > 31536000 || item.position > item.duration) return false
+        const key = JSON.stringify([item.hostId, item.path]); if (keys.has(key)) return false; keys.add(key); return true
+      })
+      if (!valid) { send(response, 422, { title: 'Preferences are invalid', code: 'preferences_invalid' }); return }
+      changes.cinemaPlayback = { entries: [...entries.map(({path,hostId,fileVersion,position,duration,completed})=>({path,hostId,fileVersion,position,duration,completed})), ...(mockPreferences.cinemaPlayback?.entries ?? []).filter(item => !keys.has(JSON.stringify([item.hostId,item.path])))].slice(0,50) }
+    }
     if (input.desktop && Array.isArray(input.desktop.windows) && input.desktop.windows.length <= 8
       && Array.isArray(input.desktop.windowSizes) && input.desktop.windowSizes.length <= 32) changes.desktop = input.desktop
     for (const key of ['galleryLocation', 'musicLocation', 'cinemaLocation']) {
@@ -2033,7 +2053,18 @@ createServer(async (request, response) => {
         send(response, 422, { title: 'Preferences are invalid', code: 'preferences_invalid' })
         return
       }
-      changes.musicPlayback = { path: value.path, hostId: value.hostId, position: value.position, playing: value.playing, repeat: value.repeat, shuffle: value.shuffle }
+      let queue
+      if (value.queue != null) {
+        const seen = new Set(); let bytes = 0
+        if (!Array.isArray(value.queue) || value.queue.length > 2000 || value.queue.some(item => {
+          if (!item || typeof item.path !== 'string' || !item.path.startsWith('/') || Buffer.byteLength(item.path) > 4096 || /[\u0000-\u001f\u007f\\]/u.test(item.path) || item.path.slice(1).split('/').some(part => !part || part === '.' || part === '..') || typeof item.hostId !== 'string' || !/^[A-Za-z0-9_-]{0,128}$/.test(item.hostId)) return true
+          const key = JSON.stringify([item.hostId, item.path]); bytes += Buffer.byteLength(item.path) + item.hostId.length
+          if (seen.has(key) || bytes > 256 * 1024) return true
+          seen.add(key); return false
+        })) { send(response, 422, { title: 'Preferences are invalid', code: 'preferences_invalid' }); return }
+        queue = value.queue.map(item => ({ path: item.path, hostId: item.hostId }))
+      }
+      changes.musicPlayback = { path: value.path, hostId: value.hostId, position: value.position, playing: value.playing, repeat: value.repeat, shuffle: value.shuffle, ...(queue ? { queue } : {}) }
     }
     if (!Object.keys(changes).length) {
       send(response, 422, { title: 'Preferences are invalid', code: 'preferences_invalid' })
