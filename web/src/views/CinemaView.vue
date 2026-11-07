@@ -496,7 +496,6 @@ onBeforeUnmount(() => {
           <div class="cinema-card__footer">
             <span v-if="checkpoint(item)">{{ checkpoint(item)!.completed ? phrase('已看完') : formatGalleryDuration(checkpoint(item)!.position) + ' / ' + formatGalleryDuration(checkpoint(item)!.duration) }}</span>
             <span v-else>{{ item.folder === path ? formatBytes(item.entry.sizeBytes) : galleryBaseName(item.folder) }}</span>
-            <button class="icon-button icon-button--small" type="button" :aria-label="phrase('编辑影片') + ' ' + cinemaTitle(item.entry.name)" :title="phrase('编辑影片')" :disabled="saving" @click="edit(item)"><Pencil :size="15" /></button>
           </div>
         </li>
       </ul>
