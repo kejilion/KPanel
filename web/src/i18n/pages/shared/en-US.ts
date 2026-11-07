@@ -1,6 +1,15 @@
 import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
+  ["浏览器未保存刮削结果，请检查存储空间。","Metadata could not be saved. Check browser storage."],
+  ["数据源拒绝请求，请检查 TMDB 密钥或稍后重试。","The source rejected the request. Check the TMDB credential or try again later."],
+  ["数据源繁忙，请稍后重试。","The source is busy. Try again later."],
+  ["刮削失败，请检查面板网络后重试。","Could not fetch metadata. Check the panel network and retry."],
+  ["没有找到资料，请尝试原片名或其他数据源。","No results. Try the original title or another source."],
+  ["资料已应用，原视频文件未改动。","Metadata applied. The original video is unchanged."],
+  ["已恢复本地影片信息。","Local video information restored."],
+  ["本轮刮削完成","Metadata scan complete"],
+  ["部分影片需要手动匹配","Some videos need manual matching"],
   ['配置的响应头可能在未认证时公开，请勿在响应头中放置敏感信息。', 'Configured response headers may be visible before authentication. Do not put sensitive information in them.'],
   ['操作结果未确认，请刷新查看后再重试。', 'The result is unconfirmed. Refresh the rules before trying again.'],
   ['该模板会开放应用直连端口，暂不支持创建时设置访问密码。', 'This template exposes an application port and cannot currently use an access password during creation.'],

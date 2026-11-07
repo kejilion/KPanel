@@ -6,6 +6,8 @@ import { Clapperboard, Film, Folder, FolderOpen, Image as ImageIcon, LayoutGrid,
 import HostSwitcher from '@/components/common/HostSwitcher.vue'
 import GalleryVideo from '@/components/gallery/GalleryVideo.vue'
 import GalleryViewer from '@/components/gallery/GalleryViewer.vue'
+import CinemaMetadataPanel from '@/components/gallery/CinemaMetadata.vue'
+import { cinemaMetadataImage, cinemaSourceURL, type CinemaMetadata } from '@/lib/cinemaMetadata'
 import { useI18n } from '@/i18n'
 import { phraseCatalogVersion, translatePhrase, usePhraseCatalog } from '@/i18n/phrase'
 import { api } from '@/lib/api'
@@ -58,6 +60,9 @@ const editCover = ref('')
 const editFeatured = ref(false)
 const editError = ref('')
 const saving = ref(false)
+const metadata = ref(new Map<string, CinemaMetadata>())
+function filmTitle(item: GalleryItem) { return metadata.value.get(item.entry.path)?.title ?? cinemaTitle(item.entry.name) }
+function filmMetadata(item: GalleryItem) { return metadata.value.get(item.entry.path) }
 let listing: AbortController | undefined
 let coverUpload: AbortController | undefined
 let disposed = false
@@ -65,7 +70,7 @@ let disposed = false
 const selectedHost = computed(() => hosts.value.find(host => hostId.value ? host.id === hostId.value : host.isLocal))
 const films = computed(() => [...(snapshot.value?.films ?? [])].sort((a, b) =>
   (order.value === 'newest' ? b.time - a.time : 0) || a.entry.name.localeCompare(b.entry.name, undefined, { numeric: true })))
-const visibleFilms = computed(() => films.value.filter(item => item.entry.name.toLocaleLowerCase().includes(search.value.trim().toLocaleLowerCase())))
+const visibleFilms = computed(() => films.value.filter(item => (item.entry.name + ' ' + filmTitle(item)).toLocaleLowerCase().includes(search.value.trim().toLocaleLowerCase())))
 const featured = computed(() => films.value.find(item => item.entry.path === preferences.value.featured) ?? films.value[0])
 const viewerIndex = computed(() => films.value.findIndex(item => item.entry.path === playingPath.value))
 const folderCounts = computed(() => {
@@ -85,12 +90,13 @@ function content(item: GalleryItem, disposition?: 'inline' | 'attachment') {
 function posterKey(item: GalleryItem) {
   return galleryPosterKey(item.entry, content(item, 'inline'))
 }
-function coverUrl(item: GalleryItem): string | undefined {
+function coverUrl(item: GalleryItem, backdrop = false): string | undefined {
   const images = snapshot.value?.images.get(item.folder) ?? []
   const choice = covers.value.get(item.entry.path)
   if (choice === frame) return undefined
   const image = images.find(entry => entry.path === choice) ?? automaticCinemaCover(item, images, folderCounts.value.get(item.folder) === 1)
-  const url = image ? files.value.contentUrl(image.path, 'inline') : undefined
+  const meta = metadata.value.get(item.entry.path)
+  const url = image ? files.value.contentUrl(image.path, 'inline') : meta ? cinemaMetadataImage(meta, backdrop) : undefined
   return url && !failedCovers.value.has(url) ? url : undefined
 }
 function coverError(event: Event) {
@@ -328,15 +334,20 @@ onBeforeUnmount(() => {
       <button v-if="windowed" class="button button--secondary" type="button" @click="openFiles()"><FolderOpen :size="17" /> {{ phrase('文件管理') }}</button>
     </section>
 
+    <CinemaMetadataPanel :items="films" :host="hostId" :selected="editing" :scanning="loading" :visible="windowVisible !== false" @update="metadata = $event" />
     <section v-if="featured" class="cinema-feature" :aria-label="phrase('精选影片')">
       <div class="cinema-feature__art" aria-hidden="true">
         <Film :size="84" />
-        <img v-if="coverUrl(featured)" :key="coverUrl(featured)" :src="coverUrl(featured)" alt="" decoding="async" @error="coverError" />
+        <img v-if="coverUrl(featured, true)" :key="coverUrl(featured, true)" :src="coverUrl(featured, true)" alt="" decoding="async" @error="coverError" />
         <GalleryVideo v-else-if="galleryBrowserCanShow(featured)" :src="content(featured, 'inline')" :poster-key="posterKey(featured)" :suspended="windowVisible === false" />
       </div>
       <div class="cinema-feature__body">
         <span class="cinema-feature__label"><Clapperboard :size="16" /> {{ phrase('精选影片') }}</span>
-        <h2>{{ cinemaTitle(featured.entry.name) }}</h2>
+        <h2>{{ filmTitle(featured) }}</h2>
+        <p v-if="filmMetadata(featured)">{{ filmMetadata(featured)?.year }} <span v-if="filmMetadata(featured)?.rating"> · {{ filmMetadata(featured)?.rating?.toFixed(1) }} / 10</span> · {{ filmMetadata(featured)?.genres?.join(' / ') }}</p>
+        <p v-if="filmMetadata(featured)?.overview" class="cinema-overview">{{ filmMetadata(featured)?.overview }}</p>
+        <p v-if="filmMetadata(featured)?.cast?.length">{{ filmMetadata(featured)?.cast?.join(' · ') }}</p>
+        <a v-if="filmMetadata(featured)" :href="cinemaSourceURL(filmMetadata(featured)!)" target="_blank" rel="noopener noreferrer" class="cinema-credit">{{ filmMetadata(featured)?.provider }}</a>
         <p>{{ galleryFileExtension(featured.entry.name).toUpperCase() }} · {{ formatBytes(featured.entry.sizeBytes) }}</p>
         <div class="cinema-feature__actions">
           <button class="button cinema-feature__play" type="button" @click="play(featured)"><Play :size="18" /> {{ phrase('播放影片') }}</button>
@@ -405,7 +416,8 @@ onBeforeUnmount(() => {
               <span class="cinema-card__format">{{ galleryFileExtension(item.entry.name).toUpperCase() }}</span>
               <span class="cinema-card__watch"><Play :size="22" /></span>
             </span>
-            <strong>{{ cinemaTitle(item.entry.name) }}</strong>
+            <strong>{{ filmTitle(item) }}</strong>
+            <span v-if="filmMetadata(item)" class="cinema-card__metadata">{{ filmMetadata(item)?.year }} <span v-if="filmMetadata(item)?.rating"> · {{ filmMetadata(item)?.rating?.toFixed(1) }} / 10</span> · {{ filmMetadata(item)?.provider }}</span>
           </button>
           <div class="cinema-card__footer">
             <span>{{ item.folder === path ? formatBytes(item.entry.sizeBytes) : galleryBaseName(item.folder) }}</span>
@@ -424,6 +436,9 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.cinema-overview { max-width: 75ch; max-height: 8em; overflow: auto; margin-block: 10px; }
+.cinema-credit { color: #c5e6ff; font-size: 13px; }
+.cinema-card__metadata { display: block; padding: 0 12px 8px; color: var(--text-soft); font-size: 13px; }
 .cinema-page { display: block; container-type: inline-size; padding: clamp(14px, 2vw, 24px); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); color: var(--text); }
 .cinema-heading, .cinema-feature__actions, .cinema-source, .cinema-folders, .cinema-toolbar, .cinema-toolbar__controls, .cinema-layout, .cinema-card__footer { display: flex; align-items: center; gap: 10px; }
 .cinema-heading { flex-wrap: wrap; margin-bottom: 20px; }
