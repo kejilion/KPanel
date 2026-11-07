@@ -116,6 +116,8 @@ export function createMusicPlayer(overrides: Partial<PlayerDependencies> = {}) {
     if (signal.aborted) { state.lyricsLoading = false; state.lyricsFailed = true; return }
     const embedded = tags.status === 'fulfilled' ? tags.value : {}
     state.current = { ...state.current, title: readableMusicTag(embedded.title, track.title), artist: readableMusicTag(embedded.artist, track.artist) }
+    const queued = state.queue.find(item => key(item) === key(track))
+    if (queued) { queued.title = state.current.title; queued.artist = state.current.artist }
     state.album = readableMusicTag(embedded.album, '')
     if (embedded.picture) state.embeddedCover = URL.createObjectURL(embedded.picture)
     state.lyrics = ((sidecar.status === 'fulfilled' && sidecar.value) || embedded.lyrics || '').slice(0, 256 * 1024)

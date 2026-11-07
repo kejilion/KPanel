@@ -260,3 +260,12 @@ it('ends the metadata wait within its budget', async () => {
     expect(online).toHaveBeenCalledWith(expect.objectContaining({ duration: 0 }), expect.any(AbortSignal))
   } finally { vi.useRealTimers() }
 })
+
+it('retains parsed title and artist in the queue after changing the current track', async () => {
+  const { player } = setup(vi.fn(async () => ({ title: 'Parsed', artist: 'Singer' })))
+  const a = track('A'), b = track('B')
+  player.replaceQueue([a,b],a); await flushPromises()
+  expect(player.state.queue[0]).toMatchObject({ title: 'Parsed', artist: 'Singer' })
+  player.play(b); await flushPromises()
+  expect(player.state.queue[0]).toMatchObject({ title: 'Parsed', artist: 'Singer' })
+})
