@@ -80,7 +80,8 @@ function paused() { playing.value = false; publish(true) }
 function ended() { completed.value = true; playing.value = false; waiting.value = false; publish(true) }
 function close() { publish(true); emit('close') }
 function retry() {
-  pendingSeek = position.value
+  // A first-request failure has not consumed the requested resume position yet.
+  pendingSeek = pendingSeek > 0 ? pendingSeek : position.value
   failed.value = false; blocked.value = false; waiting.value = true; ready = false
   video.value?.load(); void play()
 }

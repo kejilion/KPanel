@@ -82,3 +82,11 @@ it('supports seek, volume, mute and speed without borrowing the native player UI
   expect(v.playbackRate).toBe(1.5)
   expect(v.controls).toBe(false)
 })
+
+it('preserves the requested resume point when the first media request fails before metadata', async () => {
+  view = mount(CinemaPlayer, { props: { ...props, startPosition: 42 }, attachTo: document.body }); await flushPromises()
+  element().dispatchEvent(new Event('error')); await flushPromises()
+  document.querySelector<HTMLButtonElement>('[role=alert] button')!.click()
+  load()
+  expect(element().currentTime).toBe(42)
+})
