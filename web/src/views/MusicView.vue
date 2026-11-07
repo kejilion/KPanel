@@ -135,6 +135,15 @@ function seekLyric(time: number) { following.value = true; player.seek(time); vo
 async function followLyrics() {
   if (tab.value === 'listen' && !following.value) return
   await nextTick()
+  if (tab.value !== 'listen') {
+    const sidebar = lyricPanel.value?.closest<HTMLElement>('.music-now')
+    const content = sidebar?.closest<HTMLElement>('.music-content')
+    if (sidebar && content) {
+      const bounds = content.getBoundingClientRect()
+      const height = `${Math.max(0, bounds.bottom - Math.max(bounds.top, sidebar.getBoundingClientRect().top))}px`
+      if (sidebar.style.getPropertyValue('--music-sidebar-height') !== height) sidebar.style.setProperty('--music-sidebar-height', height)
+    }
+  }
   const panel = lyricPanel.value, line = panel?.querySelector<HTMLElement>('[aria-current="true"]')
   if (panel && line && panel.clientHeight > 0) {
     panel.scrollTop = Math.max(0, line.offsetTop - panel.clientHeight / 2 + line.clientHeight / 2)
@@ -152,6 +161,8 @@ onMounted(() => {
   if (typeof ResizeObserver !== 'undefined' && lyricPanel.value) {
     lyricResize = new ResizeObserver(() => { void followLyrics() })
     lyricResize.observe(lyricPanel.value)
+    const content = lyricPanel.value.closest('.music-content')
+    if (content) lyricResize.observe(content)
   }
 })
 onBeforeUnmount(() => { destroyed = true; listing?.abort(); lyricResize?.disconnect(); if (visible.value) state.viewCount = Math.max(0, state.viewCount - 1) })
@@ -159,7 +170,7 @@ onBeforeUnmount(() => { destroyed = true; listing?.abort(); lyricResize?.disconn
 
 <template>
   <main ref="musicRoot" class="page music-page" :class="{ 'music-page--focus': tab === 'listen' }" tabindex="0" @keydown="keyboard">
-    <div class="music-content">
+    <div class="music-content" @scroll.passive="followLyrics">
     <header v-if="!windowed" class="music-header">
       <div class="music-brand"><img :src="'/desktop-icons/music-kpanel-flat-v2.webp'" alt="" /><div><h1>音乐</h1><p>把日常，交给一首好歌</p></div></div>
     </header>
@@ -349,7 +360,7 @@ input[type=range] { accent-color:var(--music-accent); cursor:pointer; min-height
 .music-library:has(.music-empty),.music-library:has(.music-error) { overflow-y:auto; overscroll-behavior:contain; }
 .music-tracks,.music-queue { flex:1 0 auto; min-height:0; max-height:none; overflow:visible; scrollbar-gutter:auto; }
 .music-library .music-folders { max-height:30%; overflow-y:auto; }
-.music-layout:not(.music-layout--focus) .music-now { position:sticky; top:0; height:calc(100cqh - 76px); padding:16px; display:flex; flex-direction:column; min-height:0; overflow:hidden; }
+.music-layout:not(.music-layout--focus) .music-now { position:sticky; top:0; height:var(--music-sidebar-height,100cqh); padding:16px; display:flex; flex-direction:column; min-height:0; overflow:hidden; }
 .music-layout:not(.music-layout--focus) .music-now__album { display:grid; grid-template-rows:minmax(0,248px); grid-auto-rows:max-content; justify-items:center; align-content:center; flex:0 0 75%; min-height:0; overflow-y:auto; overscroll-behavior:contain; }
 .music-layout:not(.music-layout--focus) .music-cover { width:auto; height:calc(100% - 8px); max-width:100%; max-height:240px; margin-bottom:8px; }
 .music-layout:not(.music-layout--focus) .music-provenance { gap:4px; margin:4px 0; }
