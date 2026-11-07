@@ -44,11 +44,14 @@ function normalized(title: string) {
 }
 // Ambiguous titles and year mismatches require an explicit user choice.
 export function automaticCinemaMatch(name: string, items: readonly CinemaMetadata[]) {
+  const exact = cinemaExactMatches(name, items)
+  return exact.length === 1 ? exact[0] : undefined
+}
+export function cinemaExactMatches(name: string, items: readonly CinemaMetadata[]) {
   const query = cinemaSearchTitle(name)
-  const exact = items.filter(item => (normalized(item.title) === normalized(query.title) ||
+  return items.filter(item => (normalized(item.title) === normalized(query.title) ||
     Boolean(item.originalTitle && normalized(item.originalTitle) === normalized(query.title))) &&
     (!query.year || item.year === query.year))
-  return exact.length === 1 ? exact[0] : undefined
 }
 export function cinemaMetadataKey(host: string, language: string, item: GalleryItem) {
   return JSON.stringify([host, language, item.entry.path, item.entry.resourceVersion ?? item.entry.modifiedAt])
@@ -90,4 +93,32 @@ export function saveCinemaMetadataCache(cache: ReadonlyMap<string, CinemaMetadat
   let raw = JSON.stringify(entries)
   while (raw.length > 2 * 1024 * 1024 && entries.length) { entries.shift(); raw = JSON.stringify(entries) }
   try { localStorage.setItem(CACHE_KEY, raw); return true } catch { return false }
+}
+
+export interface CinemaMetadataSettings { enabled: boolean; provider: CinemaProvider | 'auto' }
+const SETTINGS_KEY = 'kpanel:cinema-metadata-settings:v1'
+const ATTEMPTS_KEY = 'kpanel:cinema-metadata-attempts:v1'
+export function readCinemaMetadataSettings(): CinemaMetadataSettings {
+  try {
+    const value = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}')
+    return { enabled: value?.enabled !== false, provider: ['wikipedia', 'tvmaze'].includes(value?.provider) ? value.provider : 'auto' }
+  } catch { return { enabled: true, provider: 'auto' } }
+}
+export function saveCinemaMetadataSettings(value: CinemaMetadataSettings) {
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(value)); return true } catch { return false }
+}
+export function readCinemaMetadataAttempts(): Map<string, number> {
+  try {
+    const raw = localStorage.getItem(ATTEMPTS_KEY)
+    if (!raw || raw.length > 256 * 1024) return new Map()
+    const value: unknown = JSON.parse(raw)
+    if (!Array.isArray(value)) return new Map()
+    return new Map(value.slice(-1000).filter((v): v is [string, number] => Array.isArray(v) && v.length === 2 && typeof v[0] === 'string' && v[0].length <= 5000 && Number.isFinite(v[1]) && v[1] > Date.now() && v[1] <= Date.now() + TTL))
+  } catch { return new Map() }
+}
+export function saveCinemaMetadataAttempts(attempts: ReadonlyMap<string, number>) {
+  const entries = [...attempts].filter(([, until]) => until > Date.now()).slice(-1000)
+  let raw = JSON.stringify(entries)
+  while (raw.length > 256 * 1024 && entries.length) { entries.shift(); raw = JSON.stringify(entries) }
+  try { localStorage.setItem(ATTEMPTS_KEY, raw); return true } catch { return false }
 }

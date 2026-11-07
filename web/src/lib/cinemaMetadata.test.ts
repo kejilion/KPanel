@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from 'vitest'
-import { automaticCinemaMatch, cinemaSearchTitle, cinemaMetadataImage, cinemaSourceURL, readCinemaMetadataCache, saveCinemaMetadataCache, type CinemaMetadata } from './cinemaMetadata'
+import { automaticCinemaMatch, cinemaSearchTitle, cinemaMetadataImage, cinemaSourceURL, readCinemaMetadataCache, saveCinemaMetadataCache, readCinemaMetadataSettings, saveCinemaMetadataSettings, readCinemaMetadataAttempts, saveCinemaMetadataAttempts, type CinemaMetadata } from './cinemaMetadata'
 const movie: CinemaMetadata = { provider: 'tmdb', id: 27205, kind: 'movie', title: '盗梦空间', originalTitle: 'Inception', year: '2010', overview: 'A dream', poster: '/p.jpg', url: 'https://www.themoviedb.org/movie/27205' }
 beforeEach(() => localStorage.clear())
 describe('cinema source matching', () => {
@@ -34,5 +34,19 @@ describe('cinema source matching', () => {
     expect(readCinemaMetadataCache().size).toBe(0)
     localStorage.setItem('kpanel:cinema-metadata:v1', JSON.stringify([{ key: 'expired', metadata: movie, expires: 1 }]))
     expect(readCinemaMetadataCache().size).toBe(0)
+  })
+  it('defaults to automatic lookup and never stores a credential in settings', () => {
+    expect(readCinemaMetadataSettings()).toEqual({ enabled: true, provider: 'auto' })
+    saveCinemaMetadataSettings({ enabled: false, provider: 'tmdb' })
+    expect(readCinemaMetadataSettings()).toEqual({ enabled: false, provider: 'auto' })
+    localStorage.setItem('kpanel:cinema-metadata-settings:v1', '{bad')
+    expect(readCinemaMetadataSettings().provider).toBe('auto')
+  })
+  it('bounds cooldown storage and rejects damaged or expired records', () => {
+    const records = new Map(Array.from({ length: 1200 }, (_, i) => [`key${i}`, Date.now() + 60_000]))
+    expect(saveCinemaMetadataAttempts(records)).toBe(true); expect(readCinemaMetadataAttempts().size).toBe(1000)
+    localStorage.setItem('kpanel:cinema-metadata-attempts:v1', JSON.stringify([['old', 1], ['bad', 'forever'], ['good', Date.now() + 60_000]]))
+    expect([...readCinemaMetadataAttempts().keys()]).toEqual(['good'])
+    localStorage.setItem('kpanel:cinema-metadata-attempts:v1', '{bad'); expect(readCinemaMetadataAttempts().size).toBe(0)
   })
 })
