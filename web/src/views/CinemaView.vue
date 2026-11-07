@@ -466,7 +466,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.cinema-page { display: block; container-type: inline-size; padding: clamp(14px, 2vw, 24px); border: 1px solid var(--border); border-radius: var(--radius-lg); background: #0c0e12; color: var(--text); --surface: #15181e; --surface-raised: #20242c; --surface-subtle: #111319; --text: #f3f4f6; --text-soft: #b8bfca; --border: #343a46; }
+.cinema-page { display: block; container-type: inline-size; padding: clamp(14px, 2vw, 24px); border: 1px solid var(--border); border-radius: var(--radius-lg); background: #0c0e12; color: var(--text); --surface: #15181e; --surface-raised: #20242c; --surface-subtle: #111319; --text: #f3f4f6; --text-soft: #b8bfca; --border: #343a46; --danger: #ffaaaa; }
 .cinema-heading, .cinema-feature__actions, .cinema-source, .cinema-folders, .cinema-toolbar, .cinema-toolbar__controls, .cinema-layout, .cinema-card__footer { display: flex; align-items: center; gap: 10px; }
 .cinema-heading { flex-wrap: wrap; margin-bottom: 24px; padding-bottom: 22px; border-bottom: 1px solid #252a33; }
 .cinema-heading__icon { width: 46px; height: 46px; border-radius: 22%; }
