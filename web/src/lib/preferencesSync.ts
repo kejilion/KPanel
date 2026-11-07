@@ -5,7 +5,7 @@ import { useToast } from '@/stores/toast'
 import { applyMediaLocation, legacyGalleryLocation, mediaLocationKeys, parseMediaLocation } from '@/lib/mediaLocations'
 import { watch, type WatchStopHandle } from 'vue'
 import { fileAPIForHost } from '@/lib/fileHostContext'
-import { isMusic, tracksFromEntries } from '@/lib/music'
+import { isMusic, readMusicTrack } from '@/lib/music'
 import { useMusicPlayer } from '@/stores/musicPlayer'
 import type { MusicPlaybackPreference, UserPreferences, UserPreferencesPatch } from '@/types/api'
 
@@ -84,8 +84,9 @@ async function restoreMusic(sync: Sync, value: MusicPlaybackPreference | undefin
   }
   try {
     const entry = await fileAPIForHost(value.hostId).entry(value.path, requestSignal(sync))
+    if (entry.path !== value.path || !isMusic(entry)) return
+    const track = await readMusicTrack(entry, value.hostId, requestSignal(sync))
     if (current !== sync || serial !== sync.musicRestoreSerial || sync.controller.signal.aborted || sync.musicTouched || (music.state.current && (!music.state.restored || music.state.playing)) || entry.path !== value.path || !isMusic(entry)) return
-    const track = tracksFromEntries([entry], value.hostId)[0]
     if (!track) return
     sync.restoringMusic = true
     try { music.restore(track, value.position, value.repeat, value.shuffle); sync.lastMusicRestore = value }

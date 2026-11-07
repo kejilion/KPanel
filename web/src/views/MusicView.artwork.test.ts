@@ -12,6 +12,7 @@ vi.mock('@/lib/fileHostContext', () => ({ fileAPIForHost: (host: string) => ({
   list: async () => ({ entries: harness.entries }),
   contentUrl: (path: string) => `/content/${host}${path}`,
 }) }))
+vi.mock('@/lib/useMusicQuality', () => ({ useMusicQuality: () => () => ({ bitrate: 1411, bitrateKind: 'pcm', lossless: true, sampleRate: 44100, bitsPerSample: 16 }) }))
 import MusicView from './MusicView.vue'
 
 let wrapper: VueWrapper | undefined
@@ -72,6 +73,22 @@ it('shows current cover and parsed song information in the playback queue', asyn
   expect(rows[0]!.get('.music-track__art img').attributes('src')).toBe(player.cover.value)
   expect(rows[0]!.text()).toContain('Parsed title'); expect(rows[0]!.text()).toContain('Parsed artist')
   expect(rows[1]!.find('.music-track__art img').exists()).toBe(false)
+})
+
+it('shows bitrate and lossless quality in rows and cover provenance, with compact attribution beside the lyrics title', async () => {
+  const { player, tracks, view } = await setup()
+  player.state.current = tracks[0]
+  player.state.onlineSource = 'qq'; player.state.onlineStatus = 'matched'; player.state.saveStatus = 'failed'
+  const retry = vi.spyOn(player, 'retrySave').mockResolvedValue()
+  await flushPromises()
+  expect(view.get('.music-track__format').text()).toContain('1411 kbps')
+  expect(view.get('.music-track__format .music-lossless').text()).toBe('无损')
+  expect(view.get('.music-provenance').text()).toContain('1411 kbps')
+  expect(view.get('.music-provenance .music-lossless').text()).toBe('无损')
+  const title = view.get('.music-lyric-title')
+  expect(title.get('h3').element.nextElementSibling?.textContent).toBe('QQ')
+  expect(title.get('.music-source-label').attributes('title')).toContain('QQ')
+  await title.get('.music-save-retry').trigger('click'); expect(retry).toHaveBeenCalledOnce()
 })
 
 async function lyricsSetup() {

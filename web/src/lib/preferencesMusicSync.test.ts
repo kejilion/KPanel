@@ -2,11 +2,11 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { FileEntry, MusicPlaybackPreference, UserPreferences } from '@/types/api'
 
-const mocks = vi.hoisted(() => ({ get: vi.fn(), update: vi.fn(), entry: vi.fn(), danger: vi.fn(), play: vi.fn() }))
+const mocks = vi.hoisted(() => ({ get: vi.fn(), update: vi.fn(), entry: vi.fn(), entries: vi.fn(), text: vi.fn(), danger: vi.fn(), play: vi.fn() }))
 vi.mock('@/lib/api', () => ({ api: { preferences: { get: mocks.get, update: mocks.update } },
   ApiError: class extends Error { constructor(message: string, public status: number) { super(message) } },
 }))
-vi.mock('@/lib/fileHostContext', () => ({ fileAPIForHost: () => ({ entry: mocks.entry, contentUrl: (path: string) => path, text: vi.fn() }) }))
+vi.mock('@/lib/fileHostContext', () => ({ fileAPIForHost: () => ({ entry: mocks.entry, entries: mocks.entries, contentUrl: (path: string) => path, text: mocks.text }) }))
 vi.mock('@/stores/toast', () => ({ useToast: () => ({ danger: mocks.danger }) }))
 import { startPreferencesSync, stopPreferencesSync } from './preferencesSync'
 import { mediaLocations, setMediaLocation } from './mediaLocations'
@@ -27,10 +27,21 @@ class FakeAudio {
 beforeEach(() => {
   vi.useFakeTimers(); vi.clearAllMocks(); localStorage.clear(); sessionStorage.clear()
   vi.stubGlobal('Audio', FakeAudio)
-  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false })))
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url.endsWith('.lrc') ? new Response(await mocks.text()) : { ok: false }))
   mocks.get.mockResolvedValue(remote())
   mocks.update.mockImplementation(async (patch) => ({ ...remote(), ...patch, resourceVersion: 'v2' }))
   mocks.entry.mockResolvedValue({ ...entry })
+  mocks.entries.mockResolvedValue({ entries: [], unavailable: [] }); mocks.text.mockResolvedValue('')
+})
+
+it('restores saved local lyrics and artwork before attempting online metadata', async () => {
+  mocks.entries.mockResolvedValue({ entries: ['Song.lrc', 'Song.png'].map(name => ({ ...entry, name, path: '/music/' + name })), unavailable: [] })
+  mocks.text.mockResolvedValue('[00:00]Saved local lyrics')
+  await startPreferencesSync('admin'); await vi.advanceTimersByTimeAsync(0)
+  const state = useMusicPlayer().state
+  expect(state.current).toMatchObject({ hostId: 'edge', lyrics: '/music/Song.lrc', cover: '/music/Song.png' })
+  expect(state.lyrics).toBe('[00:00]Saved local lyrics'); expect(state.onlineStatus).toBe('')
+  expect(state.restored).toBe(true); expect(mocks.play).not.toHaveBeenCalled()
 })
 afterEach(() => { stopPreferencesSync(); useMusicPlayer().stop(); vi.useRealTimers(); vi.unstubAllGlobals() })
 

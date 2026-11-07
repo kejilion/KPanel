@@ -1,7 +1,8 @@
 import { computed, reactive, watch } from 'vue'
 import { matchOnlineMusic } from '@/lib/musicOnline'
+import { saveMusicSidecars, type MusicSidecars } from '@/lib/musicSidecars'
 import { fileAPIForHost } from '@/lib/fileHostContext'
-import { MUSIC_LIMIT, trackKey, type Track } from '@/lib/music'
+import { MUSIC_LIMIT, readMusicLyrics, trackKey, type Track } from '@/lib/music'
 import { readMusicTags, readableMusicTag } from '@/lib/musicTags'
 
 type Repeat = 'off' | 'all' | 'one'
@@ -9,6 +10,7 @@ interface PlayerDependencies {
   audio: () => HTMLAudioElement
   tags: typeof readMusicTags
   text: (track: Track, signal: AbortSignal) => Promise<string>
+  save: typeof saveMusicSidecars
   online: typeof matchOnlineMusic
   random: () => number
 }
@@ -17,19 +19,21 @@ interface PlayerDependencies {
 export function createMusicPlayer(overrides: Partial<PlayerDependencies> = {}) {
   const deps: PlayerDependencies = {
     audio: () => new Audio(), tags: readMusicTags,
-    text: (track, signal) => fileAPIForHost(track.hostId).text(track.lyrics!, signal),
-    online: matchOnlineMusic, random: Math.random, ...overrides,
+    text: readMusicLyrics,
+    save: saveMusicSidecars, online: matchOnlineMusic, random: Math.random, ...overrides,
   }
   const state = reactive({
     queue: [] as Track[], current: undefined as Track | undefined,
     playing: false, waiting: false, restored: false, position: 0, duration: 0, volume: 0.8, muted: false,
     repeat: 'off' as Repeat, shuffle: false, error: '' as '' | 'blocked' | 'network' | 'unsupported',
     lyrics: '', lyricsLoading: false, lyricsFailed: false, embeddedCover: '', onlineCover: '', onlineSource: '', onlineStatus: '' as '' | 'loading' | 'matched' | 'empty' | 'failed', album: '',
+    saveStatus: '' as '' | 'saving' | 'saved' | 'kept' | 'partial' | 'failed',
     viewCount: 0, notice: '' as '' | 'added' | 'next' | 'full',
   })
   let audio: HTMLAudioElement | undefined, controller: AbortController | undefined
   let timer: ReturnType<typeof setTimeout> | undefined, sequence = 0, detachedIndex = -1
   let history: Track[] = [], remaining: string[] = []
+  let pendingSave: { track: Track; assets: MusicSidecars } | undefined
   let cycle = new Set<string>(), priority = ''
   const key = (track: Track) => trackKey(track)
   const currentIndex = computed(() => state.current ? state.queue.findIndex(t => key(t) === key(state.current!)) : -1)
@@ -44,7 +48,7 @@ export function createMusicPlayer(overrides: Partial<PlayerDependencies> = {}) {
   function releaseMetadata() {
     controller?.abort(); controller = undefined; clearTimeout(timer)
     if (state.embeddedCover) URL.revokeObjectURL(state.embeddedCover)
-    state.embeddedCover = ''; state.onlineCover = ''; state.onlineSource = ''; state.onlineStatus = ''
+    state.embeddedCover = ''; state.onlineCover = ''; state.onlineSource = ''; state.onlineStatus = ''; state.saveStatus = ''; pendingSave = undefined
   }
   function mediaSession() { return typeof navigator !== 'undefined' ? navigator.mediaSession : undefined }
   function publishMetadata() {
@@ -105,6 +109,33 @@ export function createMusicPlayer(overrides: Partial<PlayerDependencies> = {}) {
   }
   function mute() { state.muted = !state.muted; if (audio) audio.muted = state.muted }
 
+  async function persistSidecars(track: Track, assets: MusicSidecars, id: number) {
+    if (id !== sequence || !state.current) return
+    pendingSave = { track: { ...track }, assets }
+    state.saveStatus = 'saving'
+    controller?.abort(); clearTimeout(timer)
+    const saving = new AbortController(); controller = saving
+    timer = setTimeout(() => saving.abort(), 20000)
+    try {
+      const result = await deps.save(track, assets, saving.signal)
+      if (id !== sequence || saving.signal.aborted || !state.current) return
+      const paths = { ...(result.lyrics ? { lyrics: result.lyrics } : {}), ...(result.cover ? { cover: result.cover } : {}) }
+      Object.assign(state.current, paths)
+      const queued = state.queue.find(item => key(item) === key(track))
+      if (queued) Object.assign(queued, paths)
+      state.saveStatus = result.failed ? (result.saved || result.kept ? 'partial' : 'failed') : (result.saved ? 'saved' : 'kept')
+      publishMetadata()
+    } catch {
+      if (id === sequence) state.saveStatus = 'failed'
+    } finally {
+      if (id === sequence) { clearTimeout(timer); if (saving.signal.aborted && state.saveStatus === 'saving') state.saveStatus = 'failed' }
+    }
+  }
+  async function retrySave() {
+    if (state.saveStatus === 'saving' || !pendingSave || !state.current || key(pendingSave.track) !== key(state.current)) return
+    await persistSidecars(pendingSave.track, pendingSave.assets, sequence)
+  }
+
   async function metadata(track: Track, id: number, signal: AbortSignal) {
     state.lyricsLoading = true
     // Independent optional resources: a broken sidecar does not discard embedded lyrics.
@@ -143,11 +174,13 @@ export function createMusicPlayer(overrides: Partial<PlayerDependencies> = {}) {
     try {
       const result = await deps.online({ title: state.current.title, artist: state.current.artist, album: state.album, duration: state.duration }, onlineController.signal)
       if (id !== sequence || onlineController.signal.aborted) return
+      const assets: MusicSidecars = { ...(!state.lyrics && result.lyrics ? { lyrics: result.lyrics } : {}), ...(!cover.value && result.cover ? { cover: result.cover } : {}) }
       if (!state.lyrics && result.lyrics) { state.lyrics = result.lyrics.slice(0, 128 * 1024); state.lyricsFailed = false }
       if (!cover.value && result.cover && /^data:image\/(jpeg|png);base64,/.test(result.cover)) state.onlineCover = result.cover
       state.onlineSource = result.source ?? ''
       state.onlineStatus = result.matched ? 'matched' : 'empty'
       publishMetadata()
+      if (assets.lyrics || assets.cover) await persistSidecars(track, assets, id)
     } catch {
       if (id === sequence) state.onlineStatus = 'failed'
     } finally {
@@ -269,7 +302,7 @@ export function createMusicPlayer(overrides: Partial<PlayerDependencies> = {}) {
       }
     }
   }
-  return { state, currentIndex, cover, play, restore, retry, choose, replaceQueue, enqueue, next, previous, toggle, pause, seek, setVolume, mute, remove, move, clearQueue, shuffle, stop }
+  return { state, currentIndex, cover, retrySave, play, restore, retry, choose, replaceQueue, enqueue, next, previous, toggle, pause, seek, setVolume, mute, remove, move, clearQueue, shuffle, stop }
 }
 const player = createMusicPlayer()
 export function useMusicPlayer() { return player }

@@ -5,6 +5,8 @@ import { createMusicPlayer } from './musicPlayer'
 import type { Track } from '@/lib/music'
 import type { MusicTags } from '@/lib/musicTags'
 import type { OnlineMusic, matchOnlineMusic } from '@/lib/musicOnline'
+import type { saveMusicSidecars, SidecarSaveResult } from '@/lib/musicSidecars'
+vi.mock('@/lib/musicSidecars', () => ({ saveMusicSidecars: vi.fn(async () => ({ saved: 0, kept: 0, failed: 0 })) }))
 vi.mock('@/lib/musicOnline', () => ({ matchOnlineMusic: vi.fn(async () => ({ matched: false })) }))
 
 function track(name: string, hostId = ''): Track {
@@ -22,11 +24,11 @@ class FakeAudio {
   removeAttribute = vi.fn(() => { this.src = '' })
 }
 const players: ReturnType<typeof createMusicPlayer>[] = []
-function setup(tags = vi.fn(async (): Promise<MusicTags> => ({})), text = vi.fn(async () => ''), online: typeof matchOnlineMusic = vi.fn(async (): Promise<OnlineMusic> => ({ matched: false }))) {
+function setup(tags = vi.fn(async (): Promise<MusicTags> => ({})), text = vi.fn(async () => ''), online: typeof matchOnlineMusic = vi.fn(async (): Promise<OnlineMusic> => ({ matched: false })), save: typeof saveMusicSidecars = vi.fn(async (): Promise<SidecarSaveResult> => ({ saved: 0, kept: 0, failed: 0 }))) {
   const audios: FakeAudio[] = []
-  const player = createMusicPlayer({ audio: () => { const audio = new FakeAudio(); audios.push(audio); return audio as unknown as HTMLAudioElement }, tags, text, online, random: () => 0 })
+  const player = createMusicPlayer({ audio: () => { const audio = new FakeAudio(); audios.push(audio); return audio as unknown as HTMLAudioElement }, tags, text, online, save, random: () => 0 })
   players.push(player)
-  return { player, audios, tags, text, online }
+  return { player, audios, tags, text, online, save }
 }
 afterEach(() => { players.splice(0).forEach(player => player.stop()); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 describe('music listening session', () => {
@@ -268,4 +270,49 @@ it('retains parsed title and artist in the queue after changing the current trac
   expect(player.state.queue[0]).toMatchObject({ title: 'Parsed', artist: 'Singer' })
   player.play(b); await flushPromises()
   expect(player.state.queue[0]).toMatchObject({ title: 'Parsed', artist: 'Singer' })
+})
+
+describe('automatic same-directory metadata saving', () => {
+  const online = () => vi.fn(async () => ({ matched: true, lyrics: '[00:01]downloaded', cover: 'data:image/png;base64,AA==' }))
+  it('saves only the used online resources and updates current and queued sidecar paths', async () => {
+    const save = vi.fn(async () => ({ lyrics: '/music/A.lrc', cover: '/music/A.png', saved: 2, kept: 0, failed: 0 }))
+    const { player } = setup(undefined, undefined, online(), save)
+    const a = track('A', 'node-a'); player.replaceQueue([a], a); await flushPromises()
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ hostId: 'node-a', entry: expect.objectContaining({ path: '/music/A.flac' }) }), expect.objectContaining({ lyrics: '[00:01]downloaded' }), expect.any(AbortSignal))
+    expect(player.state.current).toMatchObject({ lyrics: '/music/A.lrc', cover: '/music/A.png' })
+    expect(player.state.queue[0]).toMatchObject({ lyrics: '/music/A.lrc', cover: '/music/A.png' })
+    expect(player.state.saveStatus).toBe('saved')
+    const coverOnly = vi.fn(async (_track: Track, _assets: unknown, _signal: AbortSignal): Promise<SidecarSaveResult> => ({ saved: 1, kept: 0, failed: 0 }))
+    const { player: local } = setup(vi.fn(async () => ({ lyrics: 'embedded' })), undefined, online(), coverOnly)
+    local.play(track('B')); await flushPromises()
+    expect(coverOnly.mock.calls[0]?.[1]).toEqual({ cover: 'data:image/png;base64,AA==' })
+  })
+  it('keeps playback and matching successful when saving fails, and retries without restarting audio', async () => {
+    const save = vi.fn().mockRejectedValueOnce(Error('permission denied')).mockResolvedValueOnce({ lyrics: '/music/A.lrc', saved: 1, kept: 0, failed: 0 })
+    const match = online(), { player, audios } = setup(undefined, undefined, match, save)
+    player.play(track('A')); await flushPromises()
+    expect(player.state.saveStatus).toBe('failed'); expect(player.state.onlineStatus).toBe('matched')
+    expect(player.state.playing).toBe(true); expect(player.state.error).toBe('')
+    await player.retrySave(); expect(player.state.saveStatus).toBe('saved')
+    expect(match).toHaveBeenCalledTimes(1); expect(audios).toHaveLength(1)
+  })
+  it('cancels old-host saves and rejects their late result after changing the song', async () => {
+    let finish!: (value: SidecarSaveResult) => void
+    const save = vi.fn((_track: Track, _assets: unknown, _signal: AbortSignal) => new Promise<SidecarSaveResult>(resolve => { finish = resolve }))
+    const { player } = setup(undefined, undefined, online(), save)
+    player.play(track('A', 'old-node')); await flushPromises()
+    const oldSignal = save.mock.calls[0]![2], finishOld = finish
+    player.play(track('B', 'new-node')); await flushPromises()
+    expect(oldSignal.aborted).toBe(true)
+    finishOld({ lyrics: '/music/A.lrc', saved: 1, kept: 0, failed: 0 }); await flushPromises()
+    expect(player.state.current?.entry.path).toBe('/music/B.flac'); expect(player.state.current?.lyrics).toBeUndefined()
+    player.stop(); finish({ lyrics: '/music/B.lrc', saved: 1, kept: 0, failed: 0 }); await flushPromises()
+    expect(player.state.current).toBeUndefined(); expect(player.state.saveStatus).toBe('')
+  })
+  it('reports partial results and preserves existing files distinctly from new saves', async () => {
+    const save = vi.fn().mockResolvedValueOnce({ lyrics: '/music/A.lrc', saved: 1, kept: 0, failed: 1 }).mockResolvedValueOnce({ lyrics: '/music/A.lrc', cover: '/music/A.png', saved: 0, kept: 2, failed: 0 })
+    const { player } = setup(undefined, undefined, online(), save)
+    player.play(track('A')); await flushPromises(); expect(player.state.saveStatus).toBe('partial')
+    await player.retrySave(); expect(player.state.saveStatus).toBe('kept')
+  })
 })

@@ -1870,7 +1870,13 @@ async function handleMockLocalApps(request, response, url) {
   return true
 }
 
+const jsonBodies = new WeakMap()
 async function readJSON(request, maxBytes = 65_536) {
+  const cached = jsonBodies.get(request)
+  if (cached) {
+    if (cached.length > maxBytes) throw new Error('request body exceeds visual mock limit')
+    return JSON.parse(cached.toString('utf8') || '{}')
+  }
   const chunks = []
   let size = 0
   for await (const chunk of request) {
@@ -1878,7 +1884,9 @@ async function readJSON(request, maxBytes = 65_536) {
     if (size > maxBytes) throw new Error('request body exceeds visual mock limit')
     chunks.push(chunk)
   }
-  return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
+  const bytes = Buffer.concat(chunks)
+  jsonBodies.set(request, bytes)
+  return JSON.parse(bytes.toString('utf8') || '{}')
 }
 
 let mockMonitoringCheckRevision = 1
