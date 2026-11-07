@@ -47,6 +47,15 @@ it('resolves restored queue resources only when selected and keeps offline refer
   expect(player.state.queue).toHaveLength(3); expect(player.state.current?.needsRefresh).toBe(true); expect(online).not.toHaveBeenCalled()
 })
 describe('music listening session', () => {
+  it('does not carry a removed current index into a restored queue', () => {
+    for (const stopFirst of [false, true]) {
+      const { player } = setup(), old = [track('old-first'), track('old-second')], fresh = [track('new-first'), track('new-second')]
+      player.replaceQueue(old, old[1]); player.remove(old[1]!)
+      if (stopFirst) player.stop()
+      player.restore(track('outside'), 10, 'off', false, fresh); player.next()
+      expect(player.state.current?.entry.path).toBe(fresh[0]!.entry.path)
+    }
+  })
   it('retries a failed restored track at its saved position', () => {
     const { player, audios } = setup()
     player.restore(track('A'), 42, 'off', false)

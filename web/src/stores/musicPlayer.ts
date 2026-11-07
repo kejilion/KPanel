@@ -230,7 +230,7 @@ export function createMusicPlayer(overrides: Partial<PlayerDependencies> = {}) {
   }
   function restore(track: Track | undefined, position: number, repeat: Repeat, shuffle: boolean, queue?: Track[]) {
     if (!track) stop()
-    state.queue = queue ?? (track ? [track] : []); history = []; remaining = []; cycle.clear(); priority = ''
+    state.queue = queue ?? (track ? [track] : []); history = []; remaining = []; cycle.clear(); priority = ''; detachedIndex = -1
     state.repeat = repeat; state.shuffle = shuffle
     if (track) play(track, false, position, false)
     else state.restored = true
@@ -309,7 +309,7 @@ export function createMusicPlayer(overrides: Partial<PlayerDependencies> = {}) {
   function clearQueue() { state.queue = state.current ? [{ ...state.current }] : []; remaining = []; history = []; priority = ''; cycle.clear(); if (state.current) cycle.add(key(state.current)) }
   function shuffle(value = !state.shuffle) { state.shuffle = value; remaining = []; history = []; cycle.clear(); if (state.current) cycle.add(key(state.current)) }
   function stop() {
-    ++sequence; releaseAudio(); releaseMetadata(); history = []; remaining = []; cycle.clear(); priority = ''
+    ++sequence; releaseAudio(); releaseMetadata(); history = []; remaining = []; cycle.clear(); priority = ''; detachedIndex = -1
     state.current = undefined; state.queue = []; state.playing = false; state.waiting = false; state.restored = false
     state.position = 0; state.duration = 0; state.lyrics = ''; state.error = ''; state.notice = ''; state.lyricsLoading = false; state.lyricsFailed = false
     const session = mediaSession()
