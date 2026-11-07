@@ -14,6 +14,7 @@ watch(() => props.metadata, () => { expanded.value = false })
 </script>
 <template>
   <section class="cinema-synopsis" :aria-label="phrase('影片资料')">
+    <p v-if="metadata.originalTitle && metadata.originalTitle !== metadata.title" class="cinema-synopsis__original">{{ metadata.originalTitle }}</p>
     <div v-if="metadata.year || rating || genres.length" class="cinema-synopsis__tags">
       <span v-if="metadata.year" class="cinema-synopsis__year">{{ metadata.year }}</span>
       <span v-if="rating" class="cinema-synopsis__rating"><Star :size="15" aria-hidden="true" /><strong>{{ rating }}</strong><span>/ 10</span></span>
@@ -29,6 +30,7 @@ watch(() => props.metadata, () => { expanded.value = false })
 </template>
 <style scoped>
 .cinema-synopsis { display: grid; gap: 16px; max-width: 70ch; margin-block: 18px 24px; min-width: 0; }
+.cinema-synopsis__original { margin: 0; color: var(--text-soft); font-size: 14px; overflow-wrap: anywhere; }
 .cinema-synopsis__tags { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; font-size: 14px; }
 .cinema-synopsis__year { color: var(--text-soft); }
 .cinema-synopsis__rating { display: inline-flex; align-items: center; gap: 5px; color: #f6d77a; }

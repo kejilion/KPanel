@@ -41,6 +41,7 @@ let disposed = false
 let retryAt = 0
 function key(item: GalleryItem) { return cinemaMetadataKey(props.host, language.value, item) }
 function attemptKey(item: GalleryItem) { return JSON.stringify([key(item), provider.value]) }
+function clearedKey(item: GalleryItem) { return JSON.stringify([key(item), 'cleared']) }
 function publish() { emit('update', new Map(props.items.flatMap(item => { const value = cache.value.get(key(item)) ?? sessionMatches.get(key(item)); return value ? [[item.entry.path, value] as const] : [] }))) }
 function persist() {
   cache.value = new Map([...cache.value].slice(-200))
@@ -84,7 +85,7 @@ async function detailed(item: CinemaMetadata, signal: AbortSignal) {
 function apply(film: GalleryItem, item: CinemaMetadata) {
   if (sessionMatches.size >= 4000) sessionMatches.delete(sessionMatches.keys().next().value!)
   sessionMatches.set(key(film), item)
-  cache.value.delete(key(film)); cache.value.set(key(film), { ...item, fetchedAt: Date.now() }); attempts.delete(attemptKey(film)); persist()
+  cache.value.delete(key(film)); cache.value.set(key(film), { ...item, fetchedAt: Date.now() }); attempts.delete(attemptKey(film)); attempts.delete(clearedKey(film)); persist()
 }
 function schedule(delay = 200) {
   if (scheduled) clearTimeout(scheduled)
@@ -101,7 +102,7 @@ async function scan(refresh = false) {
   try {
     for (const film of items) {
       const identity = key(film); if (seen.has(identity)) continue; seen.add(identity)
-      if (!refresh && (cache.value.has(identity) || sessionMatches.has(identity) || (attempts.get(attemptKey(film)) ?? 0) > Date.now())) continue
+      if (!refresh && (cache.value.has(identity) || sessionMatches.has(identity) || Math.max(attempts.get(attemptKey(film)) ?? 0, attempts.get(clearedKey(film)) ?? 0) > Date.now())) continue
       const parsed = cinemaSearchTitle(film.entry.name)
       const found = await lookup(parsed.title || film.entry.name, parsed.kind, run.signal, film.entry.name)
       let item = automaticCinemaMatch(film.entry.name, found)
@@ -133,8 +134,8 @@ async function choose(item: CinemaMetadata) {
   catch (cause) { if (!run.signal.aborted) error.value = errorText(cause) }
   finally { if (manual === run) { busy.value = false; manual = undefined } }
 }
-function remove() { if (target.value) { cache.value.delete(key(target.value)); sessionMatches.delete(key(target.value)); attempts.set(attemptKey(target.value), Date.now() + 30 * 24 * 60 * 60 * 1000); saveCinemaMetadataAttempts(attempts); persist(); status.value = phrase('已恢复本地影片信息。') } }
-watch(() => props.selected, item => { stop(); results.value = []; error.value = ''; status.value = ''; if (item) { const parsed = cinemaSearchTitle(item.entry.name); title.value = parsed.title; kind.value = parsed.kind } schedule() }, { immediate: true })
+function remove() { if (target.value) { cache.value.delete(key(target.value)); sessionMatches.delete(key(target.value)); attempts.set(clearedKey(target.value), Date.now() + 30 * 24 * 60 * 60 * 1000); saveCinemaMetadataAttempts(attempts); persist(); status.value = phrase('已恢复本地影片信息。') } }
+watch(() => props.selected, (item, previous) => { stop(); results.value = []; error.value = ''; status.value = ''; if (previous && item?.entry.path !== previous.entry.path) open.value = false; if (item) { const parsed = cinemaSearchTitle(item.entry.name); title.value = parsed.title; kind.value = parsed.kind } schedule() }, { immediate: true })
 watch([() => props.host, language], () => { stop(); credential.value = ''; memo.clear(); sessionMatches.clear(); retryAt = 0; results.value = []; publish(); schedule() })
 watch([provider, credential], () => { stop(); memo.clear(); retryAt = 0; results.value = []; error.value = ''; saveCinemaMetadataSettings({ enabled: enabled.value, provider: provider.value }); schedule() })
 watch(enabled, value => { stopAuto(); saveCinemaMetadataSettings({ enabled: value, provider: provider.value }); if (value) schedule() })
@@ -188,5 +189,5 @@ input:not([type=checkbox]), select { max-width: 100%; min-width: 0; padding: 8px
 .metadata__results img { width: 70px; height: 105px; object-fit: cover; border-radius: var(--radius-md); }
 footer { font-size: 13px; } footer svg { fill: #01b4e4; vertical-align: middle; }
 .metadata__selected { display: grid; gap: 8px; padding: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); }
-a { color: var(--brand); }
+a { color: #c5e6ff; }
 </style>

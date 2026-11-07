@@ -51,7 +51,7 @@ export function cinemaExactMatches(name: string, items: readonly CinemaMetadata[
   const query = cinemaSearchTitle(name)
   return items.filter(item => (normalized(item.title) === normalized(query.title) ||
     Boolean(item.originalTitle && normalized(item.originalTitle) === normalized(query.title))) &&
-    (!query.year || item.year === query.year))
+    (!query.year || item.year === query.year || (query.kind === 'tv' && item.kind === 'tv' && Number(item.year) > 0 && Number(item.year) <= Number(query.year))))
 }
 export function cinemaMetadataKey(host: string, language: string, item: GalleryItem) {
   return JSON.stringify([host, language, item.entry.path, item.entry.resourceVersion ?? item.entry.modifiedAt])

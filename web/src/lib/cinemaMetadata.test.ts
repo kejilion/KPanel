@@ -21,6 +21,11 @@ describe('cinema source matching', () => {
     expect(cinemaSearchTitle('1917.mkv')).toMatchObject({ title: '1917', year: undefined })
     expect(cinemaSearchTitle('Blade.Runner.2049.mkv')).toMatchObject({ title: 'Blade Runner 2049', year: undefined })
   })
+  it('allows a uniquely named series to predate a later season while preserving remake ambiguity', () => {
+    const show = { ...movie, kind: 'tv' as const, title: 'The Expanse', originalTitle: '', year: '2015' }
+    expect(automaticCinemaMatch('The.Expanse.2020.S05E01.mkv', [show])).toEqual(show)
+    expect(automaticCinemaMatch('The.Expanse.2020.S05E01.mkv', [show, { ...show, id: 2, year: '2019' }])).toBeUndefined()
+  })
   it('uses same-origin artwork and constructs trusted source links', () => {
     expect(cinemaMetadataImage(movie)).toContain('/api/v1/cinema/image?provider=tmdb&path=%2Fp.jpg&size=poster')
     expect(cinemaSourceURL({ ...movie, url: 'javascript:evil' })).toBe('https://www.themoviedb.org/movie/27205')
