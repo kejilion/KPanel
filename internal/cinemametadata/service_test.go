@@ -183,7 +183,7 @@ func TestKeyTVmazeWikipediaAndSourceFailures(t *testing.T) {
 		if r.URL.Host != "zh.wikipedia.org" || r.URL.Query().Get("gsrlimit") != "5" {
 			t.Fatal(r.URL)
 		}
-		return fixture(`{"query":{"pages":[{"pageid":42,"title":"盗梦空间","extract":"简介","thumbnail":{"source":"https://upload.wikimedia.org/wikipedia/commons/thumb/1/12/a.jpg/500px-a.jpg"}}]}}`), nil
+		return fixture(`{"query":{"pages":[{"pageid":42,"title":"全面啟動","extract":"《盗梦空间》（英語：Inception，台湾译《全面启动》）是一部於2010年上映的电影。","thumbnail":{"source":"https://upload.wikimedia.org/wikipedia/commons/thumb/1/12/a.jpg/500px-a.jpg"}}]}}`), nil
 	})
 	q := query("tmdb")
 	q.Credential = strings.Repeat("a", 32)
@@ -199,6 +199,9 @@ func TestKeyTVmazeWikipediaAndSourceFailures(t *testing.T) {
 	result, err = s.Search(context.Background(), q)
 	if err != nil || result.Items[0].ID != 42 || result.Items[0].Poster == "" {
 		t.Fatalf("%+v %v", result, err)
+	}
+	if result.Items[0].OriginalTitle != "Inception" || result.Items[0].Year != "2010" {
+		t.Fatalf("regional alias missing: %+v", result.Items[0])
 	}
 	for _, body := range []string{"invalid", `{"error":{"info":"private error"}}`, strings.Repeat("x", (1<<20)+1)} {
 		s = New()

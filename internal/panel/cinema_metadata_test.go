@@ -55,6 +55,7 @@ func TestCinemaLiveRoute(t *testing.T) {
 	for _, query := range []cinemametadata.Query{
 		{Provider: "wikipedia", Title: "Inception", Kind: "movie", Language: "en-US"},
 		{Provider: "wikipedia", Title: "盗梦空间", Kind: "movie", Language: "zh-CN"},
+		{Provider: "wikipedia", Title: "Inception", Kind: "movie", Language: "zh-CN"},
 		{Provider: "tvmaze", Title: "The Expanse", Kind: "tv", Language: "en-US"},
 	} {
 		t.Run(query.Provider+"/"+query.Language, func(t *testing.T) {
@@ -76,6 +77,9 @@ func TestCinemaLiveRoute(t *testing.T) {
 			}
 			if item.Poster == "" {
 				t.Fatal("no poster returned")
+			}
+			if query.Provider == "wikipedia" && query.Title == "Inception" && query.Language == "zh-CN" && item.OriginalTitle != "Inception" {
+				t.Fatalf("English filename cannot match localized metadata: %+v", item)
 			}
 			params := url.Values{"provider": {item.Provider}, "path": {item.Poster}, "size": {"poster"}}
 			image := authenticatedRequest(s, http.MethodGet, cinemaImagePath+"?"+params.Encode(), nil, session, csrf, nil)

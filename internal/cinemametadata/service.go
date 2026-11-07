@@ -220,6 +220,7 @@ func year(s string) string {
 
 var markup = regexp.MustCompile(`<[^>]*>`)
 var wikipediaRelease = regexp.MustCompile(`(?i)\b(?:is|was) (?:an? )?((?:19|20)\d{2})\b|(?:於|于)((?:19|20)\d{2})年(?:上映|发行|發行|首播|播出)|(?:是|為|为)(?:一部|一套|一齣|一出)?((?:19|20)\d{2})年`)
+var wikipediaEnglishTitle = regexp.MustCompile(`(?:英語|英语|英文)[：:]\s*([^，,；;）)]+)`)
 
 func wikipediaYear(extract string) string {
 	match := wikipediaRelease.FindStringSubmatch(text(extract, 400))
@@ -518,6 +519,8 @@ func (s *Service) wikipedia(ctx context.Context, q Query) (Result, error) {
 		alias := ""
 		if strings.Contains(text(p.Extract, 200), "《"+q.Title+"》") {
 			alias = q.Title
+		} else if match := wikipediaEnglishTitle.FindStringSubmatch(text(p.Extract, 200)); len(match) > 1 {
+			alias = text(strings.TrimSpace(match[1]), 240)
 		}
 		result.Items = append(result.Items, Item{Provider: "wikipedia", ID: p.ID, Kind: q.Kind, Title: text(p.Title, 240), OriginalTitle: alias, Year: releaseYear, Overview: plain(p.Extract), Poster: imagePath("wikipedia", p.Thumbnail.Source), URL: "https://" + language + ".wikipedia.org/?curid=" + strconv.FormatInt(p.ID, 10)})
 	}
