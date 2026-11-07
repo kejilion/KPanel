@@ -487,7 +487,7 @@ onBeforeUnmount(() => {
               <img v-if="coverUrl(item)" :key="coverUrl(item)" :src="coverUrl(item)" alt="" loading="lazy" decoding="async" @error="coverError" />
               <GalleryVideo v-if="galleryBrowserCanShow(item)" :src="content(item, 'inline')" :poster-key="posterKey(item)" :metadata-only="Boolean(coverUrl(item))" :suspended="windowVisible === false || Boolean(selectedFilm)" />
               <span v-if="preferences.featured === item.entry.path" class="cinema-card__featured">{{ phrase('精选影片') }}</span>
-              <span v-if="resolution(item)" class="cinema-card__format" :title="readGalleryPoster(posterKey(item))?.width + ' × ' + readGalleryPoster(posterKey(item))?.height">{{ resolution(item) }}</span>
+              <span v-if="resolution(item)" class="cinema-card__format" :data-quality="resolution(item)" :title="readGalleryPoster(posterKey(item))?.width + ' × ' + readGalleryPoster(posterKey(item))?.height">{{ resolution(item) }}</span>
               <span class="cinema-card__watch">{{ phrase('查看详情') }}</span>
               <progress v-if="checkpoint(item)" class="cinema-card__progress" :value="checkpoint(item)!.completed ? checkpoint(item)!.duration : checkpoint(item)!.position" :max="checkpoint(item)!.duration" :aria-label="phrase('观看进度')" />
             </span>
@@ -548,7 +548,11 @@ p { color: var(--text-soft); line-height: 1.55; }
 .cinema-card__poster { position: relative; display: grid; place-items: center; aspect-ratio: 2 / 3; overflow: hidden; border-radius: var(--radius-md); background: linear-gradient(145deg, #1b3645, #172131); color: #a6cbd3; }
 .cinema-grid--wide .cinema-card__poster { aspect-ratio: 16 / 9; }
 .cinema-card__format, .cinema-card__watch { position: absolute; display: grid; place-items: center; background: #14202d; color: #fff; }
-.cinema-card__format { inset: auto auto 8px 8px; padding: 4px 7px; border-radius: var(--radius-sm); font-size: 12px; }
+.cinema-card__format { inset: auto auto 8px 8px; padding: 4px 7px; border: 1px solid #607486; border-radius: var(--radius-sm); font-size: 12px; font-weight: 600; }
+.cinema-card__format[data-quality="1080p"] { background: #16354f; color: #c7e5ff; border-color: #7bb8e8; }
+.cinema-card__format[data-quality="2K"] { background: #35274f; color: #ead8ff; border-color: #b59be5; }
+.cinema-card__format[data-quality="4K"] { background: #493916; color: #ffe5a3; border-color: #dcb96a; }
+.cinema-card__format[data-quality="8K"] { background: #4b2439; color: #ffd5e7; border-color: #e7a1c1; }
 .cinema-card__watch { padding: 10px 14px; border: 1px solid #7c909b; border-radius: var(--radius-sm); opacity: 0; font-size: 14px; }
 .cinema-card__play:is(:hover,:focus-visible) .cinema-card__watch { opacity: 1; }
 .cinema-card__play strong { display: block; padding: 11px 4px 3px; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
