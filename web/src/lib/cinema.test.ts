@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { FileEntry } from '@/types/api'
-import { automaticCinemaCover, cinemaRenameTarget, readCinemaFolder } from './cinema'
+import { automaticCinemaCover, cinemaRenameTarget, cinemaResolution, readCinemaFolder } from './cinema'
 
 const { filesForHost, list } = vi.hoisted(() => {
   const list = vi.fn()
@@ -18,6 +18,15 @@ function entry(path: string, kind: FileEntry['kind'] = 'file'): FileEntry {
 beforeEach(() => { list.mockReset(); filesForHost.mockClear() })
 
 describe('cinema library', () => {
+  it.each([[1920, 1080, '1080p'], [2560, 1440, '2K'], [2048, 1080, '2K'], [3840, 2160, '4K'], [4096, 1716, '4K'], [7680, 4320, '8K'], [1080, 1920, '1080p'], [1920, 800, '1080p'], [1280, 720, '720p'], [640, 360, '360p']] as const)('labels actual video dimensions %i × %i', (width, height, expected) => {
+    expect(cinemaResolution(width, height)).toBe(expected)
+  })
+  it('keeps missing or invalid video dimensions unlabeled', () => {
+    for (const value of [undefined, 0, -1, NaN, Infinity, 1.5]) {
+      expect(cinemaResolution(value, 1080)).toBeUndefined()
+      expect(cinemaResolution(1920, value)).toBeUndefined()
+    }
+  })
   it('keeps a rename in the original directory with the original extension', () => {
     const film = entry('/films/old.cut.mkv')
     expect(cinemaRenameTarget(film, ' New Cut ')).toBe('/films/New Cut.mkv')

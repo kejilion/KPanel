@@ -10,7 +10,7 @@ import CinemaPlayer from '@/components/gallery/CinemaPlayer.vue'
 import { useI18n } from '@/i18n'
 import { phraseCatalogVersion, translatePhrase, usePhraseCatalog } from '@/i18n/phrase'
 import { api } from '@/lib/api'
-import { automaticCinemaCover, CINEMA_ROOT, cinemaImage, cinemaRenameTarget, cinemaTitle, readCinemaFolder, readCinemaPreferences, writeCinemaPreferences, type CinemaFolder } from '@/lib/cinema'
+import { automaticCinemaCover, CINEMA_ROOT, cinemaImage, cinemaRenameTarget, cinemaResolution, cinemaTitle, readCinemaFolder, readCinemaPreferences, writeCinemaPreferences, type CinemaFolder } from '@/lib/cinema'
 import { clusterHostPanelPageURL } from '@/lib/clusterHostNavigation'
 import { desktopWindowVisibleKey } from '@/lib/desktopRouteKeys'
 import { fileAPIForHost } from '@/lib/fileHostContext'
@@ -101,6 +101,10 @@ function content(item: GalleryItem, disposition?: 'inline' | 'attachment') {
 }
 function posterKey(item: GalleryItem) {
   return galleryPosterKey(item.entry, content(item, 'inline'))
+}
+function resolution(item: GalleryItem) {
+  const metadata = readGalleryPoster(posterKey(item))
+  return metadata && cinemaResolution(metadata.width, metadata.height)
 }
 function coverUrl(item: GalleryItem): string | undefined {
   const images = snapshot.value?.images.get(item.folder) ?? []
@@ -481,9 +485,9 @@ onBeforeUnmount(() => {
             <span class="cinema-card__poster">
               <Film :size="38" />
               <img v-if="coverUrl(item)" :key="coverUrl(item)" :src="coverUrl(item)" alt="" loading="lazy" decoding="async" @error="coverError" />
-              <GalleryVideo v-else-if="galleryBrowserCanShow(item)" :src="content(item, 'inline')" :poster-key="posterKey(item)" :suspended="windowVisible === false || Boolean(selectedFilm)" />
+              <GalleryVideo v-if="galleryBrowserCanShow(item)" :src="content(item, 'inline')" :poster-key="posterKey(item)" :metadata-only="Boolean(coverUrl(item))" :suspended="windowVisible === false || Boolean(selectedFilm)" />
               <span v-if="preferences.featured === item.entry.path" class="cinema-card__featured">{{ phrase('精选影片') }}</span>
-              <span class="cinema-card__format">{{ galleryFileExtension(item.entry.name).toUpperCase() }}</span>
+              <span v-if="resolution(item)" class="cinema-card__format" :title="readGalleryPoster(posterKey(item))?.width + ' × ' + readGalleryPoster(posterKey(item))?.height">{{ resolution(item) }}</span>
               <span class="cinema-card__watch">{{ phrase('查看详情') }}</span>
               <progress v-if="checkpoint(item)" class="cinema-card__progress" :value="checkpoint(item)!.completed ? checkpoint(item)!.duration : checkpoint(item)!.position" :max="checkpoint(item)!.duration" :aria-label="phrase('观看进度')" />
             </span>

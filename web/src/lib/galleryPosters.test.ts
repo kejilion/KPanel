@@ -32,9 +32,30 @@ describe('gallery poster cache', () => {
     expect(readGalleryPoster('video')).toBeUndefined()
     video.dispatchEvent(new Event('seeked'))
     await pending
-    expect(readGalleryPoster('video')).toEqual({ poster: 'data:image/jpeg;base64,frame', duration: 12 })
+    expect(readGalleryPoster('video')).toEqual({ poster: 'data:image/jpeg;base64,frame', duration: 12, width: 640, height: 360 })
     expect(video.getAttribute('src')).toBeNull()
     expect(pause).toHaveBeenCalled()
+  })
+
+  it('reads dimensions without seeking or capturing when artwork already exists and reuses metadata', async () => {
+    const video = document.createElement('video')
+    Object.defineProperties(video, { duration: { value: 12 }, videoWidth: { value: 3840 }, videoHeight: { value: 1608 } })
+    vi.spyOn(video, 'load').mockImplementation(() => undefined)
+    const pause = vi.spyOn(video, 'pause').mockImplementation(() => undefined)
+    const original = document.createElement.bind(document)
+    const create = vi.spyOn(document, 'createElement').mockImplementation(((name: string) => name === 'video' ? video : original(name)) as typeof document.createElement)
+    const pending = loadGalleryPoster('artwork', '/film.mp4', new AbortController().signal, true)
+    await Promise.resolve()
+    expect(video.preload).toBe('metadata')
+    video.dispatchEvent(new Event('loadedmetadata'))
+    await pending
+    expect(readGalleryPoster('artwork')).toEqual({ duration: 12, width: 3840, height: 1608 })
+    expect(video.currentTime).toBe(0)
+    expect(create).not.toHaveBeenCalledWith('canvas')
+    expect(video.getAttribute('src')).toBeNull()
+    expect(pause).toHaveBeenCalledOnce()
+    await loadGalleryPoster('artwork', '/film.mp4', new AbortController().signal, true)
+    expect(create).toHaveBeenCalledTimes(1)
   })
 
   it('cancels the decoder when navigation abandons a pending poster', async () => {

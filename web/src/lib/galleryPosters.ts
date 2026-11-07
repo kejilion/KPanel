@@ -12,6 +12,8 @@ import { queueGalleryVideo } from '@/lib/galleryMedia'
 export interface GalleryPoster {
   poster?: string
   duration?: number
+  width?: number
+  height?: number
 }
 
 const MAX_POSTERS = 240
@@ -64,13 +66,14 @@ export function resetGalleryPostersForTest(): void {
 }
 
 /** Seek explicitly; loadeddata alone can still represent the initial black frame. */
-export async function loadGalleryPoster(key: string, url: string, signal: AbortSignal): Promise<void> {
+export async function loadGalleryPoster(key: string, url: string, signal: AbortSignal, metadataOnly = false): Promise<void> {
   await queueGalleryVideo(async () => {
-    if (readGalleryPoster(key)?.poster) return
+    const cached = readGalleryPoster(key)
+    if (metadataOnly ? cached?.width && cached.height : cached?.poster) return
     const video = document.createElement('video')
     video.muted = true
     video.playsInline = true
-    video.preload = 'auto'
+    video.preload = metadataOnly ? 'metadata' : 'auto'
     let frameCallback: number | undefined
     let fallbackTimer: ReturnType<typeof setTimeout> | undefined
     try {
@@ -88,7 +91,7 @@ export async function loadGalleryPoster(key: string, url: string, signal: AbortS
           if (signal.aborted) { abort(); return }
           const poster = captureGalleryVideoFrame(video)
           if (!poster) { fail(); return }
-          storeGalleryPoster(key, { poster, duration: Number.isFinite(video.duration) ? video.duration : undefined })
+          storeGalleryPoster(key, { poster, duration: Number.isFinite(video.duration) ? video.duration : undefined, width: video.videoWidth, height: video.videoHeight })
           cleanup()
           resolve()
         }
@@ -96,7 +99,11 @@ export async function loadGalleryPoster(key: string, url: string, signal: AbortS
         signal.addEventListener('abort', abort, { once: true })
         video.onerror = fail
         video.onloadedmetadata = () => {
-          if (video.videoWidth <= 0 || !Number.isFinite(video.duration) || video.duration <= 0) { fail(); return }
+          if (video.videoWidth <= 0 || video.videoHeight <= 0 || !Number.isFinite(video.duration) || video.duration <= 0) { fail(); return }
+          if (metadataOnly) {
+            storeGalleryPoster(key, { ...readGalleryPoster(key), duration: video.duration, width: video.videoWidth, height: video.videoHeight })
+            cleanup(); resolve(); return
+          }
           // Do not use a fragment: explicitly wait for the target seek to finish.
           video.currentTime = Math.min(1, video.duration / 3)
         }
