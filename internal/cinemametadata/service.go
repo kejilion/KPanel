@@ -487,7 +487,11 @@ func (s *Service) wikipedia(ctx context.Context, q Query) (Result, error) {
 			continue
 		}
 		releaseYear := regexp.MustCompile(`\b(?:19|20)\d{2}\b`).FindString(text(p.Extract, 180))
-		result.Items = append(result.Items, Item{Provider: "wikipedia", ID: p.ID, Kind: q.Kind, Title: text(p.Title, 240), Year: releaseYear, Overview: plain(p.Extract), Poster: imagePath("wikipedia", p.Thumbnail.Source), URL: "https://" + language + ".wikipedia.org/?curid=" + strconv.FormatInt(p.ID, 10)})
+		alias := ""
+		if strings.Contains(text(p.Extract, 200), "《"+q.Title+"》") {
+			alias = q.Title
+		}
+		result.Items = append(result.Items, Item{Provider: "wikipedia", ID: p.ID, Kind: q.Kind, Title: text(p.Title, 240), OriginalTitle: alias, Year: releaseYear, Overview: plain(p.Extract), Poster: imagePath("wikipedia", p.Thumbnail.Source), URL: "https://" + language + ".wikipedia.org/?curid=" + strconv.FormatInt(p.ID, 10)})
 	}
 	return result, nil
 }

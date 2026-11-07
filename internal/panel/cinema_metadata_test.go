@@ -63,14 +63,12 @@ func TestCinemaLiveRoute(t *testing.T) {
 			if r.Code != 200 {
 				t.Fatalf("metadata %d %s", r.Code, r.Body)
 			}
-			var envelope struct {
-				Data cinemametadata.Result `json:"data"`
-			}
-			if json.Unmarshal(r.Body.Bytes(), &envelope) != nil || len(envelope.Data.Items) == 0 {
+			var result cinemametadata.Result
+			if json.Unmarshal(r.Body.Bytes(), &result) != nil || len(result.Items) == 0 {
 				t.Fatalf("response %s", r.Body)
 			}
 			var item cinemametadata.Item
-			for _, candidate := range envelope.Data.Items {
+			for _, candidate := range result.Items {
 				if candidate.Poster != "" {
 					item = candidate
 					break
