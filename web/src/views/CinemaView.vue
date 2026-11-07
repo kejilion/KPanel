@@ -2,10 +2,10 @@
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { mediaLocations, setMediaLocation } from '@/lib/mediaLocations'
 import { useRoute, useRouter } from 'vue-router'
-import { Clapperboard, Film, Folder, FolderOpen, Image as ImageIcon, LayoutGrid, Pencil, Play, RefreshCw, Search, X } from '@lucide/vue'
+import { ArrowLeft, Clapperboard, Film, Folder, FolderOpen, Image as ImageIcon, LayoutGrid, Pencil, Play, RefreshCw, Search, X } from '@lucide/vue'
 import HostSwitcher from '@/components/common/HostSwitcher.vue'
 import GalleryVideo from '@/components/gallery/GalleryVideo.vue'
-import GalleryViewer from '@/components/gallery/GalleryViewer.vue'
+import CinemaPlayer from '@/components/gallery/CinemaPlayer.vue'
 import { useI18n } from '@/i18n'
 import { phraseCatalogVersion, translatePhrase, usePhraseCatalog } from '@/i18n/phrase'
 import { api } from '@/lib/api'
@@ -15,7 +15,7 @@ import { desktopWindowVisibleKey } from '@/lib/desktopRouteKeys'
 import { fileAPIForHost } from '@/lib/fileHostContext'
 import { fileHostLabel, fileHostStatus } from '@/lib/fileHostStatus'
 import { notifyFileDirectoriesChanged } from '@/lib/fileWindowTransfer'
-import { formatBytes } from '@/lib/format'
+import { formatBytes, formatDateTime } from '@/lib/format'
 import { galleryBaseName, galleryBrowserCanShow, galleryFileExtension, galleryParentPath, nextGalleryUploadName, normalizeGalleryRoot, type GalleryItem } from '@/lib/gallery'
 import { galleryPosterKey, readGalleryPoster } from '@/lib/galleryPosters'
 import { useMusicPlayer } from '@/stores/musicPlayer'
@@ -51,6 +51,10 @@ const hostsLoading = ref(false)
 const hostsError = ref(false)
 const picker = ref<InstanceType<typeof HostSwitcher>>()
 const playingPath = ref('')
+const selectedPath = ref('')
+const detailHeading = ref<HTMLElement>()
+let cardOpener: HTMLElement | null = null
+let libraryScroll: { element: Element; top: number } | undefined
 const editing = ref<GalleryItem>()
 const editorTitle = ref<HTMLInputElement>()
 const editTitle = ref('')
@@ -66,7 +70,7 @@ const selectedHost = computed(() => hosts.value.find(host => hostId.value ? host
 const films = computed(() => [...(snapshot.value?.films ?? [])].sort((a, b) =>
   (order.value === 'newest' ? b.time - a.time : 0) || a.entry.name.localeCompare(b.entry.name, undefined, { numeric: true })))
 const visibleFilms = computed(() => films.value.filter(item => item.entry.name.toLocaleLowerCase().includes(search.value.trim().toLocaleLowerCase())))
-const featured = computed(() => films.value.find(item => item.entry.path === preferences.value.featured) ?? films.value[0])
+const selectedFilm = computed(() => films.value.find(item => item.entry.path === selectedPath.value))
 const viewerIndex = computed(() => films.value.findIndex(item => item.entry.path === playingPath.value))
 const folderCounts = computed(() => {
   const counts = new Map<string, number>()
@@ -103,16 +107,31 @@ function viewerSources(item: GalleryItem) {
     preview: coverUrl(item) ?? readGalleryPoster(posterKey(item))?.poster,
   }
 }
+async function openDetail(item: GalleryItem, event: Event) {
+  cardOpener = event.currentTarget as HTMLElement
+  let parent = cardOpener.parentElement
+  while (parent && parent !== document.documentElement) {
+    if (/(auto|scroll)/.test(getComputedStyle(parent).overflowY)) break
+    parent = parent.parentElement
+  }
+  const element = parent ?? document.scrollingElement
+  libraryScroll = element ? { element, top: element.scrollTop } : undefined
+  selectedPath.value = item.entry.path
+  await nextTick()
+  detailHeading.value?.focus({ preventScroll: true })
+  detailHeading.value?.scrollIntoView?.({ block: 'start' })
+}
+async function closeDetail() {
+  selectedPath.value = ''
+  editing.value = undefined
+  await nextTick()
+  cardOpener?.focus({ preventScroll: true })
+  if (libraryScroll) libraryScroll.element.scrollTop = libraryScroll.top
+}
 function play(item: GalleryItem) {
   const music = useMusicPlayer()
   if (music.state.playing || music.state.waiting) music.pause()
   playingPath.value = item.entry.path
-}
-function download(item: GalleryItem) {
-  const link = document.createElement('a')
-  link.href = content(item, 'attachment')
-  link.download = item.entry.name
-  link.click()
 }
 
 function message(error: unknown) {
@@ -235,7 +254,10 @@ async function save() {
     preferences.value = next
     editing.value = undefined
     notice.value = phrase('影片已更新')
-    if (target !== old) await load()
+    if (target !== old) {
+      if (selectedPath.value === old) selectedPath.value = target
+      await load()
+    }
   } catch (cause) {
     if (!disposed && host === hostId.value && root === path.value) editError.value = message(cause) || phrase('影片未更新')
   } finally {
@@ -282,6 +304,7 @@ watch([path, hostId], () => {
   search.value = ''
   shown.value = 48
   playingPath.value = ''
+  selectedPath.value = ''
   editing.value = undefined
   snapshot.value = undefined
   notice.value = ''
@@ -299,7 +322,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <main class="page cinema-page">
+  <main class="page cinema-page" :inert="Boolean(playingPath)">
     <header v-if="!windowed" class="cinema-heading">
       <img class="cinema-heading__icon" :src="'/desktop-icons/cinema-kpanel-flat-v3.webp'" alt="" />
       <div>
@@ -312,7 +335,7 @@ onBeforeUnmount(() => {
     </header>
     <h1 v-else class="sr-only">{{ i18n.t('route.cinema') }}</h1>
 
-    <section class="cinema-source" :aria-label="phrase('影片来源')">
+    <section v-show="!selectedFilm" class="cinema-source" :aria-label="phrase('影片来源')">
       <HostSwitcher
         ref="picker" :hosts="hosts" :active-id="selectedHost?.id ?? hostId"
         :label="fileHostLabel(hostId, hosts, phrase('本机'))" :loading="hostsLoading" :error="hostsError"
@@ -328,24 +351,36 @@ onBeforeUnmount(() => {
       <button v-if="windowed" class="button button--secondary" type="button" @click="openFiles()"><FolderOpen :size="17" /> {{ phrase('文件管理') }}</button>
     </section>
 
-    <section v-if="featured" class="cinema-feature" :aria-label="phrase('精选影片')">
-      <div class="cinema-feature__art" aria-hidden="true">
-        <Film :size="84" />
-        <img v-if="coverUrl(featured)" :key="coverUrl(featured)" :src="coverUrl(featured)" alt="" decoding="async" @error="coverError" />
-        <GalleryVideo v-else-if="galleryBrowserCanShow(featured)" :src="content(featured, 'inline')" :poster-key="posterKey(featured)" :suspended="windowVisible === false" />
+    <section v-if="selectedFilm" class="cinema-detail" :aria-label="phrase('影片详情')" @keydown.esc.stop="!editing && closeDetail()">
+      <div class="cinema-detail__backdrop" aria-hidden="true">
+        <img v-if="viewerSources(selectedFilm).preview" :src="viewerSources(selectedFilm).preview" alt="" @error="coverError" />
+        <GalleryVideo v-else-if="galleryBrowserCanShow(selectedFilm)" :src="content(selectedFilm, 'inline')" :poster-key="posterKey(selectedFilm)" :suspended="windowVisible === false" />
       </div>
-      <div class="cinema-feature__body">
-        <span class="cinema-feature__label"><Clapperboard :size="16" /> {{ phrase('精选影片') }}</span>
-        <h2>{{ cinemaTitle(featured.entry.name) }}</h2>
-        <p>{{ galleryFileExtension(featured.entry.name).toUpperCase() }} · {{ formatBytes(featured.entry.sizeBytes) }}</p>
-        <div class="cinema-feature__actions">
-          <button class="button cinema-feature__play" type="button" @click="play(featured)"><Play :size="18" /> {{ phrase('播放影片') }}</button>
-          <button class="button cinema-feature__edit" type="button" @click="edit(featured)"><Pencil :size="16" /> {{ phrase('编辑影片') }}</button>
+      <button class="button cinema-detail__back" type="button" @click="closeDetail"><ArrowLeft :size="18" /> {{ phrase('返回片库') }}</button>
+      <div class="cinema-detail__content">
+        <div class="cinema-detail__poster" aria-hidden="true">
+          <Film :size="56" />
+          <img v-if="coverUrl(selectedFilm)" :src="coverUrl(selectedFilm)" alt="" @error="coverError" />
+          <GalleryVideo v-else-if="galleryBrowserCanShow(selectedFilm)" :src="content(selectedFilm, 'inline')" :poster-key="posterKey(selectedFilm)" :suspended="windowVisible === false" />
+        </div>
+        <div class="cinema-detail__info">
+          <span class="cinema-detail__eyebrow"><Clapperboard :size="16" /> {{ phrase('影片详情') }}</span>
+          <h2 ref="detailHeading" tabindex="-1">{{ cinemaTitle(selectedFilm.entry.name) }}</h2>
+          <div class="cinema-detail__tags"><span>{{ galleryFileExtension(selectedFilm.entry.name).toUpperCase() }}</span><span>{{ formatBytes(selectedFilm.entry.sizeBytes) }}</span></div>
+          <div class="cinema-feature__actions">
+            <button class="button cinema-feature__play" type="button" @click="play(selectedFilm)"><Play :size="19" /> {{ phrase('播放影片') }}</button>
+            <button class="button cinema-feature__edit" type="button" @click="edit(selectedFilm)"><Pencil :size="16" /> {{ phrase('编辑影片') }}</button>
+          </div>
+          <dl class="cinema-detail__metadata">
+            <div><dt>{{ phrase('文件名') }}</dt><dd>{{ selectedFilm.entry.name }}</dd></div>
+            <div><dt>{{ phrase('所在目录') }}</dt><dd>{{ selectedFilm.folder }}</dd></div>
+            <div v-if="selectedFilm.time"><dt>{{ phrase('修改时间') }}</dt><dd>{{ formatDateTime(selectedFilm.entry.modifiedAt) }}</dd></div>
+          </dl>
         </div>
       </div>
     </section>
 
-    <nav v-if="snapshot?.folders.length" class="cinema-folders" :aria-label="phrase('影视目录')">
+    <nav v-show="!selectedFilm" v-if="snapshot?.folders.length" class="cinema-folders" :aria-label="phrase('影视目录')">
       <button v-for="folder in snapshot.folders.slice(0, 24)" :key="folder.path" class="button button--secondary button--small" type="button" :disabled="saving" @click="browse(folder.path)"><Folder :size="15" />{{ folder.name }}</button>
     </nav>
 
@@ -363,7 +398,7 @@ onBeforeUnmount(() => {
       <label>{{ phrase('上传封面图片') }}
         <input type="file" accept=".jpg,.jpeg,.png,.webp,.avif" :disabled="saving" @change="uploadCover" />
       </label>
-      <label class="cinema-editor__check"><input v-model="editFeatured" type="checkbox" :disabled="saving" /> {{ phrase('设为首页主图') }}</label>
+      <label class="cinema-editor__check"><input v-model="editFeatured" type="checkbox" :disabled="saving" /> {{ phrase('标记为精选影片') }}</label>
       <p>{{ phrase('封面和海报布局保存在当前浏览器。') }}</p>
       <p v-if="editError" class="cinema-error" role="alert">{{ editError }}</p>
       <div class="cinema-feature__actions">
@@ -373,9 +408,9 @@ onBeforeUnmount(() => {
     </form>
     <p v-if="notice" class="cinema-note" role="status">{{ notice }}</p>
 
-    <section class="cinema-library" :aria-label="phrase('海报墙')">
+    <section v-show="!selectedFilm" class="cinema-library" :aria-label="phrase('海报墙')">
       <div class="cinema-toolbar">
-        <div><h2>{{ phrase('海报墙') }}</h2><p>{{ visibleFilms.length }} {{ phrase('部影片') }}</p></div>
+        <div><h2>{{ phrase('全部影片') }}</h2><p>{{ visibleFilms.length }} {{ phrase('部影片') }}</p></div>
         <div class="cinema-toolbar__controls">
           <label class="cinema-search"><Search :size="17" /><input v-model="search" type="search" :aria-label="phrase('搜索影片')" :placeholder="phrase('搜索影片')" /></label>
           <select v-model="order" :aria-label="phrase('排序')"><option value="newest">{{ phrase('最近更新') }}</option><option value="name">{{ phrase('按名称') }}</option></select>
@@ -397,13 +432,14 @@ onBeforeUnmount(() => {
       </div>
       <ul v-if="visibleFilms.length" class="cinema-grid" :class="{ 'cinema-grid--wide': preferences.layout === 'wide' }">
         <li v-for="item in visibleFilms.slice(0, shown)" :key="posterKey(item)" class="cinema-card">
-          <button class="cinema-card__play" type="button" :aria-label="phrase('播放影片') + ' ' + cinemaTitle(item.entry.name)" @click="play(item)">
+          <button class="cinema-card__play" type="button" :aria-label="phrase('影片详情') + ' ' + cinemaTitle(item.entry.name)" @click="openDetail(item, $event)">
             <span class="cinema-card__poster">
               <Film :size="38" />
               <img v-if="coverUrl(item)" :key="coverUrl(item)" :src="coverUrl(item)" alt="" loading="lazy" decoding="async" @error="coverError" />
-              <GalleryVideo v-else-if="galleryBrowserCanShow(item)" :src="content(item, 'inline')" :poster-key="posterKey(item)" :suspended="windowVisible === false" />
+              <GalleryVideo v-else-if="galleryBrowserCanShow(item)" :src="content(item, 'inline')" :poster-key="posterKey(item)" :suspended="windowVisible === false || Boolean(selectedFilm)" />
+              <span v-if="preferences.featured === item.entry.path" class="cinema-card__featured">{{ phrase('精选影片') }}</span>
               <span class="cinema-card__format">{{ galleryFileExtension(item.entry.name).toUpperCase() }}</span>
-              <span class="cinema-card__watch"><Play :size="22" /></span>
+              <span class="cinema-card__watch">{{ phrase('查看详情') }}</span>
             </span>
             <strong>{{ cinemaTitle(item.entry.name) }}</strong>
           </button>
@@ -417,10 +453,10 @@ onBeforeUnmount(() => {
     </section>
 
   </main>
-  <GalleryViewer v-if="viewerIndex >= 0" :items="films" :index="viewerIndex" :sources="viewerSources" :contained="windowed" :filmstrip="true"
-    :navigation-labels="{ previous: phrase('上一部影片'), next: phrase('下一部影片') }"
-    @close="playingPath = ''" @navigate="playingPath = films[$event]?.entry.path ?? ''"
-    @download="download" @reveal="playingPath = ''; openFiles($event.folder)" />
+  <CinemaPlayer v-if="viewerIndex >= 0" :src="content(films[viewerIndex]!, 'inline')" :poster="viewerSources(films[viewerIndex]!).preview"
+    :title="cinemaTitle(films[viewerIndex]!.entry.name)" :back-label="phrase('返回影片详情')" :fullscreen-label="phrase('全屏')"
+    :fallback-label="phrase('未能自动全屏，可点击右上角全屏按钮。')" :error-label="phrase('影片无法播放，请检查文件或浏览器支持的格式。')"
+    @close="playingPath = ''" />
 </template>
 
 <style scoped>
@@ -433,14 +469,6 @@ h1, h2, h3, p { margin: 0; }
 h1 { font-size: 26px; }
 p { color: var(--text-soft); line-height: 1.55; }
 .cinema-heading p, .cinema-toolbar p, .cinema-note { font-size: 14px; }
-.cinema-feature { position: relative; display: grid; min-height: clamp(255px, 32cqi, 395px); align-items: end; isolation: isolate; overflow: hidden; border-radius: var(--radius-lg); background: #121925; color: #fff; }
-.cinema-feature__art { position: absolute; inset: 0; display: grid; place-items: center; background: linear-gradient(120deg, #101827, #234d56 60%, #345a70); color: #b8d7dc; }
-.cinema-feature__art > img, .cinema-card__poster > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.cinema-feature__art::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, rgb(8 14 24 / 88%), transparent 90%), linear-gradient(0deg, rgb(8 14 24 / 92%), transparent 85%); }
-.cinema-feature__body { position: relative; padding: clamp(20px, 4cqi, 50px); min-width: 0; }
-.cinema-feature__label { display: inline-flex; gap: 8px; align-items: center; color: #b4e4e7; font-size: 13px; font-weight: 700; }
-.cinema-feature h2 { margin: 8px 0; max-width: 26ch; font-size: clamp(26px, 4.4cqi, 56px); line-height: 1.16; overflow-wrap: anywhere; }
-.cinema-feature p { color: #dae4ed; }
 .cinema-feature__actions { flex-wrap: wrap; margin-top: 16px; }
 .cinema-feature__play { background: #d9f4f5; color: #142c36; }
 .cinema-feature__edit { background: #233441; border-color: #5c707e; color: #fff; }
@@ -457,18 +485,18 @@ p { color: var(--text-soft); line-height: 1.55; }
 .cinema-search { display: flex; align-items: center; gap: 7px; }
 .cinema-layout { gap: 4px; }
 .cinema-layout [aria-pressed=true] { background: var(--brand-soft); color: var(--text); border-color: var(--brand); }
-.cinema-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(154px, 100%), 1fr)); gap: 14px; margin: 0; padding: 0; list-style: none; }
+.cinema-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(145px, 100%), 1fr)); gap: 22px 16px; margin: 0; padding: 0; list-style: none; }
 .cinema-grid--wide { grid-template-columns: repeat(auto-fill, minmax(min(235px, 100%), 1fr)); }
-.cinema-card { min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
+.cinema-card { min-width: 0; border: 1px solid transparent; border-radius: var(--radius-md); background: transparent; }
 .cinema-card__play { display: block; width: 100%; text-align: start; padding: 0; background: none; color: var(--text); border: 0; font: inherit; cursor: pointer; }
-.cinema-card__poster { position: relative; display: grid; place-items: center; aspect-ratio: 2 / 3; overflow: hidden; border-radius: var(--radius-md) var(--radius-md) 0 0; background: linear-gradient(145deg, #1b3645, #172131); color: #a6cbd3; }
+.cinema-card__poster { position: relative; display: grid; place-items: center; aspect-ratio: 2 / 3; overflow: hidden; border-radius: var(--radius-md); background: linear-gradient(145deg, #1b3645, #172131); color: #a6cbd3; }
 .cinema-grid--wide .cinema-card__poster { aspect-ratio: 16 / 9; }
 .cinema-card__format, .cinema-card__watch { position: absolute; display: grid; place-items: center; background: #14202d; color: #fff; }
 .cinema-card__format { inset: auto auto 8px 8px; padding: 4px 7px; border-radius: var(--radius-sm); font-size: 12px; }
-.cinema-card__watch { width: 44px; height: 44px; border-radius: 50%; opacity: 0; }
+.cinema-card__watch { padding: 10px 14px; border: 1px solid #7c909b; border-radius: var(--radius-sm); opacity: 0; font-size: 14px; }
 .cinema-card__play:is(:hover,:focus-visible) .cinema-card__watch { opacity: 1; }
-.cinema-card__play strong { display: block; padding: 11px 11px 1px; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cinema-card__footer { justify-content: space-between; padding: 1px 7px 5px 11px; font-size: 13px; color: var(--text-soft); }
+.cinema-card__play strong { display: block; padding: 11px 4px 3px; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cinema-card__footer { justify-content: space-between; padding: 1px 0 5px 4px; font-size: 13px; color: var(--text-soft); }
 .cinema-card__footer span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cinema-empty, .cinema-editor { display: grid; gap: 12px; padding: 20px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
 .cinema-empty { place-items: center; text-align: center; padding-block: 40px; }
@@ -486,4 +514,34 @@ p { color: var(--text-soft); line-height: 1.55; }
   .cinema-search { flex: 1 1 100%; }
   .cinema-search input { flex: 1; }
 }
+.cinema-detail { position: relative; isolation: isolate; overflow: hidden; border-radius: var(--radius-lg); background: #101923; color: #f6f8fb; min-height: 510px; }
+.cinema-detail__backdrop { position: absolute; z-index: -2; inset: 0; background: linear-gradient(135deg, #173c46, #101923); }
+.cinema-detail__backdrop > img { width: 100%; height: 100%; object-fit: cover; opacity: .48; }
+.cinema-detail::before { content: ''; position: absolute; z-index: -1; inset: 0; background: linear-gradient(90deg, rgb(9 16 24 / 70%), rgb(9 16 24 / 78%)), linear-gradient(0deg, #101923, transparent); }
+.cinema-detail__back { margin: 20px; background: #1d2b39; border-color: #677888; color: #fff; }
+.cinema-detail__content { display: grid; grid-template-columns: minmax(140px, 220px) minmax(0, 1fr); align-items: center; gap: clamp(24px, 5cqi, 58px); padding: 16px clamp(22px, 5cqi, 56px) 48px; }
+.cinema-detail__poster { position: relative; display: grid; place-items: center; aspect-ratio: 2 / 3; overflow: hidden; border: 1px solid #657786; border-radius: var(--radius-md); background: #1c2d3c; color: #a8d1dc; box-shadow: var(--shadow-lg); }
+.cinema-detail__poster > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.cinema-detail__info { min-width: 0; }
+.cinema-detail__eyebrow { display: flex; align-items: center; gap: 8px; color: #bbdce2; font-size: 13px; }
+.cinema-detail h2 { margin: 14px 0; font-size: clamp(28px, 4cqi, 46px); line-height: 1.2; overflow-wrap: anywhere; }
+.cinema-detail__tags { display: flex; flex-wrap: wrap; gap: 8px; }
+.cinema-detail__tags span { padding: 5px 9px; border: 1px solid #73828e; border-radius: var(--radius-sm); color: #e1e9ee; font-size: 13px; }
+.cinema-detail__metadata { display: grid; gap: 14px; margin: 28px 0 0; padding-top: 22px; border-top: 1px solid #52616e; font-size: 14px; }
+.cinema-detail__metadata div { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 12px; }
+.cinema-detail__metadata dt { color: #b7c4ce; }
+.cinema-detail__metadata dd { margin: 0; overflow-wrap: anywhere; line-height: 1.5; }
+.cinema-card__poster { transition: transform var(--motion-duration-fast) var(--motion-ease-standard), box-shadow var(--motion-duration-fast) var(--motion-ease-standard); }
+.cinema-card__poster > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.cinema-card__play:is(:hover,:focus-visible) .cinema-card__poster { transform: translateY(-3px); box-shadow: var(--shadow-md); }
+.cinema-card__play:focus-visible { outline: 2px solid var(--brand); outline-offset: 4px; border-radius: var(--radius-md); }
+@container (max-width: 560px) {
+  .cinema-detail__content { grid-template-columns: 100px minmax(0, 1fr); align-items: start; gap: 18px; padding: 8px 18px 28px; }
+  .cinema-detail__info h2 { font-size: 26px; }
+  .cinema-detail__metadata div { grid-template-columns: 1fr; gap: 4px; }
+  .cinema-detail .cinema-feature__actions { flex-direction: column; align-items: stretch; }
+}
+@container (max-width: 360px) { .cinema-detail__content { grid-template-columns: 1fr; } .cinema-detail__poster { width: 120px; } }
+@media (prefers-reduced-motion: reduce) { .cinema-card__poster { transition: none; } }
+.cinema-card__featured { position: absolute; top: 8px; left: 8px; padding: 4px 7px; border-radius: var(--radius-sm); background: #d9f4f5; color: #142c36; font-size: 12px; }
 </style>

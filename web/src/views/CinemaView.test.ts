@@ -1,0 +1,39 @@
+// @vitest-environment jsdom
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import { createMemoryHistory, createRouter } from 'vue-router'
+import { afterEach, expect, it, vi } from 'vitest'
+import type { FileEntry } from '@/types/api'
+
+const harness = vi.hoisted(() => ({ list: vi.fn(), pause: vi.fn() }))
+vi.mock('@/lib/fileHostContext', () => ({ fileAPIForHost: () => ({ list: harness.list, contentUrl: (path: string) => `/content${path}` }) }))
+vi.mock('@/stores/musicPlayer', () => ({ useMusicPlayer: () => ({ state: { playing: true }, pause: harness.pause }) }))
+vi.mock('@/lib/api', () => ({ api: { cluster: { hosts: async () => ({ items: [] }) } } }))
+import CinemaView from './CinemaView.vue'
+
+let view: VueWrapper | undefined
+afterEach(() => { view?.unmount(); localStorage.clear(); vi.clearAllMocks() })
+it('opens details before playback, returns to the same film, and preserves library search', async () => {
+  const entry: FileEntry = { name: 'Journey.mp4', path: '/home/videos/Journey.mp4', kind: 'file', sizeBytes: 2048, modifiedAt: '2026-11-06T00:00:00Z', mode: '-rw-r--r--', owner: 'root', group: 'root', resourceVersion: 'v1', editable: false, previewable: true }
+  harness.list.mockResolvedValue({ entries: [entry] })
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/cinema', name: 'cinema', component: CinemaView }] })
+  await router.push('/cinema'); await router.isReady()
+  view = mount(CinemaView, { global: { plugins: [router], stubs: { HostSwitcher: true, GalleryVideo: true, CinemaPlayer: { template: '<button class="test-player" @click="$emit(\'close\')">exit</button>' } } }, attachTo: document.body })
+  await flushPromises()
+  expect(view.find('.cinema-feature').exists()).toBe(false)
+  expect(view.find('.cinema-detail').exists()).toBe(false)
+  await view.get('.cinema-search input').setValue('Journey')
+  await view.get('.cinema-card__play').trigger('click')
+  expect(view.find('.cinema-detail').exists()).toBe(true)
+  expect(view.find('.test-player').exists()).toBe(false)
+  expect(harness.pause).not.toHaveBeenCalled()
+  await view.get('.cinema-feature__play').trigger('click')
+  expect(harness.pause).toHaveBeenCalledOnce()
+  expect(view.find('.test-player').exists()).toBe(true)
+  await view.get('.test-player').trigger('click')
+  expect(view.find('.test-player').exists()).toBe(false)
+  expect(view.get('.cinema-detail h2').text()).toBe('Journey')
+  await view.get('.cinema-detail__back').trigger('click')
+  expect(view.find('.cinema-detail').exists()).toBe(false)
+  expect((view.get('.cinema-search input').element as HTMLInputElement).value).toBe('Journey')
+  expect(document.activeElement).toBe(view.get('.cinema-card__play').element)
+})
