@@ -3,7 +3,8 @@ import { matchOnlineMusic } from '@/lib/musicOnline'
 import { saveMusicSidecars, type MusicSidecars } from '@/lib/musicSidecars'
 import { fileAPIForHost } from '@/lib/fileHostContext'
 import { MUSIC_LIMIT, readMusicLyrics, readMusicTrack, isMusic, trackKey, type Track } from '@/lib/music'
-import { readMusicTags, readableMusicTag } from '@/lib/musicTags'
+import { readMusicTags, readableMusicTag, type MusicTags } from '@/lib/musicTags'
+import { peekMusicInfo, saveMusicInfo } from '@/lib/musicInfoCache'
 
 type Repeat = 'off' | 'all' | 'one'
 interface PlayerDependencies {
@@ -155,13 +156,18 @@ export function createMusicPlayer(overrides: Partial<PlayerDependencies> = {}) {
       if (queued) Object.assign(queued, refreshed, { needsRefresh: false })
     }
     // Independent optional resources: a broken sidecar does not discard embedded lyrics.
+    const cached = peekMusicInfo(track)
     const [tags, sidecar] = await Promise.allSettled([
-      deps.tags(fileAPIForHost(track.hostId).contentUrl(track.entry.path), signal),
+      cached?.tags && cached.embeddedAssets === false ? Promise.resolve(cached.tags) : deps.tags(fileAPIForHost(track.hostId).contentUrl(track.entry.path), signal),
       track.lyrics ? deps.text(track, signal) : Promise.resolve(''),
     ])
     if (id !== sequence || !state.current) return
     if (signal.aborted) { state.lyricsLoading = false; state.lyricsFailed = true; return }
-    const embedded = tags.status === 'fulfilled' ? tags.value : {}
+    const embedded: MusicTags = tags.status === 'fulfilled' ? tags.value : {}
+    if (tags.status === 'fulfilled' && !cached?.tags) {
+      const { title, artist, album, picture, lyrics } = embedded
+      void saveMusicInfo(track, { tags: { title, artist, album }, embeddedAssets: Boolean(picture || lyrics) }, signal)
+    }
     state.current = { ...state.current, title: readableMusicTag(embedded.title, track.title), artist: readableMusicTag(embedded.artist, track.artist) }
     const queued = state.queue.find(item => key(item) === key(track))
     if (queued) { queued.title = state.current.title; queued.artist = state.current.artist }
@@ -208,10 +214,14 @@ export function createMusicPlayer(overrides: Partial<PlayerDependencies> = {}) {
     const id = ++sequence
     releaseAudio(); releaseMetadata()
     state.position = startPosition; state.current = { ...track }; state.restored = !autoplay; state.duration = 0; state.error = ''
+    const cached = peekMusicInfo(track)
+    state.current.title = readableMusicTag(cached?.tags?.title, track.title)
+    state.current.artist = readableMusicTag(cached?.tags?.artist, track.artist)
     const queuedKeys = new Set(state.queue.map(key))
     cycle = new Set([...cycle].filter(k => queuedKeys.has(k)))
     cycle.add(key(track))
     state.playing = false; state.waiting = autoplay; state.lyrics = ''; state.lyricsFailed = false; state.album = ''
+    state.album = readableMusicTag(cached?.tags?.album, '')
     const target = deps.audio(); audio = target
     let pendingSeek = startPosition
     target.preload = 'metadata'; target.volume = state.volume; target.muted = state.muted

@@ -76,12 +76,12 @@ export function parseMusicQuality(b: Uint8Array, fileBytes: number, audioOnly = 
 
 async function prefix(url: string, start: number, length: number, signal: AbortSignal): Promise<Uint8Array> {
   const response = await fetch(url, { headers: { Range: `bytes=${start}-${start + length - 1}` }, signal })
-  if (!response.body) return new Uint8Array()
+  if (!response.body) throw new Error('Music header unavailable')
   const reader = response.body.getReader()
   const pieces: Uint8Array[] = []
   let size = 0
   try {
-    if (!response.ok || (start > 0 && response.status !== 206) || (response.status === 206 && !response.headers.get('Content-Range')?.startsWith(`bytes ${start}-`))) return new Uint8Array()
+    if (!response.ok || (start > 0 && response.status !== 206) || (response.status === 206 && !response.headers.get('Content-Range')?.startsWith(`bytes ${start}-`))) throw new Error('Music header unavailable')
     while (size < length) {
       const next = await reader.read()
       if (next.done) break

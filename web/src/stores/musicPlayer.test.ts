@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
+import { clearMusicInfoMemory } from '@/lib/musicInfoCache'
 import { createMusicPlayer } from './musicPlayer'
 import type { Track } from '@/lib/music'
 import type { MusicTags } from '@/lib/musicTags'
@@ -30,7 +31,7 @@ function setup(tags = vi.fn(async (): Promise<MusicTags> => ({})), text = vi.fn(
   players.push(player)
   return { player, audios, tags, text, online, save }
 }
-afterEach(() => { players.splice(0).forEach(player => player.stop()); vi.unstubAllGlobals(); vi.restoreAllMocks() })
+afterEach(() => { clearMusicInfoMemory(); players.splice(0).forEach(player => player.stop()); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 it('resolves restored queue resources only when selected and keeps offline references on failure', async () => {
   const actual = { ...track('B', 'edge'), lyrics: '/music/B.lrc', cover: '/music/B.jpg' }
   const resolve = vi.fn(async () => actual), text = vi.fn(async () => 'local lyrics'), online = vi.fn(async () => ({ matched: false }))

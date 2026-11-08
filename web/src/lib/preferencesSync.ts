@@ -1,5 +1,6 @@
 import { applyCinemaPlayback, mergeCinemaPlayback, parseCinemaPlayback, setCinemaPlaybackOwner } from '@/lib/cinemaPlayback'
 import { api, ApiError } from '@/lib/api'
+import { clearMusicInfoMemory } from '@/lib/musicInfoCache'
 import { applySyncedLocale, getLocale, t } from '@/i18n'
 import { applyDesktopPreferences, desktopPreferencesSnapshot, parseDesktopSessionPreferences } from '@/stores/desktopMode'
 import { useToast } from '@/stores/toast'
@@ -361,6 +362,7 @@ export function startPreferencesSync(owner: string): Promise<void> {
 }
 
 export function stopPreferencesSync(): void {
+  clearMusicInfoMemory()
   if (current) {
     window.clearTimeout(current.timer)
     current.controller.abort()
