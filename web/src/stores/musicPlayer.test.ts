@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
-import { clearMusicInfoMemory } from '@/lib/musicInfoCache'
+import { clearMusicInfoMemory, saveMusicInfo } from '@/lib/musicInfoCache'
 import { createMusicPlayer } from './musicPlayer'
 import type { Track } from '@/lib/music'
 import type { MusicTags } from '@/lib/musicTags'
@@ -27,19 +27,38 @@ class FakeAudio {
 const players: ReturnType<typeof createMusicPlayer>[] = []
 function setup(tags = vi.fn(async (): Promise<MusicTags> => ({})), text = vi.fn(async () => ''), online: typeof matchOnlineMusic = vi.fn(async (): Promise<OnlineMusic> => ({ matched: false })), save: typeof saveMusicSidecars = vi.fn(async (): Promise<SidecarSaveResult> => ({ saved: 0, kept: 0, failed: 0 }))) {
   const audios: FakeAudio[] = []
-  const player = createMusicPlayer({ audio: () => { const audio = new FakeAudio(); audios.push(audio); return audio as unknown as HTMLAudioElement }, tags, text, online, save, random: () => 0 })
+  const player = createMusicPlayer({ audio: () => { const audio = new FakeAudio(); audios.push(audio); return audio as unknown as HTMLAudioElement }, resolve: async track => track, tags, text, online, save, random: () => 0 })
   players.push(player)
   return { player, audios, tags, text, online, save }
 }
 afterEach(() => { clearMusicInfoMemory(); players.splice(0).forEach(player => player.stop()); vi.unstubAllGlobals(); vi.restoreAllMocks() })
+it('retains cached identity when an embedded resource read fails', async () => {
+  const song = track('filename')
+  await saveMusicInfo(song, { tags: { title: '缓存歌名', artist: '缓存歌手', album: '缓存专辑' }, embeddedAssets: true }, new AbortController().signal)
+  const { player } = setup(vi.fn(async () => { throw new Error('temporary resource failure') }))
+  player.play(song); await flushPromises()
+  expect(player.state.current).toMatchObject({ title: '缓存歌名', artist: '缓存歌手' })
+  expect(player.state.album).toBe('缓存专辑')
+})
+it('revalidates queued file versions before using cached tags', async () => {
+  const song = track('filename'), changed = { ...song, entry: { ...song.entry, resourceVersion: 'v2' } }
+  await saveMusicInfo(song, { tags: { title: '旧标签' }, quality: { bitrate: 192 }, embeddedAssets: false }, new AbortController().signal)
+  const tags = vi.fn(async () => ({ title: '新标签' })), resolve = vi.fn(async () => changed)
+  const player = createMusicPlayer({ audio: () => new FakeAudio() as unknown as HTMLAudioElement, tags, resolve, online: async () => ({ matched: false }) })
+  players.push(player); player.replaceQueue([song]); await flushPromises()
+  expect(resolve).toHaveBeenCalledOnce(); expect(tags).toHaveBeenCalledOnce()
+  expect(player.state.current).toMatchObject({ title: '新标签', entry: { resourceVersion: 'v2' } })
+  tags.mockClear(); player.play(player.state.queue[0]!); await flushPromises()
+  expect(resolve).toHaveBeenCalledTimes(2); expect(tags).not.toHaveBeenCalled()
+})
 it('resolves restored queue resources only when selected and keeps offline references on failure', async () => {
   const actual = { ...track('B', 'edge'), lyrics: '/music/B.lrc', cover: '/music/B.jpg' }
-  const resolve = vi.fn(async () => actual), text = vi.fn(async () => 'local lyrics'), online = vi.fn(async () => ({ matched: false }))
+  const resolve = vi.fn(async (selected: Track) => selected.entry.path === actual.entry.path ? actual : selected), text = vi.fn(async () => 'local lyrics'), online = vi.fn(async () => ({ matched: false }))
   const player = createMusicPlayer({ audio: () => new FakeAudio() as unknown as HTMLAudioElement, resolve, tags: async () => ({}), text, online })
   players.push(player)
   const restored = { ...actual, cover: undefined, lyrics: undefined, needsRefresh: true }
   player.restore(track('A'), 10, 'off', false, [track('A'), restored])
-  await flushPromises(); expect(resolve).not.toHaveBeenCalled()
+  await flushPromises(); expect(resolve).toHaveBeenCalledOnce(); resolve.mockClear()
   player.choose(restored); await flushPromises()
   expect(resolve).toHaveBeenCalledOnce(); expect(text).toHaveBeenCalledWith(actual, expect.any(AbortSignal))
   expect(player.state.lyrics).toBe('local lyrics'); expect(player.state.current?.cover).toBe(actual.cover)
@@ -197,6 +216,7 @@ describe('music listening session', () => {
     const tags = vi.fn<() => Promise<MusicTags>>().mockImplementationOnce(() => new Promise(r => { resolve = r })).mockResolvedValue({ title: 'New title' })
     const { player, audios } = setup(tags)
     player.play(track('Old')); const stale = audios[0]!.onended
+    await flushPromises()
     player.play(track('New')); resolve({ title: 'Stale title', lyrics: 'Old lyrics' }); stale?.()
     await flushPromises()
     expect(player.state.current?.title).toBe('New title'); expect(player.state.lyrics).toBe(''); expect(audios).toHaveLength(2)

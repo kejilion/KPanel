@@ -145,11 +145,14 @@ export function createMusicPlayer(overrides: Partial<PlayerDependencies> = {}) {
 
   async function metadata(track: Track, id: number, signal: AbortSignal) {
     state.lyricsLoading = true
-    if (track.needsRefresh) {
-      let refreshed: Track | undefined
-      try { refreshed = await deps.resolve(track, signal) } catch { /* Keep offline references for a later retry. */ }
-      if (id !== sequence || !state.current) return
-      if (!refreshed || signal.aborted) { state.lyricsLoading = false; state.lyricsFailed = true; return }
+    // Revalidate the actual file version before trusting a persistent observation.
+    // The same path can have been replaced since it was added to the queue.
+    let refreshed: Track | undefined
+    try { refreshed = await deps.resolve(track, signal) } catch { /* Keep offline references for a later retry. */ }
+    if (id !== sequence || !state.current) return
+    if (signal.aborted) { state.lyricsLoading = false; state.lyricsFailed = true; return }
+    if (!refreshed && track.needsRefresh) { state.lyricsLoading = false; state.lyricsFailed = true; return }
+    if (refreshed) {
       track = refreshed
       state.current = { ...refreshed }
       const queued = state.queue.find(item => key(item) === key(track))
@@ -158,13 +161,13 @@ export function createMusicPlayer(overrides: Partial<PlayerDependencies> = {}) {
     // Independent optional resources: a broken sidecar does not discard embedded lyrics.
     const cached = peekMusicInfo(track)
     const [tags, sidecar] = await Promise.allSettled([
-      cached?.tags && cached.embeddedAssets === false ? Promise.resolve(cached.tags) : deps.tags(fileAPIForHost(track.hostId).contentUrl(track.entry.path), signal),
+      refreshed && cached?.tags && cached.embeddedAssets === false ? Promise.resolve(cached.tags) : deps.tags(fileAPIForHost(track.hostId).contentUrl(track.entry.path), signal),
       track.lyrics ? deps.text(track, signal) : Promise.resolve(''),
     ])
     if (id !== sequence || !state.current) return
     if (signal.aborted) { state.lyricsLoading = false; state.lyricsFailed = true; return }
-    const embedded: MusicTags = tags.status === 'fulfilled' ? tags.value : {}
-    if (tags.status === 'fulfilled' && !cached?.tags) {
+    const embedded: MusicTags = tags.status === 'fulfilled' ? tags.value : cached?.tags ?? {}
+    if (refreshed && tags.status === 'fulfilled' && !cached?.tags) {
       const { title, artist, album, picture, lyrics } = embedded
       void saveMusicInfo(track, { tags: { title, artist, album }, embeddedAssets: Boolean(picture || lyrics) }, signal)
     }

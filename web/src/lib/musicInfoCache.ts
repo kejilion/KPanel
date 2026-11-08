@@ -15,6 +15,14 @@ export function clearMusicInfoMemory() { generation++; memory.clear() }
 export function peekMusicInfo(track: Track): MusicInfo | undefined { return memory.get(musicQualityKey(track)) }
 function reference(track: Track): MusicRef { return { hostId: track.hostId, path: track.entry.path, resourceVersion: track.entry.resourceVersion, sizeBytes: track.entry.sizeBytes } }
 function validRef(track: Track) { return Boolean(track.entry.resourceVersion) && track.entry.path.startsWith('/') }
+function textTags(tags: MusicTags): MusicInfo['tags'] {
+  const result: NonNullable<MusicInfo['tags']> = {}
+  for (const key of ['title', 'artist', 'album'] as const) {
+    const value = tags[key]
+    if (typeof value === 'string' && new TextEncoder().encode(value).length <= 1024) result[key] = value
+  }
+  return result
+}
 function remember(track: Track, info: MusicInfo) {
   const key = musicQualityKey(track)
   if (memory.size >= 256 && !memory.has(key)) memory.delete(memory.keys().next().value!)
@@ -38,8 +46,9 @@ export async function lookupMusicInfo(tracks: Track[], signal: AbortSignal) {
 }
 export async function saveMusicInfo(track: Track, info: MusicInfo, signal: AbortSignal) {
   if (signal.aborted || !validRef(track)) return
-  remember(track, info)
-  try { await api.music.cache({ observation: { ref: reference(track), info } }, signal) }
+  const bounded = { ...info, ...(info.tags ? { tags: textTags(info.tags) } : {}) }
+  remember(track, bounded)
+  try { await api.music.cache({ observation: { ref: reference(track), info: bounded } }, signal) }
   catch { /* Retry naturally on a later visit; never replace real file metadata with an error. */ }
 }
 export async function loadMusicInfo(original: Track, signal: AbortSignal): Promise<MusicInfo> {
