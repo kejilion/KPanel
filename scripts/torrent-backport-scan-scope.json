@@ -12,8 +12,8 @@
     "scripts/build-mcp-clients.sh": "29b0e82668f585aa46d10432912e1050954430cfac6a0550dd408d728979e113",
     "Makefile": "f651d8ce2f10adc487118e1ccb476615347661922a8c8ef529f1b8013da5d53e"
   },
-  "closureSha256": "d1e35ac4ee4d1b9f7ab395e7e9ca098b0d38d21c904b8d3c485beb5c67e763e1",
-  "firstPartySourceSha256": "4b2bc39df917951608a1e7d463f5ffde1aba1a34a24e3b23bc9331122c0948c1",
+  "closureSha256": "d1033d9afadd9c8d0070195d99e2b103df4df787c370bedcde45bdf201cb5bc4",
+  "firstPartySourceSha256": "bce03c2944283268b941aeee8207da8c576f2f1e3b750a90c18de43c267187d0",
   "buildTargetHashEncoding": "UTF-8 with LF line endings",
   "closureEncoding": "SHA256 of JSON.stringify of ordered OS/architecture rows; packages sorted by import path; path, module and selected version; stdlib go1.27.3; main-module packages additionally bind relative sourceDirectory and sorted actual GoFiles.",
   "firstPartySourceEncoding": "SHA256 of JSON.stringify of all cmd/internal Go source path and SHA256 pairs sorted by relative path; contents normalized to UTF-8 LF. All actual main-module production GoFiles must be covered. Generated .pb.go and .proto files or symlinks require a new review.",
