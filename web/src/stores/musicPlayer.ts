@@ -24,7 +24,10 @@ export function createMusicPlayer(overrides: Partial<PlayerDependencies> = {}) {
     resolve: async (track, signal) => {
       const entry = await fileAPIForHost(track.hostId).entry(track.entry.path, signal)
       if (entry.path !== track.entry.path || !isMusic(entry)) return undefined
-      return readMusicTrack(entry, track.hostId, signal)
+      const refreshed = await readMusicTrack(entry, track.hostId, signal)
+      // Discovery is optional on older/offline Agents; keep known local assets
+      // until a refreshed library provides their new references.
+      return refreshed ? { ...refreshed, cover: refreshed.cover ?? track.cover, lyrics: refreshed.lyrics ?? track.lyrics } : undefined
     },
     text: readMusicLyrics,
     save: saveMusicSidecars, online: matchOnlineMusic, random: Math.random, ...overrides,
@@ -143,12 +146,15 @@ export function createMusicPlayer(overrides: Partial<PlayerDependencies> = {}) {
     await persistSidecars(pendingSave.track, pendingSave.assets, sequence)
   }
 
-  async function metadata(track: Track, id: number, signal: AbortSignal) {
+  async function metadata(track: Track, id: number, signal: AbortSignal, revalidate = true) {
     state.lyricsLoading = true
     // Revalidate the actual file version before trusting a persistent observation.
     // The same path can have been replaced since it was added to the queue.
-    let refreshed: Track | undefined
-    try { refreshed = await deps.resolve(track, signal) } catch { /* Keep offline references for a later retry. */ }
+    let refreshed: Track | undefined = revalidate || track.needsRefresh ? undefined : track
+    // Passive preference restoration can already supply a freshly resolved file.
+    if (revalidate || track.needsRefresh) {
+      try { refreshed = await deps.resolve(track, signal) } catch { /* Keep offline references for a later retry. */ }
+    }
     if (id !== sequence || !state.current) return
     if (signal.aborted) { state.lyricsLoading = false; state.lyricsFailed = true; return }
     if (!refreshed && track.needsRefresh) { state.lyricsLoading = false; state.lyricsFailed = true; return }
@@ -239,7 +245,7 @@ export function createMusicPlayer(overrides: Partial<PlayerDependencies> = {}) {
     target.src = fileAPIForHost(track.hostId).contentUrl(track.entry.path)
     bindSession(); publishMetadata(); if (autoplay) void resume()
     controller = new AbortController(); timer = setTimeout(() => controller?.abort(), 8000)
-    void metadata(track, id, controller.signal)
+    void metadata(track, id, controller.signal, autoplay)
   }
   function restore(track: Track | undefined, position: number, repeat: Repeat, shuffle: boolean, queue?: Track[]) {
     if (!track) stop()

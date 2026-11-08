@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
 import { clearMusicInfoMemory, saveMusicInfo } from '@/lib/musicInfoCache'
+import { api } from '@/lib/api'
 import { createMusicPlayer } from './musicPlayer'
 import type { Track } from '@/lib/music'
 import type { MusicTags } from '@/lib/musicTags'
@@ -32,6 +33,17 @@ function setup(tags = vi.fn(async (): Promise<MusicTags> => ({})), text = vi.fn(
   return { player, audios, tags, text, online, save }
 }
 afterEach(() => { clearMusicInfoMemory(); players.splice(0).forEach(player => player.stop()); vi.unstubAllGlobals(); vi.restoreAllMocks() })
+it('retains known local cover and lyrics when optional companion discovery fails', async () => {
+  const song = { ...track('Local'), cover: '/music/Local.jpg', lyrics: '/music/Local.lrc' }
+  vi.spyOn(api.files, 'entry').mockResolvedValue(song.entry)
+  vi.spyOn(api.files, 'entries').mockRejectedValue(new Error('legacy Agent companion lookup unavailable'))
+  const online = vi.fn(async () => ({ matched: false })), text = vi.fn(async () => 'Existing local lyrics')
+  const player = createMusicPlayer({ audio: () => new FakeAudio() as unknown as HTMLAudioElement, tags: async () => ({}), text, online })
+  players.push(player); player.play(song); await flushPromises()
+  expect(player.state.current).toMatchObject({ cover: song.cover, lyrics: song.lyrics })
+  expect(player.cover.value).toContain(encodeURIComponent(song.cover))
+  expect(player.state.lyrics).toBe('Existing local lyrics'); expect(online).not.toHaveBeenCalled()
+})
 it('retains cached identity when an embedded resource read fails', async () => {
   const song = track('filename')
   await saveMusicInfo(song, { tags: { title: '缓存歌名', artist: '缓存歌手', album: '缓存专辑' }, embeddedAssets: true }, new AbortController().signal)
@@ -58,7 +70,7 @@ it('resolves restored queue resources only when selected and keeps offline refer
   players.push(player)
   const restored = { ...actual, cover: undefined, lyrics: undefined, needsRefresh: true }
   player.restore(track('A'), 10, 'off', false, [track('A'), restored])
-  await flushPromises(); expect(resolve).toHaveBeenCalledOnce(); resolve.mockClear()
+  await flushPromises(); expect(resolve).not.toHaveBeenCalled()
   player.choose(restored); await flushPromises()
   expect(resolve).toHaveBeenCalledOnce(); expect(text).toHaveBeenCalledWith(actual, expect.any(AbortSignal))
   expect(player.state.lyrics).toBe('local lyrics'); expect(player.state.current?.cover).toBe(actual.cover)
