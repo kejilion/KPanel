@@ -249,6 +249,9 @@ func (c *Cache) get(ref Ref) (*Record, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := f.Close(); err != nil {
+		return nil, err
+	}
 	var record Record
 	err = json.Unmarshal(b, &record)
 	if len(b) > MaxRecordBytes || err != nil || record.Ref != ref || record.Schema != 1 || record.Source != "file-header" || !record.Info.Valid() || record.DetectedAt.IsZero() || record.DetectedAt.After(c.now().Add(time.Minute)) || c.now().Sub(record.DetectedAt) > Retention {

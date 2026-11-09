@@ -13,7 +13,7 @@
     "Makefile": "f651d8ce2f10adc487118e1ccb476615347661922a8c8ef529f1b8013da5d53e"
   },
   "closureSha256": "d1033d9afadd9c8d0070195d99e2b103df4df787c370bedcde45bdf201cb5bc4",
-  "firstPartySourceSha256": "cf25a15e2213a5547eb036da554c8bc9e578d838d606405e60af574d56437eb1",
+  "firstPartySourceSha256": "790c0a900c683a2244687187ce7b1d92cbc5cdd0ed100ccda81ade0abc9a740e",
   "buildTargetHashEncoding": "UTF-8 with LF line endings",
   "closureEncoding": "SHA256 of JSON.stringify of ordered OS/architecture rows; packages sorted by import path; path, module and selected version; stdlib go1.27.3; main-module packages additionally bind relative sourceDirectory and sorted actual GoFiles.",
   "firstPartySourceEncoding": "SHA256 of JSON.stringify of all cmd/internal Go source path and SHA256 pairs sorted by relative path; contents normalized to UTF-8 LF. All actual main-module production GoFiles must be covered. Generated .pb.go and .proto files or symlinks require a new review.",
@@ -584,6 +584,6 @@
       "reason": "The affected module is present in the selected build list but absent from all six verified production package closures. Its upstream command/test use remains an inventory finding."
     }
   ],
-  "rc130Rc10IdentitySummary": "RC10 source rebind after integrating the reviewed local music metadata cache and remote desktop open chooser: the canonical firstPartySources helper observed 1,314 Go/proto files; scan-inventories with Go 1.27.3 matched actual and original production closures across all six OS/architecture targets. Dependency manifests, selected graph and build-target files are unchanged. Exact-SHA GitHub CI, vulnerability scanners and Release L3 remain required; this identity record does not assert those results.",
-  "rc130Rc10IdentityEvidenceSha256": "ee8606e1e23557879a0b6d62eac35831926025444eced154299e5be8a75d9f38"
+  "rc130Rc10IdentitySummary": "RC10 source rebind after desktop open chooser, local music metadata cache and the Windows cache-removal fix: canonical firstPartySources observed 1,314 Go/proto files; scan-inventories with Go 1.27.3 matched actual and original production closures across all six OS/architecture targets. The existing dependency graph, module manifests and build-target files are unchanged. Exact-SHA GitHub CI, security scanners and full Release L3 remain mandatory; this identity record is not a scan or release result.",
+  "rc130Rc10IdentityEvidenceSha256": "4199dc4c8e37f6c149fed0f1a13dae49e461719f7c61a9936fd275202ac0389d"
 }
