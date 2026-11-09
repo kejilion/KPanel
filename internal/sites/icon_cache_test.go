@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -819,5 +820,42 @@ func TestIconCachePrunesAbandonedArtifactsAfterGracePeriod(t *testing.T) {
 		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("abandoned artifact was not pruned: %s (%v)", path, err)
 		}
+	}
+}
+
+func TestParseSiteIconLinksAllowsExternalHosts(t *testing.T) {
+	base, err := url.Parse("https://example.com/blog/post")
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := []byte(`<!doctype html>
+		<link rel="icon" href="/icon.png">
+		<link rel="apple-touch-icon" href="https://cdn.example.net/icons/touch.png">
+		<link rel="icon" type="image/png" href="https://icons.example.org:8443/favicon.png">
+		<link rel="icon" href="javascript:alert(1)">
+		<link rel="stylesheet" href="/style.css">
+		<link rel="mask-icon" href="/mask.svg">`)
+	links := ParseSiteIconLinks(document, base)
+	want := []string{
+		"https://example.com/icon.png",
+		"https://cdn.example.net/icons/touch.png",
+		"https://icons.example.org:8443/favicon.png",
+	}
+	if len(links) != len(want) {
+		t.Fatalf("got %d links, want %d: %v", len(links), len(want), links)
+	}
+	for index, expected := range want {
+		if links[index].String() != expected {
+			t.Errorf("link %d = %q, want %q", index, links[index].String(), expected)
+		}
+	}
+}
+
+func TestValidateSiteIconExportedWrapper(t *testing.T) {
+	if contentType, err := ValidateSiteIcon(testIconPNG(t, 16, 16)); err != nil || contentType != "image/png" {
+		t.Fatalf("ValidateSiteIcon = %q, %v", contentType, err)
+	}
+	if _, err := ValidateSiteIcon([]byte("not an image")); err == nil {
+		t.Fatal("ValidateSiteIcon accepted invalid bytes")
 	}
 }
