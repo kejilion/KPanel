@@ -3,6 +3,7 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
+import { clearMusicInfoMemory, saveMusicInfo } from '@/lib/musicInfoCache'
 import { tracksFromEntries } from '@/lib/music'
 import * as musicPlayer from '@/stores/musicPlayer'
 import type { FileEntry } from '@/types/api'
@@ -16,10 +17,10 @@ vi.mock('@/lib/useMusicQuality', () => ({ useMusicQuality: () => () => ({ bitrat
 import MusicView from './MusicView.vue'
 
 let wrapper: VueWrapper | undefined
-afterEach(() => { wrapper?.unmount(); wrapper = undefined; vi.restoreAllMocks() })
+afterEach(() => { wrapper?.unmount(); wrapper = undefined; clearMusicInfoMemory(); vi.restoreAllMocks() })
 
-async function setup() {
-  harness.entries = ['A.mp3', 'B.mp3'].map(name => ({ name, path: `/music/${name}`, kind: 'file',
+async function setup(names = ['A.mp3', 'B.mp3']) {
+  harness.entries = names.map(name => ({ name, path: `/music/${name}`, kind: 'file',
     sizeBytes: 100, mode: '', owner: '', group: '', modifiedAt: '', resourceVersion: name, editable: false, previewable: true }))
   const player = musicPlayer.createMusicPlayer()
   vi.spyOn(musicPlayer, 'useMusicPlayer').mockReturnValue(player)
@@ -89,6 +90,33 @@ it('shows bitrate and lossless quality in rows and cover provenance, with compac
   expect(title.get('h3').element.nextElementSibling?.textContent).toBe('QQ')
   expect(title.get('.music-source-label').attributes('title')).toContain('QQ')
   await title.get('.music-save-retry').trigger('click'); expect(retry).toHaveBeenCalledOnce()
+})
+
+it('keeps filename search results after tag lookup and expands long playback titles on demand', async () => {
+  vi.spyOn(api.music, 'cache').mockResolvedValue({ items: [] })
+  const { player, view, tracks } = await setup(['01 - live take.mp3'])
+  const search = view.get('.music-search input')
+  await search.setValue('live take')
+  expect(view.findAll('.music-tracks li')).toHaveLength(1)
+  await saveMusicInfo(tracks[0]!, { tags: { title: 'Concert', artist: 'Band' } }, new AbortController().signal)
+  await flushPromises()
+  expect(view.findAll('.music-tracks li')).toHaveLength(1)
+  expect(view.get('.music-track__name strong').text()).toBe('Concert')
+  await search.setValue('band'); expect(view.findAll('.music-tracks li')).toHaveLength(1)
+  await search.setValue('Concert'); expect(view.findAll('.music-tracks li')).toHaveLength(1)
+
+  const title = 'A very long song title '.repeat(5).trim(), artist = 'A very long performer '.repeat(5).trim()
+  clearMusicInfoMemory()
+  player.state.current = { ...tracks[0]!, title, artist }
+  await flushPromises()
+  const control = view.get('.music-console__title')
+  await control.trigger('click')
+  expect(control.attributes('aria-expanded')).toBe('true')
+  expect(control.classes()).toContain('is-expanded')
+  expect(control.get('strong').text()).toBe(title)
+  expect(control.get('span').text()).toBe(artist)
+  await control.trigger('click')
+  expect(control.attributes('aria-expanded')).toBe('false')
 })
 
 async function lyricsSetup() {

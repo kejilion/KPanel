@@ -81,10 +81,11 @@ export async function mockMusic(request, response, url, send, readJSON) {
   }
   if (request.method === 'GET' && url.pathname === '/api/v1/files/content' && entries.some(e => e.path === url.searchParams.get('path'))) {
     const data = path === mp3Entry.path ? mp3 : wav
+    const entry = entries.find(e => e.path === path)
     const range = /^bytes=(\d+)-(\d*)$/.exec(request.headers.range || '')
     const start = range ? Math.min(Number(range[1]), data.length - 1) : 0
     const end = range?.[2] ? Math.min(Number(range[2]), data.length - 1) : data.length - 1
-    response.writeHead(range ? 206 : 200, { 'Content-Type': path === mp3Entry.path ? 'audio/mpeg' : 'audio/wav', 'Accept-Ranges': 'bytes', 'Content-Length': end - start + 1, ...(range ? { 'Content-Range': `bytes ${start}-${end}/${data.length}` } : {}) })
+    response.writeHead(range ? 206 : 200, { 'Content-Type': path === mp3Entry.path ? 'audio/mpeg' : 'audio/wav', 'Accept-Ranges': 'bytes', 'Content-Length': end - start + 1, ETag: `"${entry?.resourceVersion || 'music-preview-v1'}"`, ...(range ? { 'Content-Range': `bytes ${start}-${end}/${data.length}` } : {}) })
     response.end(data.subarray(start, end + 1)); return true
   }
   if (request.method === 'POST' && url.pathname === '/api/v1/music/metadata') {

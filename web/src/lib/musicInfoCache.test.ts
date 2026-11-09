@@ -3,7 +3,7 @@ import { api } from './api'
 import { musicQueueTrack, type Track } from './music'
 import { readMusicTags } from './musicTags'
 import { readMusicQuality } from './musicQuality'
-import { clearMusicInfoMemory, loadMusicInfo, peekMusicInfo, type MusicRecord } from './musicInfoCache'
+import { clearMusicInfoMemory, invalidateMusicInfo, loadMusicInfo, lookupMusicInfo, peekMusicInfo, saveMusicInfo, type MusicRecord } from './musicInfoCache'
 
 vi.mock('./api', () => ({ api: { music: { cache: vi.fn() }, files: { entry: vi.fn(), contentUrl: (path: string) => path } } }))
 vi.mock('./musicTags', () => ({ readMusicTags: vi.fn() }))
@@ -60,4 +60,13 @@ it('falls back when cache storage is unavailable and discards in-flight results 
   await vi.waitFor(() => expect(resolve).toBeTypeOf('function'))
   clearMusicInfoMemory(); resolve({ title: 'stale' }); await loading
   expect(peekMusicInfo(track('v3'))).toBeUndefined()
+})
+it('does not reload an invalidated file version from persistent cache during the current session', async () => {
+  setup(); const old = track('v2')
+  await loadMusicInfo(old, signal())
+  invalidateMusicInfo(old); vi.mocked(api.music.cache).mockClear()
+  await saveMusicInfo(old, { tags: { title: 'stale write' } }, signal())
+  await lookupMusicInfo([old], signal())
+  expect(api.music.cache).not.toHaveBeenCalled()
+  expect(peekMusicInfo(old)).toBeUndefined()
 })

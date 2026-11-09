@@ -40,9 +40,9 @@ const activeHost = computed(() => hosts.value.find(h => hostId.value ? h.id === 
 const hostLabel = computed(() => fileHostLabel(hostId.value, hosts.value, phrase('本机')))
 const allTracks = computed(() => tracksFromEntries(entries.value, hostId.value))
 const sort = ref('name'), tab = ref<'library' | 'listen' | 'queue'>(route.query.view === 'listen' ? 'listen' : 'library'), locationOpen = ref(false)
-const tracks = computed(() => allTracks.value.filter(t => `${trackTitle(t)} ${trackArtist(t)}`.toLocaleLowerCase().includes(search.value.toLocaleLowerCase())).sort((a,b) => sort.value === 'artist' ? trackArtist(a).localeCompare(trackArtist(b)) || trackTitle(a).localeCompare(trackTitle(b)) : trackTitle(a).localeCompare(trackTitle(b), undefined, {numeric:true})))
+const tracks = computed(() => allTracks.value.filter(t => trackSearchText(t).includes(search.value.toLocaleLowerCase())).sort((a,b) => sort.value === 'artist' ? trackArtist(a).localeCompare(trackArtist(b)) || trackTitle(a).localeCompare(trackTitle(b)) : trackTitle(a).localeCompare(trackTitle(b), undefined, {numeric:true})))
 const folders = computed(() => entries.value.filter(e => e.kind === 'directory' && !e.name.startsWith('.')))
-const volumeOpen = ref(false), musicRoot = ref<HTMLElement>()
+const volumeOpen = ref(false), titleExpanded = ref(false), musicRoot = ref<HTMLElement>()
 const quality = useMusicQuality(musicRoot, () => [...tracks.value, ...state.queue, ...(state.current ? [state.current] : [])], () => tab.value)
 function bitrate(track: Track) { const info = quality(track); return info?.bitrate ? info.bitrate + ' kbps' + (info.vbr ? ' VBR' : '') : '' }
 function qualityTitle(track: Track) {
@@ -121,6 +121,10 @@ function repeat() { state.repeat = state.repeat === 'off' ? 'all' : state.repeat
 function isCurrent(track: Track) { return state.current && trackKey(state.current) === trackKey(track) }
 function trackTitle(track: Track) { return readableMusicTag(peekMusicInfo(track)?.tags?.title, isCurrent(track) ? state.current!.title : track.title) }
 function trackArtist(track: Track) { return readableMusicTag(peekMusicInfo(track)?.tags?.artist, isCurrent(track) ? state.current!.artist : track.artist) }
+function trackSearchText(track: Track) {
+  const tags = peekMusicInfo(track)?.tags
+  return [track.entry.name, track.title, track.artist, tags?.title, tags?.artist].filter(Boolean).join(' ').toLocaleLowerCase()
+}
 function choose(track: Track) { if (!state.queue.length) player.replaceQueue(tracks.value, track); else player.choose(track) }
 function seek(event: Event) { player.seek(Number((event.target as HTMLInputElement).value)) }
 function volume(event: Event) { player.setVolume(Number((event.target as HTMLInputElement).value)) }
@@ -160,7 +164,7 @@ async function followLyrics() {
 }
 watch([lyrics, activeLine, tab, following], followLyrics)
 watch(() => route.query.view, view => { if (view === 'listen') tab.value = 'listen' })
-watch(() => state.current && trackKey(state.current), () => { following.value = true; followedScrollTop = 0; coverFailed.value = false })
+watch(() => state.current && trackKey(state.current), () => { following.value = true; followedScrollTop = 0; coverFailed.value = false; titleExpanded.value = false })
 watch(() => player.cover.value, () => { coverFailed.value = false })
 watch([path, hostId], () => { location.value = path.value; search.value = ''; void load() }, { immediate: true })
 watch(visible, (value, previous) => { state.viewCount += Number(value) - Number(previous ?? false) }, { immediate: true })
@@ -218,7 +222,7 @@ onBeforeUnmount(() => { destroyed = true; listing?.abort(); lyricResize?.disconn
     <p class="music-notice" role="status" aria-live="polite">{{ notice }}</p>
     </div>
     <section class="music-console" :aria-label="phrase('播放控制')">
-      <div class="music-console__summary"><button class="music-console__cover" :aria-label="phrase('查看正在播放')" @click="tab = tab === 'listen' ? 'library' : 'listen'"><img v-if="player.cover.value && !coverFailed" :src="player.cover.value" alt="" @error="coverFailed = true" /><Music2 v-else :size="23" /></button><button class="music-console__title" :aria-label="`${phrase('查看正在播放')} ${(state.current ? trackTitle(state.current) : '') || ''}`" @click="tab = 'listen'"><strong>{{ (state.current ? trackTitle(state.current) : '') || phrase('还没有播放歌曲') }}</strong><span>{{ (state.current ? trackArtist(state.current) : '') || phrase('选一首喜欢的歌') }}</span></button><a v-if="state.current" class="music-icon-button" :href="fileAPIForHost(state.current.hostId).contentUrl(state.current.entry.path, 'attachment')" :aria-label="phrase('下载原文件')"><Download :size="17" /></a></div>
+      <div class="music-console__summary"><button class="music-console__cover" :aria-label="phrase('查看正在播放')" @click="tab = tab === 'listen' ? 'library' : 'listen'"><img v-if="player.cover.value && !coverFailed" :src="player.cover.value" alt="" @error="coverFailed = true" /><Music2 v-else :size="23" /></button><button class="music-console__title" :class="{ 'is-expanded': titleExpanded }" :aria-expanded="titleExpanded" :aria-label="`${phrase('查看正在播放')} ${(state.current ? trackTitle(state.current) : '') || ''}`" @click="tab = 'listen'; titleExpanded = !titleExpanded"><strong>{{ (state.current ? trackTitle(state.current) : '') || phrase('还没有播放歌曲') }}</strong><span>{{ (state.current ? trackArtist(state.current) : '') || phrase('选一首喜欢的歌') }}</span></button><a v-if="state.current" class="music-icon-button" :href="fileAPIForHost(state.current.hostId).contentUrl(state.current.entry.path, 'attachment')" :aria-label="phrase('下载原文件')"><Download :size="17" /></a></div>
       <button class="music-icon-button music-mobile-volume-toggle" :aria-label="phrase('音量设置')" :aria-expanded="volumeOpen" @click="volumeOpen = !volumeOpen"><Volume2 :size="19" /></button><div class="music-console__center"><div class="music-transport"><button class="music-icon-button" :aria-label="phrase('随机播放')" :aria-pressed="state.shuffle" @click="player.shuffle()"><Shuffle :size="18" /></button><button class="music-icon-button" :disabled="!state.current" :aria-label="phrase('上一首')" @click="player.previous"><SkipBack :size="20" /></button><button class="music-play" :disabled="!state.current" :aria-label="state.playing || state.waiting ? phrase('暂停') : phrase('播放')" @click="player.toggle"><Pause v-if="state.playing || state.waiting" :size="24" /><Play v-else :size="24" /></button><button class="music-icon-button" :disabled="!state.queue.length" :aria-label="phrase('下一首')" @click="player.next()"><SkipForward :size="20" /></button><button class="music-icon-button" :aria-label="repeatLabel" :title="repeatLabel" :aria-pressed="state.repeat !== 'off'" @click="repeat"><Repeat1 v-if="state.repeat === 'one'" :size="18" /><Repeat v-else :size="18" /></button></div><div class="music-progress"><span>{{ musicTime(state.position) }}</span><input type="range" min="0" :max="state.duration || 0" step="0.1" :value="state.position" :disabled="!state.duration" :aria-label="phrase('播放进度')" @input="seek" /><span>{{ musicTime(state.duration) }}</span></div></div>
       <div class="music-console__volume" :class="{ 'is-open': volumeOpen }"><button class="music-icon-button" :aria-label="state.muted ? phrase('取消静音') : phrase('静音')" :aria-pressed="state.muted" @click="player.mute"><VolumeX v-if="state.muted || state.volume === 0" :size="19" /><Volume2 v-else :size="19" /></button><input type="range" min="0" max="1" step="0.01" :value="state.muted ? 0 : state.volume" :aria-label="phrase('音量')" @input="volume" /><button class="music-icon-button" :aria-label="phrase('播放队列')" :aria-pressed="tab === 'queue'" @click="tab = tab === 'queue' ? 'library' : 'queue'"><ListMusic :size="20" /></button><button class="music-icon-button" :disabled="!state.current" :aria-label="phrase('停止播放')" @click="player.stop"><X :size="18" /></button></div>
       <div v-if="state.waiting || playbackError" class="music-playback-status" :role="playbackError ? 'alert' : 'status'"><span>{{ playbackError || phrase('正在缓冲…') }}</span><button v-if="playbackError && state.current" class="music-text-button" @click="player.retry()">重试</button><button v-if="playbackError && state.queue.length > 1" class="music-text-button" @click="player.next()">跳过此曲</button></div>
@@ -334,6 +338,7 @@ input[type=range] { accent-color:var(--music-accent); cursor:pointer; min-height
   .music-page--focus .music-tabs button { padding-block:8px; }
   .music-page--focus .music-now { display:flex; flex-direction:column; padding:8px; }
   .music-page--focus .music-now__album { display:none; }
+  .music-page--focus .music-console__title.is-expanded { max-height:min(30cqh,144px); overflow-y:auto; overscroll-behavior:contain; }
   .music-page--focus .music-lyric-section { flex:1 1 0; }
   .music-page--focus .music-lyric-section > .music-caption { margin:0 0 4px; }
   .music-page--focus .music-console { gap:6px; padding:8px; }
@@ -413,6 +418,7 @@ input[type=range] { accent-color:var(--music-accent); cursor:pointer; min-height
 /* Phone browsers use the same bounded workspace as desktop, with readable rows and reachable controls. */
 .music-console__title { flex:1; min-width:0; border:0; padding:0; color:var(--text); background:transparent; text-align:start; font:inherit; }
 .music-console__title strong,.music-console__title span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.music-console__title.is-expanded strong,.music-console__title.is-expanded span { overflow:visible; text-overflow:clip; white-space:normal; overflow-wrap:anywhere; }
 @container (max-width:680px) {
   .music-header { display:none; }
   .music-tabs { position:sticky; top:0; z-index:1; background:var(--surface); gap:16px; margin-bottom:12px; }

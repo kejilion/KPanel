@@ -1,4 +1,5 @@
 import { fileAPIForHost } from './fileHostContext'
+import { MusicVersionMismatchError, musicVersionETag } from './musicTags'
 import type { Track } from './music'
 
 export interface MusicQuality {
@@ -74,14 +75,23 @@ export function parseMusicQuality(b: Uint8Array, fileBytes: number, audioOnly = 
   return {}
 }
 
-async function prefix(url: string, start: number, length: number, signal: AbortSignal): Promise<Uint8Array> {
-  const response = await fetch(url, { headers: { Range: `bytes=${start}-${start + length - 1}` }, signal })
+async function prefix(url: string, start: number, length: number, signal: AbortSignal, expectedResourceVersion?: string): Promise<Uint8Array> {
+  const headers = new Headers({ Range: 'bytes=' + start + '-' + (start + length - 1) })
+  const response = await fetch(url, { headers, signal })
+  if (response.status === 412) {
+    await response.body?.cancel(); throw new MusicVersionMismatchError()
+  }
+  if (!response.ok) { await response.body?.cancel(); throw new Error('Music header unavailable') }
+  if (expectedResourceVersion && response.headers.get('ETag') !== musicVersionETag(expectedResourceVersion)) {
+    await response.body?.cancel(); throw new MusicVersionMismatchError()
+  }
   if (!response.body) throw new Error('Music header unavailable')
   const reader = response.body.getReader()
   const pieces: Uint8Array[] = []
   let size = 0
   try {
-    if (!response.ok || (start > 0 && response.status !== 206) || (response.status === 206 && !response.headers.get('Content-Range')?.startsWith(`bytes ${start}-`))) throw new Error('Music header unavailable')
+    if (!response.ok || (start > 0 && response.status !== 206) ||
+        (response.status === 206 && !response.headers.get('Content-Range')?.startsWith('bytes ' + start + '-'))) throw new Error('Music header unavailable')
     while (size < length) {
       const next = await reader.read()
       if (next.done) break
@@ -95,10 +105,11 @@ async function prefix(url: string, start: number, length: number, signal: AbortS
 
 export async function readMusicQuality(track: Track, signal: AbortSignal): Promise<MusicQuality> {
   const url = fileAPIForHost(track.hostId).contentUrl(track.entry.path)
-  const bytes = await prefix(url, 0, prefixBytes, signal)
+  const version = track.entry.resourceVersion || undefined
+  const bytes = await prefix(url, 0, prefixBytes, signal, version)
   const offset = id3AudioOffset(bytes)
   if (offset >= bytes.length && offset < track.entry.sizeBytes - 4) {
-    return parseMusicQuality(await prefix(url, offset, 8192, signal), track.entry.sizeBytes, true)
+    return parseMusicQuality(await prefix(url, offset, 8192, signal, version), track.entry.sizeBytes, true)
   }
   return parseMusicQuality(bytes, track.entry.sizeBytes)
 }

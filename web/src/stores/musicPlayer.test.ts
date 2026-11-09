@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
-import { clearMusicInfoMemory, saveMusicInfo } from '@/lib/musicInfoCache'
+import { clearMusicInfoMemory, loadMusicInfo, peekMusicInfo, saveMusicInfo } from '@/lib/musicInfoCache'
 import { api } from '@/lib/api'
 import { createMusicPlayer } from './musicPlayer'
 import type { Track } from '@/lib/music'
-import type { MusicTags } from '@/lib/musicTags'
+import { MusicVersionMismatchError, type MusicTags } from '@/lib/musicTags'
 import type { OnlineMusic, matchOnlineMusic } from '@/lib/musicOnline'
 import type { saveMusicSidecars, SidecarSaveResult } from '@/lib/musicSidecars'
 vi.mock('@/lib/musicSidecars', () => ({ saveMusicSidecars: vi.fn(async () => ({ saved: 0, kept: 0, failed: 0 })) }))
@@ -62,6 +62,29 @@ it('revalidates queued file versions before using cached tags', async () => {
   expect(player.state.current).toMatchObject({ title: '新标签', entry: { resourceVersion: 'v2' } })
   tags.mockClear(); player.play(player.state.queue[0]!); await flushPromises()
   expect(resolve).toHaveBeenCalledTimes(2); expect(tags).not.toHaveBeenCalled()
+})
+it('skips online matching and sidecar writes after the file version changes during a tag read', async () => {
+  const song = track('filename'), changed = { ...song, title: 'Current filename', entry: { ...song.entry, resourceVersion: 'v2' } }
+  await saveMusicInfo(changed, { tags: { title: 'Old cached title', artist: 'Old cached artist' }, embeddedAssets: true }, new AbortController().signal)
+  const tags = vi.fn(async () => { throw new MusicVersionMismatchError() })
+  const text = vi.fn(async () => 'stale sidecar lyrics')
+  const online = vi.fn(async () => ({ matched: true, lyrics: '[00:01]wrong song', cover: 'data:image/png;base64,AA==' }))
+  const save = vi.fn(async () => ({ saved: 1, kept: 0, failed: 0 }))
+  const player = createMusicPlayer({ audio: () => new FakeAudio() as unknown as HTMLAudioElement, resolve: async () => changed, tags, text, online, save })
+  players.push(player); player.replaceQueue([song]); await flushPromises()
+  expect(player.state.current).toMatchObject({ title: 'Current filename', entry: { resourceVersion: '' }, needsRefresh: true })
+  expect(player.state.queue[0]).toMatchObject({ entry: { resourceVersion: '' }, needsRefresh: true })
+  expect(player.state.lyrics).toBe('')
+  expect(peekMusicInfo(player.state.current!)).toBeUndefined()
+  expect(online).not.toHaveBeenCalled(); expect(save).not.toHaveBeenCalled()
+
+  const fresh = { ...changed.entry, resourceVersion: 'v3', sizeBytes: 200 }
+  vi.spyOn(api.files, 'entry').mockResolvedValue(fresh)
+  const cache = vi.spyOn(api.music, 'cache').mockResolvedValue({ items: [] })
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 404 })))
+  await loadMusicInfo(player.state.current!, new AbortController().signal)
+  expect(api.files.entry).toHaveBeenCalledWith(song.entry.path, expect.any(AbortSignal), '')
+  expect(cache.mock.calls[0]?.[0].refs?.[0]).toMatchObject({ resourceVersion: 'v3', sizeBytes: 200 })
 })
 it('resolves restored queue resources only when selected and keeps offline references on failure', async () => {
   const actual = { ...track('B', 'edge'), lyrics: '/music/B.lrc', cover: '/music/B.jpg' }

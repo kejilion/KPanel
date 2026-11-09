@@ -3,8 +3,8 @@ import { matchOnlineMusic } from '@/lib/musicOnline'
 import { saveMusicSidecars, type MusicSidecars } from '@/lib/musicSidecars'
 import { fileAPIForHost } from '@/lib/fileHostContext'
 import { MUSIC_LIMIT, readMusicLyrics, readMusicTrack, isMusic, trackKey, type Track } from '@/lib/music'
-import { readMusicTags, readableMusicTag, type MusicTags } from '@/lib/musicTags'
-import { peekMusicInfo, saveMusicInfo } from '@/lib/musicInfoCache'
+import { MusicVersionMismatchError, readMusicTags, readableMusicTag, type MusicTags } from '@/lib/musicTags'
+import { invalidateMusicInfo, peekMusicInfo, saveMusicInfo } from '@/lib/musicInfoCache'
 
 type Repeat = 'off' | 'all' | 'one'
 interface PlayerDependencies {
@@ -167,11 +167,21 @@ export function createMusicPlayer(overrides: Partial<PlayerDependencies> = {}) {
     // Independent optional resources: a broken sidecar does not discard embedded lyrics.
     const cached = peekMusicInfo(track)
     const [tags, sidecar] = await Promise.allSettled([
-      refreshed && cached?.tags && cached.embeddedAssets === false ? Promise.resolve(cached.tags) : deps.tags(fileAPIForHost(track.hostId).contentUrl(track.entry.path), signal),
+      refreshed && cached?.tags && cached.embeddedAssets === false ? Promise.resolve(cached.tags) : deps.tags(fileAPIForHost(track.hostId).contentUrl(track.entry.path), signal, track.entry.resourceVersion),
       track.lyrics ? deps.text(track, signal) : Promise.resolve(''),
     ])
     if (id !== sequence || !state.current) return
     if (signal.aborted) { state.lyricsLoading = false; state.lyricsFailed = true; return }
+    if (tags.status === 'rejected' && tags.reason instanceof MusicVersionMismatchError) {
+      invalidateMusicInfo(track)
+      const staleEntry = { ...state.current.entry, resourceVersion: '' }
+      state.current = { ...state.current, entry: staleEntry, title: track.title, artist: track.artist, needsRefresh: true }
+      const queued = state.queue.find(item => key(item) === key(track))
+      if (queued) { queued.entry = { ...queued.entry, resourceVersion: '' }; queued.title = track.title; queued.artist = track.artist; queued.needsRefresh = true }
+      state.album = ''; state.lyrics = ''; state.lyricsFailed = false; state.lyricsLoading = false; state.onlineStatus = ''
+      clearTimeout(timer); publishMetadata()
+      return // A changed file must not be matched online or used to save a sidecar.
+    }
     const embedded: MusicTags = tags.status === 'fulfilled' ? tags.value : cached?.tags ?? {}
     if (refreshed && tags.status === 'fulfilled' && !cached?.tags) {
       const { title, artist, album, picture, lyrics } = embedded

@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { id3AudioOffset, parseMusicQuality, readMusicQuality } from './musicQuality'
+import { MusicVersionMismatchError } from './musicTags'
 import type { Track } from './music'
 vi.mock('./fileHostContext', () => ({ fileAPIForHost: (host: string) => ({ contentUrl: (path: string) => 'https://fixture.test/' + host + path }) }))
 afterEach(() => vi.unstubAllGlobals())
@@ -31,15 +32,28 @@ it('distinguishes PCM WAV from a WAV container carrying compressed audio', () =>
 })
 it('bounds oversized responses and skips large ID3 tags with a second bounded range on the same host', async () => {
   const head=new Uint8Array(65536);head.set([73,68,51,4,0,0,0,4,0,0]) // 65536-byte tag + 10-byte header.
-  const fetcher=vi.fn().mockResolvedValueOnce(new Response(head,{status:206,headers:{'Content-Range':'bytes 0-65535/1000000'}})).mockResolvedValueOnce(new Response(mp3(),{status:206,headers:{'Content-Range':'bytes 65546-67745/1000000'}}))
+  const fetcher=vi.fn().mockResolvedValueOnce(new Response(head,{status:206,headers:{'Content-Range':'bytes 0-65535/1000000',ETag:'"v1"'}})).mockResolvedValueOnce(new Response(mp3(),{status:206,headers:{'Content-Range':'bytes 65546-67745/1000000',ETag:'"v1"'}}))
   vi.stubGlobal('fetch',fetcher)
   expect(id3AudioOffset(head)).toBe(65546)
   expect(await readMusicQuality(track,new AbortController().signal)).toMatchObject({bitrate:320})
   expect(fetcher.mock.calls[0]?.[0]).toContain('/node-a/music/song.mp3')
-  expect(fetcher.mock.calls[1]?.[1].headers.Range).toBe('bytes=65546-73737')
+  expect(fetcher.mock.calls[1]?.[1].headers.get('Range')).toBe('bytes=65546-73737')
+})
+it('rejects metadata ranges from a different file version', async () => {
+  const head=new Uint8Array(65536);head.set([73,68,51,4,0,0,0,4,0,0])
+  const fetcher=vi.fn().mockResolvedValueOnce(new Response(head,{status:206,headers:{'Content-Range':'bytes 0-65535/1000000',ETag:'"v1"'}})).mockResolvedValueOnce(new Response(mp3(),{status:206,headers:{'Content-Range':'bytes 65546-67745/1000000',ETag:'"v2"'}}))
+  vi.stubGlobal('fetch',fetcher)
+  await expect(readMusicQuality(track,new AbortController().signal)).rejects.toBeInstanceOf(MusicVersionMismatchError)
+  expect(fetcher).toHaveBeenCalledTimes(2)
+})
+it('rejects a replacement before parsing the first range', async () => {
+  const fetcher=vi.fn().mockResolvedValueOnce(new Response(mp3(),{status:206,headers:{'Content-Range':'bytes 0-65535/1000000',ETag:'"v2"'}}))
+  vi.stubGlobal('fetch',fetcher)
+  await expect(readMusicQuality(track,new AbortController().signal)).rejects.toBeInstanceOf(MusicVersionMismatchError)
+  expect(fetcher).toHaveBeenCalledOnce()
 })
 it('refuses a server that ignores a nonzero range instead of parsing the wrong bytes', async () => {
   const head=new Uint8Array(10);head.set([73,68,51,4,0,0,0,4,0,0])
-  vi.stubGlobal('fetch',vi.fn().mockResolvedValueOnce(new Response(head)).mockResolvedValueOnce(new Response(mp3())))
+  vi.stubGlobal('fetch',vi.fn().mockResolvedValueOnce(new Response(head,{headers:{ETag:'"v1"'}})).mockResolvedValueOnce(new Response(mp3(),{headers:{ETag:'"v1"'}})))
   await expect(readMusicQuality(track,new AbortController().signal)).rejects.toThrow('Music header unavailable')
 })

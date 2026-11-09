@@ -14,3 +14,10 @@ describe('music playback status layout', () => {
     expect(source).toContain(':role="playbackError ? \'alert\' : \'status\'"')
   })
 })
+
+it('lets touch users expand clipped playback metadata even in short layouts', () => {
+  expect(source).toContain(':aria-expanded="titleExpanded"')
+  expect(source).toContain('titleExpanded = !titleExpanded')
+  expect(source).toMatch(/music-console__title\.is-expanded strong,.music-console__title\.is-expanded span \{[^}]*white-space:normal/)
+  expect(source).toContain('.music-page--focus .music-console__title.is-expanded { max-height:min(30cqh,144px); overflow-y:auto; overscroll-behavior:contain; }')
+})

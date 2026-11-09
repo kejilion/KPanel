@@ -107,9 +107,24 @@ export function parseMusicTags(input: Uint8Array): MusicTags {
   }
   return result
 }
-export async function readMusicTags(url: string, signal: AbortSignal): Promise<MusicTags> {
-  const response = await fetch(url, { headers: { Range: `bytes=0-${TAG_BUDGET - 1}` }, signal })
-  if (!response.ok || !response.body || (response.status === 206 && !response.headers.get('Content-Range')?.startsWith('bytes 0-'))) { await response.body?.cancel(); throw new Error('Music tags unavailable') }
+export function musicVersionETag(resourceVersion: string) { return `"${resourceVersion}"` }
+export class MusicVersionMismatchError extends Error {
+  constructor() { super('Music resource version mismatch'); this.name = 'MusicVersionMismatchError' }
+}
+
+export async function readMusicTags(url: string, signal: AbortSignal, expectedResourceVersion?: string): Promise<MusicTags> {
+  const headers = new Headers({ Range: 'bytes=0-' + (TAG_BUDGET - 1) })
+  const response = await fetch(url, { headers, signal })
+  if (response.status === 412) {
+    await response.body?.cancel(); throw new MusicVersionMismatchError()
+  }
+  if (!response.ok) { await response.body?.cancel(); throw new Error('Music tags unavailable') }
+  if (expectedResourceVersion && response.headers.get('ETag') !== musicVersionETag(expectedResourceVersion)) {
+    await response.body?.cancel(); throw new MusicVersionMismatchError()
+  }
+  if (!response.body || (response.status === 206 && !response.headers.get('Content-Range')?.startsWith('bytes 0-'))) {
+    await response.body?.cancel(); throw new Error('Music tags unavailable')
+  }
   const reader = response.body.getReader(), chunks: Uint8Array[] = []
   let size = 0
   try {

@@ -10,9 +10,14 @@ export interface MusicInfo { tags?: Pick<MusicTags, 'title' | 'artist' | 'album'
 export interface MusicRecord { ref: MusicRef; info: MusicInfo; schema: number; source: string; detectedAt: string }
 export interface MusicCacheInput { refs?: MusicRef[]; observation?: { ref: MusicRef; info: MusicInfo } }
 const memory = shallowReactive(new Map<string, MusicInfo>())
+const invalidated = new Set<string>()
 let generation = 0
-export function clearMusicInfoMemory() { generation++; memory.clear() }
+export function clearMusicInfoMemory() { generation++; memory.clear(); invalidated.clear() }
 export function peekMusicInfo(track: Track): MusicInfo | undefined { return memory.get(musicQualityKey(track)) }
+export function invalidateMusicInfo(track: Track) {
+  const key = musicQualityKey(track)
+  memory.delete(key); invalidated.add(key)
+}
 function reference(track: Track): MusicRef { return { hostId: track.hostId, path: track.entry.path, resourceVersion: track.entry.resourceVersion, sizeBytes: track.entry.sizeBytes } }
 function validRef(track: Track) { return Boolean(track.entry.resourceVersion) && track.entry.path.startsWith('/') }
 function textTags(tags: MusicTags): MusicInfo['tags'] {
@@ -31,7 +36,7 @@ function remember(track: Track, info: MusicInfo) {
 /** Batch only a bounded initial window; remaining rows are resolved when visible. */
 export async function lookupMusicInfo(tracks: Track[], signal: AbortSignal) {
   const epoch = generation
-  const selected = tracks.filter(t => validRef(t) && !peekMusicInfo(t)).slice(0, 64)
+  const selected = tracks.filter(t => validRef(t) && !peekMusicInfo(t) && !invalidated.has(musicQualityKey(t))).slice(0, 64)
   for (let at = 0; at < selected.length && !signal.aborted; at += 32) {
     const batch = selected.slice(at, at + 32)
     try {
@@ -39,13 +44,15 @@ export async function lookupMusicInfo(tracks: Track[], signal: AbortSignal) {
       if (signal.aborted || epoch !== generation) return
       for (const record of result.items) {
         const track = batch.find(t => JSON.stringify(reference(t)) === JSON.stringify(record.ref))
-        if (track && record.schema === 1 && record.source === 'file-header') remember(track, record.info)
+        if (track && !invalidated.has(musicQualityKey(track)) && record.schema === 1 && record.source === 'file-header') remember(track, record.info)
       }
     } catch { /* Optional disposable cache: file reads and playback still work. */ }
   }
 }
 export async function saveMusicInfo(track: Track, info: MusicInfo, signal: AbortSignal) {
   if (signal.aborted || !validRef(track)) return
+  const key = musicQualityKey(track)
+  if (invalidated.has(key)) return
   const bounded = { ...info, ...(info.tags ? { tags: textTags(info.tags) } : {}) }
   remember(track, bounded)
   try { await api.music.cache({ observation: { ref: reference(track), info: bounded } }, signal) }
@@ -65,7 +72,7 @@ export async function loadMusicInfo(original: Track, signal: AbortSignal): Promi
   const cached = peekMusicInfo(track) ?? {}
   if (cached.tags && cached.quality) return cached
   const [tags, quality] = await Promise.allSettled([
-    cached.tags ? Promise.resolve(undefined) : readMusicTags(fileAPIForHost(track.hostId).contentUrl(track.entry.path), signal),
+    cached.tags ? Promise.resolve(undefined) : readMusicTags(fileAPIForHost(track.hostId).contentUrl(track.entry.path), signal, track.entry.resourceVersion),
     cached.quality ? Promise.resolve(undefined) : readMusicQuality(track, signal),
   ])
   if (signal.aborted || epoch !== generation) return {}
