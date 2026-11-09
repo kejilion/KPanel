@@ -683,60 +683,6 @@ func parseSiteIconLinks(
 	base *url.URL,
 	allowedHosts map[string]bool,
 ) []*url.URL {
-	return parseSiteIconLinksWithResolver(document, base, func(raw string) (*url.URL, bool) {
-		return resolveSiteIconURL(raw, base, allowedHosts)
-	})
-}
-
-// ParseSiteIconLinks returns the favicon link candidates declared by an
-// arbitrary page, without restricting candidates to the page's own hosts.
-// Callers must validate every returned URL (scheme, credentials, SSRF, size)
-// before dialling it; the icon cache's own host restriction stays in
-// parseSiteIconLinks.
-func ParseSiteIconLinks(document []byte, base *url.URL) []*url.URL {
-	return parseSiteIconLinksWithResolver(document, base, func(raw string) (*url.URL, bool) {
-		return resolveExternalSiteIconURL(raw, base)
-	})
-}
-
-// ValidateSiteIcon reports the content type of a decoded site icon, or an
-// error when the bytes are not a supported icon within the size limits.
-func ValidateSiteIcon(data []byte) (string, error) {
-	return validateSiteIcon(data)
-}
-
-// resolveExternalSiteIconURL resolves a declared icon reference against the
-// page it was found on. Cross-host references (for example a CDN) and
-// non-default ports are kept; the caller enforces the SSRF policy.
-func resolveExternalSiteIconURL(raw string, base *url.URL) (*url.URL, bool) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" || len(raw) > 2048 {
-		return nil, false
-	}
-	reference, err := url.Parse(raw)
-	if err != nil {
-		return nil, false
-	}
-	candidate := base.ResolveReference(reference)
-	candidate.Fragment = ""
-	if (candidate.Scheme != "http" && candidate.Scheme != "https") ||
-		candidate.User != nil ||
-		candidate.Opaque != "" ||
-		candidate.Host == "" || candidate.Hostname() == "" ||
-		len(candidate.String()) > 2048 {
-		return nil, false
-	}
-	if candidate.Path == "" {
-		candidate.Path = "/"
-	}
-	return candidate, true
-}
-
-func parseSiteIconLinksWithResolver(
-	document []byte,
-	base *url.URL,
-	resolve func(raw string) (*url.URL, bool),
-) []*url.URL {
 	lower := bytes.ToLower(document)
 	result := make([]*url.URL, 0, siteIconMaxLinkedCandidates)
 	for offset := 0; offset < len(lower) && len(result) < siteIconMaxLinkedCandidates; {
@@ -757,7 +703,7 @@ func parseSiteIconLinksWithResolver(
 		}
 		attributes := parseHTMLAttributes(document[afterName:end])
 		if siteIconRel(attributes["rel"]) && declaredSiteIconTypeSupported(attributes["type"]) {
-			if candidate, ok := resolve(attributes["href"]); ok {
+			if candidate, ok := resolveSiteIconURL(attributes["href"], base, allowedHosts); ok {
 				result = appendUniqueIconURL(result, candidate)
 			}
 		}

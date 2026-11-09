@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { isDesktopCommandShortcut } from '@/lib/desktopCommandShortcuts'
-import { api } from '@/lib/api'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { AlignLeft, ImagePlus, Link2, Terminal, Trash2, Type } from '@lucide/vue'
 import TerminalHostPicker from '@/components/terminal/TerminalHostPicker.vue'
@@ -85,23 +84,6 @@ const iconInput = ref<HTMLInputElement>()
 const iconPreviewURL = ref('')
 const removeIcon = ref(false)
 const validationMessage = ref('')
-// Auto-filled favicon state: a fetched icon only ever replaces an empty slot
-// or a previously fetched icon. Once the user picks a file or removes the
-// icon, the automatic fill stops for the rest of this dialog session.
-const iconAutoFetched = ref(false)
-const iconManuallySet = ref(false)
-const lastIconFetchURL = ref('')
-let iconFetchTimer: ReturnType<typeof setTimeout> | undefined
-let iconFetchController: AbortController | undefined
-
-function abortIconFetch(): void {
-  if (iconFetchTimer !== undefined) {
-    clearTimeout(iconFetchTimer)
-    iconFetchTimer = undefined
-  }
-  iconFetchController?.abort()
-  iconFetchController = undefined
-}
 let previewSequence = 0
 let previewReader: FileReader | undefined
 
@@ -147,15 +129,11 @@ function reset(): void {
   removeIcon.value = false
   validationMessage.value = ''
   iconFailed.value = false
-  abortIconFetch()
-  iconAutoFetched.value = false
-  iconManuallySet.value = false
-  lastIconFetchURL.value = ''
 }
 
 watch([() => props.open, () => props.shortcut?.id, () => props.site?.id], ([open]) => {
   if (open) reset()
-  else { abortIconFetch(); clearPreview() }
+  else clearPreview()
 }, { immediate: true })
 
 function readIconPreview(file: File): void {
@@ -206,21 +184,15 @@ function selectIcon(event: Event): void {
     return
   }
   clearPreview()
-  abortIconFetch()
   icon.value = file
-  iconManuallySet.value = true
-  iconAutoFetched.value = false
   removeIcon.value = false
   validationMessage.value = ''
   readIconPreview(file)
 }
 
 function clearIcon(): void {
-  abortIconFetch()
   clearPreview()
   icon.value = undefined
-  iconManuallySet.value = true
-  iconAutoFetched.value = false
   removeIcon.value = Boolean(props.site || props.shortcut?.iconVersion || props.shortcut?.iconURL)
 }
 
@@ -234,50 +206,6 @@ function normalizedURL(value: string): string | undefined {
     return undefined
   }
 }
-
-function canAutoFillIcon(): boolean {
-  if (props.site || targetType.value !== 'url' || !props.open) return false
-  if (iconManuallySet.value) return false
-  if (iconAutoFetched.value) return true
-  return !icon.value && !visibleIconURL.value
-}
-
-async function fetchIconPreview(normalized: string, controller: AbortController): Promise<void> {
-  let blob: Blob
-  try {
-    blob = await api.desktop.previewShortcutIcon(normalized, controller.signal)
-  } catch {
-    // A failed fetch silently keeps the current icon; the form stays usable.
-    return
-  }
-  if (controller.signal.aborted || !props.open) return
-  if (normalizedURL(url.value.trim()) !== normalized) return
-  if (iconManuallySet.value || (icon.value && !iconAutoFetched.value)) return
-  const extension = blob.type === 'image/png' ? 'png' : blob.type === 'image/jpeg' ? 'jpg' : 'webp'
-  const file = new File([blob], `favicon.${extension}`, { type: blob.type })
-  clearPreview()
-  icon.value = file
-  iconAutoFetched.value = true
-  removeIcon.value = false
-  lastIconFetchURL.value = normalized
-  readIconPreview(file)
-}
-
-function scheduleIconFetch(): void {
-  abortIconFetch()
-  if (!canAutoFillIcon()) return
-  const normalized = normalizedURL(url.value.trim())
-  if (!normalized || normalized === lastIconFetchURL.value) return
-  iconFetchTimer = setTimeout(() => {
-    iconFetchTimer = undefined
-    const controller = new AbortController()
-    iconFetchController = controller
-    void fetchIconPreview(normalized, controller)
-  }, 450)
-}
-
-watch(url, () => { scheduleIconFetch() })
-watch(targetType, (type) => { if (type !== 'url') abortIconFetch() })
 
 function submit(): void {
   if (props.saving) return
@@ -310,7 +238,7 @@ function submit(): void {
   }, icon.value, removeIcon.value)
 }
 
-onBeforeUnmount(() => { abortIconFetch(); clearPreview(); importController?.abort() })
+onBeforeUnmount(() => { clearPreview(); importController?.abort() })
 </script>
 
 <template>
