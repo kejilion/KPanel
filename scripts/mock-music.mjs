@@ -17,20 +17,10 @@ for (let at = 0; at < mp3.length; at += 1044) mp3.set([255, 251, 224, 0], at)
 const mp3Entry = { ...entries[0], name: '码率展示示例.mp3', path: root + '/码率展示示例.mp3', sizeBytes: mp3.length }
 entries.push(mp3Entry)
 const sidecars = new Map()
-const musicCache = new Map()
 function sidecarPath(path) { return /\.(lrc|jpg|jpeg|png|webp)$/.test(path) && entries.some(e => e.path.replace(/\.[^.]+$/, '') === path.replace(/\.[^.]+$/, '')) }
 const cover = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
 
 export async function mockMusic(request, response, url, send, readJSON) {
-  if (request.method === 'POST' && url.pathname === '/api/v1/music/cache') {
-    const input = await readJSON(request), key = ref => JSON.stringify(ref)
-    if (input.observation) {
-      const o = input.observation, previous = musicCache.get(key(o.ref))
-      if (musicCache.size >= 4096 && !previous) musicCache.delete(musicCache.keys().next().value)
-      musicCache.set(key(o.ref), { ref: o.ref, info: { ...previous?.info, ...o.info }, schema: 1, source: 'file-header', detectedAt: new Date().toISOString() })
-    }
-    send(response, 200, { items: (input.refs || []).flatMap(ref => musicCache.has(key(ref)) ? [musicCache.get(key(ref))] : []) }); return true
-  }
   const host = url.searchParams.get('hostId') || '', path = url.searchParams.get('path') || ''
   if (request.method === 'GET' && url.pathname === '/api/v1/files/entry' && entries.some(item => item.path === path)) {
     send(response, 200, entries.find(item => item.path === path)); return true
@@ -81,11 +71,10 @@ export async function mockMusic(request, response, url, send, readJSON) {
   }
   if (request.method === 'GET' && url.pathname === '/api/v1/files/content' && entries.some(e => e.path === url.searchParams.get('path'))) {
     const data = path === mp3Entry.path ? mp3 : wav
-    const entry = entries.find(e => e.path === path)
     const range = /^bytes=(\d+)-(\d*)$/.exec(request.headers.range || '')
     const start = range ? Math.min(Number(range[1]), data.length - 1) : 0
     const end = range?.[2] ? Math.min(Number(range[2]), data.length - 1) : data.length - 1
-    response.writeHead(range ? 206 : 200, { 'Content-Type': path === mp3Entry.path ? 'audio/mpeg' : 'audio/wav', 'Accept-Ranges': 'bytes', 'Content-Length': end - start + 1, ETag: `"${entry?.resourceVersion || 'music-preview-v1'}"`, ...(range ? { 'Content-Range': `bytes ${start}-${end}/${data.length}` } : {}) })
+    response.writeHead(range ? 206 : 200, { 'Content-Type': path === mp3Entry.path ? 'audio/mpeg' : 'audio/wav', 'Accept-Ranges': 'bytes', 'Content-Length': end - start + 1, ...(range ? { 'Content-Range': `bytes ${start}-${end}/${data.length}` } : {}) })
     response.end(data.subarray(start, end + 1)); return true
   }
   if (request.method === 'POST' && url.pathname === '/api/v1/music/metadata') {
