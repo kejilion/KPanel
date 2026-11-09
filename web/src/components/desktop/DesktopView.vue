@@ -1139,6 +1139,12 @@ const menuRemovableCount = computed(() => {
 })
 const menuWindowId = ref<number>()
 const detailEntry = ref<DesktopEntry>()
+const browserChooserEntry = ref<DesktopEntry>()
+const browserChooserURL = computed(() => {
+  const entry = browserChooserEntry.value
+  if (!entry?.url) return ''
+  return browserInput(entry.url) ?? entry.url
+})
 const renameEntry = ref<DesktopEntry>()
 const siteSaving = ref(false)
 const siteError = ref('')
@@ -1370,7 +1376,10 @@ function openEntry(entry: DesktopEntry): void {
     return
   }
   if (entry.url) {
-    openBrowserEntry(entry)
+    // Ask before launching the built-in browser: its remote Chromium
+    // sidecar takes a while to come up, so the user gets a chance to use
+    // the system browser instead. Other branches return above.
+    browserChooserEntry.value = entry
     return
   }
 }
@@ -1475,6 +1484,18 @@ function openBrowserEntry(entry: DesktopEntry): void {
   }
   const id = desktop.openWindow(path, 'route.browser', false, true)
   if (!id) toast.show(i18n.t('desktop.windowLimitTitle'), { message: i18n.t('desktop.windowLimitMessage') })
+}
+
+function openBrowserChooserInternal(): void {
+  const entry = browserChooserEntry.value
+  browserChooserEntry.value = undefined
+  if (entry) openBrowserEntry(entry)
+}
+
+function openBrowserChooserExternal(): void {
+  const entry = browserChooserEntry.value
+  browserChooserEntry.value = undefined
+  if (entry) openExternal(entry)
 }
 
 function openAppScriptEntry(entry: DesktopEntry): void {
@@ -3982,7 +4003,14 @@ async function enterClassicSafely(): Promise<void> {
 function onEntryMenuOpen(): void {
   const entry = menuEntry.value
   closeContextMenu()
-  if (entry) openEntry(entry)
+  if (!entry) return
+  // The first menu item already names the internal browser for URL entries,
+  // so routing through the chooser would ask a question the user just answered.
+  if (entry.url && entry.launch === 'external') {
+    openBrowserEntry(entry)
+    return
+  }
+  openEntry(entry)
 }
 
 function onEntryMenuOpenContainingDirectory(): void {
@@ -5063,6 +5091,7 @@ function onViewportResize(): void {
                 ? i18n.t('desktop.internalBrowserOpen')
                 : i18n.t('desktop.entryOpen') }}
           </button>
+          <button v-if="menuEntry.url" type="button" role="menuitem" @click="openExternal(menuEntry); closeContextMenu()"><ExternalLink :size="15" aria-hidden="true" />{{ i18n.t('desktop.systemBrowserOpen') }}</button>
           <button
             v-if="menuEntry.kind === 'shortcut' && menuEntry.launch === 'file'"
             type="button"
@@ -5134,7 +5163,6 @@ function onViewportResize(): void {
               ? i18n.t('desktop.removeFromDesktop')
               : i18n.t('desktop.shortcutDelete') }}
           </button>
-          <button v-if="menuEntry.url" type="button" role="menuitem" @click="openExternal(menuEntry); closeContextMenu()"><ExternalLink :size="15" aria-hidden="true" />{{ i18n.t('desktop.systemBrowserOpen') }}</button>
         </template>
         <template v-else-if="menuNavPath">
           <button v-if="menuNavPath === '/browser'" type="button" role="menuitem" @click="openBrowserSettings"><Pencil :size="15" aria-hidden="true" />{{ browserText('settings') }}</button>
@@ -5570,6 +5598,25 @@ function onViewportResize(): void {
         </button>
         <button class="button button--ghost" type="button" @click="detailEntry = undefined">
           {{ i18n.t('common.closeDialog') }}
+        </button>
+      </template>
+    </ModalDialog>
+
+    <ModalDialog
+      :open="Boolean(browserChooserEntry)"
+      :title="browserChooserEntry?.name || ''"
+      size="small"
+      @close="browserChooserEntry = undefined"
+    >
+      <p v-if="browserChooserEntry" class="desktop__browser-chooser-url">{{ browserChooserURL }}</p>
+      <template #footer>
+        <button class="button button--primary" type="button" @click="openBrowserChooserInternal">
+          <AppWindow :size="15" aria-hidden="true" />
+          {{ i18n.t('desktop.internalBrowserOpen') }}
+        </button>
+        <button class="button button--ghost" type="button" @click="openBrowserChooserExternal">
+          <ExternalLink :size="15" aria-hidden="true" />
+          {{ i18n.t('desktop.systemBrowserOpen') }}
         </button>
       </template>
     </ModalDialog>

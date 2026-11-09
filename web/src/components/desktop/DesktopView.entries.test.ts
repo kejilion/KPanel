@@ -127,6 +127,18 @@ async function openExternalMenu(wrapper: VueWrapper, selector: string) {
   await nextTick()
 }
 
+function chooserURL(): string | null {
+  return document.body.querySelector('.desktop__browser-chooser-url')?.textContent ?? null
+}
+
+function clickBrowserChooser(internal: boolean): void {
+  const label = internal ? '在内置浏览器中打开' : '用系统浏览器打开'
+  const button = Array.from(document.body.querySelectorAll<HTMLButtonElement>('.modal-panel__footer button'))
+    .find((item) => item.textContent?.includes(label))
+  expect(button).toBeDefined()
+  button!.click()
+}
+
 describe('DesktopView dynamic entries', () => {
   beforeEach(() => {
     resetDesktopModeForTest()
@@ -260,14 +272,45 @@ describe('DesktopView dynamic entries', () => {
     await flushPromises()
     await wrapper.find("button[title=\"blog.example.com\"]").trigger("dblclick")
     await nextTick()
+    expect(desktop.windows.value).toHaveLength(0)
+    expect(chooserURL()).toBe("https://blog.example.com/")
+    clickBrowserChooser(true)
+    await nextTick()
     expect(desktop.windows.value).toHaveLength(1)
     expect(desktop.windows.value[0]?.path).toBe("/browser")
     await wrapper.find("button[title=\"Nginx\"]").trigger("dblclick")
+    await nextTick()
+    expect(chooserURL()).toBe("http://192.168.1.5:8080/")
+    clickBrowserChooser(true)
     await nextTick()
     expect(desktop.windows.value).toHaveLength(1)
     expect(desktop.windows.value[0]?.path).toBe("/browser")
     expect(window.open).not.toHaveBeenCalled()
     expect(document.body.querySelector(".desktop__external-confirm")).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('asks how to open a website and opens it in the system browser when chosen', async () => {
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await flushPromises()
+    await wrapper.find('button[title="blog.example.com"]').trigger('dblclick')
+    await nextTick()
+    expect(chooserURL()).toBe('https://blog.example.com/')
+    clickBrowserChooser(false)
+    await nextTick()
+    expect(window.open).toHaveBeenCalledWith('https://blog.example.com/', '_blank', 'noopener,noreferrer')
+    expect(useDesktopMode().windows.value).toHaveLength(0)
+    expect(document.body.querySelector('.desktop__browser-chooser-url')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('opens the browser icon directly without asking', async () => {
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await flushPromises()
+    await wrapper.find('button[title="浏览器"]').trigger('dblclick')
+    await nextTick()
+    expect(document.body.querySelector('.desktop__browser-chooser-url')).toBeNull()
+    expect(useDesktopMode().windows.value.map(window => window.path)).toEqual(['/browser'])
     wrapper.unmount()
   })
 
@@ -312,6 +355,25 @@ describe('DesktopView dynamic entries', () => {
     wrapper.unmount()
   })
 
+  it('keeps the two browser choices together at the top of the website menu', async () => {
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await nextTick()
+    await nextTick()
+
+    await wrapper.find('button[title="blog.example.com"]').trigger('contextmenu', { clientX: 120, clientY: 80 })
+    await nextTick()
+    const labels = wrapper.findAll('.desktop__context-menu [role="menuitem"]').map((item) => item.text().trim())
+    expect(labels).toEqual([
+      '在内置浏览器中打开',
+      '用系统浏览器打开',
+      '详情',
+      '编辑站点',
+      '从桌面移除',
+      '编为一组',
+    ])
+    wrapper.unmount()
+  })
+
   it('routes the website-detail action to the built-in browser', async () => {
     const wrapper = mount(DesktopView, { attachTo: document.body })
     await nextTick()
@@ -319,7 +381,7 @@ describe('DesktopView dynamic entries', () => {
 
     await wrapper.find('button[title="blog.example.com"]').trigger('contextmenu', { clientX: 120, clientY: 80 })
     await nextTick()
-    await wrapper.findAll('.desktop__context-menu [role="menuitem"]')[1]?.trigger('click')
+    await wrapper.findAll('.desktop__context-menu [role="menuitem"]')[2]?.trigger('click')
     await nextTick()
 
     expect(document.body.querySelector('.desktop__detail')).not.toBeNull()
@@ -327,6 +389,9 @@ describe('DesktopView dynamic entries', () => {
     await nextTick()
 
     expect(document.body.querySelector('.desktop__detail')).toBeNull()
+    expect(chooserURL()).toBe('https://blog.example.com/')
+    clickBrowserChooser(true)
+    await nextTick()
     expect(useDesktopMode().windows.value[0]?.path).toBe('/browser')
     expect(window.open).not.toHaveBeenCalled()
     wrapper.unmount()
@@ -342,7 +407,7 @@ describe('DesktopView dynamic entries', () => {
     await nextTick()
     const appItems = wrapper.findAll('.desktop__context-menu [role="menuitem"]')
     expect(appItems).toHaveLength(5)
-    await appItems[1]?.trigger('click')
+    await appItems[2]?.trigger('click')
     expect(desktop.windows.value[0]?.path).toBe('/apps?app=nginx')
     wrapper.unmount()
   })
@@ -355,7 +420,7 @@ describe('DesktopView dynamic entries', () => {
 
     await wrapper.find('button[title="Nginx"]').trigger('contextmenu', { clientX: 80, clientY: 80 })
     await nextTick()
-    await wrapper.findAll('.desktop__context-menu [role="menuitem"]')[1]?.trigger('click')
+    await wrapper.findAll('.desktop__context-menu [role="menuitem"]')[2]?.trigger('click')
 
     expect(desktop.windows.value).toHaveLength(1)
     expect(desktop.windows.value[0]?.path).toBe('/apps?app=nginx')
@@ -376,7 +441,7 @@ describe('DesktopView dynamic entries', () => {
     await nextTick()
     const siteItems = wrapper.findAll('.desktop__context-menu [role="menuitem"]')
     expect(siteItems).toHaveLength(6)
-    await siteItems[2]?.trigger('click')
+    await siteItems[3]?.trigger('click')
     await nextTick()
 
     const input = document.body.querySelector<HTMLInputElement>('.desktop-shortcut-form input:not([type="file"])')
@@ -403,7 +468,7 @@ describe('DesktopView dynamic entries', () => {
     await flushPromises()
     await wrapper.find('button[title="blog.example.com"]').trigger('contextmenu', { clientX: 120, clientY: 80 })
     await nextTick()
-    await wrapper.findAll('.desktop__context-menu [role="menuitem"]')[2]!.trigger('click')
+    await wrapper.findAll('.desktop__context-menu [role="menuitem"]')[3]!.trigger('click')
     await nextTick()
     const dialog = wrapper.findAllComponents(DesktopShortcutDialog).find(item => item.props('open'))!
     expect(dialog.props('site')).toMatchObject({ id: 'blog', name: 'blog.example.com', customIcon: false })
@@ -423,7 +488,7 @@ describe('DesktopView dynamic entries', () => {
     await flushPromises()
     await wrapper.find('button[title="blog.example.com"]').trigger('contextmenu', { clientX: 120, clientY: 80 })
     await nextTick()
-    await wrapper.findAll('.desktop__context-menu [role="menuitem"]')[2]!.trigger('click')
+    await wrapper.findAll('.desktop__context-menu [role="menuitem"]')[3]!.trigger('click')
     await nextTick()
     const dialog = wrapper.findAllComponents(DesktopShortcutDialog).find(item => item.props('open'))!
     const file = new File(['png'], 'site.png', { type: 'image/png' })
@@ -445,7 +510,7 @@ describe('DesktopView dynamic entries', () => {
     await flushPromises()
     await wrapper.find('button[title="blog.example.com"]').trigger('contextmenu', { clientX: 120, clientY: 80 })
     await nextTick()
-    await wrapper.findAll('.desktop__context-menu [role="menuitem"]')[2]!.trigger('click')
+    await wrapper.findAll('.desktop__context-menu [role="menuitem"]')[3]!.trigger('click')
     await nextTick()
     const fileInput = document.body.querySelector<HTMLInputElement>('input[type="file"]')!
     Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['png'], 'icon.png', { type: 'image/png' })] })
@@ -477,7 +542,7 @@ describe('DesktopView dynamic entries', () => {
     await flushPromises()
     await wrapper.find('button[title="' + (hasAlias ? '原别名 · ' + domain : domain) + '"]').trigger('contextmenu', { clientX: 120, clientY: 80 })
     await nextTick()
-    await wrapper.findAll('.desktop__context-menu [role="menuitem"]')[2]!.trigger('click')
+    await wrapper.findAll('.desktop__context-menu [role="menuitem"]')[3]!.trigger('click')
     await nextTick()
     const dialog = wrapper.findAllComponents(DesktopShortcutDialog).find(item => item.props('open'))!
     dialog.vm.$emit('save', { id: 'blog', name: domain, description: '', targetType: 'url', url: 'https://' + domain }, undefined, false)
@@ -646,10 +711,17 @@ describe('DesktopView dynamic entries', () => {
     expect(shortcut.find('.desktop__icon-img').attributes('src')).toContain('/api/v1/desktop/shortcuts/')
     await shortcut.trigger('dblclick')
     await nextTick()
+    expect(useDesktopMode().windows.value).toHaveLength(0)
+    expect(chooserURL()).toBe('https://docs.example.com/')
+    clickBrowserChooser(true)
+    await nextTick()
     expect(useDesktopMode().windows.value.map(window => window.path)).toEqual(['/browser'])
     expect(window.open).not.toHaveBeenCalled()
     expect(document.body.querySelector('.desktop__external-confirm')).toBeNull()
     await wrapper.find('button[title="blog.example.com"]').trigger('dblclick')
+    await nextTick()
+    expect(chooserURL()).toBe('https://blog.example.com/')
+    clickBrowserChooser(true)
     await nextTick()
     expect(useDesktopMode().windows.value.map(window => window.path)).toEqual(['/browser'])
     await shortcut.find('.desktop__icon-img').trigger('error')
