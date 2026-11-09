@@ -5,8 +5,12 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { tracksFromEntries, type Track } from './music'
 import { musicQualityKey, readMusicQuality } from './musicQuality'
 import { useMusicQuality } from './useMusicQuality'
+import { clearMusicInfoMemory } from './musicInfoCache'
+import { api } from './api'
 import type { FileEntry } from '@/types/api'
 
+vi.mock('./api', () => ({ api: { music: { cache: vi.fn(async () => ({ items: [] })) }, files: { contentUrl: (path: string) => path } } }))
+vi.mock('./musicTags', () => ({ readMusicTags: vi.fn(async () => ({})) }))
 vi.mock('./musicQuality', async importOriginal => ({ ...await importOriginal<typeof import('./musicQuality')>(), readMusicQuality: vi.fn() }))
 const readers = vi.mocked(readMusicQuality)
 let observed: Element[] = [], callback: IntersectionObserverCallback
@@ -16,7 +20,7 @@ vi.stubGlobal('IntersectionObserver', class {
   observe(element: Element) { observed.push(element) }
   disconnect = disconnect
 })
-afterEach(() => { readers.mockReset(); disconnect.mockClear() })
+afterEach(() => { clearMusicInfoMemory(); readers.mockReset(); disconnect.mockClear() })
 function track(index: number): Track {
   return tracksFromEntries([{ name: index + '.mp3', path: '/music/' + index + '.mp3', kind: 'file', sizeBytes: 100, resourceVersion: '1' } as FileEntry], '')[0]!
 }
@@ -39,7 +43,7 @@ it('probes visible rows only, limits concurrency, reuses cache and aborts when l
   readers.mockImplementation((_track, signal) => new Promise(resolve => pending.push({ resolve, signal })))
   const { wrapper, tracks, quality } = await setup()
   expect(readers).not.toHaveBeenCalled()
-  visible(); expect(readers).toHaveBeenCalledTimes(2)
+  visible(); await flushPromises(); expect(readers).toHaveBeenCalledTimes(2)
   pending[0]!.resolve({ bitrate: 320 }); await flushPromises()
   expect(readers).toHaveBeenCalledTimes(3); expect(quality(tracks.value[0]!)).toEqual({ bitrate: 320 })
   visible([observed[0]!]); expect(readers).toHaveBeenCalledTimes(3)
@@ -60,6 +64,6 @@ it('invalidates by host and resource version and bounds error cache', async () =
   for (let start = 1; start <= 130; start += 10) {
     tracks.value = Array.from({ length: 10 }, (_, i) => track(start + i)); await flushPromises(); visible(); await flushPromises()
   }
-  expect(quality(original)).toBeUndefined()
+  expect(quality(original)).toBeUndefined(); expect(api.music.cache).toHaveBeenCalled()
   wrapper.unmount()
 })

@@ -109,7 +109,7 @@ export function parseMusicTags(input: Uint8Array): MusicTags {
 }
 export async function readMusicTags(url: string, signal: AbortSignal): Promise<MusicTags> {
   const response = await fetch(url, { headers: { Range: `bytes=0-${TAG_BUDGET - 1}` }, signal })
-  if (!response.ok || !response.body) return {}
+  if (!response.ok || !response.body || (response.status === 206 && !response.headers.get('Content-Range')?.startsWith('bytes 0-'))) { await response.body?.cancel(); throw new Error('Music tags unavailable') }
   const reader = response.body.getReader(), chunks: Uint8Array[] = []
   let size = 0
   try {

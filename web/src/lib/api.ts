@@ -1345,6 +1345,8 @@ export const api = {
     csrf: () => csrfToken,
   },
   music: {
+    cache: (body: import('./musicInfoCache').MusicCacheInput, signal?: AbortSignal): Promise<{ items: import('./musicInfoCache').MusicRecord[] }> =>
+      request('/music/cache', { method: 'POST', body, signal }),
     metadata: (body: import('./musicOnline').MusicQuery, signal?: AbortSignal): Promise<import('./musicOnline').OnlineMusic> =>
       request('/music/metadata', { method: 'POST', body, signal }),
   },

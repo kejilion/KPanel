@@ -36,6 +36,7 @@ import (
 	"github.com/kejilion/kejilion-panel/internal/desktopwallpapers"
 	"github.com/kejilion/kejilion-panel/internal/desktopworkspace"
 	"github.com/kejilion/kejilion-panel/internal/dockerx"
+	"github.com/kejilion/kejilion-panel/internal/musiccache"
 	"github.com/kejilion/kejilion-panel/internal/musicmetadata"
 	"github.com/kejilion/kejilion-panel/internal/notification"
 	"github.com/kejilion/kejilion-panel/internal/offers"
@@ -105,6 +106,7 @@ type Server struct {
 	tutorialMetadataCache   map[string]tutorialMetadataCacheEntry
 	tutorialFeeds           [2]tutorialFeedCache
 	musicMetadata           *musicmetadata.Service
+	musicCache              *musiccache.Cache
 	cinemaMetadata          *cinemametadata.Service
 	fileShareRateMu         sync.Mutex
 	fileShareRates          map[string]fileShareRateEntry
@@ -335,6 +337,7 @@ func NewServer(config Config, authService *auth.Service, storage *store.Store, a
 	server.remoteDownloadAdaptive = func(ctx context.Context, raw string, response *http.Response) io.ReadCloser {
 		return downloadClient.Adaptive(ctx, raw, response, accelerationBudget)
 	}
+	server.musicCache, _ = musiccache.Open(filepath.Join(config.DataDir, "music-metadata-v1"))
 	server.mcp = newMCPService(config.DataDir)
 	server.cluster.SetManagedOperationHandler(server.handleManagedClusterOperation, func() bool { access := server.mcp.access.Snapshot(); return access.Available && access.Enabled })
 	server.backups, err = backup.OpenManager(filepath.Join(config.DataDir, "backups"))
@@ -529,6 +532,8 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		s.handleAutomaticUpdateSettings(w, r)
 	case r.URL.Path == "/api/v1/settings/kpanel-release":
 		s.handleKPanelRelease(w, r)
+	case r.URL.Path == musicCachePath:
+		s.handleMusicCache(w, r)
 	case r.URL.Path == musicMetadataPath:
 		s.handleMusicMetadata(w, r)
 	case r.URL.Path == cinemaMetadataPath:

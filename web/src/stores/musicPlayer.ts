@@ -3,7 +3,8 @@ import { matchOnlineMusic } from '@/lib/musicOnline'
 import { saveMusicSidecars, type MusicSidecars } from '@/lib/musicSidecars'
 import { fileAPIForHost } from '@/lib/fileHostContext'
 import { MUSIC_LIMIT, readMusicLyrics, readMusicTrack, isMusic, trackKey, type Track } from '@/lib/music'
-import { readMusicTags, readableMusicTag } from '@/lib/musicTags'
+import { readMusicTags, readableMusicTag, type MusicTags } from '@/lib/musicTags'
+import { peekMusicInfo, saveMusicInfo } from '@/lib/musicInfoCache'
 
 type Repeat = 'off' | 'all' | 'one'
 interface PlayerDependencies {
@@ -23,7 +24,10 @@ export function createMusicPlayer(overrides: Partial<PlayerDependencies> = {}) {
     resolve: async (track, signal) => {
       const entry = await fileAPIForHost(track.hostId).entry(track.entry.path, signal)
       if (entry.path !== track.entry.path || !isMusic(entry)) return undefined
-      return readMusicTrack(entry, track.hostId, signal)
+      const refreshed = await readMusicTrack(entry, track.hostId, signal)
+      // Discovery is optional on older/offline Agents; keep known local assets
+      // until a refreshed library provides their new references.
+      return refreshed ? { ...refreshed, cover: refreshed.cover ?? track.cover, lyrics: refreshed.lyrics ?? track.lyrics } : undefined
     },
     text: readMusicLyrics,
     save: saveMusicSidecars, online: matchOnlineMusic, random: Math.random, ...overrides,
@@ -142,26 +146,37 @@ export function createMusicPlayer(overrides: Partial<PlayerDependencies> = {}) {
     await persistSidecars(pendingSave.track, pendingSave.assets, sequence)
   }
 
-  async function metadata(track: Track, id: number, signal: AbortSignal) {
+  async function metadata(track: Track, id: number, signal: AbortSignal, revalidate = true) {
     state.lyricsLoading = true
-    if (track.needsRefresh) {
-      let refreshed: Track | undefined
+    // Revalidate the actual file version before trusting a persistent observation.
+    // The same path can have been replaced since it was added to the queue.
+    let refreshed: Track | undefined = revalidate || track.needsRefresh ? undefined : track
+    // Passive preference restoration can already supply a freshly resolved file.
+    if (revalidate || track.needsRefresh) {
       try { refreshed = await deps.resolve(track, signal) } catch { /* Keep offline references for a later retry. */ }
-      if (id !== sequence || !state.current) return
-      if (!refreshed || signal.aborted) { state.lyricsLoading = false; state.lyricsFailed = true; return }
+    }
+    if (id !== sequence || !state.current) return
+    if (signal.aborted) { state.lyricsLoading = false; state.lyricsFailed = true; return }
+    if (!refreshed && track.needsRefresh) { state.lyricsLoading = false; state.lyricsFailed = true; return }
+    if (refreshed) {
       track = refreshed
       state.current = { ...refreshed }
       const queued = state.queue.find(item => key(item) === key(track))
       if (queued) Object.assign(queued, refreshed, { needsRefresh: false })
     }
     // Independent optional resources: a broken sidecar does not discard embedded lyrics.
+    const cached = peekMusicInfo(track)
     const [tags, sidecar] = await Promise.allSettled([
-      deps.tags(fileAPIForHost(track.hostId).contentUrl(track.entry.path), signal),
+      refreshed && cached?.tags && cached.embeddedAssets === false ? Promise.resolve(cached.tags) : deps.tags(fileAPIForHost(track.hostId).contentUrl(track.entry.path), signal),
       track.lyrics ? deps.text(track, signal) : Promise.resolve(''),
     ])
     if (id !== sequence || !state.current) return
     if (signal.aborted) { state.lyricsLoading = false; state.lyricsFailed = true; return }
-    const embedded = tags.status === 'fulfilled' ? tags.value : {}
+    const embedded: MusicTags = tags.status === 'fulfilled' ? tags.value : cached?.tags ?? {}
+    if (refreshed && tags.status === 'fulfilled' && !cached?.tags) {
+      const { title, artist, album, picture, lyrics } = embedded
+      void saveMusicInfo(track, { tags: { title, artist, album }, embeddedAssets: Boolean(picture || lyrics) }, signal)
+    }
     state.current = { ...state.current, title: readableMusicTag(embedded.title, track.title), artist: readableMusicTag(embedded.artist, track.artist) }
     const queued = state.queue.find(item => key(item) === key(track))
     if (queued) { queued.title = state.current.title; queued.artist = state.current.artist }
@@ -208,10 +223,14 @@ export function createMusicPlayer(overrides: Partial<PlayerDependencies> = {}) {
     const id = ++sequence
     releaseAudio(); releaseMetadata()
     state.position = startPosition; state.current = { ...track }; state.restored = !autoplay; state.duration = 0; state.error = ''
+    const cached = peekMusicInfo(track)
+    state.current.title = readableMusicTag(cached?.tags?.title, track.title)
+    state.current.artist = readableMusicTag(cached?.tags?.artist, track.artist)
     const queuedKeys = new Set(state.queue.map(key))
     cycle = new Set([...cycle].filter(k => queuedKeys.has(k)))
     cycle.add(key(track))
     state.playing = false; state.waiting = autoplay; state.lyrics = ''; state.lyricsFailed = false; state.album = ''
+    state.album = readableMusicTag(cached?.tags?.album, '')
     const target = deps.audio(); audio = target
     let pendingSeek = startPosition
     target.preload = 'metadata'; target.volume = state.volume; target.muted = state.muted
@@ -226,7 +245,7 @@ export function createMusicPlayer(overrides: Partial<PlayerDependencies> = {}) {
     target.src = fileAPIForHost(track.hostId).contentUrl(track.entry.path)
     bindSession(); publishMetadata(); if (autoplay) void resume()
     controller = new AbortController(); timer = setTimeout(() => controller?.abort(), 8000)
-    void metadata(track, id, controller.signal)
+    void metadata(track, id, controller.signal, autoplay)
   }
   function restore(track: Track | undefined, position: number, repeat: Repeat, shuffle: boolean, queue?: Track[]) {
     if (!track) stop()

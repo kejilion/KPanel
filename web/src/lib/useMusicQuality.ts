@@ -1,6 +1,7 @@
 import { nextTick, onBeforeUnmount, shallowReactive, watch, type Ref } from 'vue'
-import { musicQualityKey, readMusicQuality, type MusicQuality } from './musicQuality'
+import { musicQualityKey, type MusicQuality } from './musicQuality'
 import type { Track } from './music'
+import { loadMusicInfo, peekMusicInfo } from './musicInfoCache'
 
 /** Read only visible rows: two bounded header probes, 64 queued items, 128 cached results. */
 export function useMusicQuality(root: Ref<HTMLElement | undefined>, tracks: () => Track[], revision: () => unknown) {
@@ -18,7 +19,7 @@ export function useMusicQuality(root: Ref<HTMLElement | undefined>, tracks: () =
     controller.signal.addEventListener('abort', stop, { once: true })
     const timer = setTimeout(stop, 6000)
     try {
-      const value = await readMusicQuality(track, probe.signal)
+      const value = (await loadMusicInfo(track, probe.signal)).quality ?? {}
       if (!controller.signal.aborted) {
         remember(key, value)
       }
@@ -35,7 +36,7 @@ export function useMusicQuality(root: Ref<HTMLElement | undefined>, tracks: () =
     const key = musicQualityKey(track)
     if (cache.has(key) || pending.has(key) || controller.signal.aborted) return
     if (queue.length >= 64) pending.delete(musicQualityKey(queue.shift()!))
-    pending.add(key); queue.push({ ...track, entry: { ...track.entry } }); pump()
+    pending.add(key); queue.push(track); pump()
   }
   watch([root, tracks, revision], async () => {
     await nextTick()
@@ -52,5 +53,5 @@ export function useMusicQuality(root: Ref<HTMLElement | undefined>, tracks: () =
     root.value.querySelectorAll('[data-music-quality]').forEach(element => observer!.observe(element))
   }, { immediate: true })
   onBeforeUnmount(() => { controller.abort(); observer?.disconnect(); queue.length = 0; pending.clear() })
-  return (track: Track): MusicQuality | undefined => cache.get(musicQualityKey(track))
+  return (track: Track): MusicQuality | undefined => peekMusicInfo(track)?.quality ?? cache.get(musicQualityKey(track))
 }

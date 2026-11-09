@@ -14,6 +14,8 @@ import { MUSIC_ROOT, musicExtension, musicTime, parseLyrics, readMusicFolder, tr
 import { useMusicPlayer } from '@/stores/musicPlayer'
 import { useMusicQuality } from '@/lib/useMusicQuality'
 import { musicQualityKey } from '@/lib/musicQuality'
+import { lookupMusicInfo, peekMusicInfo } from '@/lib/musicInfoCache'
+import { readableMusicTag } from '@/lib/musicTags'
 import { desktopWindowVisibleKey } from '@/lib/desktopRouteKeys'
 import { formatBytes } from '@/lib/format'
 import { useI18n } from '@/i18n'
@@ -38,11 +40,11 @@ const activeHost = computed(() => hosts.value.find(h => hostId.value ? h.id === 
 const hostLabel = computed(() => fileHostLabel(hostId.value, hosts.value, phrase('本机')))
 const allTracks = computed(() => tracksFromEntries(entries.value, hostId.value))
 const sort = ref('name'), tab = ref<'library' | 'listen' | 'queue'>(route.query.view === 'listen' ? 'listen' : 'library'), locationOpen = ref(false)
-const tracks = computed(() => allTracks.value.filter(t => `${t.title} ${t.artist}`.toLocaleLowerCase().includes(search.value.toLocaleLowerCase())).sort((a,b) => sort.value === 'artist' ? a.artist.localeCompare(b.artist) || a.title.localeCompare(b.title) : a.title.localeCompare(b.title, undefined, {numeric:true})))
+const tracks = computed(() => allTracks.value.filter(t => `${trackTitle(t)} ${trackArtist(t)}`.toLocaleLowerCase().includes(search.value.toLocaleLowerCase())).sort((a,b) => sort.value === 'artist' ? trackArtist(a).localeCompare(trackArtist(b)) || trackTitle(a).localeCompare(trackTitle(b)) : trackTitle(a).localeCompare(trackTitle(b), undefined, {numeric:true})))
 const folders = computed(() => entries.value.filter(e => e.kind === 'directory' && !e.name.startsWith('.')))
 const volumeOpen = ref(false), musicRoot = ref<HTMLElement>()
-const quality = useMusicQuality(musicRoot, () => [...tracks.value, ...(state.current ? [state.current] : [])], () => tab.value)
-function bitrate(track: Track) { const info = quality(track); return info?.bitrate ? (info.bitrateKind === 'pcm' ? '' : '≈') + info.bitrate + ' kbps' + (info.vbr ? ' VBR' : '') : '' }
+const quality = useMusicQuality(musicRoot, () => [...tracks.value, ...state.queue, ...(state.current ? [state.current] : [])], () => tab.value)
+function bitrate(track: Track) { const info = quality(track); return info?.bitrate ? info.bitrate + ' kbps' + (info.vbr ? ' VBR' : '') : '' }
 function qualityTitle(track: Track) {
   const info = quality(track)
   if (!info) return ''
@@ -77,7 +79,13 @@ async function loadHosts() {
 async function load() {
   listing?.abort(); const controller = new AbortController(); listing = controller
   entries.value = []; error.value = ''; loading.value = true; truncated.value = false
-  try { const result = await readMusicFolder(path.value, hostId.value, controller.signal); if (!controller.signal.aborted) { entries.value = result.entries; truncated.value = result.truncated } }
+  try { const result = await readMusicFolder(path.value, hostId.value, controller.signal); if (!controller.signal.aborted) {
+      const budget = new AbortController(), stop = () => budget.abort()
+      controller.signal.addEventListener('abort', stop, { once: true })
+      const timer = setTimeout(stop, 1200)
+      try { await lookupMusicInfo(tracksFromEntries(result.entries, hostId.value), budget.signal) } finally { clearTimeout(timer); controller.signal.removeEventListener('abort', stop) }
+      if (!controller.signal.aborted) { entries.value = result.entries; truncated.value = result.truncated }
+    } }
   catch (e) { if (!controller.signal.aborted) error.value = e instanceof Error ? e.message : String(e) }
   finally { if (!controller.signal.aborted) loading.value = false }
 }
@@ -111,8 +119,8 @@ function selectHost(host: ClusterHost) {
 function files() { void router.push({ name: 'files', query: { path: path.value, ...(hostId.value ? { hostId: hostId.value } : {}) } }) }
 function repeat() { state.repeat = state.repeat === 'off' ? 'all' : state.repeat === 'all' ? 'one' : 'off' }
 function isCurrent(track: Track) { return state.current && trackKey(state.current) === trackKey(track) }
-function trackTitle(track: Track) { return isCurrent(track) ? state.current!.title : track.title }
-function trackArtist(track: Track) { return isCurrent(track) ? state.current!.artist : track.artist }
+function trackTitle(track: Track) { return readableMusicTag(peekMusicInfo(track)?.tags?.title, isCurrent(track) ? state.current!.title : track.title) }
+function trackArtist(track: Track) { return readableMusicTag(peekMusicInfo(track)?.tags?.artist, isCurrent(track) ? state.current!.artist : track.artist) }
 function choose(track: Track) { if (!state.queue.length) player.replaceQueue(tracks.value, track); else player.choose(track) }
 function seek(event: Event) { player.seek(Number((event.target as HTMLInputElement).value)) }
 function volume(event: Event) { player.setVolume(Number((event.target as HTMLInputElement).value)) }
@@ -191,7 +199,7 @@ onBeforeUnmount(() => { destroyed = true; listing?.abort(); lyricResize?.disconn
             <div v-if="!tracks.length" class="music-empty"><Disc3 :size="48" /><h2>{{ search ? phrase('没有匹配的歌曲') : phrase('让音乐住进这里') }}</h2><p>{{ search ? phrase('试试其他歌名或歌手') : phrase('选择音乐文件夹，或通过文件管理上传歌曲。') }}</p><button v-if="search" class="button button--secondary" @click="search = ''">清除搜索</button><button v-else class="button button--secondary" @click="focusLocation">选择文件夹</button></div>
             <ol class="music-tracks" :aria-label="phrase('歌曲列表')"><li v-for="(track, index) in tracks" :key="trackKey(track)" :class="{ active: isCurrent(track) }">
               <button class="music-track" :aria-label="`${phrase('播放')} ${trackTitle(track)}`" @click="choose(track)"><span class="music-track__number"><span v-if="isCurrent(track) && state.playing" class="music-wave" :class="{ 'is-playing': !state.waiting && visible }" aria-hidden="true"><i></i><i></i><i></i></span><Play v-else-if="isCurrent(track)" :size="16" /><template v-else>{{ String(index + 1).padStart(2, '0') }}</template></span><span class="music-track__art"><img v-if="artwork(track)" :key="artwork(track)" :src="artwork(track)" alt="" loading="lazy" @error="($event.target as HTMLImageElement).hidden = true" /><Music2 v-else :size="21" /></span><span class="music-track__name"><strong>{{ trackTitle(track) }}</strong><span>{{ trackArtist(track) || phrase('未知歌手') }}</span></span><span class="music-track__format" :data-music-quality="musicQualityKey(track)" :title="qualityTitle(track)"><span class="music-format-line"><span>{{ musicExtension(track.entry.name).toUpperCase() }}</span><span v-if="bitrate(track)">{{ bitrate(track) }}</span><span v-if="quality(track)?.lossless" class="music-lossless"><Gem :size="13" aria-hidden="true" />{{ phrase('无损') }}</span></span><small>{{ formatBytes(track.entry.sizeBytes) }}</small></span></button>
-              <button class="music-icon-button music-next" :aria-label="`${phrase('下一首播放')} ${track.title}`" :title="phrase('下一首播放')" @click="player.enqueue(track, true)"><ListPlus :size="18" /></button><button class="music-icon-button" :aria-label="`${phrase('加入播放队列')} ${track.title}`" :title="phrase('加入播放队列')" @click="player.enqueue(track)"><Plus :size="18" /></button>
+              <button class="music-icon-button music-next" :aria-label="`${phrase('下一首播放')} ${trackTitle(track)}`" :title="phrase('下一首播放')" @click="player.enqueue(track, true)"><ListPlus :size="18" /></button><button class="music-icon-button" :aria-label="`${phrase('加入播放队列')} ${trackTitle(track)}`" :title="phrase('加入播放队列')" @click="player.enqueue(track)"><Plus :size="18" /></button>
             </li></ol>
           </template>
         </template>
@@ -199,18 +207,18 @@ onBeforeUnmount(() => { destroyed = true; listing?.abort(); lyricResize?.disconn
           <div class="music-section-heading"><div><span class="music-eyebrow">接下来听什么</span><h2>播放队列</h2></div><button class="button button--secondary" :disabled="!state.queue.length" @click="player.clearQueue">清空待播</button></div>
           <p class="music-caption">跨主机歌曲可以放在同一队列。移除歌曲不会打断当前播放。</p>
           <div v-if="!state.queue.length" class="music-empty"><ListMusic :size="44" /><h2>队列还是空的</h2><button class="button button--secondary" @click="tab = 'library'">去音乐库选歌</button></div>
-          <ol class="music-queue"><li v-for="(track, index) in state.queue" :key="trackKey(track)" :class="{ active: isCurrent(track) }"><button class="music-track" @click="player.choose(track)"><span class="music-track__number">{{ index + 1 }}</span><span class="music-track__art"><img v-if="artwork(track)" :key="artwork(track)" :src="artwork(track)" alt="" loading="lazy" @error="($event.target as HTMLImageElement).hidden = true" /><Music2 v-else :size="21" /></span><span class="music-track__name"><strong>{{ trackTitle(track) }}</strong><span>{{ trackArtist(track) || phrase('未知歌手') }} · {{ fileHostLabel(track.hostId, hosts, phrase('本机')) }}</span></span><Play v-if="isCurrent(track)" :size="16" /></button><button class="music-icon-button" :disabled="index === 0" :aria-label="`${phrase('上移')} ${track.title}`" @click="player.move(track, -1)"><ArrowUp :size="16" /></button><button class="music-icon-button" :disabled="index === state.queue.length - 1" :aria-label="`${phrase('下移')} ${track.title}`" @click="player.move(track, 1)"><ArrowDown :size="16" /></button><button class="music-icon-button" :aria-label="`${phrase('移出队列')} ${track.title}`" @click="player.remove(track)"><X :size="17" /></button></li></ol>
+          <ol class="music-queue"><li v-for="(track, index) in state.queue" :key="trackKey(track)" :class="{ active: isCurrent(track) }"><button class="music-track" :data-music-quality="musicQualityKey(track)" :aria-label="`${phrase('播放')} ${trackTitle(track)}`" @click="player.choose(track)"><span class="music-track__number">{{ index + 1 }}</span><span class="music-track__art"><img v-if="artwork(track)" :key="artwork(track)" :src="artwork(track)" alt="" loading="lazy" @error="($event.target as HTMLImageElement).hidden = true" /><Music2 v-else :size="21" /></span><span class="music-track__name"><strong>{{ trackTitle(track) }}</strong><span>{{ trackArtist(track) || phrase('未知歌手') }} · {{ fileHostLabel(track.hostId, hosts, phrase('本机')) }}</span></span><Play v-if="isCurrent(track)" :size="16" /></button><button class="music-icon-button" :disabled="index === 0" :aria-label="`${phrase('上移')} ${trackTitle(track)}`" @click="player.move(track, -1)"><ArrowUp :size="16" /></button><button class="music-icon-button" :disabled="index === state.queue.length - 1" :aria-label="`${phrase('下移')} ${trackTitle(track)}`" @click="player.move(track, 1)"><ArrowDown :size="16" /></button><button class="music-icon-button" :aria-label="`${phrase('移出队列')} ${trackTitle(track)}`" @click="player.remove(track)"><X :size="17" /></button></li></ol>
         </template>
       </section>
       <aside class="music-now" :class="{ 'music-now--mobile-hidden': tab !== 'listen' }">
-        <div class="music-now__album"><div class="music-cover"><img v-if="player.cover.value && !coverFailed" :src="player.cover.value" alt="" @error="coverFailed = true" /><div v-else class="music-cover__record"><Disc3 :size="96" /></div></div><span class="music-eyebrow"><span v-if="state.playing" class="music-wave" :class="{ 'is-playing': !state.waiting && visible }" aria-hidden="true"><i></i><i></i><i></i></span> {{ state.current ? phrase(state.playing ? '正在播放' : '暂停') : phrase('准备好，听点喜欢的') }}</span><h2>{{ state.current?.title || phrase('你的下一首好歌') }}</h2><p>{{ state.current?.artist || phrase('从音乐库开始聆听') }}</p><p v-if="state.album" class="music-caption">{{ state.album }}</p><div v-if="state.current" class="music-provenance" :data-music-quality="musicQualityKey(state.current)" :title="qualityTitle(state.current)"><span>{{ musicExtension(state.current.entry.name).toUpperCase() }} · {{ phrase('原文件') }}</span><span v-if="bitrate(state.current)">{{ bitrate(state.current) }}</span><span v-if="quality(state.current)?.lossless" class="music-lossless"><Gem :size="13" aria-hidden="true" />{{ phrase('无损') }}</span><span>{{ currentHost }}</span></div></div>
+        <div class="music-now__album"><div class="music-cover"><img v-if="player.cover.value && !coverFailed" :src="player.cover.value" alt="" @error="coverFailed = true" /><div v-else class="music-cover__record"><Disc3 :size="96" /></div></div><span class="music-eyebrow"><span v-if="state.playing" class="music-wave" :class="{ 'is-playing': !state.waiting && visible }" aria-hidden="true"><i></i><i></i><i></i></span> {{ state.current ? phrase(state.playing ? '正在播放' : '暂停') : phrase('准备好，听点喜欢的') }}</span><h2>{{ (state.current ? trackTitle(state.current) : '') || phrase('你的下一首好歌') }}</h2><p>{{ (state.current ? trackArtist(state.current) : '') || phrase('从音乐库开始聆听') }}</p><p v-if="state.album" class="music-caption">{{ state.album }}</p><div v-if="state.current" class="music-provenance" :data-music-quality="musicQualityKey(state.current)" :title="qualityTitle(state.current)"><span>{{ musicExtension(state.current.entry.name).toUpperCase() }} · {{ phrase('原文件') }}</span><span v-if="bitrate(state.current)">{{ bitrate(state.current) }}</span><span v-if="quality(state.current)?.lossless" class="music-lossless"><Gem :size="13" aria-hidden="true" />{{ phrase('无损') }}</span><span>{{ currentHost }}</span></div></div>
         <section class="music-lyric-section"><div class="music-section-heading"><div class="music-lyric-title"><h3>歌词</h3><span v-if="sourceShort" class="music-source-label" :title="onlineNotice" :aria-label="onlineNotice" role="status">{{ sourceShort }}</span><span v-if="saveShort" class="music-source-label" :title="saveNotice" :aria-label="saveNotice" role="status">{{ saveShort }}</span><button v-if="state.saveStatus === 'failed' || state.saveStatus === 'partial'" class="music-save-retry" @click="player.retrySave">{{ phrase('重试保存') }}</button></div><button v-if="tab === 'listen' && lyrics.length" class="music-text-button" :aria-pressed="following" @click="following = !following">{{ following ? phrase('跟随播放') : phrase('恢复跟随') }}</button></div><div ref="lyricPanel" class="music-lyrics" @scroll.passive="lyricScrolled"><p v-if="state.lyricsLoading" role="status">正在读取歌词…</p><p v-else-if="state.lyricsFailed" role="status">歌词读取失败，可重新播放以重试</p><template v-else-if="lyrics.length"><button v-for="(line, index) in lyrics" :key="index" :aria-current="index === activeLine ? 'true' : undefined" @click="seekLyric(line.time)">{{ line.text || '♪' }}</button></template><p v-else>{{ state.lyrics || phrase('暂无歌词：优先读取本地内容，再尝试在线匹配') }}</p></div></section>
       </aside>
     </div>
     <p class="music-notice" role="status" aria-live="polite">{{ notice }}</p>
     </div>
     <section class="music-console" :aria-label="phrase('播放控制')">
-      <div class="music-console__summary"><button class="music-console__cover" :aria-label="phrase('查看正在播放')" @click="tab = tab === 'listen' ? 'library' : 'listen'"><img v-if="player.cover.value && !coverFailed" :src="player.cover.value" alt="" @error="coverFailed = true" /><Music2 v-else :size="23" /></button><div><strong>{{ state.current?.title || phrase('还没有播放歌曲') }}</strong><span>{{ state.current?.artist || phrase('选一首喜欢的歌') }}</span></div><a v-if="state.current" class="music-icon-button" :href="fileAPIForHost(state.current.hostId).contentUrl(state.current.entry.path, 'attachment')" :aria-label="phrase('下载原文件')"><Download :size="17" /></a></div>
+      <div class="music-console__summary"><button class="music-console__cover" :aria-label="phrase('查看正在播放')" @click="tab = tab === 'listen' ? 'library' : 'listen'"><img v-if="player.cover.value && !coverFailed" :src="player.cover.value" alt="" @error="coverFailed = true" /><Music2 v-else :size="23" /></button><button class="music-console__title" :aria-label="`${phrase('查看正在播放')} ${(state.current ? trackTitle(state.current) : '') || ''}`" @click="tab = 'listen'"><strong>{{ (state.current ? trackTitle(state.current) : '') || phrase('还没有播放歌曲') }}</strong><span>{{ (state.current ? trackArtist(state.current) : '') || phrase('选一首喜欢的歌') }}</span></button><a v-if="state.current" class="music-icon-button" :href="fileAPIForHost(state.current.hostId).contentUrl(state.current.entry.path, 'attachment')" :aria-label="phrase('下载原文件')"><Download :size="17" /></a></div>
       <button class="music-icon-button music-mobile-volume-toggle" :aria-label="phrase('音量设置')" :aria-expanded="volumeOpen" @click="volumeOpen = !volumeOpen"><Volume2 :size="19" /></button><div class="music-console__center"><div class="music-transport"><button class="music-icon-button" :aria-label="phrase('随机播放')" :aria-pressed="state.shuffle" @click="player.shuffle()"><Shuffle :size="18" /></button><button class="music-icon-button" :disabled="!state.current" :aria-label="phrase('上一首')" @click="player.previous"><SkipBack :size="20" /></button><button class="music-play" :disabled="!state.current" :aria-label="state.playing || state.waiting ? phrase('暂停') : phrase('播放')" @click="player.toggle"><Pause v-if="state.playing || state.waiting" :size="24" /><Play v-else :size="24" /></button><button class="music-icon-button" :disabled="!state.queue.length" :aria-label="phrase('下一首')" @click="player.next()"><SkipForward :size="20" /></button><button class="music-icon-button" :aria-label="repeatLabel" :title="repeatLabel" :aria-pressed="state.repeat !== 'off'" @click="repeat"><Repeat1 v-if="state.repeat === 'one'" :size="18" /><Repeat v-else :size="18" /></button></div><div class="music-progress"><span>{{ musicTime(state.position) }}</span><input type="range" min="0" :max="state.duration || 0" step="0.1" :value="state.position" :disabled="!state.duration" :aria-label="phrase('播放进度')" @input="seek" /><span>{{ musicTime(state.duration) }}</span></div></div>
       <div class="music-console__volume" :class="{ 'is-open': volumeOpen }"><button class="music-icon-button" :aria-label="state.muted ? phrase('取消静音') : phrase('静音')" :aria-pressed="state.muted" @click="player.mute"><VolumeX v-if="state.muted || state.volume === 0" :size="19" /><Volume2 v-else :size="19" /></button><input type="range" min="0" max="1" step="0.01" :value="state.muted ? 0 : state.volume" :aria-label="phrase('音量')" @input="volume" /><button class="music-icon-button" :aria-label="phrase('播放队列')" :aria-pressed="tab === 'queue'" @click="tab = tab === 'queue' ? 'library' : 'queue'"><ListMusic :size="20" /></button><button class="music-icon-button" :disabled="!state.current" :aria-label="phrase('停止播放')" @click="player.stop"><X :size="18" /></button></div>
       <div v-if="state.waiting || playbackError" class="music-playback-status" :role="playbackError ? 'alert' : 'status'"><span>{{ playbackError || phrase('正在缓冲…') }}</span><button v-if="playbackError && state.current" class="music-text-button" @click="player.retry()">重试</button><button v-if="playbackError && state.queue.length > 1" class="music-text-button" @click="player.next()">跳过此曲</button></div>
@@ -331,12 +339,12 @@ input[type=range] { accent-color:var(--music-accent); cursor:pointer; min-height
   .music-page--focus .music-console { gap:6px; padding:8px; }
   .music-page--focus .music-lyrics { padding-block:4px; }
 }
-@container (min-width:540px) and (max-height:480px) {
+@container (min-width:480px) and (max-height:480px) {
   .music-page--focus .music-console { grid-template-columns:minmax(100px,.7fr) minmax(280px,1.3fr); }
   .music-page--focus .music-console__cover { width:36px; height:36px; }
   .music-page--focus .music-console__summary { padding-right:0; }
   .music-page--focus .music-console__center { padding-right:32px; }
-  .music-page--focus .music-mobile-volume-toggle { display:flex; right:6px; top:8px; }
+  .music-page--focus .music-mobile-volume-toggle { display:flex; position:absolute; right:6px; top:8px; }
   .music-page--focus .music-console__volume { display:none; }
   .music-page--focus .music-console__volume.is-open { display:flex; grid-column:1/-1; }
 }
@@ -387,12 +395,12 @@ input[type=range] { accent-color:var(--music-accent); cursor:pointer; min-height
   .music-search { margin-block:8px; }
   .music-console { gap:6px; padding:8px; }
 }
-@container (min-width:540px) and (max-height:480px) {
+@container (min-width:480px) and (max-height:480px) {
   .music-console { grid-template-columns:minmax(100px,.7fr) minmax(280px,1.3fr); }
   .music-console__cover { width:36px; height:36px; }
   .music-console__summary { padding-right:0; }
   .music-console__center { padding-right:32px; }
-  .music-mobile-volume-toggle { display:flex; right:6px; top:8px; }
+  .music-mobile-volume-toggle { display:flex; position:absolute; right:6px; top:8px; }
   .music-console__volume { display:none; }
   .music-console__volume.is-open { display:flex; grid-column:1/-1; }
 }
@@ -401,5 +409,69 @@ input[type=range] { accent-color:var(--music-accent); cursor:pointer; min-height
   .music-tabs { margin-bottom:4px; }
   .music-search { margin-block:4px; }
   .music-search input,.music-search select { padding-block:6px; }
+}
+/* Phone browsers use the same bounded workspace as desktop, with readable rows and reachable controls. */
+.music-console__title { flex:1; min-width:0; border:0; padding:0; color:var(--text); background:transparent; text-align:start; font:inherit; }
+.music-console__title strong,.music-console__title span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+@container (max-width:680px) {
+  .music-header { display:none; }
+  .music-tabs { position:sticky; top:0; z-index:1; background:var(--surface); gap:16px; margin-bottom:12px; }
+  .music-tabs button { min-height:44px; gap:6px; padding-block:8px; }
+  .music-location { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:start; margin:0 0 12px; }
+  .music-location__source { display:grid; min-width:0; }
+  .music-location__source > .music-text-button { max-width:100%; padding:6px 0; }
+  .music-location__source > .music-text-button span { white-space:nowrap; text-overflow:ellipsis; overflow:hidden; }
+  .music-location__actions { gap:0; margin:0; flex-wrap:wrap; justify-content:end; max-width:100px; }
+  .music-location-form input { flex-basis:100%; font-size:16px; }
+  .music-library__hero { display:flex; padding:8px; gap:8px; }
+  .music-library__hero-info { flex-basis:80px; gap:0 6px; }
+  .music-library__hero h2 { font-size:16px; margin:2px 0; }
+  .music-library__hero-actions { gap:0; }
+  .music-library__hero-actions .button { padding-inline:10px; }
+  .music-search { flex-wrap:nowrap; gap:8px; margin:12px 0; }
+  .music-search label { min-width:0; gap:6px; }
+  .music-search input,.music-location-form input { font-size:16px; }
+  .music-search select { max-width:94px; padding-inline:6px; min-height:44px; }
+  .music-track { display:grid; grid-template-columns:36px minmax(0,1fr); gap:4px 8px; padding-block:10px; }
+  .music-track__number { display:none; }
+  .music-track__art { grid-column:1; grid-row:1; width:36px; height:36px; }
+  .music-track__name { grid-column:2; gap:3px; }
+  .music-track__name strong { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
+  .music-track__name span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .music-track__format { grid-column:1/-1; max-width:none; padding:0; text-align:start; }
+  .music-format-line { justify-content:start; gap:3px 6px; min-height:24px; }
+  .music-icon-button,.music-queue > li > .music-icon-button { min-width:40px; min-height:44px; }
+  .music-queue .music-track { grid-template-columns:32px minmax(0,1fr); }
+  .music-queue .music-track > svg { display:none; }
+  .music-queue > li { gap:0; padding-inline:2px; }
+  .music-queue .music-track__art { width:32px; height:32px; }
+  .music-console { gap:4px; padding:8px; padding-bottom:max(8px,env(safe-area-inset-bottom)); }
+  .music-console__summary { gap:8px; padding-right:40px; }
+  .music-console__cover { width:36px; height:36px; }
+  .music-console__summary .music-icon-button { min-width:32px; }
+  .music-console__title span { margin-top:2px; }
+  .music-mobile-volume-toggle { right:8px; top:8px; }
+  .music-transport { gap:8px; }
+  .music-play { width:44px; height:44px; }
+  .music-progress { gap:6px; margin-top:0; }
+  .music-console__volume.is-open { display:flex; grid-column:1/-1; justify-content:center; padding-top:4px; border-top:1px solid var(--border); }
+  .music-console__volume input { flex:1; max-width:160px; }
+  .music-playback-status { position:static; transform:none; grid-column:1/-1; max-width:none; max-height:88px; overflow-y:auto; box-shadow:none; padding:4px 8px; font-size:14px; }
+  .music-page--focus .music-now { gap:8px; padding:10px; }
+  .music-page--focus .music-now__album { grid-template-columns:clamp(64px,24cqi,120px) minmax(0,1fr); max-height:42%; overflow-y:auto; }
+  .music-page--focus .music-cover { width:100%; height:auto; max-height:120px; }
+  .music-page--focus .music-now__album h2 { font-size:18px; }
+  .music-page--focus .music-provenance { justify-content:start; gap:4px; margin:4px 0; }
+  .music-page--focus .music-lyrics button { font-size:16px; padding:12px 8px; }
+  .music-lyric-title { gap:4px 6px; }
+}
+@container (max-width:680px) and (max-height:480px) {
+  .music-tabs { margin-bottom:4px; }
+  .music-page--focus .music-now__album { display:none; }
+}
+@container (min-width:480px) and (max-height:480px) {
+  .music-console__summary { padding-right:0; }
+  .music-console__title { max-height:52px; }
+  .music-console__volume.is-open { position:absolute; bottom:100%; right:0; padding:8px; background:var(--surface-raised); border:1px solid var(--border); border-radius:var(--radius-md); }
 }
 </style>

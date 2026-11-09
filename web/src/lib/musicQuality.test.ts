@@ -41,5 +41,5 @@ it('bounds oversized responses and skips large ID3 tags with a second bounded ra
 it('refuses a server that ignores a nonzero range instead of parsing the wrong bytes', async () => {
   const head=new Uint8Array(10);head.set([73,68,51,4,0,0,0,4,0,0])
   vi.stubGlobal('fetch',vi.fn().mockResolvedValueOnce(new Response(head)).mockResolvedValueOnce(new Response(mp3())))
-  expect(await readMusicQuality(track,new AbortController().signal)).toEqual({})
+  await expect(readMusicQuality(track,new AbortController().signal)).rejects.toThrow('Music header unavailable')
 })
