@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, onBeforeUpdate, onMounted, onUpdated, ref, shallowRef, watch } from 'vue'
 import { mediaLocations, setMediaLocation } from '@/lib/mediaLocations'
 import { useRoute, useRouter } from 'vue-router'
 import { Music2, Play, Pause, SkipBack, SkipForward, FolderOpen, Plus, RefreshCw, Download, X, Shuffle, Repeat, Repeat1, ListMusic, ArrowUp, ArrowDown, Volume2, VolumeX, Search, Disc3, ChevronRight, ListPlus, Gem } from '@lucide/vue'
@@ -42,6 +42,38 @@ const hostLabel = computed(() => fileHostLabel(hostId.value, hosts.value, phrase
 const allTracks = computed(() => tracksFromEntries(entries.value, hostId.value))
 const sort = ref('name'), tab = ref<'library' | 'listen' | 'queue'>(route.query.view === 'listen' ? 'listen' : 'library'), locationOpen = ref(false)
 const tracks = shallowRef<Track[]>([])
+const trackList = ref<HTMLOListElement>()
+let lastScrollInput = -Infinity
+function markScrollInput() { lastScrollInput = performance.now() }
+let scrollAnchor: { scroller: HTMLElement; row: HTMLElement; top: number } | undefined
+onBeforeUpdate(() => {
+  scrollAnchor = undefined
+  // Writing scrollTop during a gesture can interrupt the browser's momentum.
+  if (performance.now() - lastScrollInput < 250) return
+  const list = trackList.value, scroller = list?.closest<HTMLElement>('.music-content')
+  if (!list || !scroller?.scrollTop || !visible.value) return
+  const edge = scroller.getBoundingClientRect().top
+  const bounds = list.getBoundingClientRect()
+  if (edge < bounds.top || edge >= bounds.bottom) return
+  // Rows are in vertical order, so locating the first visible one only needs a few reads.
+  let first = 0, end = list.children.length
+  while (first < end) {
+    const middle = Math.floor((first + end) / 2)
+    if (list.children[middle]!.getBoundingClientRect().bottom <= edge) first = middle + 1
+    else end = middle
+  }
+  const row = list.children[first] as HTMLLIElement | undefined
+  if (row) {
+    scrollAnchor = { scroller, row, top: row.getBoundingClientRect().top - edge + scroller.scrollTop }
+  }
+})
+onUpdated(() => {
+  if (!scrollAnchor || scrollAnchor.row.parentElement !== trackList.value) return
+  const { scroller, row, top } = scrollAnchor
+  // Compare positions inside the scrollable content so wheel and touch movement are preserved.
+  const delta = row.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - top
+  if (Math.abs(delta) >= 1) scroller.scrollTop += delta
+})
 const nameOrder = new Intl.Collator(undefined, { numeric: true })
 // Only browsing controls rebuild the list. Metadata can still update each row in place.
 watch([allTracks, sort, search], ([available, order, query]) => {
@@ -200,7 +232,7 @@ onBeforeUnmount(() => { destroyed = true; listing?.abort(); lyricResize?.disconn
 
 <template>
   <main ref="musicRoot" class="page music-page" :class="{ 'music-page--focus': tab === 'listen' }" tabindex="0" @keydown="keyboard">
-    <div class="music-content" @scroll.passive="followLyrics">
+    <div class="music-content" @scroll.passive="followLyrics" @wheel.passive="markScrollInput" @touchmove.passive="markScrollInput">
     <header v-if="!windowed" class="music-header">
       <div class="music-brand"><img :src="'/desktop-icons/music-kpanel-flat-v2.webp'" alt="" /><div><h1>音乐</h1><p>把日常，交给一首好歌</p></div></div>
     </header>
@@ -219,7 +251,7 @@ onBeforeUnmount(() => { destroyed = true; listing?.abort(); lyricResize?.disconn
             <p v-if="truncated" role="status">仅显示部分文件，请进入子文件夹继续浏览。</p>
             <div v-if="folders.length && !search" class="music-folders"><button v-for="folder in folders" :key="folder.path" @click="navigate(folder.path)"><span><Disc3 :size="25" /></span><strong>{{ folder.name }}</strong><ChevronRight :size="16" /></button></div>
             <div v-if="!tracks.length" class="music-empty"><Disc3 :size="48" /><h2>{{ search ? phrase('没有匹配的歌曲') : phrase('让音乐住进这里') }}</h2><p>{{ search ? phrase('试试其他歌名或歌手') : phrase('选择音乐文件夹，或通过文件管理上传歌曲。') }}</p><button v-if="search" class="button button--secondary" @click="search = ''">清除搜索</button><button v-else class="button button--secondary" @click="focusLocation">选择文件夹</button></div>
-             <ol class="music-tracks" :aria-label="phrase('歌曲列表')"><li v-for="(track, index) in tracks" :key="trackKey(track)" v-memo="trackRowInputs(track, index)" :class="{ active: isCurrent(track) }">
+             <ol ref="trackList" class="music-tracks" :aria-label="phrase('歌曲列表')"><li v-for="(track, index) in tracks" :key="trackKey(track)" v-memo="trackRowInputs(track, index)" :class="{ active: isCurrent(track) }">
               <button class="music-track" :aria-label="`${phrase('播放')} ${trackTitle(track)}`" @click="choose(track)"><span class="music-track__number"><span v-if="isCurrent(track) && state.playing" class="music-wave" :class="{ 'is-playing': !state.waiting && visible }" aria-hidden="true"><i></i><i></i><i></i></span><Play v-else-if="isCurrent(track)" :size="16" /><template v-else>{{ String(index + 1).padStart(2, '0') }}</template></span><span class="music-track__art"><img v-if="artwork(track)" :key="artwork(track)" :src="artwork(track)" alt="" loading="lazy" @error="($event.target as HTMLImageElement).hidden = true" /><Music2 v-else :size="21" /></span><span class="music-track__name"><strong>{{ trackTitle(track) }}</strong><span>{{ trackArtist(track) || phrase('未知歌手') }}</span></span><span class="music-track__format" :data-music-quality="musicQualityKey(track)" :title="qualityTitle(track)"><span class="music-format-line"><span>{{ musicExtension(track.entry.name).toUpperCase() }}</span><span v-if="bitrate(track)">{{ bitrate(track) }}</span><span v-if="quality(track)?.lossless" class="music-lossless"><Gem :size="13" aria-hidden="true" />{{ phrase('无损') }}</span></span><small>{{ formatBytes(track.entry.sizeBytes) }}</small></span></button>
               <button class="music-icon-button music-next" :aria-label="`${phrase('下一首播放')} ${trackTitle(track)}`" :title="phrase('下一首播放')" @click="player.enqueue(track, true)"><ListPlus :size="18" /></button><button class="music-icon-button" :aria-label="`${phrase('加入播放队列')} ${trackTitle(track)}`" :title="phrase('加入播放队列')" @click="player.enqueue(track)"><Plus :size="18" /></button>
             </li></ol>
@@ -288,8 +320,7 @@ input:not([type=range]),select { border:1px solid var(--border); border-radius:v
 .music-tracks,.music-queue { list-style:none; padding:0; margin:0; max-height:54vh; overflow-y:auto; scrollbar-gutter:stable; }
 .music-tracks,.music-queue { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg); padding:4px; }
 .music-tracks li,.music-queue li { display:flex; align-items:center; border-bottom:1px solid var(--border); border-radius:var(--radius-md); padding-inline:4px; }
-/* Anchor to the row itself when new metadata makes the text wrap. */
-.music-tracks > li > * { overflow-anchor:none; }
+.music-content:has(.music-tracks) { overflow-anchor:none; }
 .music-tracks li:hover,.music-queue li:hover { background:var(--surface-raised); } .music-tracks li.active,.music-queue li.active { background:var(--music-tint); }
 .music-tracks li.active,.music-queue li.active { box-shadow:inset 3px 0 var(--music-accent); }
 .music-track { display:flex; align-items:center; gap:12px; padding:12px 0; flex:1; min-width:0; text-align:start; }

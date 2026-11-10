@@ -92,6 +92,22 @@ it('shows bitrate and lossless quality in rows and cover provenance, with compac
   await title.get('.music-save-retry').trigger('click'); expect(retry).toHaveBeenCalledOnce()
 })
 
+it('updates tags in place until the user changes the sort order', async () => {
+  vi.spyOn(api.music, 'cache').mockResolvedValue({ items: [] })
+  const { view, tracks } = await setup()
+  const titles = () => view.findAll('.music-tracks .music-track__name strong').map(row => row.text())
+  const firstRow = view.get('.music-tracks li').element
+  expect(titles()).toEqual(['A', 'B'])
+
+  await saveMusicInfo(tracks[0]!, { tags: { title: 'Z', artist: 'Band' } }, new AbortController().signal)
+  await flushPromises()
+  expect(titles()).toEqual(['Z', 'B'])
+  expect(view.get('.music-tracks li').element).toBe(firstRow)
+
+  await view.get('.music-search select').setValue('artist')
+  expect(titles()).toEqual(['B', 'Z'])
+})
+
 it('keeps filename search results after tag lookup and expands long playback titles on demand', async () => {
   vi.spyOn(api.music, 'cache').mockResolvedValue({ items: [] })
   const { player, view, tracks } = await setup(['01 - live take.mp3'])
