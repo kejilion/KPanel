@@ -222,7 +222,7 @@ onBeforeUnmount(() => { destroyed = true; listing?.abort(); lyricResize?.disconn
             <p v-if="truncated" role="status">仅显示部分文件，请进入子文件夹继续浏览。</p>
             <div v-if="folders.length && !search" class="music-folders"><button v-for="folder in folders" :key="folder.path" @click="navigate(folder.path)"><span><Disc3 :size="25" /></span><strong>{{ folder.name }}</strong><ChevronRight :size="16" /></button></div>
             <div v-if="!tracks.length" class="music-empty"><Disc3 :size="48" /><h2>{{ search ? phrase('没有匹配的歌曲') : phrase('让音乐住进这里') }}</h2><p>{{ search ? phrase('试试其他歌名或歌手') : phrase('选择音乐文件夹，或通过文件管理上传歌曲。') }}</p><button v-if="search" class="button button--secondary" @click="search = ''">清除搜索</button><button v-else class="button button--secondary" @click="focusLocation">选择文件夹</button></div>
-             <ol class="music-tracks" :aria-label="phrase('歌曲列表')"><li v-for="(track, index) in tracks" :key="trackKey(track)" v-memo="trackRowInputs(track, index)" :class="{ active: isCurrent(track) }">
+             <ol class="music-tracks" :class="{ 'music-tracks--filtered': Boolean(search) }" :aria-label="phrase('歌曲列表')"><li v-for="(track, index) in tracks" :key="trackKey(track)" v-memo="trackRowInputs(track, index)" :class="{ active: isCurrent(track) }">
               <button class="music-track" :aria-label="`${phrase('播放')} ${trackTitle(track)}`" :aria-description="trackArtist(track) || phrase('未知歌手')" @click="choose(track)">
                 <span class="music-track__number"><span v-if="isCurrent(track) && state.playing" class="music-wave" :class="{ 'is-playing': !state.waiting && visible }" aria-hidden="true"><i></i><i></i><i></i></span><Play v-else-if="isCurrent(track)" :size="16" /><template v-else>{{ String(index + 1).padStart(2, '0') }}</template></span>
                 <span class="music-track__art"><img v-if="artwork(track)" :key="artwork(track)" :src="artwork(track)" alt="" loading="lazy" @error="($event.target as HTMLImageElement).hidden = true" /><Music2 v-else :size="21" /></span>
@@ -395,6 +395,8 @@ input[type=range] { accent-color:var(--music-accent); cursor:pointer; min-height
 .music-lossless { display:inline-flex; align-items:center; gap:3px; border:1px solid var(--brand); border-radius:var(--radius-sm); padding:2px 5px; color:var(--brand-strong); background:var(--brand-soft); font-size:12px; font-weight:600; white-space:nowrap; }
 /* A browser must not anchor to text that can move within an otherwise stable row. */
 .music-tracks { overflow-anchor:none; }
+/* Async tag matches can add rows above the viewport; anchor filtered results to a stable row. */
+.music-tracks--filtered { overflow-anchor:auto; }
 /* Give names and quality indicators the same space before and after metadata arrives. */
 .music-tracks .music-track__name strong {
   display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2;
