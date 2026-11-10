@@ -390,6 +390,8 @@ input[type=range] { accent-color:var(--music-accent); cursor:pointer; min-height
 .music-format-line { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:4px 6px; }
 .music-track__format { max-width:170px; }
 .music-lossless { display:inline-flex; align-items:center; gap:3px; border:1px solid var(--brand); border-radius:var(--radius-sm); padding:2px 5px; color:var(--brand-strong); background:var(--brand-soft); font-size:12px; font-weight:600; white-space:nowrap; }
+/* A browser must not anchor to text that can move within an otherwise stable row. */
+.music-tracks { overflow-anchor:none; }
 /* Give names and quality indicators the same space before and after metadata arrives. */
 .music-tracks .music-track__name strong {
   display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2;
