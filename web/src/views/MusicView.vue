@@ -288,6 +288,8 @@ input:not([type=range]),select { border:1px solid var(--border); border-radius:v
 .music-tracks,.music-queue { list-style:none; padding:0; margin:0; max-height:54vh; overflow-y:auto; scrollbar-gutter:stable; }
 .music-tracks,.music-queue { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg); padding:4px; }
 .music-tracks li,.music-queue li { display:flex; align-items:center; border-bottom:1px solid var(--border); border-radius:var(--radius-md); padding-inline:4px; }
+/* Anchor to the row itself when new metadata makes the text wrap. */
+.music-tracks > li > * { overflow-anchor:none; }
 .music-tracks li:hover,.music-queue li:hover { background:var(--surface-raised); } .music-tracks li.active,.music-queue li.active { background:var(--music-tint); }
 .music-tracks li.active,.music-queue li.active { box-shadow:inset 3px 0 var(--music-accent); }
 .music-track { display:flex; align-items:center; gap:12px; padding:12px 0; flex:1; min-width:0; text-align:start; }
