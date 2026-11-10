@@ -13,7 +13,7 @@
     "Makefile": "f651d8ce2f10adc487118e1ccb476615347661922a8c8ef529f1b8013da5d53e"
   },
   "closureSha256": "d1033d9afadd9c8d0070195d99e2b103df4df787c370bedcde45bdf201cb5bc4",
-  "firstPartySourceSha256": "790c0a900c683a2244687187ce7b1d92cbc5cdd0ed100ccda81ade0abc9a740e",
+  "firstPartySourceSha256": "6450d5f22232325d7cdcbadf3050028c51aa101be096c8ca37cbc8c11ff01742",
   "buildTargetHashEncoding": "UTF-8 with LF line endings",
   "closureEncoding": "SHA256 of JSON.stringify of ordered OS/architecture rows; packages sorted by import path; path, module and selected version; stdlib go1.27.3; main-module packages additionally bind relative sourceDirectory and sorted actual GoFiles.",
   "firstPartySourceEncoding": "SHA256 of JSON.stringify of all cmd/internal Go source path and SHA256 pairs sorted by relative path; contents normalized to UTF-8 LF. All actual main-module production GoFiles must be covered. Generated .pb.go and .proto files or symlinks require a new review.",
@@ -585,5 +585,7 @@
     }
   ],
   "rc130Rc10IdentitySummary": "RC10 source rebind after desktop open chooser, local music metadata cache and the Windows cache-removal fix: canonical firstPartySources observed 1,314 Go/proto files; scan-inventories with Go 1.27.3 matched actual and original production closures across all six OS/architecture targets. The existing dependency graph, module manifests and build-target files are unchanged. Exact-SHA GitHub CI, security scanners and full Release L3 remain mandatory; this identity record is not a scan or release result.",
-  "rc130Rc10IdentityEvidenceSha256": "4199dc4c8e37f6c149fed0f1a13dae49e461719f7c61a9936fd275202ac0389d"
+  "rc130Rc10IdentityEvidenceSha256": "4199dc4c8e37f6c149fed0f1a13dae49e461719f7c61a9936fd275202ac0389d",
+  "rc130Rc11IdentitySummary": "RC11 release-owner source identity rebind: canonical firstPartySources observed 1,314 Go/proto files. The only Go-source change since RC10 is the internal/version/version.go version literal from 1.30.0-rc.10-dev to 1.30.0-rc.11-dev. Module manifests, selected graph, build-target inputs, production imports and the previously qualified six-target closure are unchanged. Exact-SHA candidate CI, security scanners and GitHub-hosted Release L3 remain mandatory; this identity receipt does not assert their success.",
+  "rc130Rc11IdentityEvidenceSha256": "6e067ec1db28847d0d76b34429baeff5bbe5c640dee04f24d1b0b0d12b6fadf4"
 }
