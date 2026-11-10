@@ -43,13 +43,19 @@ const allTracks = computed(() => tracksFromEntries(entries.value, hostId.value))
 const sort = ref('name'), tab = ref<'library' | 'listen' | 'queue'>(route.query.view === 'listen' ? 'listen' : 'library'), locationOpen = ref(false)
 const tracks = shallowRef<Track[]>([])
 const trackList = ref<HTMLOListElement>()
+const scrollSettleMs = 250
 let lastScrollInput = -Infinity
 function markScrollInput() { lastScrollInput = performance.now() }
+function scrollInProgress() { return performance.now() - lastScrollInput < scrollSettleMs }
+function contentScrolled() {
+  if (scrollInProgress()) markScrollInput()
+  void followLyrics()
+}
 let scrollAnchor: { scroller: HTMLElement; row: HTMLElement; top: number } | undefined
 onBeforeUpdate(() => {
   scrollAnchor = undefined
   // Writing scrollTop during a gesture can interrupt the browser's momentum.
-  if (performance.now() - lastScrollInput < 250) return
+  if (scrollInProgress()) return
   const list = trackList.value, scroller = list?.closest<HTMLElement>('.music-content')
   if (!list || !scroller?.scrollTop || !visible.value) return
   const edge = scroller.getBoundingClientRect().top
@@ -232,7 +238,7 @@ onBeforeUnmount(() => { destroyed = true; listing?.abort(); lyricResize?.disconn
 
 <template>
   <main ref="musicRoot" class="page music-page" :class="{ 'music-page--focus': tab === 'listen' }" tabindex="0" @keydown="keyboard">
-    <div class="music-content" @scroll.passive="followLyrics" @wheel.passive="markScrollInput" @touchmove.passive="markScrollInput">
+    <div class="music-content" @scroll.passive="contentScrolled" @wheel.passive="markScrollInput" @touchmove.passive="markScrollInput">
     <header v-if="!windowed" class="music-header">
       <div class="music-brand"><img :src="'/desktop-icons/music-kpanel-flat-v2.webp'" alt="" /><div><h1>音乐</h1><p>把日常，交给一首好歌</p></div></div>
     </header>
