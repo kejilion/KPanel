@@ -41,17 +41,20 @@ const activeHost = computed(() => hosts.value.find(h => hostId.value ? h.id === 
 const hostLabel = computed(() => fileHostLabel(hostId.value, hosts.value, phrase('本机')))
 const allTracks = computed(() => tracksFromEntries(entries.value, hostId.value))
 const sort = ref('name'), tab = ref<'library' | 'listen' | 'queue'>(route.query.view === 'listen' ? 'listen' : 'library'), locationOpen = ref(false)
-const tracks = shallowRef<Track[]>([])
+const orderedTracks = shallowRef<Track[]>([])
+const tracks = computed(() => {
+  const term = search.value.toLocaleLowerCase()
+  return term ? orderedTracks.value.filter(track => trackSearchText(track).includes(term)) : orderedTracks.value
+})
 const nameOrder = new Intl.Collator(undefined, { numeric: true })
 // Only browsing controls rebuild the list. Metadata can still update each row in place.
-watch([allTracks, sort, search], ([available, order, query]) => {
-  const term = query.toLocaleLowerCase()
-  const rows = (term ? available.filter(track => trackSearchText(track).includes(term)) : available)
+watch([allTracks, sort], ([available, order]) => {
+  const rows = available
     .map(track => ({ track, title: trackTitle(track), artist: order === 'artist' ? trackArtist(track) : '' }))
   rows.sort((a, b) => order === 'artist'
     ? a.artist.localeCompare(b.artist) || a.title.localeCompare(b.title)
     : nameOrder.compare(a.title, b.title))
-  tracks.value = rows.map(row => row.track)
+  orderedTracks.value = rows.map(row => row.track)
 }, { immediate: true })
 const folders = computed(() => entries.value.filter(e => e.kind === 'directory' && !e.name.startsWith('.')))
 const volumeOpen = ref(false), titleExpanded = ref(false), musicRoot = ref<HTMLElement>()
