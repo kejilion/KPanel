@@ -4002,14 +4002,6 @@ body.desktop-mode-open::-webkit-scrollbar {
   white-space: nowrap;
 }
 
-.desktop__browser-chooser-url {
-  margin: 0;
-  overflow-wrap: anywhere;
-  color: var(--text-soft);
-  font-size: 14px;
-  line-height: 1.6;
-}
-
 .desktop__rename-form label {
   display: grid;
   gap: 7px;

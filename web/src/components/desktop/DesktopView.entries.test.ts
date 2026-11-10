@@ -20,7 +20,16 @@ import type { DesktopWorkspace, DesktopWorkspaceUpdate, Site } from '@/types/api
 
 // These cases cover entry routing and window ownership. The remote browser's
 // canvas/socket/settings lifecycle is exercised by its dedicated view tests.
-vi.mock('@/views/WebBrowserView.vue', () => ({ default: { template: '<div data-testid="entry-browser-view" />' } }))
+vi.mock('@/views/WebBrowserView.vue', async () => {
+  const { inject } = await import('vue')
+  const { browserLaunchKey } = await import('@/lib/webBrowser')
+  return {
+    default: {
+      setup: () => ({ launch: inject(browserLaunchKey) }),
+      template: '<div data-testid="entry-browser-view">{{ launch?.url }}</div>',
+    },
+  }
+})
 
 vi.mock('@/lib/desktopEntries', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/desktopEntries')>()
@@ -125,18 +134,6 @@ async function openExternalMenu(wrapper: VueWrapper, selector: string) {
   expect(action).toBeDefined()
   await action!.trigger('click')
   await nextTick()
-}
-
-function chooserURL(): string | null {
-  return document.body.querySelector('.desktop__browser-chooser-url')?.textContent ?? null
-}
-
-function clickBrowserChooser(internal: boolean): void {
-  const label = internal ? '在内置浏览器中打开' : '用系统浏览器打开'
-  const button = Array.from(document.body.querySelectorAll<HTMLButtonElement>('.modal-panel__footer button'))
-    .find((item) => item.textContent?.includes(label))
-  expect(button).toBeDefined()
-  button!.click()
 }
 
 describe('DesktopView dynamic entries', () => {
@@ -266,41 +263,23 @@ describe('DesktopView dynamic entries', () => {
     wrapper.unmount()
   })
 
-  it("opens websites and applications in one browser window without persisting URLs", async () => {
+  it('opens websites and applications directly in the same browser window', async () => {
     const desktop = useDesktopMode()
     const wrapper = mount(DesktopView, { attachTo: document.body })
     await flushPromises()
-    await wrapper.find("button[title=\"blog.example.com\"]").trigger("dblclick")
-    await nextTick()
-    expect(desktop.windows.value).toHaveLength(0)
-    expect(chooserURL()).toBe("https://blog.example.com/")
-    clickBrowserChooser(true)
-    await nextTick()
-    expect(desktop.windows.value).toHaveLength(1)
-    expect(desktop.windows.value[0]?.path).toBe("/browser")
-    await wrapper.find("button[title=\"Nginx\"]").trigger("dblclick")
-    await nextTick()
-    expect(chooserURL()).toBe("http://192.168.1.5:8080/")
-    clickBrowserChooser(true)
-    await nextTick()
-    expect(desktop.windows.value).toHaveLength(1)
-    expect(desktop.windows.value[0]?.path).toBe("/browser")
-    expect(window.open).not.toHaveBeenCalled()
-    expect(document.body.querySelector(".desktop__external-confirm")).toBeNull()
-    wrapper.unmount()
-  })
-
-  it('asks how to open a website and opens it in the system browser when chosen', async () => {
-    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await wrapper.get('button[title="blog.example.com"]').trigger('dblclick')
     await flushPromises()
-    await wrapper.find('button[title="blog.example.com"]').trigger('dblclick')
-    await nextTick()
-    expect(chooserURL()).toBe('https://blog.example.com/')
-    clickBrowserChooser(false)
-    await nextTick()
-    expect(window.open).toHaveBeenCalledWith('https://blog.example.com/', '_blank', 'noopener,noreferrer')
-    expect(useDesktopMode().windows.value).toHaveLength(0)
-    expect(document.body.querySelector('.desktop__browser-chooser-url')).toBeNull()
+    expect(desktop.windows.value).toHaveLength(1)
+    expect(desktop.windows.value[0]?.path).toBe('/browser')
+    expect(wrapper.get('[data-testid="entry-browser-view"]').text()).toBe('https://blog.example.com/')
+    const browserWindowID = desktop.windows.value[0]?.id
+
+    await wrapper.get('button[title="Nginx"]').trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(desktop.windows.value).toMatchObject([{ id: browserWindowID, path: '/browser' }])
+    expect(wrapper.get('[data-testid="entry-browser-view"]').text()).toBe('http://192.168.1.5:8080/')
+    expect(window.open).not.toHaveBeenCalled()
+    expect(document.body.querySelector('[aria-modal="true"]')).toBeNull()
     wrapper.unmount()
   })
 
@@ -309,7 +288,7 @@ describe('DesktopView dynamic entries', () => {
     await flushPromises()
     await wrapper.find('button[title="浏览器"]').trigger('dblclick')
     await nextTick()
-    expect(document.body.querySelector('.desktop__browser-chooser-url')).toBeNull()
+    expect(document.body.querySelector('[aria-modal="true"]')).toBeNull()
     expect(useDesktopMode().windows.value.map(window => window.path)).toEqual(['/browser'])
     wrapper.unmount()
   })
@@ -334,7 +313,7 @@ describe('DesktopView dynamic entries', () => {
     await flushPromises()
     await openExternalMenu(wrapper, 'button[title="blog.example.com"]')
     expect(window.open).toHaveBeenCalledWith('https://blog.example.com/', '_blank', 'noopener,noreferrer')
-    expect(document.body.querySelector('.desktop__external-confirm')).toBeNull()
+    expect(document.body.querySelector('[aria-modal="true"]')).toBeNull()
     expect(useDesktopMode().windows.value).toHaveLength(0)
     wrapper.unmount()
   })
@@ -351,7 +330,7 @@ describe('DesktopView dynamic entries', () => {
     await siteItems[0]?.trigger('click')
     expect(window.open).not.toHaveBeenCalled()
     expect(useDesktopMode().windows.value[0]?.path).toBe('/browser')
-    expect(document.body.querySelector('.desktop__external-confirm')).toBeNull()
+    expect(document.body.querySelector('[aria-modal="true"]')).toBeNull()
     wrapper.unmount()
   })
 
@@ -386,13 +365,11 @@ describe('DesktopView dynamic entries', () => {
 
     expect(document.body.querySelector('.desktop__detail')).not.toBeNull()
     document.body.querySelector<HTMLButtonElement>('.modal-panel__footer .button--primary')?.click()
-    await nextTick()
+    await flushPromises()
 
     expect(document.body.querySelector('.desktop__detail')).toBeNull()
-    expect(chooserURL()).toBe('https://blog.example.com/')
-    clickBrowserChooser(true)
-    await nextTick()
     expect(useDesktopMode().windows.value[0]?.path).toBe('/browser')
+    expect(wrapper.get('[data-testid="entry-browser-view"]').text()).toBe('https://blog.example.com/')
     expect(window.open).not.toHaveBeenCalled()
     wrapper.unmount()
   })
@@ -710,20 +687,11 @@ describe('DesktopView dynamic entries', () => {
     const shortcut = wrapper.find('button[title="内部文档"]')
     expect(shortcut.find('.desktop__icon-img').attributes('src')).toContain('/api/v1/desktop/shortcuts/')
     await shortcut.trigger('dblclick')
-    await nextTick()
-    expect(useDesktopMode().windows.value).toHaveLength(0)
-    expect(chooserURL()).toBe('https://docs.example.com/')
-    clickBrowserChooser(true)
-    await nextTick()
+    await flushPromises()
     expect(useDesktopMode().windows.value.map(window => window.path)).toEqual(['/browser'])
+    expect(wrapper.get('[data-testid="entry-browser-view"]').text()).toBe('https://docs.example.com/')
     expect(window.open).not.toHaveBeenCalled()
-    expect(document.body.querySelector('.desktop__external-confirm')).toBeNull()
-    await wrapper.find('button[title="blog.example.com"]').trigger('dblclick')
-    await nextTick()
-    expect(chooserURL()).toBe('https://blog.example.com/')
-    clickBrowserChooser(true)
-    await nextTick()
-    expect(useDesktopMode().windows.value.map(window => window.path)).toEqual(['/browser'])
+    expect(document.body.querySelector('[aria-modal="true"]')).toBeNull()
     await shortcut.find('.desktop__icon-img').trigger('error')
     expect(shortcut.find('.desktop__icon-monogram').text()).toBe('内')
 

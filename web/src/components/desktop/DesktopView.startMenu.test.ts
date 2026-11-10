@@ -152,14 +152,8 @@ describe('DesktopView start menu', () => {
     await openMenu()
     await wrapper.get('[data-start-menu-key="app:kuma"]').trigger('click')
     await flushPromises()
-    expect(document.body.querySelector('.desktop__browser-chooser-url')?.textContent).toBe('http://192.168.1.5:3001/')
-    const button = Array.from(document.body.querySelectorAll<HTMLButtonElement>('.modal-panel__footer button'))
-      .find((item) => item.textContent?.includes('在内置浏览器中打开'))
-    expect(button).toBeDefined()
-    button!.click()
-    await flushPromises()
     expect(desktop.windows.value.map(item => item.path)).toEqual(['/browser'])
-    expect(document.body.querySelector('.desktop__external-confirm')).toBeNull()
+    expect(document.body.querySelector('[aria-modal="true"]')).toBeNull()
   })
 
   it('runs searched desktop actions such as the wallpaper picker', async () => {
