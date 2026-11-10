@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { mediaLocations, setMediaLocation } from '@/lib/mediaLocations'
 import { useRoute, useRouter } from 'vue-router'
 import { Music2, Play, Pause, SkipBack, SkipForward, FolderOpen, Plus, RefreshCw, Download, X, Shuffle, Repeat, Repeat1, ListMusic, ArrowUp, ArrowDown, Volume2, VolumeX, Search, Disc3, ChevronRight, ListPlus, Gem } from '@lucide/vue'
@@ -25,6 +25,7 @@ import type { ClusterHost, FileEntry } from '@/types/api'
 usePhraseCatalog(locale => locale === 'en-US' ? import('@/i18n/pages/MusicView/en-US').then(m => m.default) : import('@/i18n/pages/MusicView/zh-TW').then(m => m.default))
 function phrase(value: string) { phraseCatalogVersion.value; return translatePhrase(value) }
 const i18n = useI18n(), player = useMusicPlayer(), state = player.state
+const currentKey = computed(() => state.current && trackKey(state.current))
 const route = useRoute(), router = useRouter()
 const windowVisible = inject(desktopWindowVisibleKey, undefined)
 const windowed = Boolean(windowVisible)
@@ -40,7 +41,18 @@ const activeHost = computed(() => hosts.value.find(h => hostId.value ? h.id === 
 const hostLabel = computed(() => fileHostLabel(hostId.value, hosts.value, phrase('本机')))
 const allTracks = computed(() => tracksFromEntries(entries.value, hostId.value))
 const sort = ref('name'), tab = ref<'library' | 'listen' | 'queue'>(route.query.view === 'listen' ? 'listen' : 'library'), locationOpen = ref(false)
-const tracks = computed(() => allTracks.value.filter(t => trackSearchText(t).includes(search.value.toLocaleLowerCase())).sort((a,b) => sort.value === 'artist' ? trackArtist(a).localeCompare(trackArtist(b)) || trackTitle(a).localeCompare(trackTitle(b)) : trackTitle(a).localeCompare(trackTitle(b), undefined, {numeric:true})))
+const tracks = shallowRef<Track[]>([])
+const nameOrder = new Intl.Collator(undefined, { numeric: true })
+// Only browsing controls rebuild the list. Metadata can still update each row in place.
+watch([allTracks, sort, search], ([available, order, query]) => {
+  const term = query.toLocaleLowerCase()
+  const rows = (term ? available.filter(track => trackSearchText(track).includes(term)) : available)
+    .map(track => ({ track, title: trackTitle(track), artist: order === 'artist' ? trackArtist(track) : '' }))
+  rows.sort((a, b) => order === 'artist'
+    ? a.artist.localeCompare(b.artist) || a.title.localeCompare(b.title)
+    : nameOrder.compare(a.title, b.title))
+  tracks.value = rows.map(row => row.track)
+}, { immediate: true })
 const folders = computed(() => entries.value.filter(e => e.kind === 'directory' && !e.name.startsWith('.')))
 const volumeOpen = ref(false), titleExpanded = ref(false), musicRoot = ref<HTMLElement>()
 const quality = useMusicQuality(musicRoot, () => [...tracks.value, ...state.queue, ...(state.current ? [state.current] : [])], () => tab.value)
@@ -118,7 +130,7 @@ function selectHost(host: ClusterHost) {
 
 function files() { void router.push({ name: 'files', query: { path: path.value, ...(hostId.value ? { hostId: hostId.value } : {}) } }) }
 function repeat() { state.repeat = state.repeat === 'off' ? 'all' : state.repeat === 'all' ? 'one' : 'off' }
-function isCurrent(track: Track) { return state.current && trackKey(state.current) === trackKey(track) }
+function isCurrent(track: Track) { return currentKey.value === trackKey(track) }
 function trackTitle(track: Track) { return readableMusicTag(peekMusicInfo(track)?.tags?.title, isCurrent(track) ? state.current!.title : track.title) }
 function trackArtist(track: Track) { return readableMusicTag(peekMusicInfo(track)?.tags?.artist, isCurrent(track) ? state.current!.artist : track.artist) }
 function trackSearchText(track: Track) {
@@ -129,6 +141,12 @@ function choose(track: Track) { if (!state.queue.length) player.replaceQueue(tra
 function seek(event: Event) { player.seek(Number((event.target as HTMLInputElement).value)) }
 function volume(event: Event) { player.setVolume(Number((event.target as HTMLInputElement).value)) }
 function artwork(track: Track) { return (isCurrent(track) && player.cover.value) || (track.cover ? fileAPIForHost(track.hostId).contentUrl(track.cover) : '') }
+function trackRowInputs(track: Track, index: number) {
+  const active = isCurrent(track)
+  return [track, track.entry, index, peekMusicInfo(track), quality(track), phraseCatalogVersion.value, active,
+    active && state.current?.title, active && state.current?.artist, active && player.cover.value,
+    active && state.playing, active && state.waiting, active && visible.value]
+}
 function keyboard(event: KeyboardEvent) {
   if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return
   const target = event.target as HTMLElement
@@ -201,7 +219,7 @@ onBeforeUnmount(() => { destroyed = true; listing?.abort(); lyricResize?.disconn
             <p v-if="truncated" role="status">仅显示部分文件，请进入子文件夹继续浏览。</p>
             <div v-if="folders.length && !search" class="music-folders"><button v-for="folder in folders" :key="folder.path" @click="navigate(folder.path)"><span><Disc3 :size="25" /></span><strong>{{ folder.name }}</strong><ChevronRight :size="16" /></button></div>
             <div v-if="!tracks.length" class="music-empty"><Disc3 :size="48" /><h2>{{ search ? phrase('没有匹配的歌曲') : phrase('让音乐住进这里') }}</h2><p>{{ search ? phrase('试试其他歌名或歌手') : phrase('选择音乐文件夹，或通过文件管理上传歌曲。') }}</p><button v-if="search" class="button button--secondary" @click="search = ''">清除搜索</button><button v-else class="button button--secondary" @click="focusLocation">选择文件夹</button></div>
-            <ol class="music-tracks" :aria-label="phrase('歌曲列表')"><li v-for="(track, index) in tracks" :key="trackKey(track)" :class="{ active: isCurrent(track) }">
+             <ol class="music-tracks" :aria-label="phrase('歌曲列表')"><li v-for="(track, index) in tracks" :key="trackKey(track)" v-memo="trackRowInputs(track, index)" :class="{ active: isCurrent(track) }">
               <button class="music-track" :aria-label="`${phrase('播放')} ${trackTitle(track)}`" @click="choose(track)"><span class="music-track__number"><span v-if="isCurrent(track) && state.playing" class="music-wave" :class="{ 'is-playing': !state.waiting && visible }" aria-hidden="true"><i></i><i></i><i></i></span><Play v-else-if="isCurrent(track)" :size="16" /><template v-else>{{ String(index + 1).padStart(2, '0') }}</template></span><span class="music-track__art"><img v-if="artwork(track)" :key="artwork(track)" :src="artwork(track)" alt="" loading="lazy" @error="($event.target as HTMLImageElement).hidden = true" /><Music2 v-else :size="21" /></span><span class="music-track__name"><strong>{{ trackTitle(track) }}</strong><span>{{ trackArtist(track) || phrase('未知歌手') }}</span></span><span class="music-track__format" :data-music-quality="musicQualityKey(track)" :title="qualityTitle(track)"><span class="music-format-line"><span>{{ musicExtension(track.entry.name).toUpperCase() }}</span><span v-if="bitrate(track)">{{ bitrate(track) }}</span><span v-if="quality(track)?.lossless" class="music-lossless"><Gem :size="13" aria-hidden="true" />{{ phrase('无损') }}</span></span><small>{{ formatBytes(track.entry.sizeBytes) }}</small></span></button>
               <button class="music-icon-button music-next" :aria-label="`${phrase('下一首播放')} ${trackTitle(track)}`" :title="phrase('下一首播放')" @click="player.enqueue(track, true)"><ListPlus :size="18" /></button><button class="music-icon-button" :aria-label="`${phrase('加入播放队列')} ${trackTitle(track)}`" :title="phrase('加入播放队列')" @click="player.enqueue(track)"><Plus :size="18" /></button>
             </li></ol>
