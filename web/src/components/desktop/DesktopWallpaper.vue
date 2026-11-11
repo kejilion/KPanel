@@ -88,13 +88,10 @@ watch([descriptor, motion.systemReducedMotion], ([target], [previousTarget]) => 
     // The opaque handoff will read descriptor again, including rapid scene → still → scene.
   } else if (phase.value === 'waiting') {
     void showLatest()
-  } else if (phase.value === 'entering' || shown.value.live || target.live) {
+  } else {
     generation++
     phase.value = 'leaving'
     arm(() => { void showLatest() }, 700)
-  } else {
-    shown.value = target
-    imageFailed.value = false
   }
 })
 
