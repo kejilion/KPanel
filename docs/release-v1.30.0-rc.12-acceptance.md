@@ -69,3 +69,29 @@
 - 生产部署：不适用（预览版）；本次未连接、备份、升级或部署生产主机。
 - 回滚点：`v1.29.0`，Docker `latest` 仍指向上述稳定 digest；预览用户可退出预览来源，但退出不会自动降级。
 - 验收边界：公开验收 job 成功证明精确公开产物门禁完成；本机未获得公开验收 artifact 的逐项报告，因此不补写未见的用例数量或实体设备结果。
+
+## 首轮 L3 失败与恢复
+
+- 首轮 RC12 预览工作流 [43032017270](https://github.com/kejilion/KPanel/actions/runs/43032017270) 于 2026-11-11 21:54:36（+08:00）在 L3 的 TestEmbeddedDeploymentAssetsMatchCanonicalPackaging 检出嵌入式 managed-compose.yml 与规范打包文件不一致。候选 CI 与 Windows 检查已通过；L3 拒绝提升，未写入 main、tag 或 GitHub Release。
+- 提交 ff62c3eeeef48f29970302232fce331e76c99b4a 同步了嵌入资源。最终 RC12 候选 7f70633cc72d1cb0548bdddf5d2c511edfc2a251 的 L3（job 130587467992）于 2026-11-11 22:52:18（+08:00）通过，之后仅公开一次。
+- 该事件归类为候选产品/打包校验失败，被正常 L3 门禁拦截；不是执行器、基础设施或证据通道异常，因此流程异常计数为 0。
+
+## 交付节奏数据
+
+<!-- kpanel-release-metrics:start -->
+- 首个纳入提交时间：2026-11-11T10:08:05+08:00
+- 候选冻结时间：2026-11-11T22:22:18+08:00
+- 生产完成时间：不适用
+- 提交到生产用时：未记录
+- 是否回滚、紧急热修复或重复发布：否（首轮 L3 在公开前拦截并修复；最终预览仅公开一次，无回滚或紧急热修复）
+- 若发生失败，发现时间、恢复时间和逃逸门禁：不适用
+<!-- kpanel-release-metrics:end -->
+
+<!-- kpanel-release-process-metrics:start -->
+- 已记录发布流程异常或无效证据拦截次数：0
+- 其中生产写操作开始后异常次数：0
+<!-- kpanel-release-process-metrics:end -->
+
+<!-- kpanel-release-process-incidents:start -->
+[]
+<!-- kpanel-release-process-incidents:end -->
