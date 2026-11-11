@@ -20,15 +20,15 @@ const lane = (id, code) => ({ id, argv: [process.execPath, '-e', code] });
 
 const torrentVersion = 'v1.61.1-0.20260911233437-76452a2c8a2f';
 test('torrent baseline requires the exact upstream version and rejects local replacements', () => {
-  const source = `module example.test/panel\n\ngo 1.27.3\nrequire github.com/anacrolix/torrent ${torrentVersion}\n`;
+  const source = `module example.test/panel\n\ngo 1.27.4\nrequire github.com/anacrolix/torrent ${torrentVersion}\n`;
   assert.equal(baselineMod(source), source);
   assert.throws(() => baselineMod(source.replace(torrentVersion, 'v1.61.0')), /exact unmodified/);
   assert.throws(() => baselineMod(source + `replace github.com/anacrolix/torrent ${torrentVersion} => ./third_party/torrent\n`), /exact unmodified/);
 });
 
 function moduleDeclarations() {
-  // Shape observed from the fixed Go 1.27.3 `go mod edit -json`: empty Replace is omitted.
-  const baseline = { Module: { Path: 'example.test/panel' }, Go: '1.27.3',
+  // Shape observed from the fixed Go 1.27.4 `go mod edit -json`: empty Replace is omitted.
+  const baseline = { Module: { Path: 'example.test/panel' }, Go: '1.27.4',
     Require: [{ Path: 'github.com/anacrolix/torrent', Version: torrentVersion }, { Path: 'example.test/other', Version: 'v1.0.0', Indirect: true }] };
   return { baseline, actual: structuredClone(baseline) };
 }
@@ -129,7 +129,7 @@ test('production closure retains exact selected versions and rejects incomplete 
   ];
   const closure = productionClosure(packages, target, selected);
   assert.deepEqual(closure.modules, [{ Path: dependency.Path, Version: dependency.Version }]);
-  assert.deepEqual(closure.row.packages[0], { path: 'fmt', module: 'stdlib', version: 'go1.27.3' });
+  assert.deepEqual(closure.row.packages[0], { path: 'fmt', module: 'stdlib', version: 'go1.27.4' });
   assert.deepEqual(productionClosure([...packages].reverse(), target, selected), closure);
   for (const bad of [[], packages.slice(1), [...packages, packages[0]], packages.map(p => ({ ...p, Incomplete: true })), packages.map(p => ({ ...p, DepsErrors: [{}] }))]) {
     assert.throws(() => productionClosure(bad, target, selected));

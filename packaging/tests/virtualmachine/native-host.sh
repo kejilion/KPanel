@@ -33,7 +33,7 @@ cleanup() {
 trap cleanup EXIT
 exec > >(tee "$evidence/native-host.log") 2>&1
 test -c /dev/kvm
-test "$(go env GOVERSION)" = go1.27.3
+test "$(go env GOVERSION)" = go1.27.4
 test "$(ps -p 1 -o comm=)" = systemd
 git ls-files '*.go' | LC_ALL=C sort | while IFS= read -r file; do sha256sum "$file"; done > "$evidence/go-sources-before.sha256"
 git rev-parse 'HEAD^{tree}' > "$evidence/source-tree.txt"

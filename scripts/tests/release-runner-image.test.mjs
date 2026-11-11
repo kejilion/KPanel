@@ -7,7 +7,7 @@ const dockerfile = readFileSync(resolve(import.meta.dirname, '..', '..', 'packag
 
 test('release runner pins bases and direct packages and keeps npm executable', () => {
   assert.match(dockerfile, /^FROM node:24\.22\.1-alpine@sha256:[0-9a-f]{64} AS node-runtime$/m);
-  assert.match(dockerfile, /^FROM golang:1\.27\.3-alpine@sha256:[0-9a-f]{64}$/m);
+  assert.match(dockerfile, /^FROM golang:1\.27\.4-alpine@sha256:[0-9a-f]{64}$/m);
   assert.match(dockerfile, /docker-cli=29\.9\.3-r1/);
   for (const component of ['bash', 'build-base', 'ca-certificates', 'coreutils', 'docker-cli', 'docker-cli-buildx', 'git', 'make']) {
     assert.match(dockerfile, new RegExp(`\\s${component.replaceAll('-', '\\-')}=[^\\s\\\\]+`));
@@ -27,13 +27,16 @@ test('Go toolchain stays aligned across modules, images, Runner and CI', () => {
   const root = resolve(import.meta.dirname, '..', '..');
   const read = path => readFileSync(resolve(root, path), 'utf8');
   const goVersion = read('go.mod').match(/^go (\d+\.\d+\.\d+)$/m)?.[1];
-  assert.equal(goVersion, '1.27.3');
+  assert.equal(goVersion, '1.27.4');
   const goBase = dockerfile.match(/^FROM (golang:[^\s]+)$/m)?.[1];
   assert.ok(goBase?.startsWith(`golang:${goVersion}-alpine@sha256:`));
   assert.ok(read('Dockerfile').includes(`FROM --platform=$BUILDPLATFORM ${goBase} AS go-build`));
+  assert.ok(read('packaging/browser/Dockerfile').includes(`FROM --platform=$BUILDPLATFORM ${goBase} AS build`));
   assert.ok(dockerfile.includes(`org.opencontainers.image.base.golang="${goBase}"`));
   assert.ok(dockerfile.includes(`go version | grep -F 'go${goVersion}'`));
-  for (const workflow of ['ci.yml', 'release.yml', 'dependency-freshness.yml']) {
+  assert.ok(read('scripts/run-release-gate.sh').includes(`grep -F 'go${goVersion} '`));
+  assert.ok(read('packaging/tests/virtualmachine/native-host.sh').includes(`= go${goVersion}`));
+  for (const workflow of ['ci.yml', 'release.yml', 'dependency-freshness.yml', 'release-l3.yml', 'release-stable-recovery.yml', 'virtual-machine-native-verify.yml']) {
     const versions = [...read(`.github/workflows/${workflow}`).matchAll(/go-version: "([^"]+)"/g)];
     assert.ok(versions.length > 0, `${workflow} must pin Go`);
     assert.ok(versions.every(([, version]) => version === goVersion), workflow);
@@ -42,7 +45,7 @@ test('Go toolchain stays aligned across modules, images, Runner and CI', () => {
   const siteWorkflow = read('.codex-workflows/kpanel-site-icon-cache-validation.workflow.yaml');
   const sitePins = [...siteWorkflow.matchAll(/golang:([^\s]+)/g)];
   assert.equal(sitePins.length, 3);
-  assert.ok(sitePins.every(([, pin]) => pin === `${goVersion}-bookworm@sha256:5c3e9b43cfd3bb95c7937462e29d87ada57b481a96fa23ad0eb61778d7a00110`));
+  assert.ok(sitePins.every(([, pin]) => pin === `${goVersion}-bookworm@sha256:4fa7c968ba93f1635670522dbb01a2c78150443e1385746924566079f36570ea`));
 });
 
 test('release runner accepts the optional build proxy only as a BuildKit secret', () => {

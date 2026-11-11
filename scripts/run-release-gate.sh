@@ -9,7 +9,7 @@ if [ "${1:-}" = --github-hosted ]; then
   test "$(git rev-parse HEAD)" = "$2"
   test -z "$(git status --short --untracked-files=all)"
   git merge-base --is-ancestor "$3" HEAD
-  go version | grep -F 'go1.27.3 '
+  go version | grep -F 'go1.27.4 '
   test "$(node --version)" = v24.22.1
   export VERIFY_BASE_REF="$3"
   make verify-release

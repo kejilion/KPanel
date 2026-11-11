@@ -16,7 +16,7 @@ const repoRoot = resolve(import.meta.dirname, '..');
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const MAIN_MODULE = 'github.com/kejilion/kejilion-panel';
 const BUILD_FILES = ['Dockerfile', '.github/workflows/release.yml', 'scripts/build-mcp-clients.sh', 'Makefile'];
-const GO_VERSION = 'go1.27.3';
+const GO_VERSION = 'go1.27.4';
 const SOURCE_ROOTS = ['cmd', 'internal'];
 const ascii = (a, b) => {
   if (a < b) return -1;
@@ -87,7 +87,7 @@ export function firstPartySources(repo) {
 export function scannerManifest(modules, scope) {
   if (!['selected', 'production'].includes(scope) || !modules.length || new Set(modules.map(m => m.Path)).size !== modules.length
       || modules.some(m => !/^[A-Za-z0-9._~+/-]+$/.test(m.Path) || !/^v[0-9][A-Za-z0-9.+-]*$/.test(m.Version))) throw new Error('Invalid scanner module inventory');
-  return `module kpanel.local/diagnostics/${scope}\n\ngo 1.27.3\n\nrequire (\n${modules.map(m => `\t${m.Path} ${m.Version}`).join('\n')}\n)\n`;
+  return `module kpanel.local/diagnostics/${scope}\n\ngo 1.27.4\n\nrequire (\n${modules.map(m => `\t${m.Path} ${m.Version}`).join('\n')}\n)\n`;
 }
 
 export function validateScanScope(policy, identity, now = new Date()) {
@@ -209,7 +209,7 @@ export function verifyModuleDeclarations(actual, baseline) {
     const normalized = { ...declaration };
     const absent = normalized.Replace === undefined || normalized.Replace === null;
     if (!absent && !Array.isArray(normalized.Replace)) throw new Error('Invalid replacement declarations');
-    // Go 1.27.3 omits an empty Replace field; null and [] are equivalent here.
+    // Go 1.27.4 omits an empty Replace field; null and [] are equivalent here.
     // No other field is normalized: every remaining declaration must match exactly.
     if (absent || normalized.Replace.length === 0) delete normalized.Replace;
     return normalized;

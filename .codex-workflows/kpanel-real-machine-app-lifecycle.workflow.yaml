@@ -94,7 +94,7 @@ git diff --check "${{candidate_commit}}^" "${{candidate_commit}}"
 docker run --rm \
   -v "$CANDIDATE_SOURCE:/src" \
   -w /src \
-  golang:1.27.3-alpine@sha256:f2c872bcee949b7be9c490efd02b48a8a2fbf947cdf533f1c58525ec9d8170fd \
+  golang:1.27.4-alpine@sha256:0a5f7fe796599ff487605987432e7619ae45beeb2fba4c2ce0b907879932aebf \
   sh -eu -c 'apk add --no-cache bash >/dev/null && go test ./...'
 
 docker build \

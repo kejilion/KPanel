@@ -1,6 +1,6 @@
 module github.com/kejilion/kejilion-panel
 
-go 1.27.3
+go 1.27.4
 
 require (
 	github.com/anacrolix/dht/v2 v2.23.1-0.20260525063928-ec3a9bd99456
