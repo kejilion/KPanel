@@ -1,4 +1,5 @@
 import type { InjectionKey, Ref } from 'vue'
+import type { DesktopEntry } from './desktopEntries'
 
 export const BROWSER_MAX_TABS = 8
 
@@ -9,6 +10,10 @@ export interface BrowserComponent { supported: boolean; reason?: string; install
 export interface BrowserTab { id: string; url: string; title: string; loading: boolean; back: boolean; forward: boolean }
 export interface BrowserEvent { type: string; tab?: string; active?: string; tabs?: BrowserTab[]; image?: string; width?: number; height?: number; code?: string; text?: string }
 export interface BrowserLink { id: string; name: string; url: string; iconURL?: string }
+export function browserStartLinks(entries: DesktopEntry[]): BrowserLink[] {
+  return entries.flatMap(entry => entry.launch === 'external' && entry.url && browserInput(entry.url)
+    ? [{ id: entry.key, name: entry.name, url: entry.url, iconURL: entry.iconURL }] : [])
+}
 export const browserLinksKey: InjectionKey<Readonly<Ref<BrowserLink[]>>> = Symbol('browser-links')
 export interface BrowserLaunch { url: string; request: string }
 export const browserLaunchKey: InjectionKey<Readonly<Ref<BrowserLaunch | undefined>>> = Symbol('browser-launch')

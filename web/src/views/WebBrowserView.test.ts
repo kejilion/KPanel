@@ -5,7 +5,7 @@ import { nextTick, ref } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import WebBrowserView from './WebBrowserView.vue'
 import { api } from '@/lib/api'
-import { browserLinksKey, browserLaunchKey } from '@/lib/webBrowser'
+import { browserLinksKey, browserLaunchKey, type BrowserLink } from '@/lib/webBrowser'
 import { desktopWindowTitlebarTargetKey, desktopWindowVisibleKey } from '@/lib/desktopRouteKeys'
 
 const vncClients = vi.hoisted(() => [] as Array<{ canvas: HTMLCanvasElement; dispatchEvent(event: Event): boolean }>)
@@ -42,13 +42,39 @@ describe('desktop remote browser', () => {
     vi.mocked(api.browser.status).mockResolvedValue({ ready: true, maxTabs: 8 })
   })
   afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
-  async function render(visible = ref(true), url?: string, titlebar?: HTMLElement) {
+  async function render(visible = ref(true), url?: string, titlebar?: HTMLElement, links = ref<BrowserLink[]>([{ id: 'app', name: 'App', url: 'https://example.com' }])) {
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/browser', component: { template: '<div />' } }] })
     await router.push('/browser')
-    const wrapper = mount(WebBrowserView, { global: { plugins: [router], provide: { [desktopWindowTitlebarTargetKey as symbol]: ref(titlebar), [desktopWindowVisibleKey as symbol]: visible, [browserLaunchKey as symbol]: ref(url ? { url, request: 'test' } : undefined), [browserLinksKey as symbol]: ref([{ id: 'app', name: 'App', url: 'https://example.com' }]) } } })
+    const wrapper = mount(WebBrowserView, { global: { plugins: [router], provide: { [desktopWindowTitlebarTargetKey as symbol]: ref(titlebar), [desktopWindowVisibleKey as symbol]: visible, [browserLaunchKey as symbol]: ref(url ? { url, request: 'test' } : undefined), [browserLinksKey as symbol]: links } } })
     await flushPromises()
     return wrapper
   }
+  it('shows every shortcut, recovers broken desktop artwork and opens its URL', async () => {
+    const links = ref<BrowserLink[]>(Array.from({ length: 14 }, (_, index) => ({
+      id: `shortcut:${index}`, name: `Shortcut ${index}`, url: `https://example.com/${index}`, iconURL: `/icons/${index}.webp`,
+    })))
+    const wrapper = await render(ref(true), undefined, undefined, links)
+    const socket = Socket.instances[0]!
+    socket.state(); await nextTick()
+    expect(wrapper.findAll('.web-browser__quick button')).toHaveLength(14)
+    const icon = wrapper.get('.web-browser__quick-artwork')
+    expect(icon.get('img').attributes('src')).toBe('/icons/0.webp')
+    await icon.get('img').trigger('error')
+    expect(icon.find('img').exists()).toBe(false)
+    expect(icon.text()).toBe('S')
+    links.value[0]!.iconURL = '/icons/updated.webp'
+    await nextTick()
+    expect(icon.get('img').attributes('src')).toBe('/icons/updated.webp')
+    await icon.get('img').trigger('load')
+    expect(icon.text()).toBe('')
+    await wrapper.findAll('.web-browser__quick button')[13]!.trigger('click')
+    expect(socket.sent).toContainEqual({ type: 'new', url: 'https://example.com/13' })
+    await wrapper.get('button[title="起始页"]').trigger('click')
+    links.value = []
+    await nextTick()
+    expect(wrapper.find('.web-browser__quick').exists()).toBe(false)
+    wrapper.unmount()
+  })
   async function attachVNC(width: number, height: number) {
     await flushPromises()
     const channel = Socket.instances.filter(item => String(item.url).includes('/browser/vnc/')).at(-1)!
