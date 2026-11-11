@@ -329,8 +329,10 @@ func fetchDesktopIconPreview(ctx context.Context, client *http.Client, target *u
 	// Large homepages commonly declare their icons in the head. Inspect only
 	// the bounded prefix; oversized image candidates remain rejected below.
 	if (err == nil || errors.Is(err, errDesktopIconPreviewTooLarge)) && status == http.StatusOK {
-		if icon, ok := desktopIconPreviewFromBytes(page); ok {
-			return icon, nil
+		if err == nil {
+			if icon, ok := desktopIconPreviewFromBytes(page); ok {
+				return icon, nil
+			}
 		}
 		if finalURL != nil {
 			candidates = append(candidates, sites.ParseSiteIconLinks(page, finalURL)...)

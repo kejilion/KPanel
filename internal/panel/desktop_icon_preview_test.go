@@ -220,6 +220,22 @@ func TestFetchDesktopIconPreviewLargePageHead(t *testing.T) {
 	}
 }
 
+func TestFetchDesktopIconPreviewRejectsOversizedDirectImage(t *testing.T) {
+	body := append(panelTestPNG(t), bytes.Repeat([]byte("x"), desktopworkspace.MaxIconBytes)...)
+	server := desktopIconPreviewTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/large.png" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(body)
+	})
+	target, _ := url.Parse(server.URL + "/large.png")
+	if _, err := fetchDesktopIconPreview(context.Background(), newDesktopIconPreviewClient(desktopIconPreviewLoopbackLookup), target); err == nil {
+		t.Fatal("oversized direct image accepted after truncation")
+	}
+}
+
 func TestFetchDesktopIconPreviewAcceptsDirectImageURL(t *testing.T) {
 	jpeg := desktopIconPreviewTestJPEG(t)
 	server := desktopIconPreviewTestServer(t, func(w http.ResponseWriter, r *http.Request) {
