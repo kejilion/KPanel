@@ -26,9 +26,11 @@ if (remote !== `${sha}\trefs/heads/${branch}`) throw new Error('Candidate branch
 // release automation supplied only by an unreviewed candidate.
 const automation = ref => git('ls-tree', '-r', ref, '--', '.github/workflows', 'scripts', 'Makefile',
   'packaging/tests', 'packaging/release-browser', 'packaging/release-runner')
-  .split('\n').filter(line => !line.endsWith('\tscripts/torrent-backport-scan-scope.json')).join('\n');
+  .split('\n').filter(line => !line.endsWith('\tscripts/torrent-backport-scan-scope.json')
+    && !line.endsWith('\tscripts/mock-app-market-api.mjs')).join('\n');
 // Source-version qualification intentionally changes with every release version;
 // all executable release helpers, including newly added files, must already be trusted.
+// The local mock API is test infrastructure, not release automation.
 if (automation('origin/main') !== automation(sha)) throw new Error('Release automation must be integrated on main before dispatch');
 if (process.argv[2] === 'check') {
   if (process.env.GITHUB_REF !== 'refs/heads/main') throw new Error('Dispatch Publish preview from main only');
