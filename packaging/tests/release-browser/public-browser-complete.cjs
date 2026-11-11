@@ -1,7 +1,7 @@
 // Bounded metadata only: no headers, cookies, bodies, console text, input values or terminal output.
 function createDiagnostics(context, base, { captureTimeoutMs = 2000 } = {}) {
  const started = Date.now(), pending = new Map(), attached = new WeakSet();
- const data = { stage: 'bootstrap', events: [], droppedEvents: 0, untrackedRequests: 0 };
+ const data = { stage: 'bootstrap', events: [], droppedEvents: 0, untrackedRequests: 0, assetNetworkChangeFailures: 0 };
  const route = value => {
   try {
    const url = new URL(value, base);
@@ -36,8 +36,10 @@ function createDiagnostics(context, base, { captureTimeoutMs = 2000 } = {}) {
  context.on('requestfinished', request => pending.delete(request));
  context.on('requestfailed', request => {
   pending.delete(request);
+  const detail = describe(request);
   const code = /\bnet::ERR_[A-Z_]+\b/.exec(request.failure()?.errorText || '')?.[0] || 'request-failed';
-  add('requestfailed', { ...describe(request), code });
+  if (detail.route === '/assets/*' && detail.method === 'GET' && code === 'net::ERR_NETWORK_CHANGED') data.assetNetworkChangeFailures++;
+  add('requestfailed', { ...detail, code });
  });
  async function snapshot(page, index) {
   let timer;
@@ -95,7 +97,18 @@ function createDiagnostics(context, base, { captureTimeoutMs = 2000 } = {}) {
  };
 }
 
-module.exports = { createDiagnostics };
+async function navigateWithAssetNetworkRecovery(page, url, diagnostics, onRetry) {
+ const before = diagnostics.data.assetNetworkChangeFailures;
+ await page.goto(url);
+ const failures = diagnostics.data.assetNetworkChangeFailures - before;
+ if (failures > 0) {
+  onRetry?.(failures);
+  await page.reload();
+ }
+ return failures;
+}
+
+module.exports = { createDiagnostics, navigateWithAssetNetworkRecovery };
 if (require.main === module) {
 const {chromium}=require('/work/runtime/node_modules/playwright');
 const fs=require('node:fs'),crypto=require('node:crypto'),assert=require('node:assert/strict');
@@ -116,7 +129,9 @@ const check=(n,v)=>{assert(v,n);report.checks.push(n)};const unwrap=x=>x&&typeof
   await api('/terminal-sessions/'+id+'/input','POST',{data:Buffer.from("printf '%s%s\\n' '__KPANEL_RC127_' 'PTY__'\r").toString('base64').replace(/=+$/,'')});
   let output,transcript='',offset=0;for(let i=0;i<20;i++){output=await api('/terminal-sessions/'+id+'/output?offset='+offset+'&wait=1000');assert(output&&typeof output==='object'&&(typeof output.data==='string'||output.data===null)&&Number.isSafeInteger(output.nextOffset),'terminal output schema');transcript+=Buffer.from(output.data||'','base64').toString();offset=output.nextOffset;if(transcript.includes('__KPANEL_RC127_PTY__'))break}
   check('real PTY execution output marker',transcript.includes('__KPANEL_RC127_PTY__'));
-  const terminalPage=await ctx.newPage();terminalPage.on('pageerror',()=>report.errors.push('pageerror'));diagnostics.stage('terminal-first-navigation');await terminalPage.goto(base+'/terminal');await terminalPage.locator('.terminal-tab__close').waitFor();diagnostics.stage('terminal-reload');await terminalPage.reload();await terminalPage.locator('.terminal-tab__close').waitFor();diagnostics.stage('terminal-history');
+  const terminalPage=await ctx.newPage();terminalPage.on('pageerror',()=>report.errors.push('pageerror'));diagnostics.stage('terminal-first-navigation');
+  await navigateWithAssetNetworkRecovery(terminalPage,base+'/terminal',diagnostics,failedRequests=>{report.terminalNavigationRetry={reason:'same-origin asset GET network changed',failedRequests,attempts:2};diagnostics.stage('terminal-first-navigation-retry')});
+  await terminalPage.locator('.terminal-tab__close').waitFor();diagnostics.stage('terminal-reload');await terminalPage.reload();await terminalPage.locator('.terminal-tab__close').waitFor();diagnostics.stage('terminal-history');
   const retained=await api('/terminal-sessions');check('same real session survives page reload',retained.items.some(x=>x.sessionId===id&&x.retained));
   await api('/terminal-sessions/'+id+'/resize','POST',{rows:30,columns:100});
   check('one restored terminal tab',await terminalPage.locator('.terminal-tab__close').count()===1);

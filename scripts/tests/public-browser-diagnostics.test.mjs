@@ -8,10 +8,10 @@ import test from 'node:test';
 
 const require = createRequire(import.meta.url);
 const runner = new URL('../../packaging/tests/release-browser/public-browser-complete.cjs', import.meta.url);
-const { createDiagnostics } = require(fileURLToPath(runner));
+const { createDiagnostics, navigateWithAssetNetworkRecovery } = require(fileURLToPath(runner));
 const base = 'http://127.0.0.1:8080';
-const request = (url, method = 'GET') => ({ url: () => url, method: () => method,
-  failure: () => ({ errorText: 'net::ERR_CONNECTION_RESET token=PRIVATE' }),
+const request = (url, method = 'GET', errorText = 'net::ERR_CONNECTION_RESET token=PRIVATE') => ({ url: () => url, method: () => method,
+  failure: () => ({ errorText }),
   headers() { throw new Error('must never read credentials'); }, postData() { throw new Error('must never read input'); } });
 
 function fixture(count = 1) {
@@ -65,6 +65,44 @@ test('completed and failed requests leave the pending set; capture failures have
   assert.equal(result.pending.length, 0);
   assert.equal(result.pages[0].status, 'unavailable');
   assert.equal(diagnostics.data.events[0].route, '/assets/*');
+});
+
+test('only same-origin asset GET network changes qualify for the single navigation retry', () => {
+  const { context } = fixture(0);
+  const diagnostics = createDiagnostics(context, base);
+  for (const r of [
+    request(base + '/assets/app.js', 'GET', 'net::ERR_NETWORK_CHANGED'),
+    request(base + '/assets/app.js', 'GET', 'net::ERR_CONNECTION_RESET'),
+    request(base + '/assets/app.js', 'POST', 'net::ERR_NETWORK_CHANGED'),
+    request('https://external.invalid/assets/app.js', 'GET', 'net::ERR_NETWORK_CHANGED'),
+  ]) context.emit('requestfailed', r);
+  assert.equal(diagnostics.data.assetNetworkChangeFailures, 1);
+  assert.doesNotMatch(JSON.stringify(diagnostics.data), /external\.invalid|app\.js/);
+});
+
+test('navigation reloads exactly once after a measured static-asset network change', async () => {
+  const diagnostics = { data: { assetNetworkChangeFailures: 0 } };
+  const order = [];
+  const page = {
+    async goto(url) { order.push(['goto', url]); diagnostics.data.assetNetworkChangeFailures += 23; },
+    async reload() { order.push(['reload']); diagnostics.data.assetNetworkChangeFailures++; },
+  };
+  let retryCount = 0;
+  const failures = await navigateWithAssetNetworkRecovery(page, base + '/terminal', diagnostics, count => {
+    retryCount = count;
+    order.push(['retry', count]);
+  });
+  assert.equal(failures, 23);
+  assert.equal(retryCount, 23);
+  assert.deepEqual(order, [['goto', base + '/terminal'], ['retry', 23], ['reload']]);
+});
+
+test('navigation does not reload when no static-asset network change occurred', async () => {
+  const diagnostics = { data: { assetNetworkChangeFailures: 0 } };
+  const order = [];
+  const page = { async goto() { order.push('goto'); }, async reload() { order.push('reload'); } };
+  assert.equal(await navigateWithAssetNetworkRecovery(page, base + '/terminal', diagnostics), 0);
+  assert.deepEqual(order, ['goto']);
 });
 
 test('API request is registered while pending and returns the exact response without interpreting its status', async () => {

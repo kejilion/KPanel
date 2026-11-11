@@ -8,6 +8,7 @@ const dockerfile = readFileSync(resolve(import.meta.dirname, '..', '..', 'packag
 test('release runner pins bases and direct packages and keeps npm executable', () => {
   assert.match(dockerfile, /^FROM node:24\.22\.1-alpine@sha256:[0-9a-f]{64} AS node-runtime$/m);
   assert.match(dockerfile, /^FROM golang:1\.27\.3-alpine@sha256:[0-9a-f]{64}$/m);
+  assert.match(dockerfile, /docker-cli=29\.9\.3-r1/);
   for (const component of ['bash', 'build-base', 'ca-certificates', 'coreutils', 'docker-cli', 'docker-cli-buildx', 'git', 'make']) {
     assert.match(dockerfile, new RegExp(`\\s${component.replaceAll('-', '\\-')}=[^\\s\\\\]+`));
   }
