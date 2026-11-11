@@ -151,6 +151,7 @@ function reset(): void {
   iconAutoFetched.value = false
   iconManuallySet.value = false
   lastIconFetchURL.value = ''
+  scheduleIconFetch()
 }
 
 watch([() => props.open, () => props.shortcut?.id, () => props.site?.id], ([open]) => {

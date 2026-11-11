@@ -310,6 +310,35 @@ describe('desktop shortcut icon auto-fill', () => {
     wrapper.unmount(); spy.mockRestore()
   })
 
+  it('checks the existing URL again whenever an iconless shortcut is reopened', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('FileReader', AutoFillFileReader)
+    const spy = vi.spyOn(api.desktop, 'previewShortcutIcon')
+      .mockResolvedValue(new Blob([new Uint8Array([137, 80, 78, 71])], { type: 'image/png' }))
+    const wrapper = mount(DesktopShortcutDialog, {
+      attachTo: document.body,
+      props: {
+        open: true,
+        shortcut: {
+          id: 'a'.repeat(32), name: 'Docs', description: '', targetType: 'url',
+          url: 'https://docs.example.com/', createdAt: '', updatedAt: '',
+        },
+      },
+    })
+    await nextTick()
+    await vi.advanceTimersByTimeAsync(500)
+    await flushPromises()
+    expect(spy).toHaveBeenCalledTimes(1)
+
+    await wrapper.setProps({ open: false })
+    await wrapper.setProps({ open: true })
+    await nextTick()
+    await vi.advanceTimersByTimeAsync(500)
+    await flushPromises()
+    expect(spy).toHaveBeenCalledTimes(2)
+    wrapper.unmount(); spy.mockRestore()
+  })
+
   it('keeps a manually uploaded icon when the URL changes again', async () => {
     vi.useFakeTimers()
     vi.stubGlobal('FileReader', AutoFillFileReader)
