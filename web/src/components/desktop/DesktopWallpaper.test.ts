@@ -68,6 +68,16 @@ describe('shared wallpaper handoff', () => {
     wrapper.unmount()
   })
 
+  it('reveals a fallback after the next static picture fails to load', async () => {
+    const wrapper = mountWallpaper()
+    await wrapper.setProps({ wallpaperId: 'orbit' }); await black(wrapper)
+    await wrapper.get('img').trigger('error')
+    expect(wrapper.get('img').attributes('src')).toContain('kpanel-desktop.webp')
+    await wrapper.get('img').trigger('load')
+    expect(phase(wrapper)).toBe('entering')
+    wrapper.unmount()
+  })
+
   it('pauses the departing scene and starts the static entrance only after departure', async () => {
     const wrapper = mountWallpaper('pack:neon-city')
     await wrapper.setProps({ wallpaperId: 'classic' })
