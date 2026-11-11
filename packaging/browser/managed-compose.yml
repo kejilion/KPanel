@@ -1,7 +1,7 @@
 # Agent-managed optional component. No published ports or Docker socket access.
 services:
   browser:
-    image: docker.io/kjlion/kpanel-browser@sha256:37c0eb1c4a0e6408fe395e699687d405fe78d052669c32625e09a17a7e3165af
+    image: docker.io/kjlion/kpanel-browser@sha256:9a5cd79bef4262cf675331a8ce07e9e5df9121d26fb3721440c6256ad444ea03
     container_name: kpanel-browser
     user: "65532:65532"
     restart: unless-stopped
