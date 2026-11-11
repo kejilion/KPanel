@@ -305,6 +305,17 @@ func desktopIconPreviewFromBytes(body []byte) (desktopIconPreview, bool) {
 	return desktopIconPreview{contentType: contentType, data: body}, true
 }
 
+// Explicit image imports never discover icons from HTML or try a fallback URL.
+func fetchDesktopImagePreview(ctx context.Context, client *http.Client, target *url.URL) (desktopIconPreview, error) {
+	body, status, _, err := fetchDesktopIconPreviewBytes(ctx, client, target, desktopworkspace.MaxIconBytes, "image/png,image/jpeg,image/webp")
+	if err == nil && status == http.StatusOK {
+		if icon, ok := desktopIconPreviewFromBytes(body); ok {
+			return icon, nil
+		}
+	}
+	return desktopIconPreview{}, errDesktopIconPreviewNotFound
+}
+
 func appendDesktopIconPreviewCandidate(items []*url.URL, candidate *url.URL) []*url.URL {
 	value := candidate.String()
 	for _, item := range items {
@@ -383,13 +394,14 @@ func (s *Server) handleDesktopIconPreview(w http.ResponseWriter, r *http.Request
 		return
 	}
 	var input struct {
-		URL string `json:"url"`
+		URL    string `json:"url"`
+		Source string `json:"source,omitempty"`
 	}
 	if err := decodeLimitedJSON(w, r, 4096, &input); err != nil {
 		return
 	}
 	target, valid := parseDesktopIconPreviewURL(input.URL)
-	if !valid {
+	if !valid || (input.Source != "" && input.Source != "image") {
 		s.writeProblem(w, r, http.StatusBadRequest, "desktop_icon_preview_url_invalid", "A valid URL is required", "")
 		return
 	}
@@ -403,7 +415,13 @@ func (s *Server) handleDesktopIconPreview(w http.ResponseWriter, r *http.Request
 	defer cancel()
 	client := newDesktopIconPreviewClient(lookupPublicIPs)
 	defer client.CloseIdleConnections()
-	icon, err := fetchDesktopIconPreview(ctx, client, target)
+	var icon desktopIconPreview
+	var err error
+	if input.Source == "image" {
+		icon, err = fetchDesktopImagePreview(ctx, client, target)
+	} else {
+		icon, err = fetchDesktopIconPreview(ctx, client, target)
+	}
 	if err != nil {
 		s.writeProblem(w, r, http.StatusNotFound, "desktop_icon_preview_not_found", "No suitable icon was found", "")
 		return

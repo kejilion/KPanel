@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { isDesktopCommandShortcut } from '@/lib/desktopCommandShortcuts'
 import { api } from '@/lib/api'
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, useId, watch } from 'vue'
 import { AlignLeft, ImagePlus, Link2, Terminal, Trash2, Type } from '@lucide/vue'
 import TerminalHostPicker from '@/components/terminal/TerminalHostPicker.vue'
 import ModalDialog from '@/components/common/ModalDialog.vue'
@@ -85,6 +85,57 @@ const iconInput = ref<HTMLInputElement>()
 const iconPreviewURL = ref('')
 const removeIcon = ref(false)
 const validationMessage = ref('')
+const iconSourceURL = ref('')
+const iconImporting = ref(false)
+const iconImportError = ref('')
+const iconURLInputID = `desktop-icon-source-${useId()}`
+let iconImportController: AbortController | undefined
+
+function abortIconImport(): void {
+  iconImportController?.abort()
+  iconImportController = undefined
+  iconImporting.value = false
+}
+
+watch(iconSourceURL, () => { abortIconImport(); iconImportError.value = '' })
+
+async function importIconFromURL(): Promise<void> {
+  if (props.saving || iconImporting.value) return
+  iconImportError.value = ''
+  const normalized = normalizedURL(iconSourceURL.value.trim())
+  if (!normalized) {
+    iconImportError.value = i18n.t('desktop.iconSourceInvalid')
+    return
+  }
+  abortIconFetch()
+  const controller = new AbortController()
+  iconImportController = controller
+  iconImporting.value = true
+  try {
+    const blob = await api.desktop.importIconFromURL(normalized, controller.signal)
+    if (controller.signal.aborted || iconImportController !== controller || !props.open || props.saving) return
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(blob.type) || blob.size < 1 || blob.size > 256 * 1024) {
+      throw new Error('invalid icon response')
+    }
+    const extension = blob.type === 'image/png' ? 'png' : blob.type === 'image/jpeg' ? 'jpg' : 'webp'
+    clearPreview()
+    icon.value = new File([blob], `icon.${extension}`, { type: blob.type })
+    iconManuallySet.value = true
+    iconAutoFetched.value = false
+    removeIcon.value = false
+    validationMessage.value = ''
+    readIconPreview(icon.value)
+  } catch {
+    if (!controller.signal.aborted && iconImportController === controller && props.open) {
+      iconImportError.value = i18n.t('desktop.iconSourceFailed')
+    }
+  } finally {
+    if (iconImportController === controller) {
+      iconImportController = undefined
+      iconImporting.value = false
+    }
+  }
+}
 // Auto-filled favicon state: a fetched icon only ever replaces an empty slot
 // or a previously fetched icon. Once the user picks a file or removes the
 // icon, the automatic fill stops for the rest of this dialog session.
@@ -134,6 +185,9 @@ function clearPreview(): void {
 }
 
 function reset(): void {
+  abortIconImport()
+  iconSourceURL.value = ''
+  iconImportError.value = ''
   clearPreview()
   name.value = props.site?.name || props.shortcut?.name || ''
   description.value = props.shortcut?.description || ''
@@ -156,7 +210,7 @@ function reset(): void {
 
 watch([() => props.open, () => props.shortcut?.id, () => props.site?.id], ([open]) => {
   if (open) reset()
-  else { abortIconFetch(); clearPreview() }
+  else { abortIconImport(); abortIconFetch(); clearPreview() }
 }, { immediate: true })
 
 function readIconPreview(file: File): void {
@@ -207,6 +261,8 @@ function selectIcon(event: Event): void {
     return
   }
   clearPreview()
+  abortIconImport()
+  iconImportError.value = ''
   abortIconFetch()
   icon.value = file
   iconManuallySet.value = true
@@ -217,6 +273,8 @@ function selectIcon(event: Event): void {
 }
 
 function clearIcon(): void {
+  abortIconImport()
+  iconImportError.value = ''
   abortIconFetch()
   clearPreview()
   icon.value = undefined
@@ -237,6 +295,7 @@ function normalizedURL(value: string): string | undefined {
 }
 
 function canAutoFillIcon(): boolean {
+  if (iconImporting.value) return false
   if (props.site || targetType.value !== 'url' || !props.open) return false
   if (iconManuallySet.value) return false
   if (iconAutoFetched.value) return true
@@ -287,7 +346,7 @@ watch(url, () => { scheduleIconFetch() })
 watch(targetType, (type) => { if (type !== 'url') abortIconFetch() })
 
 function submit(): void {
-  if (props.saving) return
+  if (props.saving || iconImporting.value) return
   validationMessage.value = ''
   const trimmedName = name.value.trim()
   const trimmedDescription = description.value.replace(/[\s\p{Cc}]+/gu, ' ').trim()
@@ -318,7 +377,7 @@ function submit(): void {
   }, icon.value, removeIcon.value)
 }
 
-onBeforeUnmount(() => { abortIconFetch(); clearPreview(); importController?.abort() })
+onBeforeUnmount(() => { abortIconImport(); abortIconFetch(); clearPreview(); importController?.abort() })
 </script>
 
 <template>
@@ -353,7 +412,24 @@ onBeforeUnmount(() => { abortIconFetch(); clearPreview(); importController?.abor
             <Trash2 :size="14" aria-hidden="true" />
             {{ i18n.t(site ? 'desktop.siteResetIcon' : 'desktop.shortcutRemoveIcon') }}
           </button>
-          <small>{{ i18n.t('desktop.shortcutIconHint') }}</small>
+        </div>
+        <div class="desktop-shortcut-form__icon-source">
+          <label :for="iconURLInputID">{{ i18n.t('desktop.iconSourceURL') }}</label>
+          <div class="desktop-shortcut-form__icon-source-row">
+            <span class="desktop-shortcut-form__control">
+              <Link2 :size="16" aria-hidden="true" />
+              <input :id="iconURLInputID" v-model="iconSourceURL" type="url" data-testid="shortcut-icon-url"
+                maxlength="2048" placeholder="https://example.com/icon.png" autocomplete="off" spellcheck="false"
+                :disabled="saving" :aria-invalid="Boolean(iconImportError)" :aria-describedby="`${iconURLInputID}-hint`"
+                @keydown.enter.prevent="importIconFromURL" />
+            </span>
+            <button class="button button--secondary" type="button" :disabled="saving || iconImporting || !iconSourceURL.trim()"
+              :aria-busy="iconImporting" @click="importIconFromURL">
+              {{ i18n.t(iconImporting ? 'desktop.iconSourceLoading' : 'desktop.iconSourceImport') }}
+            </button>
+          </div>
+          <small :id="`${iconURLInputID}-hint`">{{ i18n.t('desktop.shortcutIconHint') }}</small>
+          <p v-if="iconImportError" class="desktop-shortcut-form__icon-source-error" role="alert">{{ iconImportError }}</p>
         </div>
       </div>
 
@@ -382,6 +458,7 @@ onBeforeUnmount(() => { abortIconFetch(); clearPreview(); importController?.abor
           <Type :size="16" :stroke-width="1.9" aria-hidden="true" />
           <input
             v-model="name"
+            data-testid="shortcut-name"
             maxlength="48"
             autocomplete="off"
             :placeholder="site?.defaultName || i18n.t('desktop.shortcutNamePlaceholder')"
@@ -447,7 +524,7 @@ onBeforeUnmount(() => { abortIconFetch(); clearPreview(); importController?.abor
       <button class="button button--ghost" type="button" :disabled="saving" @click="emit('close')">
         {{ i18n.t('common.cancel') }}
       </button>
-      <button class="button button--primary" type="button" :disabled="saving" @click="submit">
+      <button class="button button--primary" type="button" :disabled="saving || iconImporting" @click="submit">
         {{ saving ? i18n.t('common.saving') : i18n.t(site ? 'desktop.renameSave' : 'desktop.shortcutSave') }}
       </button>
     </template>
@@ -462,4 +539,14 @@ select.desktop-shortcut-form__control { width: 100%; min-width: 0; color: var(--
 .desktop-shortcut-form__error { font-size: 14px; }
 .desktop-shortcut-form__field > small { color: var(--muted); font-size: 13px; line-height: 1.5; }
 .desktop-shortcut-form__field > p { margin: 0; color: var(--danger); font-size: 14px; }
+.desktop-shortcut-form__icon-source { grid-column: 1 / -1; display: grid; min-width: 0; gap: 8px; }
+.desktop-shortcut-form__icon-source > label { font-size: 14px; font-weight: 600; }
+.desktop-shortcut-form__icon-source-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: start; }
+.desktop-shortcut-form__icon-source-row > .button { min-height: 44px; font-size: 14px; white-space: nowrap; }
+.desktop-shortcut-form__icon-source > small { font-size: 13px; color: var(--muted); line-height: 1.5; }
+.desktop-shortcut-form__icon-source-error { margin: 0; color: var(--danger); font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+@media (max-width: 420px) {
+  .desktop-shortcut-form__icon-source-row { grid-template-columns: minmax(0, 1fr); }
+  .desktop-shortcut-form__icon-source-row > .button { justify-self: end; }
+}
 </style>

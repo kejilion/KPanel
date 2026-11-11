@@ -491,3 +491,67 @@ func TestDesktopIconPreviewRateLimitBeforeNetwork(t *testing.T) {
 		t.Fatalf("rate status = %d", got.Code)
 	}
 }
+
+func TestFetchDesktopImagePreviewDirectOnly(t *testing.T) {
+	png := panelTestPNG(t)
+	for _, tc := range []struct {
+		path string
+		want bool
+	}{
+		{"/image", true}, {"/page", false}, {"/oversized", false}, {"/missing", false},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			var paths []string
+			server := desktopIconPreviewTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+				paths = append(paths, r.URL.Path)
+				switch r.URL.Path {
+				case "/image":
+					_, _ = w.Write(png)
+				case "/page":
+					_, _ = w.Write([]byte(`<link rel="icon" href="/image">`))
+				case "/oversized":
+					_, _ = w.Write(append(append([]byte{}, png...), bytes.Repeat([]byte("x"), desktopworkspace.MaxIconBytes)...))
+				default:
+					http.NotFound(w, r)
+				}
+			})
+			client := newDesktopIconPreviewClient(desktopIconPreviewLoopbackLookup)
+			defer client.CloseIdleConnections()
+			target, _ := url.Parse(server.URL + tc.path)
+			icon, err := fetchDesktopImagePreview(context.Background(), client, target)
+			if (err == nil) != tc.want {
+				t.Fatalf("image result = %v", err)
+			}
+			if tc.want && !bytes.Equal(icon.data, png) {
+				t.Fatal("image bytes changed")
+			}
+			if len(paths) != 1 || paths[0] != tc.path {
+				t.Fatalf("unexpected fallback requests: %v", paths)
+			}
+		})
+	}
+}
+
+func TestDesktopIconPreviewImageSourceValidation(t *testing.T) {
+	server, tokenPath := newTestServer(t)
+	session, csrf := bootstrapCookies(t, server, tokenPath)
+	headers := map[string]string{"Origin": "http://panel.test", "X-CSRF-Token": csrf.Value, "Content-Type": "application/json"}
+	for _, tc := range []struct {
+		body   string
+		status int
+	}{
+		{`{"url":"https://example.com/image.png","source":"unknown"}`, http.StatusBadRequest},
+		{`{"url":"http://127.0.0.1:9/image.png","source":"image"}`, http.StatusNotFound},
+		{`{"url":"https://user:secret@example.com/image.png","source":"image"}`, http.StatusBadRequest},
+	} {
+		got := authenticatedRequest(server, http.MethodPost, desktopIconPreviewPath, []byte(tc.body), session, csrf, headers)
+		if got.Code != tc.status {
+			t.Fatalf("status = %d, want %d", got.Code, tc.status)
+		}
+	}
+	got := authenticatedRequest(server, http.MethodPost, desktopIconPreviewPath, []byte(`{"url":"https://example.com/image.png","source":"image"}`), session, csrf,
+		map[string]string{"Origin": "http://panel.test", "Content-Type": "application/json"})
+	if got.Code != http.StatusForbidden {
+		t.Fatalf("missing CSRF = %d", got.Code)
+	}
+}

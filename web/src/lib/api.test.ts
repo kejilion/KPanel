@@ -16,6 +16,18 @@ afterEach(() => {
 })
 
 describe('API client', () => {
+  it('imports image URLs with an explicit direct-image source and CSRF', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({ csrfToken: 'image-token', user: { id: 'owner' } }))
+      .mockResolvedValueOnce(new Response(new Uint8Array([137, 80, 78, 71]), { headers: { 'Content-Type': 'image/png' } }))
+    vi.stubGlobal('fetch', fetchMock)
+    await api.auth.login({ username: 'admin', password: 'unused' })
+    const controller = new AbortController()
+    await api.desktop.importIconFromURL('https://example.com/icon.png', controller.signal)
+    const [url, options] = fetchMock.mock.calls[1]!
+    expect(url).toBe('/api/v1/desktop/icon-preview')
+    expect(options).toMatchObject({ method: 'POST', signal: controller.signal, body: JSON.stringify({ url: 'https://example.com/icon.png', source: 'image' }) })
+    expect((options.headers as Headers).get('X-CSRF-Token')).toBe('image-token')
+  })
   it('requests shortcut icons with a CSRF-protected POST body and cancellation', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({ csrfToken: 'preview-token', user: { id: 'owner' } }))
       .mockResolvedValueOnce(new Response(new Uint8Array([137, 80, 78, 71]), { headers: { 'Content-Type': 'image/png' } }))

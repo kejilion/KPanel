@@ -2309,7 +2309,7 @@ createServer(async (request, response) => {
   }
   if (request.method === 'POST' && url.pathname === '/api/v1/desktop/icon-preview') {
     const input = await readJSON(request)
-    if (input.url === 'https://github.com/' || input.url === 'https://example.com/') {
+    if (input.source === 'image' ? input.url === 'https://example.com/icon.png' : input.url === 'https://github.com/' || input.url === 'https://example.com/') {
       sendBinary(response, 200, mockShortcutIcon, 'image/png')
     } else send(response, 404, { title: 'Mock icon not found', code: 'desktop_icon_preview_not_found' })
     return

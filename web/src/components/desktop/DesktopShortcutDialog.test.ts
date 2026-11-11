@@ -18,8 +18,8 @@ describe('DesktopShortcutDialog', () => {
     })
     await nextTick()
     const inputs = document.body.querySelectorAll<HTMLInputElement>('.desktop-shortcut-form input')
-    const name = Array.from(inputs).find((input) => input.type === 'text')
-    const url = Array.from(inputs).find((input) => input.type === 'url')
+    const name = Array.from(inputs).find((input) => input.dataset.testid === 'shortcut-name')
+    const url = Array.from(inputs).find((input) => input.type === 'url' && input.dataset.testid !== 'shortcut-icon-url')
     if (!name || !url) throw new Error('shortcut fields missing')
     name.value = '危险入口'
     name.dispatchEvent(new Event('input', { bubbles: true }))
@@ -41,7 +41,7 @@ describe('DesktopShortcutDialog', () => {
     })
     await nextTick()
     const name = document.body.querySelector<HTMLInputElement>('.desktop-shortcut-form input:not([type="file"]):not([type="url"])')
-    const url = document.body.querySelector<HTMLInputElement>('.desktop-shortcut-form input[type="url"]')
+    const url = document.body.querySelector<HTMLInputElement>('.desktop-shortcut-form input[type="url"]:not([data-testid="shortcut-icon-url"])')
     const description = document.body.querySelector<HTMLTextAreaElement>('.desktop-shortcut-form textarea')
     if (!name || !url || !description) throw new Error('shortcut fields missing')
     name.value = '  文档中心  '
@@ -164,7 +164,7 @@ describe('terminal command shortcuts', () => {
     document.body.querySelector<HTMLButtonElement>('.modal-panel__footer .button--primary')!.click()
     await nextTick()
     expect(wrapper.emitted('save')?.[0]?.[0]).toEqual({ id: '', name: '系统', description: '', targetType: 'command', command, hostId: 'local' })
-    expect(document.body.querySelector('input[type="url"]')).toBeNull()
+    expect(document.body.querySelector('input[type="url"]:not([data-testid="shortcut-icon-url"])')).toBeNull()
     wrapper.unmount(); spy.mockRestore()
   })
   it('keeps manual entry available after import fails and rejects empty commands', async () => {
@@ -172,7 +172,7 @@ describe('terminal command shortcuts', () => {
     const wrapper = mount(DesktopShortcutDialog, { attachTo: document.body, props: { open: true } })
     await chooseCommandType()
     expect(document.body.textContent).toContain('加载')
-    const name = document.body.querySelector<HTMLInputElement>('input:not([type="file"])')!
+    const name = document.body.querySelector<HTMLInputElement>('[data-testid="shortcut-name"]')!
     name.value = 'test'; name.dispatchEvent(new Event('input', { bubbles: true }))
     await nextTick()
     document.body.querySelector<HTMLButtonElement>('.modal-panel__footer .button--primary')!.click()
@@ -199,7 +199,7 @@ it('edits commands and removes the inactive target fields when switching types',
   const type = document.body.querySelector<HTMLSelectElement>('[data-testid="shortcut-type"]')!
   type.value = 'url'; type.dispatchEvent(new Event('change', { bubbles: true }))
   await nextTick()
-  const url = document.body.querySelector<HTMLInputElement>('input[type="url"]')!
+  const url = document.body.querySelector<HTMLInputElement>('input[type="url"]:not([data-testid="shortcut-icon-url"])')!
   url.value = 'https://example.com'; url.dispatchEvent(new Event('input', { bubbles: true }))
   await nextTick()
   document.body.querySelector<HTMLButtonElement>('.modal-panel__footer .button--primary')!.click()
@@ -236,7 +236,7 @@ it('saves an explicitly selected remote host and sends local when switched back'
    await nextTick()
    expect(document.body.textContent).toContain('编辑站点')
    expect(document.body.textContent).toContain('example.com')
-   expect(document.body.querySelector('input[type="url"], select, textarea')).toBeNull()
+   expect(document.body.querySelector('input[type="url"]:not([data-testid="shortcut-icon-url"]), select, textarea')).toBeNull()
    const restore = [...document.body.querySelectorAll<HTMLButtonElement>('button')].find(b => b.textContent?.includes('恢复默认图标'))!
    restore.click(); await nextTick()
    expect(document.body.querySelector('img')?.getAttribute('src')).toBe('/favicon')
@@ -276,7 +276,7 @@ describe('desktop shortcut icon auto-fill', () => {
   }
 
   function typeUrl(value: string): void {
-    const url = document.body.querySelector<HTMLInputElement>('input[type="url"]')
+    const url = document.body.querySelector<HTMLInputElement>('input[type="url"]:not([data-testid="shortcut-icon-url"])')
     if (!url) throw new Error('url input missing')
     url.value = value
     url.dispatchEvent(new Event('input', { bubbles: true }))
@@ -480,5 +480,89 @@ describe('desktop shortcut icon auto-fill', () => {
     expect(wrapper.emitted('save')?.[0]?.[0]).toMatchObject({ name: 'Example', url: 'https://example.com/' })
     expect(wrapper.emitted('save')?.[0]?.[1]).toBeUndefined()
     wrapper.unmount(); spy.mockRestore()
+  })
+})
+
+describe('desktop remote image import', () => {
+  afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers() })
+  class ImportedFileReader {
+    static readonly LOADING = 1
+    readonly readyState = 1
+    result: string | ArrayBuffer | null = null
+    onload: (() => void) | null = null
+    onerror: (() => void) | null = null
+    onabort: (() => void) | null = null
+    abort() { this.onabort?.() }
+    readAsDataURL() { this.result = 'data:image/png;base64,imported'; this.onload?.() }
+  }
+  const png = () => new Blob(['png'], { type: 'image/png' })
+  async function source(value: string) {
+    const input = document.querySelector<HTMLInputElement>('[data-testid="shortcut-icon-url"]')!
+    input.value = value; input.dispatchEvent(new Event('input', { bubbles: true })); await nextTick()
+  }
+  function importButton() { return [...document.querySelectorAll<HTMLButtonElement>('.desktop-shortcut-form__icon-source button')][0]! }
+  const existingSite = { id: 'a'.repeat(32), name: 'Site', defaultName: 'Site', url: 'https://example.com/', domain: 'example.com', iconURL: '/custom', defaultIconURL: '/default', customIcon: true }
+  it.each([false, true])('imports an image for a site=%s and emits the file through the existing save contract', async (site) => {
+    vi.stubGlobal('FileReader', ImportedFileReader)
+    const spy = vi.spyOn(api.desktop, 'importIconFromURL').mockResolvedValue(png())
+    const wrapper = mount(DesktopShortcutDialog, { attachTo: document.body, props: { open: true, ...(site ? { site: existingSite } : {}) } })
+    await source('https://cdn.example.com/icon.png')
+    importButton().click(); await flushPromises(); await nextTick()
+    expect(spy).toHaveBeenCalledWith('https://cdn.example.com/icon.png', expect.any(AbortSignal))
+    expect(document.querySelector('.desktop-shortcut-form__preview img')?.getAttribute('src')).toBe('data:image/png;base64,imported')
+    if (!site) {
+      const name = document.querySelector<HTMLInputElement>('[data-testid="shortcut-name"]')!
+      name.value = 'Shortcut'; name.dispatchEvent(new Event('input', { bubbles: true }))
+      const destination = document.querySelector<HTMLInputElement>('input[type="url"]:not([data-testid="shortcut-icon-url"])')!
+      destination.value = 'https://example.com/'; destination.dispatchEvent(new Event('input', { bubbles: true }))
+      await nextTick()
+    }
+    document.querySelector<HTMLButtonElement>('.modal-panel__footer .button--primary')!.click(); await nextTick()
+    expect(wrapper.emitted('save')?.[0]?.[1]).toBeInstanceOf(File)
+    expect((wrapper.emitted('save')?.[0]?.[1] as File).type).toBe('image/png')
+    expect(wrapper.emitted('save')?.[0]?.[2]).toBe(false)
+    wrapper.unmount()
+  })
+  it('keeps the existing image and offers a retry after a failed import', async () => {
+    const spy = vi.spyOn(api.desktop, 'importIconFromURL').mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(png())
+    vi.stubGlobal('FileReader', ImportedFileReader)
+    const wrapper = mount(DesktopShortcutDialog, { attachTo: document.body, props: { open: true, site: existingSite } })
+    await source('https://cdn.example.com/icon.png'); importButton().click(); await flushPromises()
+    expect(document.querySelector('.desktop-shortcut-form__preview img')?.getAttribute('src')).toBe('/custom')
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain('导入失败')
+    importButton().click(); await flushPromises()
+    expect(spy).toHaveBeenCalledTimes(2)
+    expect(document.querySelector('[role="alert"]')).toBeNull()
+    wrapper.unmount()
+  })
+  it('rejects credential URLs without a request and does not save during import', async () => {
+    const spy = vi.spyOn(api.desktop, 'importIconFromURL').mockImplementation(() => new Promise(() => {}))
+    const wrapper = mount(DesktopShortcutDialog, { attachTo: document.body, props: { open: true, site: existingSite } })
+    await source('https://user:secret@example.com/icon.png'); importButton().click(); await nextTick()
+    expect(spy).not.toHaveBeenCalled()
+    await source('https://cdn.example.com/icon.png'); importButton().click(); await nextTick()
+    expect(document.querySelector<HTMLButtonElement>('.modal-panel__footer .button--primary')?.disabled).toBe(true)
+    await source('')
+    expect(document.querySelector<HTMLButtonElement>('.modal-panel__footer .button--primary')?.disabled).toBe(false)
+    wrapper.unmount()
+  })
+  it('discards responses after source edits, local file selection, and dialog close', async () => {
+    vi.stubGlobal('FileReader', ImportedFileReader)
+    const resolvers: Array<(value: Blob) => void> = []
+    vi.spyOn(api.desktop, 'importIconFromURL').mockImplementation(() => new Promise(resolve => { resolvers.push(resolve) }))
+    const wrapper = mount(DesktopShortcutDialog, { attachTo: document.body, props: { open: true, site: existingSite } })
+    await source('https://first.example/icon.png'); importButton().click(); await nextTick()
+    await source('https://second.example/icon.png'); resolvers[0]!(png()); await flushPromises()
+    expect(document.querySelector('.desktop-shortcut-form__preview img')?.getAttribute('src')).toBe('/custom')
+    importButton().click(); await nextTick()
+    const input = document.querySelector<HTMLInputElement>('input[type="file"]')!
+    Object.defineProperty(input, 'files', { configurable: true, value: [new File(['png'], 'manual.png', { type: 'image/png' })] })
+    input.dispatchEvent(new Event('change', { bubbles: true })); await nextTick()
+    resolvers[1]!(new Blob(['invalid'], { type: 'text/html' })); await flushPromises()
+    expect(document.querySelector('[role="alert"]')).toBeNull()
+    importButton().click(); await nextTick(); await wrapper.setProps({ open: false }); await wrapper.setProps({ open: true })
+    resolvers[2]!(png()); await flushPromises()
+    expect(document.querySelector('.desktop-shortcut-form__preview img')?.getAttribute('src')).toBe('/custom')
+    wrapper.unmount()
   })
 })

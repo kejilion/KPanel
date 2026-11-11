@@ -460,7 +460,7 @@ describe('DesktopView dynamic entries', () => {
     await siteItems[3]?.trigger('click')
     await nextTick()
 
-    const input = document.body.querySelector<HTMLInputElement>('.desktop-shortcut-form input:not([type="file"])')
+    const input = document.body.querySelector<HTMLInputElement>('[data-testid="shortcut-name"]')
     expect(input).not.toBeNull()
     if (!input) throw new Error('rename input was not rendered')
     input.value = '我的博客'

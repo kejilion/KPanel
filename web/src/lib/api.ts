@@ -1471,6 +1471,12 @@ export const api = {
       })
       return response.blob()
     },
+    importIconFromURL: async (url: string, signal?: AbortSignal): Promise<Blob> => {
+      const response = await rawFileResponse('/desktop/icon-preview', {
+        method: 'POST', body: JSON.stringify({ url, source: 'image' }), headers: { 'Content-Type': 'application/json' }, signal,
+      })
+      return response.blob()
+    },
     uploadShortcutIcon: (id: string, file: File): Promise<DesktopShortcutIconResult> =>
       uploadDesktopIcon('shortcuts', id, file),
     siteIconURL: (id: string, version?: string): string =>
