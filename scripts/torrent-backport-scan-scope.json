@@ -12,8 +12,8 @@
     "scripts/build-mcp-clients.sh": "29b0e82668f585aa46d10432912e1050954430cfac6a0550dd408d728979e113",
     "Makefile": "f651d8ce2f10adc487118e1ccb476615347661922a8c8ef529f1b8013da5d53e"
   },
-  "closureSha256": "9290d312f32ba57778e388ed712b8e5db919fb24b7e636e9a67bef3bc7d183f9",
-  "firstPartySourceSha256": "c4db71fa15e3ae8c23575392d1e81856287ecba27c9be582cd878472829b370a",
+  "closureSha256": "ae9744959d31622e95bfbbdc0d40e503e4d97704a3ce7c6eb23cfced25edbefa",
+  "firstPartySourceSha256": "33a54c9dfd1eb09a716fe763e85ea6f563784d5e28d3376f1fd9975d311a61d7",
   "buildTargetHashEncoding": "UTF-8 with LF line endings",
   "closureEncoding": "SHA256 of JSON.stringify of ordered OS/architecture rows; packages sorted by import path; path, module and selected version; stdlib go1.27.4; main-module packages additionally bind relative sourceDirectory and sorted actual GoFiles.",
   "firstPartySourceEncoding": "SHA256 of JSON.stringify of all cmd/internal Go source path and SHA256 pairs sorted by relative path; contents normalized to UTF-8 LF. All actual main-module production GoFiles must be covered. Generated .pb.go and .proto files or symlinks require a new review.",
@@ -587,5 +587,7 @@
   "rc130Rc10IdentitySummary": "RC10 source rebind after desktop open chooser, local music metadata cache and the Windows cache-removal fix: canonical firstPartySources observed 1,314 Go/proto files; scan-inventories with Go 1.27.3 matched actual and original production closures across all six OS/architecture targets. The existing dependency graph, module manifests and build-target files are unchanged. Exact-SHA GitHub CI, security scanners and full Release L3 remain mandatory; this identity record is not a scan or release result.",
   "rc130Rc10IdentityEvidenceSha256": "4199dc4c8e37f6c149fed0f1a13dae49e461719f7c61a9936fd275202ac0389d",
   "rc130Rc11IdentitySummary": "RC11 release-owner source identity rebind: canonical firstPartySources observed 1,314 Go/proto files. The only Go-source change since RC10 is the internal/version/version.go version literal from 1.30.0-rc.10-dev to 1.30.0-rc.11-dev. Module manifests, selected graph, build-target inputs, production imports and the previously qualified six-target closure are unchanged. Exact-SHA candidate CI, security scanners and GitHub-hosted Release L3 remain mandatory; this identity receipt does not assert their success.",
-  "rc130Rc11IdentityEvidenceSha256": "6e067ec1db28847d0d76b34429baeff5bbe5c640dee04f24d1b0b0d12b6fadf4"
+  "rc130Rc11IdentityEvidenceSha256": "6e067ec1db28847d0d76b34429baeff5bbe5c640dee04f24d1b0b0d12b6fadf4",
+  "rc130Rc13IdentitySummary": "RC13 exact-candidate Go 1.27.4 identity rebind: repository scan-inventories helper verified actual/original production closures match for all six targets (683/682/239/238/342/341 packages). The selected dependency graph and build-target hashes are unchanged; canonical firstPartySources observes 1,316 Go/proto files. Only derived closure and first-party source identities change. This identity receipt does not assert scanner success; exact-candidate CI security scans and GitHub-hosted Release L3 remain required.",
+  "rc130Rc13IdentityEvidenceSha256": "59b8bade03f8744cc39d5f273db9e8ab626c7440da7b3bcdb33fd7388cb01165"
 }
