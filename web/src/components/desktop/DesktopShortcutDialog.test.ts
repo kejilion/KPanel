@@ -247,3 +247,209 @@ it('saves an explicitly selected remote host and sends local when switched back'
    expect(wrapper.emitted('save')?.[0]).toEqual([expect.objectContaining({ name: '默认站点', url: 'https://example.com/' }), undefined, true])
    wrapper.unmount()
  })
+
+describe('desktop shortcut icon auto-fill', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  class AutoFillFileReader {
+    static readonly LOADING = 1
+    readonly readyState = 1
+    result: string | ArrayBuffer | null = null
+    onload: (() => void) | null = null
+    onerror: (() => void) | null = null
+    onabort: (() => void) | null = null
+    abort() {
+      this.onabort?.()
+    }
+    readAsDataURL(blob: Blob) {
+      this.result = blob instanceof File && blob.name === 'manual.png'
+        ? 'data:image/png;base64,manual'
+        : 'data:image/png;base64,auto'
+      this.onload?.()
+    }
+  }
+
+  function iconPreview(): HTMLImageElement | null {
+    return document.body.querySelector<HTMLImageElement>('.desktop-shortcut-form__preview img')
+  }
+
+  function typeUrl(value: string): void {
+    const url = document.body.querySelector<HTMLInputElement>('input[type="url"]')
+    if (!url) throw new Error('url input missing')
+    url.value = value
+    url.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+
+  function chooseManualIcon(): void {
+    const input = document.body.querySelector<HTMLInputElement>('.desktop-shortcut-form input[type="file"]')
+    if (!input) throw new Error('icon input missing')
+    const file = new File([new Uint8Array([137, 80, 78, 71])], 'manual.png', { type: 'image/png' })
+    Object.defineProperty(input, 'files', { configurable: true, value: [file] })
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+  }
+
+  it('pre-fills the icon from the typed URL after a short debounce', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('FileReader', AutoFillFileReader)
+    const spy = vi.spyOn(api.desktop, 'previewShortcutIcon')
+      .mockResolvedValue(new Blob([new Uint8Array([137, 80, 78, 71])], { type: 'image/png' }))
+    const wrapper = mount(DesktopShortcutDialog, { attachTo: document.body, props: { open: true } })
+    await nextTick()
+    typeUrl('https://example.com')
+    await nextTick()
+    expect(spy).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(500)
+    await flushPromises()
+    await nextTick()
+
+    expect(spy).toHaveBeenCalledTimes(1)
+    expect(spy).toHaveBeenCalledWith('https://example.com/', expect.anything())
+    expect(iconPreview()?.src).toBe('data:image/png;base64,auto')
+    wrapper.unmount(); spy.mockRestore()
+  })
+
+  it('keeps a manually uploaded icon when the URL changes again', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('FileReader', AutoFillFileReader)
+    const spy = vi.spyOn(api.desktop, 'previewShortcutIcon')
+      .mockResolvedValue(new Blob([new Uint8Array([137, 80, 78, 71])], { type: 'image/png' }))
+    const wrapper = mount(DesktopShortcutDialog, { attachTo: document.body, props: { open: true } })
+    await nextTick()
+    typeUrl('https://example.com')
+    await vi.advanceTimersByTimeAsync(500)
+    await flushPromises()
+    await nextTick()
+    expect(iconPreview()?.src).toBe('data:image/png;base64,auto')
+
+    chooseManualIcon()
+    await nextTick()
+    expect(iconPreview()?.src).toBe('data:image/png;base64,manual')
+
+    typeUrl('https://other.example')
+    await vi.advanceTimersByTimeAsync(500)
+    await flushPromises()
+    await nextTick()
+    expect(spy).toHaveBeenCalledTimes(1)
+    expect(iconPreview()?.src).toBe('data:image/png;base64,manual')
+    wrapper.unmount(); spy.mockRestore()
+  })
+
+  it('stops auto-filling after the user removes an auto-filled icon', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('FileReader', AutoFillFileReader)
+    const spy = vi.spyOn(api.desktop, 'previewShortcutIcon')
+      .mockResolvedValue(new Blob([new Uint8Array([137, 80, 78, 71])], { type: 'image/png' }))
+    const wrapper = mount(DesktopShortcutDialog, { attachTo: document.body, props: { open: true } })
+    await nextTick()
+    typeUrl('https://example.com')
+    await vi.advanceTimersByTimeAsync(500)
+    await flushPromises()
+    await nextTick()
+    expect(iconPreview()?.src).toBe('data:image/png;base64,auto')
+
+    document.body.querySelector<HTMLButtonElement>('.desktop-shortcut-form__icon-actions button[type="button"]')?.click()
+    await nextTick()
+    expect(iconPreview()).toBeNull()
+
+    typeUrl('https://other.example')
+    await vi.advanceTimersByTimeAsync(500)
+    await flushPromises()
+    await nextTick()
+    expect(spy).toHaveBeenCalledTimes(1)
+    expect(iconPreview()).toBeNull()
+    wrapper.unmount(); spy.mockRestore()
+  })
+
+  it('keeps an existing shortcut icon untouched when the URL changes', async () => {
+    vi.useFakeTimers()
+    const spy = vi.spyOn(api.desktop, 'previewShortcutIcon')
+      .mockResolvedValue(new Blob([new Uint8Array([137, 80, 78, 71])], { type: 'image/png' }))
+    const wrapper = mount(DesktopShortcutDialog, {
+      attachTo: document.body,
+      props: {
+        open: true,
+        shortcut: {
+          id: 'a'.repeat(32), name: 'Docs', description: '', targetType: 'url',
+          url: 'https://docs.example.com/', iconVersion: 'v1', iconURL: '/api/v1/desktop/shortcuts/' + 'a'.repeat(32) + '/icon?v=v1',
+          createdAt: '', updatedAt: '',
+        },
+      },
+    })
+    await nextTick()
+    expect(iconPreview()?.getAttribute('src')).toContain('/icon?v=v1')
+    typeUrl('https://other.example')
+    await vi.advanceTimersByTimeAsync(500)
+    await flushPromises()
+    await nextTick()
+    expect(spy).not.toHaveBeenCalled()
+    expect(iconPreview()?.getAttribute('src')).toContain('/icon?v=v1')
+    wrapper.unmount(); spy.mockRestore()
+  })
+
+  it('discards an old response after changing URL or closing the dialog', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('FileReader', AutoFillFileReader)
+    let resolveOld!: (blob: Blob) => void
+    let resolveNew!: (blob: Blob) => void
+    const spy = vi.spyOn(api.desktop, 'previewShortcutIcon')
+      .mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve }))
+      .mockImplementationOnce(() => new Promise(resolve => { resolveNew = resolve }))
+    const wrapper = mount(DesktopShortcutDialog, { attachTo: document.body, props: { open: true } })
+    await nextTick()
+    typeUrl('https://first.example/')
+    await vi.advanceTimersByTimeAsync(500)
+    typeUrl('https://second.example/')
+    await vi.advanceTimersByTimeAsync(500)
+    resolveOld(new Blob(['old'], { type: 'image/png' }))
+    await flushPromises()
+    expect(iconPreview()).toBeNull()
+    await wrapper.setProps({ open: false })
+    await wrapper.setProps({ open: true })
+    resolveNew(new Blob(['new'], { type: 'image/png' }))
+    await flushPromises()
+    expect(iconPreview()).toBeNull()
+    wrapper.unmount(); spy.mockRestore()
+  })
+
+  it('clears an automatic icon when the URL is changed to an invalid address', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('FileReader', AutoFillFileReader)
+    const spy = vi.spyOn(api.desktop, 'previewShortcutIcon').mockResolvedValue(new Blob(['icon'], { type: 'image/png' }))
+    const wrapper = mount(DesktopShortcutDialog, { attachTo: document.body, props: { open: true } })
+    await nextTick()
+    typeUrl('https://example.com/')
+    await vi.advanceTimersByTimeAsync(500)
+    await flushPromises()
+    expect(iconPreview()).not.toBeNull()
+    typeUrl('invalid')
+    await nextTick()
+    expect(iconPreview()).toBeNull()
+    wrapper.unmount(); spy.mockRestore()
+  })
+
+  it('stays silent on fetch failure and still saves the shortcut', async () => {
+    vi.useFakeTimers()
+    const spy = vi.spyOn(api.desktop, 'previewShortcutIcon').mockRejectedValue(new Error('offline'))
+    const wrapper = mount(DesktopShortcutDialog, { attachTo: document.body, props: { open: true } })
+    await nextTick()
+    typeUrl('https://example.com')
+    await vi.advanceTimersByTimeAsync(500)
+    await flushPromises()
+    await nextTick()
+    expect(spy).toHaveBeenCalledTimes(1)
+    expect(iconPreview()).toBeNull()
+    expect(document.body.querySelector('[role="alert"]')).toBeNull()
+
+    const name = document.body.querySelector<HTMLInputElement>('.desktop-shortcut-form input:not([type="file"]):not([type="url"])')
+    if (!name) throw new Error('name input missing')
+    name.value = 'Example'
+    name.dispatchEvent(new Event('input', { bubbles: true }))
+    document.body.querySelector<HTMLButtonElement>('.modal-panel__footer .button--primary')?.click()
+    await nextTick()
+    expect(wrapper.emitted('save')?.[0]?.[0]).toMatchObject({ name: 'Example', url: 'https://example.com/' })
+    expect(wrapper.emitted('save')?.[0]?.[1]).toBeUndefined()
+    wrapper.unmount(); spy.mockRestore()
+  })
+})

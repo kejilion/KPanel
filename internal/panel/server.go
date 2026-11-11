@@ -63,6 +63,7 @@ var (
 )
 
 type Server struct {
+	iconPreviewBudget       desktopIconPreviewBudget
 	failures                failureDiagnostics
 	browserCancels          map[uint64]context.CancelFunc
 	browserNext             uint64
@@ -593,6 +594,8 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		s.handleDesktopWallpapers(w, r)
 	case r.URL.Path == scenePacksPath || strings.HasPrefix(r.URL.Path, scenePacksPath+"/"):
 		s.handleScenePacks(w, r)
+	case r.URL.Path == desktopIconPreviewPath:
+		s.handleDesktopIconPreview(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/v1/desktop/shortcuts/"), strings.HasPrefix(r.URL.Path, "/api/v1/desktop/sites/"):
 		s.handleDesktopShortcutIcon(w, r)
 	case r.URL.Path == "/api/v1/site-traffic" || r.URL.Path == "/api/v1/site-traffic/actions":
