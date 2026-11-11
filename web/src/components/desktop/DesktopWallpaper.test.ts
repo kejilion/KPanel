@@ -52,19 +52,29 @@ describe('shared wallpaper handoff', () => {
     wrapper.unmount()
   })
 
-  it('retains the outgoing static picture and brightness until black, then reveals the decoded scene poster', async () => {
+  it.each(['orbit', 'pack:neon-city'] as const)('retains the outgoing picture until black, then reveals the loaded %s wallpaper', async (wallpaperId) => {
     const wrapper = mountWallpaper()
-    await wrapper.setProps({ wallpaperId: 'pack:neon-city' })
+    await wrapper.setProps({ wallpaperId })
     expect(phase(wrapper)).toBe('leaving')
     expect(surface(wrapper).attributes('data-wallpaper')).toBe('classic')
     expect(surface(wrapper).classes()).not.toContain('desktop-wallpaper-surface--scene')
     await black(wrapper)
     expect(phase(wrapper)).toBe('waiting')
-    expect(surface(wrapper).attributes('data-wallpaper')).toBe('pack:neon-city')
+    expect(surface(wrapper).attributes('data-wallpaper')).toBe(wallpaperId)
     await wrapper.get('img').trigger('load')
     expect(phase(wrapper)).toBe('entering')
     await black(wrapper)
     expect(phase(wrapper)).toBe('idle')
+    wrapper.unmount()
+  })
+
+  it('reveals a fallback after the next static picture fails to load', async () => {
+    const wrapper = mountWallpaper()
+    await wrapper.setProps({ wallpaperId: 'orbit' }); await black(wrapper)
+    await wrapper.get('img').trigger('error')
+    expect(wrapper.get('img').attributes('src')).toContain('kpanel-desktop.webp')
+    await wrapper.get('img').trigger('load')
+    expect(phase(wrapper)).toBe('entering')
     wrapper.unmount()
   })
 
@@ -124,14 +134,15 @@ describe('shared wallpaper handoff', () => {
     wrapper.unmount()
   })
 
-  it('keeps pure static changes immediate and cancels an in-flight handoff for reduced motion', async () => {
+  it('cancels a static handoff and keeps subsequent selections immediate for reduced motion', async () => {
     const wrapper = mountWallpaper()
     await wrapper.setProps({ wallpaperId: 'orbit' })
-    expect(phase(wrapper)).toBe('idle')
-    await wrapper.setProps({ wallpaperId: 'pack:neon-city' })
     expect(phase(wrapper)).toBe('leaving')
     useSceneMotionPreference().systemReducedMotion.value = true
     await nextTick()
+    expect(phase(wrapper)).toBe('idle')
+    expect(surface(wrapper).attributes('data-wallpaper')).toBe('orbit')
+    await wrapper.setProps({ wallpaperId: 'pack:neon-city' })
     expect(phase(wrapper)).toBe('idle')
     expect(surface(wrapper).attributes('data-wallpaper')).toBe('pack:neon-city')
     expect(surface(wrapper).classes()).not.toContain('desktop-wallpaper-surface--scene')

@@ -565,7 +565,7 @@ describe('DesktopView', () => {
     await nextTick()
     expect(wrapper.find('.desktop__wallpaper-image').attributes('data-wallpaper')).toBe('classic')
 
-    await vi.advanceTimersByTimeAsync(1)
+    await vi.advanceTimersByTimeAsync(701)
     await flushPromises()
     await nextTick()
     const nextWallpaper = wrapper.find('[data-wallpaper="orbit"]')
