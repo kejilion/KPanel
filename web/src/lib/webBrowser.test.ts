@@ -1,5 +1,26 @@
 import { describe, expect, it } from 'vitest'
-import { browserCoordinates, browserEvent, browserInput, browserTextChunks } from './webBrowser'
+import { browserCoordinates, browserEvent, browserInput, browserStartLinks, browserTextChunks } from './webBrowser'
+import type { DesktopEntry } from './desktopEntries'
+
+describe('browser start links', () => {
+  it('includes apps, sites and URL shortcuts with their desktop names and artwork', () => {
+    const entries: DesktopEntry[] = ['app', 'site', 'shortcut'].map((kind, index) => ({
+      key: `${kind}:${index}`, kind: kind as DesktopEntry['kind'], id: String(index),
+      name: `Custom ${kind}`, launch: 'external', url: `https://${kind}.example/`,
+      iconURL: `/api/v1/desktop/icons/${index}?v=custom`,
+    }))
+    expect(browserStartLinks(entries)).toEqual(entries.map(entry => ({
+      id: entry.key, name: entry.name, url: entry.url, iconURL: entry.iconURL,
+    })))
+  })
+  it('excludes non-web targets and invalid URLs even when they carry a stale URL', () => {
+    const base: DesktopEntry = { key: 'shortcut:1', id: '1', kind: 'shortcut', name: 'Shortcut', launch: 'external' }
+    const entries: DesktopEntry[] = ['file', 'directory', 'command', 'script'].map(launch => ({
+      ...base, launch: launch as DesktopEntry['launch'], url: 'https://stale.example/',
+    }))
+    expect(browserStartLinks([...entries, base, { ...base, url: 'javascript:alert(1)' }])).toEqual([])
+  })
+})
 
 describe('remote browser boundary', () => {
   it('splits Chinese and emoji input using the Go protocol UTF-8 byte budget', () => {

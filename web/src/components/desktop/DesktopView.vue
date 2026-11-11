@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { isDesktopCommandShortcut } from '@/lib/desktopCommandShortcuts'
-import { browserLinksKey, browserInput, browserLaunchKey, type BrowserLaunch } from '@/lib/webBrowser'
+import { browserLinksKey, browserInput, browserStartLinks, browserLaunchKey, type BrowserLaunch } from '@/lib/webBrowser'
 import { useBrowserText } from '@/i18n/webBrowser'
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
 import type { Component } from 'vue'
@@ -377,7 +377,6 @@ function applySiteNames(value?: DesktopEntries): DesktopEntries | undefined {
 const entries = ref<DesktopEntries | undefined>(applySiteNames(getCachedDesktopEntries()))
 const browserLaunch = ref<BrowserLaunch>()
 provide(browserLaunchKey, browserLaunch)
-provide(browserLinksKey, computed(() => (entries.value?.visible || []).flatMap(entry => entry.url && browserInput(entry.url) ? [{ id: entry.key, name: entry.name, url: entry.url, iconURL: entry.iconURL }] : [])))
 const systemResources = ref<SystemResourceSnapshot>()
 const entriesLoading = ref(!entries.value)
 let entriesAbort: AbortController | undefined
@@ -428,6 +427,8 @@ const shortcutEntries = computed<DesktopEntry[]>(() => shortcuts.value.map((shor
     : isDesktopCommandShortcut(shortcut) ? SquareTerminal : undefined,
   shortcut,
 })))
+
+provide(browserLinksKey, computed(() => browserStartLinks([...(entries.value?.visible || []), ...shortcutEntries.value])))
 
 function isTransferableDesktopShortcut(entry: DesktopEntry): boolean {
   return entry.kind === 'shortcut'
