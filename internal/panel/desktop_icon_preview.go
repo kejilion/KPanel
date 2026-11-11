@@ -45,6 +45,7 @@ const (
 )
 
 var errDesktopIconPreviewNotFound = errors.New("desktop icon preview not found")
+var errDesktopIconPreviewTooLarge = errors.New("desktop icon preview response exceeds limit")
 
 // Fixed-size, per-Panel budget: no attacker-controlled map or request queue.
 type desktopIconPreviewBudget struct {
@@ -280,7 +281,7 @@ func fetchDesktopIconPreviewBytes(ctx context.Context, client *http.Client, targ
 		return nil, response.StatusCode, finalURL, err
 	}
 	if int64(len(body)) > maxBytes {
-		return nil, response.StatusCode, finalURL, errors.New("desktop icon preview response exceeds limit")
+		return body[:maxBytes], response.StatusCode, finalURL, errDesktopIconPreviewTooLarge
 	}
 	return body, response.StatusCode, finalURL, nil
 }
@@ -325,7 +326,9 @@ func fetchDesktopIconPreview(ctx context.Context, client *http.Client, target *u
 		ctx, client, target, desktopIconPreviewMaxPageBytes, "text/html,application/xhtml+xml",
 	)
 	candidates := make([]*url.URL, 0, 4)
-	if err == nil && status == http.StatusOK {
+	// Large homepages commonly declare their icons in the head. Inspect only
+	// the bounded prefix; oversized image candidates remain rejected below.
+	if (err == nil || errors.Is(err, errDesktopIconPreviewTooLarge)) && status == http.StatusOK {
 		if icon, ok := desktopIconPreviewFromBytes(page); ok {
 			return icon, nil
 		}

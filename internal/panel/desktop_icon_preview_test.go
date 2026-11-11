@@ -200,6 +200,26 @@ func TestFetchDesktopIconPreviewFallsBackToFaviconICO(t *testing.T) {
 	}
 }
 
+func TestFetchDesktopIconPreviewLargePageHead(t *testing.T) {
+	png := panelTestPNG(t)
+	server := desktopIconPreviewTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/icon.png" {
+			_, _ = w.Write(png)
+			return
+		}
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write(append([]byte(`<html><head><link rel="icon" href="/icon.png"></head>`), bytes.Repeat([]byte("x"), desktopIconPreviewMaxPageBytes)...))
+	})
+	target, _ := url.Parse(server.URL)
+	icon, err := fetchDesktopIconPreview(context.Background(), newDesktopIconPreviewClient(desktopIconPreviewLoopbackLookup), target)
+	if err != nil || !bytes.Equal(icon.data, png) {
+		t.Fatalf("large page icon: %v", err)
+	}
+}
+
 func TestFetchDesktopIconPreviewAcceptsDirectImageURL(t *testing.T) {
 	jpeg := desktopIconPreviewTestJPEG(t)
 	server := desktopIconPreviewTestServer(t, func(w http.ResponseWriter, r *http.Request) {
