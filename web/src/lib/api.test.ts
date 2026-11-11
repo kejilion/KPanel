@@ -16,6 +16,19 @@ afterEach(() => {
 })
 
 describe('API client', () => {
+  it('requests shortcut icons with a CSRF-protected POST body and cancellation', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({ csrfToken: 'preview-token', user: { id: 'owner' } }))
+      .mockResolvedValueOnce(new Response(new Uint8Array([137, 80, 78, 71]), { headers: { 'Content-Type': 'image/png' } }))
+    vi.stubGlobal('fetch', fetchMock)
+    await api.auth.login({ username: 'admin', password: 'unused' })
+    const controller = new AbortController()
+    const blob = await api.desktop.previewShortcutIcon('https://github.com/', controller.signal)
+    const [url, options] = fetchMock.mock.calls[1]!
+    expect(url).toBe('/api/v1/desktop/icon-preview')
+    expect(options).toMatchObject({ method: 'POST', credentials: 'same-origin', signal: controller.signal, body: JSON.stringify({ url: 'https://github.com/' }) })
+    expect((options.headers as Headers).get('X-CSRF-Token')).toBe('preview-token')
+    expect(blob.type).toBe('image/png')
+  })
   it('preserves structured problem details for safe terminal recovery', async () => {
     const id = 'a'.repeat(64)
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({

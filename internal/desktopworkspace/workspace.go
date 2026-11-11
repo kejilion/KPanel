@@ -934,6 +934,13 @@ func resourceVersion(state persistedWorkspace) string {
 	return "sha256:" + hex.EncodeToString(digest[:])
 }
 
+// ValidateIcon applies the same checks PutIcon applies to a shortcut icon,
+// without persisting anything. The icon-preview endpoint uses it to
+// guarantee that fetched favicon bytes can later be uploaded unchanged.
+func ValidateIcon(contentType string, data []byte) (Icon, error) {
+	return validateIcon(contentType, data)
+}
+
 func validateIcon(contentType string, data []byte) (Icon, error) {
 	mediaType, _, err := mime.ParseMediaType(contentType)
 	if err != nil {

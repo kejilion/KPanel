@@ -1464,6 +1464,13 @@ export const api = {
       buildUrl(`/desktop/scene-packs/${encodeURIComponent(id)}/poster`),
     shortcutIconURL: (id: string, version?: string): string =>
       buildUrl(`/desktop/shortcuts/${encodeURIComponent(id)}/icon`, version ? { v: version } : undefined),
+    /** Fetches a site's favicon bytes for the shortcut icon preview. The caller decides whether to keep them. */
+    previewShortcutIcon: async (url: string, signal?: AbortSignal): Promise<Blob> => {
+      const response = await rawFileResponse('/desktop/icon-preview', {
+        method: 'POST', body: JSON.stringify({ url }), headers: { 'Content-Type': 'application/json' }, signal,
+      })
+      return response.blob()
+    },
     uploadShortcutIcon: (id: string, file: File): Promise<DesktopShortcutIconResult> =>
       uploadDesktopIcon('shortcuts', id, file),
     siteIconURL: (id: string, version?: string): string =>
