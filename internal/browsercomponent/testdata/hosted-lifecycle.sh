@@ -41,16 +41,16 @@ go build -buildvcs=false -o "$runtime/agent" ./cmd/kejilion-agent
 go build -buildvcs=false -o "$runtime/reconcile" "$evidence/reconcile.go"
 CGO_ENABLED=0 go build -buildvcs=false -o "$runtime/probe" "$evidence/live-browser-probe/main.go"
 chmod 0555 "$runtime/probe"
-docker pull docker.io/kjlion/kpanel-browser@sha256:37c0eb1c4a0e6408fe395e699687d405fe78d052669c32625e09a17a7e3165af >/dev/null
+docker pull docker.io/kjlion/kpanel-browser@sha256:9a5cd79bef4262cf675331a8ce07e9e5df9121d26fb3721440c6256ad444ea03 >/dev/null
 start_panel() { docker run -d --name kejilion-panel --label com.docker.compose.project=kpanel \
   --label com.docker.compose.service=panel --label "kpanel.test=$label" \
   --mount "type=bind,src=$runtime/runtime-parent,dst=/run/kejilion-panel,readonly" \
   --mount "type=bind,src=$runtime/probe,dst=/test/probe,readonly" \
-  --entrypoint /bin/sleep docker.io/kjlion/kpanel-browser@sha256:37c0eb1c4a0e6408fe395e699687d405fe78d052669c32625e09a17a7e3165af 3600; }
+  --entrypoint /bin/sleep docker.io/kjlion/kpanel-browser@sha256:9a5cd79bef4262cf675331a8ce07e9e5df9121d26fb3721440c6256ad444ea03 3600; }
 cat > "$runtime/panel.yml" <<EOF
 services:
   panel:
-    image: docker.io/kjlion/kpanel-browser@sha256:37c0eb1c4a0e6408fe395e699687d405fe78d052669c32625e09a17a7e3165af
+    image: docker.io/kjlion/kpanel-browser@sha256:9a5cd79bef4262cf675331a8ce07e9e5df9121d26fb3721440c6256ad444ea03
     container_name: kejilion-panel
     entrypoint: ["/bin/sleep", "3600"]
     volumes:

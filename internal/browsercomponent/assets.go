@@ -11,4 +11,4 @@ var composeTemplate []byte
 //go:embed assets/browser-seccomp.json
 var seccompProfile []byte
 
-const componentImage = "docker.io/kjlion/kpanel-browser@sha256:37c0eb1c4a0e6408fe395e699687d405fe78d052669c32625e09a17a7e3165af"
+const componentImage = "docker.io/kjlion/kpanel-browser@sha256:9a5cd79bef4262cf675331a8ce07e9e5df9121d26fb3721440c6256ad444ea03"
