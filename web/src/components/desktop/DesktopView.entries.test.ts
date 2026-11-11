@@ -137,6 +137,45 @@ async function openExternalMenu(wrapper: VueWrapper, selector: string) {
 }
 
 describe('DesktopView dynamic entries', () => {
+  it('adds script entries after the cold catalog becomes live without refreshing the page', async () => {
+    vi.useFakeTimers()
+    mockedLoad.mockReset()
+    mockedLoad.mockResolvedValueOnce({ ...makeEntries(), visible: [], catalogPending: true })
+      .mockResolvedValue({ ...makeEntries(), catalogPending: false })
+    const wrapper = mount(DesktopView)
+    try {
+      await flushPromises()
+      expect(wrapper.find('button[title="OpenClaw"]').exists()).toBe(false)
+      await vi.advanceTimersByTimeAsync(2_000)
+      await flushPromises()
+      expect(mockedLoad).toHaveBeenLastCalledWith(expect.any(AbortSignal), undefined, true)
+      expect(wrapper.find('button[title="OpenClaw"]').exists()).toBe(true)
+      await vi.advanceTimersByTimeAsync(4_000)
+      expect(mockedLoad).toHaveBeenCalledTimes(2)
+    } finally { wrapper.unmount(); vi.useRealTimers() }
+  })
+
+  it('bounds catalog retries and cancels the pending retry when leaving the desktop', async () => {
+    vi.useFakeTimers()
+    mockedLoad.mockReset()
+    mockedLoad.mockResolvedValue({ ...makeEntries(), catalogPending: true })
+    const wrapper = mount(DesktopView)
+    try {
+      await flushPromises()
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(mockedLoad).toHaveBeenCalledTimes(11)
+    } finally { wrapper.unmount(); vi.useRealTimers() }
+    vi.useFakeTimers()
+    mockedLoad.mockClear()
+    const leaving = mount(DesktopView)
+    try {
+      await flushPromises()
+      leaving.unmount()
+      await vi.advanceTimersByTimeAsync(4_000)
+      expect(mockedLoad).toHaveBeenCalledOnce()
+    } finally { vi.useRealTimers() }
+  })
+
   beforeEach(() => {
     resetDesktopModeForTest()
     resetDesktopIconsForTest()

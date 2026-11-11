@@ -45,6 +45,8 @@ export interface DesktopEntries {
   /** Reused by the desktop clock to avoid a duplicate public-network call. */
   publicNetwork?: PublicNetworkSummary
   loadedAt: number
+  /** The Agent is still refreshing the catalog that supplies script-only apps. */
+  catalogPending?: boolean
 }
 
 const DESKTOP_ENTRIES_CACHE_TTL = 5 * 60_000
@@ -203,7 +205,10 @@ export async function loadDesktopEntries(
     : previous?.apps || []
   const siteEntries = sites ? buildSiteEntries(sites.items) : previous?.sites || []
   const visible = dedupeDesktopEntries(apps, siteEntries)
-  const result = { apps, sites: siteEntries, visible, publicNetwork, loadedAt: Date.now() }
+  const catalogPending = inventory
+    ? inventory.catalogMode !== 'live' && !inventory.catalogWarning
+    : previous?.catalogPending
+  const result = { apps, sites: siteEntries, visible, publicNetwork, loadedAt: Date.now(), catalogPending }
   if (inventory || sites) desktopEntriesCache.set(key, result)
   return result
 }

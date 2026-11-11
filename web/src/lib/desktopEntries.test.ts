@@ -84,6 +84,23 @@ describe('desktop entries', () => {
     clearDesktopEntriesCacheForTest()
   })
 
+  it('marks a cold catalog for refresh and clears the flag when live apps arrive', async () => {
+    vi.mocked(api.sites.list).mockResolvedValue({ items: [], total: 0 })
+    vi.mocked(api.apps.inventory)
+      .mockResolvedValueOnce({ ...inventory(), catalogMode: 'embedded' })
+      .mockResolvedValueOnce({ ...inventory([makeApp({ id: 'codex' })]), catalogMode: 'live' })
+    expect((await loadDesktopEntries(undefined, '192.168.1.5')).catalogPending).toBe(true)
+    const ready = await loadDesktopEntries(undefined, '192.168.1.5', true)
+    expect(ready.catalogPending).toBe(false)
+    expect(ready.apps.map(app => app.id)).toContain('codex')
+  })
+
+  it('does not retry a catalog whose refresh already failed', async () => {
+    vi.mocked(api.sites.list).mockResolvedValue({ items: [], total: 0 })
+    vi.mocked(api.apps.inventory).mockResolvedValue({ ...inventory(), catalogMode: 'embedded', catalogWarning: 'offline' })
+    expect((await loadDesktopEntries(undefined, '192.168.1.5')).catalogPending).toBe(false)
+  })
+
   it('loads installed apps as entries with entry URLs', async () => {
     const app = makeApp({ id: 'nginx', runtime: { installed: true, state: 'running', ports: [{ privatePort: 80, publicPort: 8080, type: 'tcp' }], accessMode: 'direct', updateStatus: 'current', detectedBy: [] } })
     vi.mocked(api.apps.inventory).mockResolvedValue(inventory([app]))

@@ -381,6 +381,7 @@ const systemResources = ref<SystemResourceSnapshot>()
 const entriesLoading = ref(!entries.value)
 let entriesAbort: AbortController | undefined
 let entriesSequence = 0
+let catalogRetryTimer: number | undefined
 
 const workspace = computed(() => desktopIcons.workspace.value)
 const hiddenEntryKeys = computed(() => new Set(workspace.value.hiddenEntryKeys))
@@ -4287,7 +4288,8 @@ function preserveVisibleEntryLayout(): void {
     .map(({ key, position }) => [key, { ...position }]))
 }
 
-async function loadEntries(force = false): Promise<void> {
+async function loadEntries(force = false, catalogRetry = 0): Promise<void> {
+  window.clearTimeout(catalogRetryTimer)
   entriesAbort?.abort()
   entriesAbort = new AbortController()
   const sequence = ++entriesSequence
@@ -4298,6 +4300,11 @@ async function loadEntries(force = false): Promise<void> {
       preserveVisibleEntryLayout()
       entries.value = applySiteNames(nextEntries)
       void loadSiteAppearanceNames(nextEntries, entriesAbort.signal, sequence)
+      // Cold Agent startup returns the embedded catalog before remote script
+      // apps arrive. Bypass the five-minute desktop cache while it warms up.
+      if (nextEntries.catalogPending && catalogRetry < 10) {
+        catalogRetryTimer = window.setTimeout(() => { void loadEntries(true, catalogRetry + 1) }, 2_000)
+      }
     }
   } catch {
     if (sequence === entriesSequence) {
@@ -4474,6 +4481,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  window.clearTimeout(catalogRetryTimer)
   cancelDesktopLongPress()
   if (taskbarClockTimer !== undefined) window.clearInterval(taskbarClockTimer)
   entriesSequence += 1
