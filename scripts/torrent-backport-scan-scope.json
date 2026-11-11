@@ -13,7 +13,7 @@
     "Makefile": "f651d8ce2f10adc487118e1ccb476615347661922a8c8ef529f1b8013da5d53e"
   },
   "closureSha256": "9290d312f32ba57778e388ed712b8e5db919fb24b7e636e9a67bef3bc7d183f9",
-  "firstPartySourceSha256": "6a78aea67edb0ceaa4735690abe1c1ead2dfbc4897dd0a2047759f80171046bf",
+  "firstPartySourceSha256": "c4db71fa15e3ae8c23575392d1e81856287ecba27c9be582cd878472829b370a",
   "buildTargetHashEncoding": "UTF-8 with LF line endings",
   "closureEncoding": "SHA256 of JSON.stringify of ordered OS/architecture rows; packages sorted by import path; path, module and selected version; stdlib go1.27.4; main-module packages additionally bind relative sourceDirectory and sorted actual GoFiles.",
   "firstPartySourceEncoding": "SHA256 of JSON.stringify of all cmd/internal Go source path and SHA256 pairs sorted by relative path; contents normalized to UTF-8 LF. All actual main-module production GoFiles must be covered. Generated .pb.go and .proto files or symlinks require a new review.",
