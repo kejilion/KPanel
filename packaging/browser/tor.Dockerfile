@@ -18,6 +18,7 @@ RUN echo '5b36ad610c20c81faa72caf27d1cd3a11f14a327c320b4cec581400016ba78b0  brow
 FROM jlesage/baseimage-gui:ubuntu-24.04-v4@sha256:e7c54da3446b4c65b6755bf00a874463c640a1f579f25bed99532051e81649ef
 RUN mkdir -p /config/log && apt-get -o Acquire::Retries=3 -o APT::Update::Error-Mode=any update && apt-get -o Acquire::Retries=3 install -y --no-install-recommends libgtk-3-0t64 libdbus-glib-1-2 libx11-xcb1 libxt6t64 libasound2t64 fonts-noto-cjk curl procps \
     && rm -rf /var/lib/apt/lists/*
+COPY --from=download /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=download /tor-browser /opt/tor-browser
 COPY --from=download /tor-data /opt/tor-data
 COPY --chmod=0555 tor-start.sh /startapp.sh
