@@ -3,7 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { h } from 'vue'
 import { afterEach, expect, it, vi } from 'vitest'
 import MusicTrackList from './MusicTrackList.vue'
-import type { Track } from '@/lib/music'
+import { trackKey, type Track } from '@/lib/music'
 
 let callback: ResizeObserverCallback
 const disconnect = vi.fn()
@@ -24,6 +24,10 @@ async function setup() {
   const root = document.createElement('div'); document.body.append(root)
   Object.defineProperty(root, 'clientHeight', { value: 300, configurable: true })
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    if (this.hasAttribute('data-index')) {
+      const top = Number(this.getAttribute('data-index')) * 76 - root.scrollTop
+      return { top, bottom: top + 76, left: 0, width: 800, height: 76 } as DOMRect
+    }
     return { top: this === root ? 0 : -root.scrollTop, left: 0, width: 800, height: 300 } as DOMRect
   })
   const wrapper = mount(MusicTrackList, { attachTo: root, props: { tracks: tracks(500), scrollRoot: root },
@@ -69,4 +73,31 @@ it('updates the mounted range on scroll without waiting for another animation fr
   await flushPromises()
   expect(Number(wrapper.findAll('[data-index]')[0]!.attributes('data-index'))).toBeGreaterThan(80)
   expect(wrapper.findAll('[data-index]').length).toBeLessThan(180)
+})
+
+it('reveals a changed song outside the mounted range and lets the user browse afterwards', async () => {
+  const { root, wrapper } = await setup()
+  await wrapper.setProps({ followKey: trackKey(wrapper.props('tracks')[490]!) })
+  await flushPromises()
+  expect(root.scrollTop).toBeGreaterThan(36000)
+  const bounds = wrapper.get('[data-index="490"]').element.getBoundingClientRect()
+  expect(bounds.top).toBeGreaterThanOrEqual(0); expect(bounds.bottom).toBeLessThanOrEqual(300)
+  root.scrollTop = 10000; root.dispatchEvent(new Event('scroll'))
+  await wrapper.setProps({ tracks: [...wrapper.props('tracks')] })
+  await flushPromises()
+  expect(root.scrollTop).toBe(10000)
+  expect(wrapper.findAll('[data-index]').length).toBeLessThan(80)
+})
+
+it('keeps visible songs and missing search results steady, and follows only the latest song', async () => {
+  const { root, wrapper } = await setup()
+  const available = wrapper.props('tracks')
+  await wrapper.setProps({ followKey: trackKey(available[0]!) }); await flushPromises()
+  expect(root.scrollTop).toBe(0)
+  await wrapper.setProps({ followKey: trackKey({ ...available[0]!, hostId: 'other-host' }) }); await flushPromises()
+  expect(root.scrollTop).toBe(0)
+  void wrapper.setProps({ followKey: trackKey(available[490]!) })
+  await wrapper.setProps({ followKey: trackKey(available[10]!) }); await flushPromises()
+  expect(root.scrollTop).toBeLessThan(1000)
+  expect(wrapper.find('[data-index="10"]').exists()).toBe(true)
 })

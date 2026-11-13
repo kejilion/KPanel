@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, shallowReactive, shallowRef, watch } from 'vue'
 import { trackKey, type Track } from '@/lib/music'
 
-const props = defineProps<{ tracks: Track[]; scrollRoot?: HTMLElement }>()
+const props = defineProps<{ tracks: Track[]; scrollRoot?: HTMLElement; followKey?: string }>()
 const emit = defineEmits<{ rangeChange: [] }>()
 const list = shallowRef<HTMLOListElement>()
 const heights = shallowReactive(new Map<string, number>())
@@ -46,6 +46,28 @@ function scrolled() {
   if (frame) cancelAnimationFrame(frame)
   refresh()
 }
+watch([() => props.followKey, list, () => props.scrollRoot], async ([key, target, root]) => {
+  await nextTick()
+  if (!key || !target || !root || !root.clientHeight || destroyed || key !== props.followKey || root !== props.scrollRoot) return
+  const index = props.tracks.findIndex(track => trackKey(track) === key)
+  if (index < 0) return
+  const rootTop = root.getBoundingClientRect().top + root.clientTop
+  const padding = Number.parseFloat(getComputedStyle(target).paddingTop) || 0
+  const top = target.getBoundingClientRect().top + target.clientTop + padding + offsets.value[index]! - rootTop
+  const height = offsets.value[index + 1]! - offsets.value[index]!
+  if (top >= 0 && top + height <= root.clientHeight) return
+  root.scrollTop = Math.max(0, root.scrollTop + top - (root.clientHeight - height) / 2)
+  scrolled()
+  await nextTick()
+  if (destroyed || key !== props.followKey || props.scrollRoot !== root || !props.tracks[index] || trackKey(props.tracks[index]!) !== key) return
+  const row = [...target.children].filter(element => !element.hasAttribute('data-music-spacer'))[index - range.value.start]
+  if (!row) return
+  const bounds = row.getBoundingClientRect(), visibleTop = root.getBoundingClientRect().top + root.clientTop
+  if (bounds.top < visibleTop || bounds.bottom > visibleTop + root.clientHeight) {
+    root.scrollTop += bounds.top - visibleTop - (root.clientHeight - bounds.height) / 2
+    scrolled()
+  }
+}, { immediate: true, flush: 'post' })
 async function observeRows() {
   await nextTick()
   if (destroyed || !list.value) return
