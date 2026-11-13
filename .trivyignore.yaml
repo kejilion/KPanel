@@ -1,6 +1,23 @@
 misconfigurations:
   - id: AVD-DS-0002
     paths:
+      - packaging/browser/tor.Dockerfile
+      - internal/browsercomponent/assets/tor.Dockerfile
+    expired_at: 2026-11-21
+    statement: >-
+      The optional Tor GUI base requires root initialization to create internal users and then starts
+      the browser as USER_ID/GROUP_ID 65532. A 2026-11-14 isolated probe with --user 65532:65532 exits
+      during 10-init-users.sh while changing /etc/shadow ownership; adding USER would break startup.
+      The exception covers only this root-init rule on these two identical recipes, not package
+      vulnerabilities, secrets, other rules or other images. The shipped compose keeps a read-only
+      rootfs, bounded tmpfs/resources, no-new-privileges, cap_drop ALL with explicit init capabilities,
+      no host mounts or Docker socket, no published ports and a private Panel control network.
+      Firefox runs as UID 65532 with zero effective capabilities; root init/supervisor processes remain
+      and this is not a fully rootless-container or Firefox content-sandbox guarantee. Browser component
+      maintainers must re-evaluate by 2026-11-21. Remove the exception when a qualified rootless base
+      passes native-desktop and lifecycle validation, or the privileged initialization is eliminated.
+  - id: AVD-DS-0002
+    paths:
       - packaging/release-runner/Dockerfile
     expired_at: 2026-12-21
     statement: >-
