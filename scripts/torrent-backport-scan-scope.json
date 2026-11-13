@@ -13,7 +13,7 @@
     "Makefile": "f651d8ce2f10adc487118e1ccb476615347661922a8c8ef529f1b8013da5d53e"
   },
   "closureSha256": "ae9744959d31622e95bfbbdc0d40e503e4d97704a3ce7c6eb23cfced25edbefa",
-  "firstPartySourceSha256": "a91de5c61237171eede4681857bbb825bae31d9a31c0b04fdae46f8342414831",
+  "firstPartySourceSha256": "6572dd416e031dfcd82893284053f61a037f48c10851b6f408c7227138922189",
   "buildTargetHashEncoding": "UTF-8 with LF line endings",
   "closureEncoding": "SHA256 of JSON.stringify of ordered OS/architecture rows; packages sorted by import path; path, module and selected version; stdlib go1.27.4; main-module packages additionally bind relative sourceDirectory and sorted actual GoFiles.",
   "firstPartySourceEncoding": "SHA256 of JSON.stringify of all cmd/internal Go source path and SHA256 pairs sorted by relative path; contents normalized to UTF-8 LF. All actual main-module production GoFiles must be covered. Generated .pb.go and .proto files or symlinks require a new review.",
@@ -593,5 +593,6 @@
   "rc130Rc14IdentitySummary": "RC14 first-party source identity rebind at dd00efd119be8901ab41bf5feaafc42ca6fb8e54: canonical firstPartySources observes 1,316 Go/proto files. Module manifests, selected graph and build-target hashes remain unchanged; no Go source paths or production imports were added, and the production change is confined to an existing package file plus the version literal. Local Go 1.27.4 inventory was unavailable, so the prior six-target closure is retained by structural review only. Exact-candidate CI and Release L3 must recompute all six closures and scanners; this receipt does not assert scan or release success.",
   "rc130Rc14IdentityEvidenceSha256": "e84e107a1b19da2fec7c2c5bda171b5d3f0ee2c5b039ef62a310d8a56a074ffd",
   "rc130Stable130IdentitySummary": "Stable v1.30.0 release-version rebind: canonical firstPartySources observes 1,316 Go/proto files; the only changed Go file is internal/version/version.go and only its Version literal changes from 1.30.0-rc.14-dev to 1.30.0-dev. Source paths, imports, dependency manifests and build-target inputs are unchanged. Local Go 1.27.4 inventory was unavailable; exact-candidate CI and GitHub-hosted stable L3 must recompute all six production closures and scanners. This source-identity receipt is not a scan, CI, L3, release or deployment result.",
-  "rc130Stable130IdentityEvidenceSha256": "be6a9239c58acd96cb2d813c9a534d9565055c134601f2212a2ade352abd0f3c"
+  "rc130Stable130IdentityEvidenceSha256": "be6a9239c58acd96cb2d813c9a534d9565055c134601f2212a2ade352abd0f3c",
+  "rc1301Rc1IdentitySummary": "Release candidate rebind over 1316 first-party Go files: relative to approved main only internal/version/version.go changes its version literal to 1.30.1-rc.1-dev. Music changes are frontend-only; dependency graph, Go filenames, build targets, closure observations and existing findings/dates are retained. Exact-candidate CI/L3 remains required."
 }
