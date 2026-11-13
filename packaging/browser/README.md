@@ -18,6 +18,10 @@ Docker 构建上下文只允许配方、启动脚本、安装包、签名和公�
 `tor-compose.yml` 不发布端口、不挂载宿主数据或 Docker Socket；浏览器进程 UID/GID 65532，根文件系统只读。
 内存 1536 MiB、CPU 1.5、PID 512，临时配置 512 MiB、临时目录 256 MiB、共享内存 256 MiB，日志 2×5 MiB。
 GUI 初始化保留所需的 CHOWN/SETUID/SETGID/FOWNER/DAC_OVERRIDE/KILL/NET_BIND_SERVICE；不使用 privileged、host network 或无沙箱参数。
+GUI 基座先以 root 初始化内部用户，再以 UID/GID 65532 启动浏览器；root 初始化/监督进程仍存在，不能将它称为完全 rootless 容器。
+2026-11-14 的受限启动实测中，直接强制 `--user 65532:65532` 会在 `10-init-users.sh` 的 `/etc/shadow` 所有权调整处失败；正常方式的 GUI 返回 200，Firefox 有效 capability 为零。
+Trivy `AVD-DS-0002` 因此只对两份相同 Tor Dockerfile 有路径限定的临时例外，2026-11-21 到期；其他漏洞、秘密及配置规则继续扫描。
+浏览器组件维护者须在到期前复核；经过原生桌面与生命周期验证的 rootless 基座可用，或初始化特权被移除时，删除该例外。
 Tor 的连接/网桥设置在原生界面内完成，容器健康和画面可用不等于 Tor 已连接。
 发行版兼容、ARM64、公开产物及生产验收仍须单独完成；本地原型证据不能替代发布门禁。
 
