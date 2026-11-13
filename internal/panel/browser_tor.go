@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"regexp"
+	"strings"
 )
 
 var torBrowserSessionPath = regexp.MustCompile(`^/v1/sessions/[a-f0-9]{64}/vnc$`)
@@ -21,5 +22,5 @@ func torBrowserRequest(ctx context.Context, serviceURL, path string) (*http.Requ
 	default:
 		return nil, errors.New("browser_incompatible")
 	}
-	return http.NewRequestWithContext(ctx, http.MethodGet, serviceURL+path, nil)
+	return http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(serviceURL, "/")+path, nil)
 }

@@ -329,10 +329,14 @@ func (s *Service) PrepareRuntime() error {
 		}
 		return nil
 	}
-	if err != nil || (string(marker) != "enabled" && string(marker) != "tor") {
+	if err != nil || !validEnabledMarker(marker) {
 		return errors.New("invalid browser enabled state")
 	}
 	return s.publishEnabled(string(marker))
+}
+
+func validEnabledMarker(marker []byte) bool {
+	return string(marker) == "enabled" || string(marker) == "tor"
 }
 
 func (s *Service) publishEnabled(marker string) error {

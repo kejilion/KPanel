@@ -47,7 +47,7 @@ func (s *Service) reconcileNetwork(ctx context.Context) error {
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
-	if err != nil || string(marker) != "enabled" {
+	if err != nil || !validEnabledMarker(marker) {
 		return errors.New("invalid browser enabled state")
 	}
 	unlock, err := lockDirectory(s.config.StateDir, "worker.lock")
@@ -60,7 +60,7 @@ func (s *Service) reconcileNetwork(ctx context.Context) error {
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
-	if err != nil || string(marker) != "enabled" {
+	if err != nil || !validEnabledMarker(marker) {
 		return errors.New("invalid browser enabled state")
 	}
 	v, err := s.snapshot(ctx)

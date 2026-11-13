@@ -84,3 +84,38 @@ func TestTorFailedBuildDoesNotEnableConnection(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestTorReconcilerRestoresRecreatedPanelAndStopsAfterUninstall(t *testing.T) {
+	s, f := fixture(t)
+	ctx := context.Background()
+	if err := s.PrepareRuntime(); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.enableDefaultConnection("tor"); err != nil {
+		t.Fatal(err)
+	}
+	f.installed = true
+	f.running = true
+	f.kind = "tor"
+	if err := s.reconcileNetwork(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(f.calls, "\n"), "network connect "+controlNetwork+" panel-id") {
+		t.Fatal(f.calls)
+	}
+	v, _ := s.Snapshot(ctx)
+	j, err := s.Start(ctx, contract.BrowserComponentRequest{Action: "uninstall", ExpectedResourceVersion: v.ResourceVersion})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.RunJob(ctx, j.ID); err != nil {
+		t.Fatal(err)
+	}
+	f.calls = nil
+	if err = s.reconcileNetwork(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.calls) != 0 {
+		t.Fatal("reconnected after uninstall", f.calls)
+	}
+}

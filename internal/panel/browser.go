@@ -21,20 +21,33 @@ import (
 var browserWorkspacePattern = regexp.MustCompile(`^[a-f0-9]{32}$`)
 
 func (s *Server) browserServiceRequest(ctx context.Context, path string) (*http.Request, error) {
+	return s.browserServiceRequestWithMarker(ctx, path, func() ([]byte, error) {
+		file, err := os.Open("/run/kejilion-panel/browser/browser-enabled")
+		if err != nil {
+			return nil, err
+		}
+		defer file.Close()
+		return io.ReadAll(io.LimitReader(file, 8))
+	})
+}
+
+func (s *Server) browserServiceRequestWithMarker(ctx context.Context, path string, readMarker func() ([]byte, error)) (*http.Request, error) {
 	serviceURL, tokenFile := s.config.BrowserServiceURL, s.config.BrowserTokenFile
 	implicit := serviceURL == "" && tokenFile == ""
 	tor := false
-	if implicit {
-		markerFile, err := os.Open("/run/kejilion-panel/browser/browser-enabled")
-		if err != nil {
+	managed := implicit || (strings.TrimRight(serviceURL, "/") == "http://browser:8092" && tokenFile == "/run/kejilion-panel/browser/browser-token")
+	if managed {
+		marker, err := readMarker()
+		// Legacy explicit Chromium deployments did not need an enabled marker.
+		if err != nil && !(errors.Is(err, os.ErrNotExist) && !implicit) {
 			return nil, errors.New("browser_unconfigured")
 		}
-		marker, err := io.ReadAll(io.LimitReader(markerFile, 8))
-		_ = markerFile.Close()
-		if err != nil || (string(marker) != "enabled" && string(marker) != "tor") {
+		if err == nil && string(marker) != "enabled" && string(marker) != "tor" {
 			return nil, errors.New("browser_unconfigured")
 		}
-		serviceURL, tokenFile = "http://browser:8092", "/run/kejilion-panel/browser/browser-token"
+		if implicit {
+			serviceURL, tokenFile = "http://browser:8092", "/run/kejilion-panel/browser/browser-token"
+		}
 		tor = string(marker) == "tor"
 	}
 	if tor {
