@@ -23,7 +23,7 @@ function tracks(count: number): Track[] {
 async function setup() {
   const root = document.createElement('div'); document.body.append(root)
   Object.defineProperty(root, 'clientHeight', { value: 300, configurable: true })
-  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
     return { top: this === root ? 0 : -root.scrollTop, left: 0, width: 800, height: 300 } as DOMRect
   })
   const wrapper = mount(MusicTrackList, { attachTo: root, props: { tracks: tracks(500), scrollRoot: root },
@@ -54,7 +54,7 @@ it('uses measured row heights, responds to resize and keeps filtered results rea
   expect(root.scrollTop).toBe(1604)
   const previous = wrapper.findAll('[data-index]').length
   Object.defineProperty(root, 'clientHeight', { value: 900, configurable: true })
-  callback([{ target: root } as ResizeObserverEntry], {} as ResizeObserver)
+  callback([{ target: root } as unknown as ResizeObserverEntry], {} as ResizeObserver)
   await vi.waitFor(() => expect(wrapper.findAll('[data-index]').length).toBeGreaterThan(previous))
   await wrapper.setProps({ tracks: tracks(1) })
   expect(wrapper.findAll('[data-index]')).toHaveLength(1)
