@@ -3,6 +3,7 @@ import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, shallowRef
 import { mediaLocations, setMediaLocation } from '@/lib/mediaLocations'
 import { useRoute, useRouter } from 'vue-router'
 import { Music2, Play, Pause, SkipBack, SkipForward, FolderOpen, Plus, RefreshCw, Download, X, Shuffle, Repeat, Repeat1, ListMusic, ArrowUp, ArrowDown, Volume2, VolumeX, Search, Disc3, ChevronRight, ListPlus, Gem } from '@lucide/vue'
+import MusicTrackList from '@/components/music/MusicTrackList.vue'
 import HostSwitcher from '@/components/common/HostSwitcher.vue'
 import { api } from '@/lib/api'
 import { fileAPIForHost } from '@/lib/fileHostContext'
@@ -57,8 +58,8 @@ watch([allTracks, sort], ([available, order]) => {
   orderedTracks.value = rows.map(row => row.track)
 }, { immediate: true })
 const folders = computed(() => entries.value.filter(e => e.kind === 'directory' && !e.name.startsWith('.')))
-const volumeOpen = ref(false), titleExpanded = ref(false), musicRoot = ref<HTMLElement>()
-const quality = useMusicQuality(musicRoot, () => [...tracks.value, ...state.queue, ...(state.current ? [state.current] : [])], () => tab.value)
+const volumeOpen = ref(false), titleExpanded = ref(false), musicRoot = ref<HTMLElement>(), musicContent = ref<HTMLElement>(), qualityRevision = ref(0)
+const quality = useMusicQuality(musicRoot, () => [...tracks.value, ...state.queue, ...(state.current ? [state.current] : [])], () => [tab.value, qualityRevision.value])
 function bitrate(track: Track) { const info = quality(track); return info?.bitrate ? info.bitrate + ' kbps' + (info.vbr ? ' VBR' : '') : '' }
 function qualityTitle(track: Track) {
   const info = quality(track)
@@ -144,15 +145,6 @@ function choose(track: Track) { if (!state.queue.length) player.replaceQueue(tra
 function seek(event: Event) { player.seek(Number((event.target as HTMLInputElement).value)) }
 function volume(event: Event) { player.setVolume(Number((event.target as HTMLInputElement).value)) }
 function artwork(track: Track) { return (isCurrent(track) && player.cover.value) || (track.cover ? fileAPIForHost(track.hostId).contentUrl(track.cover) : '') }
-function trackRowInputs(track: Track, index: number) {
-  const active = isCurrent(track)
-  return [track, track.entry, index, peekMusicInfo(track), quality(track), phraseCatalogVersion.value, active,
-    active && state.current?.title, active && state.current?.artist, active && player.cover.value,
-    active && state.playing, active && state.waiting, active && visible.value]
-}
-function queueRowInputs(track: Track, index: number) {
-  return [...trackRowInputs(track, index), state.queue.length, fileHostLabel(track.hostId, hosts.value, phrase('本机'))]
-}
 function keyboard(event: KeyboardEvent) {
   if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return
   const target = event.target as HTMLElement
@@ -206,7 +198,7 @@ onBeforeUnmount(() => { destroyed = true; listing?.abort(); lyricResize?.disconn
 
 <template>
   <main ref="musicRoot" class="page music-page" :class="{ 'music-page--focus': tab === 'listen' }" tabindex="0" @keydown="keyboard">
-    <div class="music-content" @scroll.passive="followLyrics">
+    <div ref="musicContent" class="music-content" @scroll.passive="followLyrics">
     <header v-if="!windowed" class="music-header">
       <div class="music-brand"><img :src="'/desktop-icons/music-kpanel-flat-v2.webp'" alt="" /><div><h1>音乐</h1><p>把日常，交给一首好歌</p></div></div>
     </header>
@@ -225,7 +217,7 @@ onBeforeUnmount(() => { destroyed = true; listing?.abort(); lyricResize?.disconn
             <p v-if="truncated" role="status">仅显示部分文件，请进入子文件夹继续浏览。</p>
             <div v-if="folders.length && !search" class="music-folders"><button v-for="folder in folders" :key="folder.path" @click="navigate(folder.path)"><span><Disc3 :size="25" /></span><strong>{{ folder.name }}</strong><ChevronRight :size="16" /></button></div>
             <div v-if="!tracks.length" class="music-empty"><Disc3 :size="48" /><h2>{{ search ? phrase('没有匹配的歌曲') : phrase('让音乐住进这里') }}</h2><p>{{ search ? phrase('试试其他歌名或歌手') : phrase('选择音乐文件夹，或通过文件管理上传歌曲。') }}</p><button v-if="search" class="button button--secondary" @click="search = ''">清除搜索</button><button v-else class="button button--secondary" @click="focusLocation">选择文件夹</button></div>
-             <ol class="music-tracks" :class="{ 'music-tracks--filtered': Boolean(search) }" :aria-label="phrase('歌曲列表')"><li v-for="(track, index) in tracks" :key="trackKey(track)" v-memo="trackRowInputs(track, index)" :class="{ active: isCurrent(track) }">
+             <MusicTrackList :tracks="tracks" :scroll-root="musicContent" v-slot="{ track, index }" @range-change="qualityRevision++" class="music-tracks" :class="{ 'music-tracks--filtered': Boolean(search) }" :aria-label="phrase('歌曲列表')"><li :key="trackKey(track)" :aria-posinset="index + 1" :aria-setsize="tracks.length" :class="{ active: isCurrent(track) }">
               <button class="music-track" :aria-label="`${phrase('播放')} ${trackTitle(track)}`" :aria-description="trackArtist(track) || phrase('未知歌手')" @click="choose(track)">
                 <span class="music-track__number"><span v-if="isCurrent(track) && state.playing" class="music-wave" :class="{ 'is-playing': !state.waiting && visible }" aria-hidden="true"><i></i><i></i><i></i></span><Play v-else-if="isCurrent(track)" :size="16" /><template v-else>{{ String(index + 1).padStart(2, '0') }}</template></span>
                 <span class="music-track__art"><img v-if="artwork(track)" :key="artwork(track)" :src="artwork(track)" alt="" loading="lazy" @error="($event.target as HTMLImageElement).hidden = true" /><Music2 v-else :size="21" /></span>
@@ -240,14 +232,14 @@ onBeforeUnmount(() => { destroyed = true; listing?.abort(); lyricResize?.disconn
                 </span>
               </button>
               <button class="music-icon-button music-next" :aria-label="`${phrase('下一首播放')} ${trackTitle(track)}`" :title="phrase('下一首播放')" @click="player.enqueue(track, true)"><ListPlus :size="18" /></button><button class="music-icon-button" :aria-label="`${phrase('加入播放队列')} ${trackTitle(track)}`" :title="phrase('加入播放队列')" @click="player.enqueue(track)"><Plus :size="18" /></button>
-            </li></ol>
+            </li></MusicTrackList>
           </template>
         </template>
         <template v-else>
           <div class="music-section-heading"><div><span class="music-eyebrow">接下来听什么</span><h2>播放队列</h2></div><button class="button button--secondary" :disabled="!state.queue.length" @click="player.clearQueue">清空待播</button></div>
           <p class="music-caption">跨主机歌曲可以放在同一队列。移除歌曲不会打断当前播放。</p>
           <div v-if="!state.queue.length" class="music-empty"><ListMusic :size="44" /><h2>队列还是空的</h2><button class="button button--secondary" @click="tab = 'library'">去音乐库选歌</button></div>
-          <ol class="music-queue"><li v-for="(track, index) in state.queue" :key="trackKey(track)" v-memo="queueRowInputs(track, index)" :class="{ active: isCurrent(track) }"><button class="music-track" :data-music-quality="musicQualityKey(track)" :aria-label="`${phrase('播放')} ${trackTitle(track)}`" @click="player.choose(track)"><span class="music-track__number">{{ index + 1 }}</span><span class="music-track__art"><img v-if="artwork(track)" :key="artwork(track)" :src="artwork(track)" alt="" loading="lazy" @error="($event.target as HTMLImageElement).hidden = true" /><Music2 v-else :size="21" /></span><span class="music-track__name"><strong>{{ trackTitle(track) }}</strong><span>{{ trackArtist(track) || phrase('未知歌手') }} · {{ fileHostLabel(track.hostId, hosts, phrase('本机')) }}</span></span><Play v-if="isCurrent(track)" :size="16" /></button><button class="music-icon-button" :disabled="index === 0" :aria-label="`${phrase('上移')} ${trackTitle(track)}`" @click="player.move(track, -1)"><ArrowUp :size="16" /></button><button class="music-icon-button" :disabled="index === state.queue.length - 1" :aria-label="`${phrase('下移')} ${trackTitle(track)}`" @click="player.move(track, 1)"><ArrowDown :size="16" /></button><button class="music-icon-button" :aria-label="`${phrase('移出队列')} ${trackTitle(track)}`" @click="player.remove(track)"><X :size="17" /></button></li></ol>
+          <MusicTrackList :tracks="state.queue" :scroll-root="musicContent" v-slot="{ track, index }" @range-change="qualityRevision++" class="music-queue"><li :key="trackKey(track)" :aria-posinset="index + 1" :aria-setsize="state.queue.length" :class="{ active: isCurrent(track) }"><button class="music-track" :data-music-quality="musicQualityKey(track)" :aria-label="`${phrase('播放')} ${trackTitle(track)}`" @click="player.choose(track)"><span class="music-track__number">{{ index + 1 }}</span><span class="music-track__art"><img v-if="artwork(track)" :key="artwork(track)" :src="artwork(track)" alt="" loading="lazy" @error="($event.target as HTMLImageElement).hidden = true" /><Music2 v-else :size="21" /></span><span class="music-track__name"><strong>{{ trackTitle(track) }}</strong><span>{{ trackArtist(track) || phrase('未知歌手') }} · {{ fileHostLabel(track.hostId, hosts, phrase('本机')) }}</span></span><Play v-if="isCurrent(track)" :size="16" /></button><button class="music-icon-button" :disabled="index === 0" :aria-label="`${phrase('上移')} ${trackTitle(track)}`" @click="player.move(track, -1)"><ArrowUp :size="16" /></button><button class="music-icon-button" :disabled="index === state.queue.length - 1" :aria-label="`${phrase('下移')} ${trackTitle(track)}`" @click="player.move(track, 1)"><ArrowDown :size="16" /></button><button class="music-icon-button" :aria-label="`${phrase('移出队列')} ${trackTitle(track)}`" @click="player.remove(track)"><X :size="17" /></button></li></MusicTrackList>
         </template>
       </section>
       <aside class="music-now" :class="{ 'music-now--mobile-hidden': tab !== 'listen' }">
@@ -398,13 +390,6 @@ input[type=range] { accent-color:var(--music-accent); cursor:pointer; min-height
 .music-lossless { display:inline-flex; align-items:center; gap:3px; border:1px solid var(--brand); border-radius:var(--radius-sm); padding:2px 5px; color:var(--brand-strong); background:var(--brand-soft); font-size:12px; font-weight:600; white-space:nowrap; }
 /* A browser must not anchor to text that can move within an otherwise stable row. */
 .music-tracks { overflow-anchor:none; }
-/* Skip offscreen row layout/paint while retaining native search, focus and list semantics. */
-.music-tracks > li,.music-queue > li {
-  content-visibility:auto;
-  contain-intrinsic-block-size:auto 4.75rem;
-}
-/* Async tag matches can add rows above the viewport; anchor filtered results to a stable row. */
-.music-tracks--filtered { overflow-anchor:auto; }
 /* Keep two compact text lines stable while tags and quality arrive. */
 .music-tracks .music-track__name strong {
   display:block; line-height:1.35; block-size:1lh;

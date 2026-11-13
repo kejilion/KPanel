@@ -1,0 +1,62 @@
+// @vitest-environment jsdom
+import { flushPromises, mount } from '@vue/test-utils'
+import { h } from 'vue'
+import { afterEach, expect, it, vi } from 'vitest'
+import MusicTrackList from './MusicTrackList.vue'
+import type { Track } from '@/lib/music'
+
+let callback: ResizeObserverCallback
+const disconnect = vi.fn()
+vi.stubGlobal('ResizeObserver', class {
+  constructor(value: ResizeObserverCallback) { callback = value }
+  observe() {}
+  disconnect = disconnect
+})
+const mounted: ReturnType<typeof mount>[] = []
+afterEach(() => { mounted.splice(0).forEach(wrapper => wrapper.unmount()); document.body.replaceChildren(); vi.restoreAllMocks() })
+function tracks(count: number): Track[] {
+  return Array.from({ length: count }, (_, index) => ({ hostId: '', title: `Song ${index}`, artist: '', entry: {
+    name: `${index}.mp3`, path: `/music/${index}.mp3`, kind: 'file', sizeBytes: 100, resourceVersion: '1',
+    mode: '', owner: '', group: '', modifiedAt: '', editable: false, previewable: true,
+  } }))
+}
+async function setup() {
+  const root = document.createElement('div'); document.body.append(root)
+  Object.defineProperty(root, 'clientHeight', { value: 300, configurable: true })
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+    return { top: this === root ? 0 : -root.scrollTop, left: 0, width: 800, height: 300 } as DOMRect
+  })
+  const wrapper = mount(MusicTrackList, { attachTo: root, props: { tracks: tracks(500), scrollRoot: root },
+    slots: { default: ({ track, index }: { track: Track; index: number }) => h('li', { 'data-index': index }, track.title) } })
+  mounted.push(wrapper)
+  await flushPromises()
+  await vi.waitFor(() => expect(wrapper.findAll('[data-index]').length).toBeLessThan(20))
+  return { root, wrapper }
+}
+it('mounts a bounded window and reaches the last song without mounting the whole library', async () => {
+  const { root, wrapper } = await setup()
+  expect(wrapper.find('[data-index="0"]').exists()).toBe(true)
+  expect(wrapper.find('[data-index="499"]').exists()).toBe(false)
+  root.scrollTop = 76 * 490; root.dispatchEvent(new Event('scroll'))
+  await vi.waitFor(() => expect(wrapper.find('[data-index="499"]').exists()).toBe(true))
+  expect(wrapper.findAll('[data-index]').length).toBeLessThan(30)
+  expect(wrapper.get('[data-music-spacer]').attributes('aria-hidden')).toBe('true')
+  expect(wrapper.emitted('rangeChange')!.length).toBeGreaterThan(1)
+})
+it('uses measured row heights, responds to resize and keeps filtered results reachable', async () => {
+  const { root, wrapper } = await setup()
+  callback([0, 1].map((index) => ({ target: wrapper.get(`[data-index="${index}"]`).element,
+    borderBoxSize: [{ blockSize: index === 0 ? 100 : 200 }] } as unknown as ResizeObserverEntry)), {} as ResizeObserver)
+  await flushPromises()
+  root.scrollTop = 1600; root.dispatchEvent(new Event('scroll'))
+  await vi.waitFor(() => expect(wrapper.findAll('[data-index]')[0]!.attributes('data-index')).toBe('13'))
+  callback([{ target: wrapper.get('[data-index="13"]').element, borderBoxSize: [{ blockSize: 80 }] } as unknown as ResizeObserverEntry], {} as ResizeObserver)
+  expect(root.scrollTop).toBe(1604)
+  const previous = wrapper.findAll('[data-index]').length
+  Object.defineProperty(root, 'clientHeight', { value: 900, configurable: true })
+  callback([{ target: root } as ResizeObserverEntry], {} as ResizeObserver)
+  await vi.waitFor(() => expect(wrapper.findAll('[data-index]').length).toBeGreaterThan(previous))
+  await wrapper.setProps({ tracks: tracks(1) })
+  expect(wrapper.findAll('[data-index]')).toHaveLength(1)
+  expect(wrapper.get('[data-index]').text()).toBe('Song 0')
+})
