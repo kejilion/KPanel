@@ -150,6 +150,9 @@ function trackRowInputs(track: Track, index: number) {
     active && state.current?.title, active && state.current?.artist, active && player.cover.value,
     active && state.playing, active && state.waiting, active && visible.value]
 }
+function queueRowInputs(track: Track, index: number) {
+  return [...trackRowInputs(track, index), state.queue.length, fileHostLabel(track.hostId, hosts.value, phrase('本机'))]
+}
 function keyboard(event: KeyboardEvent) {
   if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return
   const target = event.target as HTMLElement
@@ -244,7 +247,7 @@ onBeforeUnmount(() => { destroyed = true; listing?.abort(); lyricResize?.disconn
           <div class="music-section-heading"><div><span class="music-eyebrow">接下来听什么</span><h2>播放队列</h2></div><button class="button button--secondary" :disabled="!state.queue.length" @click="player.clearQueue">清空待播</button></div>
           <p class="music-caption">跨主机歌曲可以放在同一队列。移除歌曲不会打断当前播放。</p>
           <div v-if="!state.queue.length" class="music-empty"><ListMusic :size="44" /><h2>队列还是空的</h2><button class="button button--secondary" @click="tab = 'library'">去音乐库选歌</button></div>
-          <ol class="music-queue"><li v-for="(track, index) in state.queue" :key="trackKey(track)" :class="{ active: isCurrent(track) }"><button class="music-track" :data-music-quality="musicQualityKey(track)" :aria-label="`${phrase('播放')} ${trackTitle(track)}`" @click="player.choose(track)"><span class="music-track__number">{{ index + 1 }}</span><span class="music-track__art"><img v-if="artwork(track)" :key="artwork(track)" :src="artwork(track)" alt="" loading="lazy" @error="($event.target as HTMLImageElement).hidden = true" /><Music2 v-else :size="21" /></span><span class="music-track__name"><strong>{{ trackTitle(track) }}</strong><span>{{ trackArtist(track) || phrase('未知歌手') }} · {{ fileHostLabel(track.hostId, hosts, phrase('本机')) }}</span></span><Play v-if="isCurrent(track)" :size="16" /></button><button class="music-icon-button" :disabled="index === 0" :aria-label="`${phrase('上移')} ${trackTitle(track)}`" @click="player.move(track, -1)"><ArrowUp :size="16" /></button><button class="music-icon-button" :disabled="index === state.queue.length - 1" :aria-label="`${phrase('下移')} ${trackTitle(track)}`" @click="player.move(track, 1)"><ArrowDown :size="16" /></button><button class="music-icon-button" :aria-label="`${phrase('移出队列')} ${trackTitle(track)}`" @click="player.remove(track)"><X :size="17" /></button></li></ol>
+          <ol class="music-queue"><li v-for="(track, index) in state.queue" :key="trackKey(track)" v-memo="queueRowInputs(track, index)" :class="{ active: isCurrent(track) }"><button class="music-track" :data-music-quality="musicQualityKey(track)" :aria-label="`${phrase('播放')} ${trackTitle(track)}`" @click="player.choose(track)"><span class="music-track__number">{{ index + 1 }}</span><span class="music-track__art"><img v-if="artwork(track)" :key="artwork(track)" :src="artwork(track)" alt="" loading="lazy" @error="($event.target as HTMLImageElement).hidden = true" /><Music2 v-else :size="21" /></span><span class="music-track__name"><strong>{{ trackTitle(track) }}</strong><span>{{ trackArtist(track) || phrase('未知歌手') }} · {{ fileHostLabel(track.hostId, hosts, phrase('本机')) }}</span></span><Play v-if="isCurrent(track)" :size="16" /></button><button class="music-icon-button" :disabled="index === 0" :aria-label="`${phrase('上移')} ${trackTitle(track)}`" @click="player.move(track, -1)"><ArrowUp :size="16" /></button><button class="music-icon-button" :disabled="index === state.queue.length - 1" :aria-label="`${phrase('下移')} ${trackTitle(track)}`" @click="player.move(track, 1)"><ArrowDown :size="16" /></button><button class="music-icon-button" :aria-label="`${phrase('移出队列')} ${trackTitle(track)}`" @click="player.remove(track)"><X :size="17" /></button></li></ol>
         </template>
       </section>
       <aside class="music-now" :class="{ 'music-now--mobile-hidden': tab !== 'listen' }">
@@ -395,6 +398,11 @@ input[type=range] { accent-color:var(--music-accent); cursor:pointer; min-height
 .music-lossless { display:inline-flex; align-items:center; gap:3px; border:1px solid var(--brand); border-radius:var(--radius-sm); padding:2px 5px; color:var(--brand-strong); background:var(--brand-soft); font-size:12px; font-weight:600; white-space:nowrap; }
 /* A browser must not anchor to text that can move within an otherwise stable row. */
 .music-tracks { overflow-anchor:none; }
+/* Skip offscreen row layout/paint while retaining native search, focus and list semantics. */
+.music-tracks > li,.music-queue > li {
+  content-visibility:auto;
+  contain-intrinsic-block-size:auto 4.75rem;
+}
 /* Async tag matches can add rows above the viewport; anchor filtered results to a stable row. */
 .music-tracks--filtered { overflow-anchor:auto; }
 /* Keep two compact text lines stable while tags and quality arrive. */

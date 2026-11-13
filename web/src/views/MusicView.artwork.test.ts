@@ -76,6 +76,24 @@ it('shows current cover and parsed song information in the playback queue', asyn
   expect(rows[1]!.find('.music-track__art img').exists()).toBe(false)
 })
 
+it('refreshes queue controls after removing the last song and moving a song', async () => {
+  const { player, tracks, view } = await setup(['A.mp3', 'B.mp3', 'C.mp3'])
+  player.state.queue = tracks
+  await view.findAll('.music-tabs button')[2]!.trigger('click'); await flushPromises()
+  const rows = () => view.findAll('.music-queue > li')
+  const down = (index: number) => rows()[index]!.get('button[aria-label^="下移"]')
+  expect(down(1).attributes('disabled')).toBeUndefined()
+  await rows()[2]!.get('button[aria-label^="移出队列"]').trigger('click')
+  await flushPromises()
+  expect(rows()).toHaveLength(2)
+  expect(down(1).attributes('disabled')).toBeDefined()
+  await rows()[1]!.get('button[aria-label^="上移"]').trigger('click')
+  await flushPromises()
+  expect(rows()[0]!.get('.music-track__name strong').text()).toBe('B')
+  expect(rows()[0]!.get('button[aria-label^="上移"]').attributes('disabled')).toBeDefined()
+  expect(down(0).attributes('disabled')).toBeUndefined()
+})
+
 it('shows bitrate and lossless quality in rows and cover provenance, with compact attribution beside the lyrics title', async () => {
   const { player, tracks, view } = await setup()
   player.state.current = tracks[0]
