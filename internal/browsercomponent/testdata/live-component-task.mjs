@@ -6,7 +6,8 @@ const ids = execFileSync('docker', ['container', 'ls', '-aq', '--filter', 'name=
 let identity = 'missing'
 if (ids) {
   const [value] = JSON.parse(execFileSync('docker', ['inspect', ids], { encoding: 'utf8' }))
-  identity = `${value.Id}:${value.Image}:${value.State.Status}:${value.RestartCount}`
+  const kind = value.Config?.Labels?.['io.kpanel.browser.kind'] === 'tor' ? 'tor' : 'chromium'
+  identity = `${value.Id}:${value.Image}:${value.State.Status}:${value.RestartCount}:${kind}`
 }
 const version = `sha256:${createHash('sha256').update(identity).digest('hex')}`
 if (action === 'result') {
