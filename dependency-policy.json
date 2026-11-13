@@ -210,9 +210,16 @@
       "id": "docker-base-images",
       "scope": "build-images-and-pinned-index-digests",
       "manifests": [
-        "Dockerfile"
+        "Dockerfile",
+        "packaging/browser/tor.Dockerfile"
       ],
       "detector": "dockerfile-base-images"
+    },
+    {
+      "id": "tor-browser-component",
+      "scope": "optional-browser-runtime-and-base-image",
+      "manifests": ["packaging/browser/tor.Dockerfile", "internal/browsercomponent/tor_download.go"],
+      "detector": "tor-release-index-and-docker-hub"
     },
     {
       "id": "dockerfile-frontend",

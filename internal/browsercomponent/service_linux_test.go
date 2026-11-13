@@ -15,6 +15,7 @@ import (
 )
 
 type fakeRunner struct {
+	kind                                           string
 	installed, running, failInstall, workerRunning bool
 	networkMissing                                 bool
 	unsafeNetwork                                  bool
@@ -64,6 +65,10 @@ func (f *fakeRunner) Run(_ context.Context, name string, args ...string) ([]byte
 		return []byte(`{"Running":true,"Health":{"Status":"healthy"}}`), nil
 	}
 	if strings.Contains(a, "inspect abcdef012345") {
+		image := componentImage
+		if f.kind == "tor" {
+			image = componentTorImage
+		}
 		state := "exited"
 		health := "unhealthy"
 		run := "false"
@@ -72,7 +77,7 @@ func (f *fakeRunner) Run(_ context.Context, name string, args ...string) ([]byte
 			health = "healthy"
 			run = "true"
 		}
-		return []byte(`[{"Id":"abcdef012345","Image":"sha256:fixed","RestartCount":0,"State":{"Running":` + run + `,"Status":"` + state + `","Health":{"Status":"` + health + `"}}}]`), nil
+		return []byte(`[{"Id":"abcdef012345","Image":"sha256:fixed","Config":{"Image":"` + image + `"},"RestartCount":0,"State":{"Running":` + run + `,"Status":"` + state + `","Health":{"Status":"` + health + `"}}}]`), nil
 	}
 	if strings.Contains(a, " up ") {
 		if f.failInstall {
@@ -80,6 +85,11 @@ func (f *fakeRunner) Run(_ context.Context, name string, args ...string) ([]byte
 		}
 		f.installed = true
 		f.running = true
+		data, _ := os.ReadFile(filepath.Join(f.runtimeParent, "state", "compose.yml"))
+		f.kind = "chromium"
+		if strings.Contains(string(data), componentTorImage) {
+			f.kind = "tor"
+		}
 	}
 	if strings.Contains(a, " stop ") {
 		f.running = false
@@ -100,7 +110,7 @@ func fixture(t *testing.T) (*Service, *fakeRunner) {
 	}
 	dir := t.TempDir()
 	f := &fakeRunner{runtimeParent: dir, project: "kejilion-panel", networkProject: "kejilion-panel"}
-	return New(Config{StateDir: filepath.Join(dir, "state"), RuntimeDir: filepath.Join(dir, "runtime"), Executable: "/usr/bin/kejilion-agent", Runner: f}), f
+	return New(Config{StateDir: filepath.Join(dir, "state"), RuntimeDir: filepath.Join(dir, "runtime"), Executable: "/usr/bin/kejilion-agent", Runner: f, DownloadTor: func(context.Context, string) error { return nil }}), f
 }
 
 func TestInstallCreatesMissingControlNetwork(t *testing.T) {
@@ -202,7 +212,7 @@ func TestReconcileRestoresRecreatedPanelOnlyWhileEnabled(t *testing.T) {
 	if err := s.PrepareRuntime(); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.enableDefaultConnection(); err != nil {
+	if err := s.enableDefaultConnection("chromium"); err != nil {
 		t.Fatal(err)
 	}
 	f.installed = true

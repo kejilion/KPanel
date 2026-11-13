@@ -4,13 +4,14 @@ import { LoaderCircle, RefreshCw } from '@lucide/vue'
 import ModalDialog from '@/components/common/ModalDialog.vue'
 import { api, ApiError } from '@/lib/api'
 import type { UserPreferences } from '@/types/api'
-import type { BrowserComponent, BrowserComponentAction } from '@/lib/webBrowser'
+import type { BrowserComponent, BrowserComponentAction, BrowserComponentKind } from '@/lib/webBrowser'
 import { useBrowserText } from '@/i18n/webBrowser'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: []; saved: [startURL: string]; changed: [action: BrowserComponentAction] }>()
 const t = useBrowserText()
 const component = ref<BrowserComponent>()
+const selectedKind = ref<BrowserComponentKind>('chromium')
 const loading = ref(false), submitting = ref(false), saving = ref(false)
 const startURL = ref(''), version = ref(''), error = ref(''), saved = ref(false)
 let storedStartURL = ''
@@ -35,6 +36,7 @@ async function refresh(initial = false): Promise<void> {
     const value = await api.browser.component(controller?.signal)
     if (current !== epoch) return
     component.value = value
+    if (value.installed) selectedKind.value = value.kind || 'chromium'
     const job = value.job
     if (initial && job && !['queued', 'running'].includes(job.state)) completedJob = job.id
     if (job?.state === 'succeeded' && completedJob !== job.id) {
@@ -92,7 +94,7 @@ async function run(action: BrowserComponentAction): Promise<void> {
   confirmAction.value = undefined; submitting.value = true; error.value = ''
   const current = epoch
   try {
-    const job = await api.browser.componentAction(action, component.value.resourceVersion)
+    const job = action === 'install' ? await api.browser.componentAction(action, component.value.resourceVersion, selectedKind.value) : await api.browser.componentAction(action, component.value.resourceVersion)
     if (current === epoch && component.value) { component.value.job = job; await refresh() }
   } catch { if (current === epoch) { error.value = t('serviceActionFailed'); await refresh() } }
   finally { if (current === epoch) submitting.value = false }
@@ -114,6 +116,13 @@ onBeforeUnmount(() => { epoch++; controller?.abort(); clearTimeout(timer) })
         <p v-if="loading" role="status"><LoaderCircle :size="16" />{{ t('checking') }}</p>
         <template v-else-if="component">
           <strong>{{ t(state) }}</strong>
+          <label for="browser-component-kind">{{ t('browserKind') }}</label>
+          <select id="browser-component-kind" v-model="selectedKind" :disabled="component.installed || busy || !component.supported">
+            <option value="chromium">Chromium</option>
+            <option value="tor" :disabled="!component.torSupported">Tor Browser</option>
+          </select>
+          <p>{{ t(component.installed ? 'switchKindHint' : selectedKind === 'tor' ? 'torInstallHint' : 'chooseKindHint') }}</p>
+          <p v-if="!component.torSupported">{{ t('torArchitecture') }}</p>
           <p v-if="!component.supported" role="status">{{ t(component.reason === 'panel_compose_upgrade_required' ? 'composeUpgradeRequired' : 'runtimeRequired') }}</p>
           <div v-else class="browser-settings__actions">
             <button v-if="!component.installed" class="button button--primary" :disabled="busy" @click="run('install')">{{ t('installEnable') }}</button>
@@ -136,7 +145,7 @@ onBeforeUnmount(() => { epoch++; controller?.abort(); clearTimeout(timer) })
           </div>
         </template>
       </section>
-      <form @submit.prevent="save">
+      <form v-if="selectedKind !== 'tor'" @submit.prevent="save">
         <h3>{{ t('home') }}</h3>
         <label for="browser-start-url">{{ t('startURLLabel') }}</label>
         <input id="browser-start-url" v-model="startURL" type="url" placeholder="https://example.com" maxlength="4096" :disabled="!version || saving" />
@@ -157,5 +166,6 @@ onBeforeUnmount(() => { epoch++; controller?.abort(); clearTimeout(timer) })
 .browser-settings .button{min-height:40px;font-size:14px}.browser-settings__heading .button{min-width:40px}
 .browser-settings form{border-top:1px solid var(--border);padding-top:1rem}.browser-settings label{display:block;margin:.6rem 0 .3rem}.browser-settings input{box-sizing:border-box;width:100%;min-width:0;min-height:44px;padding:.5rem .75rem;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font:inherit}
 .browser-settings__confirm,.browser-settings__job{padding:.75rem;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-subtle)}.browser-settings__error{color:var(--danger)!important}
-.browser-settings input:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.browser-settings select{width:100%;min-height:44px;padding:.5rem .75rem;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font:inherit}
+.browser-settings input:focus-visible,.browser-settings select:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
 </style>

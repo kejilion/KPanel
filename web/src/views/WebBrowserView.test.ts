@@ -34,6 +34,25 @@ class Socket {
   state(tabs: unknown[] = [], active = '') { this.onmessage?.({ data: JSON.stringify({ type: 'state', tabs, active }) }) }
 }
 describe('desktop remote browser', () => {
+  it('opens the complete Tor desktop through the authenticated VNC channel', async () => {
+    vi.mocked(api.browser.status).mockResolvedValue({ ready: true, kind: 'tor', maxTabs: 8 })
+    const visible = ref(true)
+    const wrapper = await render(visible)
+    expect(Socket.instances).toHaveLength(1)
+    const channel = Socket.instances[0]!
+    expect(String(channel.url)).toContain('/browser/vnc/')
+    channel.onopen?.()
+    expect(channel.sent).toEqual([{ csrf: 'test-csrf' }])
+    channel.onmessage?.({ data: JSON.stringify({ ready: true }) }); await flushPromises()
+    expect(vncClients).toHaveLength(1)
+    expect(vncClients[0]).toMatchObject({ viewOnly: false, resizeSession: false })
+    expect(wrapper.find('.web-browser__address').exists()).toBe(false)
+    visible.value = false; await flushPromises()
+    expect(channel.readyState).toBe(3)
+    visible.value = true; await flushPromises()
+    expect(Socket.instances).toHaveLength(2)
+    wrapper.unmount()
+  })
   beforeEach(() => {
     vi.mocked(api.preferences.get).mockResolvedValue({ resourceVersion: 'test-version' })
     Socket.instances = []; vncClients.length = 0

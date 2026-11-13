@@ -11,6 +11,22 @@ const snapshot = (patch: Partial<BrowserComponent> = {}): BrowserComponent => ({
 function render() { return mount(BrowserSettings, { props: { open: true }, global: { stubs: { ModalDialog: { props: ['open'], template: '<div v-if="open"><slot/><slot name="footer"/></div>' } } } }) }
 function button(wrapper: ReturnType<typeof render>, text: string) { const found = wrapper.findAll('button').find(b => b.text() === text); if (!found) throw new Error(text); return found }
 describe('browser settings lifecycle', () => {
+  it('chooses Tor at installation and locks the installed kind until uninstall', async () => {
+    vi.mocked(api.browser.component).mockResolvedValue(snapshot({ torSupported: true }))
+    const wrapper = render(); await flushPromises()
+    await wrapper.get('select').setValue('tor')
+    vi.mocked(api.browser.componentAction).mockResolvedValue({ id: 'tor-install', action: 'install', state: 'queued', stage: 'installing' })
+    await button(wrapper, '安装并启用').trigger('click'); await flushPromises()
+    expect(api.browser.componentAction).toHaveBeenCalledWith('install', version, 'tor')
+    wrapper.unmount()
+    vi.mocked(api.browser.component).mockResolvedValue(snapshot({ installed: true, kind: 'tor', torSupported: true }))
+    const installed = render(); await flushPromises()
+    expect(installed.get('select').attributes('disabled')).toBeDefined()
+    expect((installed.get('select').element as HTMLSelectElement).value).toBe('tor')
+    expect(installed.find('form').exists()).toBe(false)
+    expect(installed.text()).toContain('先卸载当前组件')
+    installed.unmount()
+  })
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(api.browser.component).mockResolvedValue(snapshot())
@@ -24,7 +40,7 @@ describe('browser settings lifecycle', () => {
     vi.mocked(api.browser.componentAction).mockResolvedValue(job)
     vi.mocked(api.browser.component).mockResolvedValue(snapshot({ job }))
     await button(wrapper, '安装并启用').trigger('click'); await flushPromises()
-    expect(api.browser.componentAction).toHaveBeenCalledWith('install', version)
+    expect(api.browser.componentAction).toHaveBeenCalledWith('install', version, 'chromium')
     expect(wrapper.text()).toContain('后台正在处理组件')
     vi.mocked(api.browser.component).mockResolvedValue(snapshot({ installed: true, running: true, healthy: true, job: { ...job, state: 'succeeded' } }))
     await vi.advanceTimersByTimeAsync(2000); await flushPromises()
@@ -50,7 +66,7 @@ describe('browser settings lifecycle', () => {
     vi.mocked(api.browser.componentAction).mockResolvedValue({ id: 'repair', action: 'install', state: 'queued', stage: 'network' })
     const wrapper = render(); await flushPromises()
     await button(wrapper, '修复连接').trigger('click'); await flushPromises()
-    expect(api.browser.componentAction).toHaveBeenCalledWith('install', version)
+    expect(api.browser.componentAction).toHaveBeenCalledWith('install', version, 'chromium')
     wrapper.unmount()
   })
   it('saves only the browser preference and rejects credential-bearing URLs', async () => {

@@ -6,6 +6,7 @@ import test from 'node:test';
 import {
   auditSkillRevisionCandidate,
   classifyUpdate,
+  collectTorBrowser,
   COLLECTORS,
   compareVersions,
   goExecutable,
@@ -25,6 +26,15 @@ import {
   summarize,
   validatePolicy,
 } from '../report-dependency-freshness.mjs';
+
+test('Tor runtime and its base image are both checked against primary sources', async () => {
+  const repo = resolve(import.meta.dirname, '../..');
+  const same = await collectTorBrowser(repo, async () => ({ version: '16.0.1' }), async () => ({ digest: 'sha256:e7c54da3446b4c65b6755bf00a874463c640a1f579f25bed99532051e81649ef' }));
+  assert.deepEqual(same, []);
+  const newer = await collectTorBrowser(repo, async () => ({ version: '16.0.2' }), async () => ({ digest: 'sha256:' + 'a'.repeat(64) }));
+  assert.equal(newer.length, 2);
+  await assert.rejects(collectTorBrowser(repo, async () => ({ version: '17.0a1' }), async () => ({ digest: 'sha256:' + 'a'.repeat(64) })), /stable/);
+});
 
 test('stable version filter excludes prereleases and floating labels', () => {
   assert.equal(isStableVersion('v1.2.3'), true);

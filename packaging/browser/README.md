@@ -1,5 +1,26 @@
 # KPanel Browser 镜像
 
+## Tor Browser 可选组件（本地候选）
+
+在浏览器设置中选择 Chromium 或 Tor Browser 后安装；已安装时锁定类型，先卸载后才能切换。
+Tor 首轮仅支持 Linux amd64，使用完整原生工具栏，不使用 Chromium/CDP，也不继承 Chromium 起始页设置。
+Panel 只转发经过管理员会话、Origin 和首帧 CSRF 验证的有界 RFB 二进制流，不在 Panel 同源下托管第三方 HTML/JavaScript。
+所有窗口共享一个 Tor 桌面；关闭窗口只断开画面，停止/卸载组件会丢失临时会话。
+
+Agent 从 Tor 官方固定 URL 流式下载 16.0.1，单文件上限 256 MiB，固定 SHA-256
+`5b36ad610c20c81faa72caf27d1cd3a11f14a327c320b4cec581400016ba78b0`；构建阶段再次检查摘要，
+用随候选保存的官方签名和公钥执行 `gpgv`，限定主密钥指纹
+`EF6E286DDA85EA2A4BA7DE684E2C6E8793298290`。2026-11-14 已核验安装包签名。
+`tor.Dockerfile` 固定 jlesage Ubuntu 24.04 GUI 基座摘要，运行时安装 Ubuntu 签名仓库的 GTK、字体与图形依赖；
+镜像在宿主机构建为 `kpanel-browser-tor:16.0.1`，不依赖尚未发布的 KPanel Tor 镜像。
+Docker 构建上下文只允许配方、启动脚本、安装包、签名和公钥，不包含 Agent 的 token/任务状态。
+
+`tor-compose.yml` 不发布端口、不挂载宿主数据或 Docker Socket；浏览器进程 UID/GID 65532，根文件系统只读。
+内存 1536 MiB、CPU 1.5、PID 512，临时配置 512 MiB、临时目录 256 MiB、共享内存 256 MiB，日志 2×5 MiB。
+GUI 初始化保留所需的 CHOWN/SETUID/SETGID/FOWNER/DAC_OVERRIDE/KILL/NET_BIND_SERVICE；不使用 privileged、host network 或无沙箱参数。
+Tor 的连接/网桥设置在原生界面内完成，容器健康和画面可用不等于 Tor 已连接。
+发行版兼容、ARM64、公开产物及生产验收仍须单独完成；本地原型证据不能替代发布门禁。
+
 可选独立组件：Alpine 3.24、官方仓库 Chromium、TigerVNC、Openbox、软件渲染组件、中文字体和 `kpanel-browser`。
 不包含桌面环境，不挂载 Docker Socket，不发布宿主机端口，不改变 KPanel 主镜像。
 `amd64` / `arm64` 分别原生构建、运行和扫描后，才允许发布对应版本。

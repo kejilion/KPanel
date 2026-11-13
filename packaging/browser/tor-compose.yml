@@ -1,0 +1,38 @@
+# Native Tor Browser desktop. Private control network; no published ports or host data mounts.
+services:
+  browser:
+    image: kpanel-browser-tor:16.0.1
+    build:
+      context: .
+      dockerfile: tor.Dockerfile
+    container_name: kpanel-browser
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETUID, SETGID, FOWNER, DAC_OVERRIDE, KILL, NET_BIND_SERVICE]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 512
+    mem_limit: 1536m
+    cpus: 1.5
+    shm_size: 256m
+    tmpfs:
+      - /config:size=512m,uid=65532,gid=65532,mode=0700
+      - /tmp:size=256m,mode=1777
+    healthcheck:
+      test: [CMD-SHELL, "curl -fsS --max-time 3 http://127.0.0.1:8092/ >/dev/null && pgrep -x firefox.real >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      start_period: 60s
+      retries: 6
+    networks:
+      browser-control:
+        aliases: [browser]
+      browser-egress: {}
+    logging:
+      driver: json-file
+      options: {max-size: "5m", max-file: "2"}
+networks:
+  browser-control:
+    external: true
+    name: kejilion-panel-browser-control
+  browser-egress: {}

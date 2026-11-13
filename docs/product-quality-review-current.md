@@ -1,5 +1,15 @@
 # KPanel 当前业务事实与规范适配基线
 
+### 2026-11-14 v1.30.1-rc.2 Tor Browser 预览候选
+
+- 从已公开 RC1 e82c1a5d 继续，合入 feature/browser-tor-component@b7cdcb4a 的四个本地提交；来源基线 f8adf55b，按 Git 合并保留 RC1 全部音乐修复。
+- 新增可选 Tor 原生桌面、固定下载/摘要/官方签名核验、宿主本地构建及标准部署/网络恢复适配。Chromium 仍为默认；Tor 仅支持 Linux amd64，多窗口共享桌面，停止/卸载丢弃临时会话。
+- 复用来源精确候选的独立复核、合同包安全盲审、OCR 和 L2 原件；这些证据不替代当前组合候选的 CI、GitHub-hosted L3 与公开产物验收。来源已验证原生画面及隔离 Tor 出口，未证明 ARM64、长期负载或完整 Firefox 内容进程沙箱。
+- scriptLinkageState=not-required，继续使用 kejilion/sh@1faee13f3faef164efbfa899e244fc19ad58aaff / SHA-256 5c5acccac56bba480046f28ac0d5d34af736fcfb5ab187647684b52c6689ad23，不发布脚本。
+- 风险为浏览器组件生命周期和受认证的 VNC 转发；安装需要本机 Docker 构建与外网，画面健康不等于 Tor 已连接，不提供匿名性保证。
+- 本次只发布 RC 产物，生产部署不适用，稳定 Latest/latest 仍为 v1.30.0。最终结果记录在本版发布验收中。
+
+
 ### 2026-11-14 v1.30.1-rc.1 音乐修复预览候选
 
 - 基线为已公开稳定版 v1.30.0 的主线 f8adf55b；来源为顺序叠加的 perf/music-list-rendering@57f490c2、feat/music-follow-current@9c3fb14f、fix/music-flac-quality@824f039d，最新来源提交已包含前两者。

@@ -4,7 +4,12 @@ import "time"
 
 type BrowserComponentRequest struct {
 	Action                  string `json:"action"`
+	Kind                    string `json:"kind,omitempty"`
 	ExpectedResourceVersion string `json:"expectedResourceVersion"`
+}
+
+func ValidBrowserComponentKind(kind string) bool {
+	return kind == "" || kind == "chromium" || kind == "tor"
 }
 
 func ValidBrowserComponentAction(action string) bool {
@@ -19,6 +24,7 @@ type BrowserComponentJob struct {
 	ExpectedResourceVersion string     `json:"expectedResourceVersion"`
 	ID                      string     `json:"id"`
 	Action                  string     `json:"action"`
+	Kind                    string     `json:"kind,omitempty"`
 	State                   string     `json:"state"`
 	Stage                   string     `json:"stage"`
 	Message                 string     `json:"message,omitempty"`
@@ -27,6 +33,8 @@ type BrowserComponentJob struct {
 }
 
 type BrowserComponent struct {
+	Kind            string               `json:"kind,omitempty"`
+	TorSupported    bool                 `json:"torSupported"`
 	ContainerID     string               `json:"containerID,omitempty"`
 	Supported       bool                 `json:"supported"`
 	Reason          string               `json:"reason,omitempty"`

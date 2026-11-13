@@ -40,11 +40,14 @@ func (s *Server) handleBrowserComponent(w http.ResponseWriter, r *http.Request) 
 	if s.decodeJSON(w, r, &input) != nil {
 		return
 	}
-	if !contract.ValidBrowserComponentAction(input.Action) || !resourceVersionPattern.MatchString(input.ExpectedResourceVersion) {
+	if !contract.ValidBrowserComponentAction(input.Action) || !contract.ValidBrowserComponentKind(input.Kind) || (input.Action != "install" && input.Kind != "") || !resourceVersionPattern.MatchString(input.ExpectedResourceVersion) {
 		s.writeProblem(w, r, 422, "browser_component_invalid", "Invalid component request", "")
 		return
 	}
 	change := map[string]any{"action": input.Action}
+	if input.Kind != "" {
+		change["kind"] = input.Kind
+	}
 	if s.audit(r, session.User.ID, "browser.component."+input.Action, "browser", "component", "intent", change) != nil {
 		s.writeProblem(w, r, 503, "audit_unavailable", "Audit unavailable", "")
 		return
