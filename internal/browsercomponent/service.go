@@ -35,6 +35,7 @@ type Config struct {
 	StateDir, RuntimeDir, Executable, DockerSocket string
 	Runner                                         jobcontrol.Runner
 	DockerProbe                                    func(context.Context) error
+	DownloadTor                                    func(context.Context, string) error
 }
 type Service struct {
 	mu     sync.Mutex
@@ -50,6 +51,9 @@ func New(c Config) *Service {
 	}
 	if c.Runner == nil {
 		c.Runner = commandRunner{}
+	}
+	if c.DownloadTor == nil {
+		c.DownloadTor = downloadTor
 	}
 	return &Service{config: c}
 }
@@ -77,7 +81,7 @@ func (s *Service) readJob() (*contract.BrowserComponentJob, error) {
 	if err = json.Unmarshal(data, &j); err != nil {
 		return nil, err
 	}
-	if len(j.ID) != 32 || !contract.ValidBrowserComponentAction(j.Action) {
+	if len(j.ID) != 32 || !contract.ValidBrowserComponentAction(j.Action) || !contract.ValidBrowserComponentKind(j.Kind) {
 		return nil, ErrInvalid
 	}
 	if _, err = hex.DecodeString(j.ID); err != nil {
@@ -102,7 +106,7 @@ func (s *Service) Snapshot(ctx context.Context) (contract.BrowserComponent, erro
 }
 
 func (s *Service) snapshot(ctx context.Context) (contract.BrowserComponent, error) {
-	v := contract.BrowserComponent{Image: componentImage}
+	v := contract.BrowserComponent{Image: componentImage, TorSupported: runtime.GOOS == "linux" && runtime.GOARCH == "amd64"}
 	if runtime.GOOS != "linux" {
 		v.Reason = "linux_required"
 		return v, nil
@@ -139,7 +143,11 @@ func (s *Service) snapshot(ctx context.Context) (contract.BrowserComponent, erro
 		}
 		var items []struct {
 			ID, Image string
-			State     struct {
+			Config    struct {
+				Image  string
+				Labels map[string]string
+			}
+			State struct {
 				Running bool
 				Status  string
 				Health  *struct{ Status string }
@@ -150,11 +158,15 @@ func (s *Service) snapshot(ctx context.Context) (contract.BrowserComponent, erro
 			return v, ErrInvalid
 		}
 		x := items[0]
+		v.Kind = "chromium"
+		if x.Config.Image == componentTorImage || x.Config.Labels["io.kpanel.browser.kind"] == "tor" {
+			v.Kind, v.Image = "tor", componentTorImage
+		}
 		v.ContainerID = x.ID
 		v.Installed = true
 		v.Running = x.State.Running
 		v.Healthy = x.State.Health != nil && x.State.Health.Status == "healthy"
-		identity = fmt.Sprintf("%s:%s:%s:%d", x.ID, x.Image, x.State.Status, x.RestartCount)
+		identity = fmt.Sprintf("%s:%s:%s:%d:%s", x.ID, x.Image, x.State.Status, x.RestartCount, v.Kind)
 	}
 	v.ResourceVersion = fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(identity)))
 	v.Supported = true
@@ -179,7 +191,7 @@ func (s *Service) snapshot(ctx context.Context) (contract.BrowserComponent, erro
 func (s *Service) Start(ctx context.Context, r contract.BrowserComponentRequest) (contract.BrowserComponentJob, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if !contract.ValidBrowserComponentAction(r.Action) {
+	if !contract.ValidBrowserComponentAction(r.Action) || !contract.ValidBrowserComponentKind(r.Kind) || (r.Action != "install" && r.Kind != "") {
 		return contract.BrowserComponentJob{}, ErrInvalid
 	}
 	if err := privateDirectory(s.config.StateDir); err != nil {
@@ -206,6 +218,18 @@ func (s *Service) Start(ctx context.Context, r contract.BrowserComponentRequest)
 	if r.Action != "install" && !v.Installed {
 		return contract.BrowserComponentJob{}, ErrConflict
 	}
+	if r.Kind == "" {
+		r.Kind = v.Kind
+	}
+	if r.Kind == "" {
+		r.Kind = "chromium"
+	}
+	if r.Action == "install" && v.Installed && r.Kind != v.Kind {
+		return contract.BrowserComponentJob{}, ErrConflict
+	}
+	if r.Action == "install" && r.Kind == "tor" && !v.TorSupported {
+		return contract.BrowserComponentJob{}, ErrUnsupported
+	}
 	if err = jobcontrol.Available(s.config.Runner); err != nil {
 		return contract.BrowserComponentJob{}, ErrUnsupported
 	}
@@ -225,7 +249,7 @@ func (s *Service) Start(ctx context.Context, r contract.BrowserComponentRequest)
 		workerUnlock()
 		return contract.BrowserComponentJob{}, err
 	}
-	j := contract.BrowserComponentJob{ExpectedResourceVersion: r.ExpectedResourceVersion, ID: hex.EncodeToString(b), Action: r.Action, State: "queued", Stage: "queued", StartedAt: time.Now().UTC()}
+	j := contract.BrowserComponentJob{ExpectedResourceVersion: r.ExpectedResourceVersion, ID: hex.EncodeToString(b), Action: r.Action, Kind: r.Kind, State: "queued", Stage: "queued", StartedAt: time.Now().UTC()}
 	if err = s.save(&j); err != nil {
 		workerUnlock()
 		return j, err
@@ -305,25 +329,29 @@ func (s *Service) PrepareRuntime() error {
 		}
 		return nil
 	}
-	if err != nil || string(marker) != "enabled" {
+	if err != nil || (string(marker) != "enabled" && string(marker) != "tor") {
 		return errors.New("invalid browser enabled state")
 	}
-	return s.publishEnabled()
+	return s.publishEnabled(string(marker))
 }
 
-func (s *Service) publishEnabled() error {
+func (s *Service) publishEnabled(marker string) error {
 	target := filepath.Join(s.config.RuntimeDir, "browser-enabled")
-	if _, err := (atomicfile.Writer{}).WritePrivate(s.config.RuntimeDir, target, ".enabled-*", []byte("enabled")); err != nil {
+	if _, err := (atomicfile.Writer{}).WritePrivate(s.config.RuntimeDir, target, ".enabled-*", []byte(marker)); err != nil {
 		return err
 	}
 	return os.Chmod(target, 0444)
 }
 
-func (s *Service) enableDefaultConnection() error {
-	if _, err := (atomicfile.Writer{}).WritePrivate(s.config.StateDir, filepath.Join(s.config.StateDir, "enabled"), ".enabled-*", []byte("enabled")); err != nil {
+func (s *Service) enableDefaultConnection(kind string) error {
+	marker := "enabled"
+	if kind == "tor" {
+		marker = "tor"
+	}
+	if _, err := (atomicfile.Writer{}).WritePrivate(s.config.StateDir, filepath.Join(s.config.StateDir, "enabled"), ".enabled-*", []byte(marker)); err != nil {
 		return err
 	}
-	return s.publishEnabled()
+	return s.publishEnabled(marker)
 }
 
 func (s *Service) RunJob(ctx context.Context, id string) error {
@@ -376,6 +404,9 @@ func (s *Service) execute(ctx context.Context, j *contract.BrowserComponentJob) 
 	if !v.Supported || v.ResourceVersion != j.ExpectedResourceVersion {
 		return ErrConflict
 	}
+	if j.Action == "install" && v.Installed && j.Kind != "" && j.Kind != v.Kind {
+		return ErrConflict
+	}
 	if j.Action == "install" {
 		if err := s.PrepareRuntime(); err != nil {
 			return err
@@ -389,7 +420,21 @@ func (s *Service) execute(ctx context.Context, j *contract.BrowserComponentJob) 
 		}
 		runtimePath, _ := json.Marshal(s.config.RuntimeDir)
 		compose := []byte(strings.ReplaceAll(string(composeTemplate), "__BROWSER_RUNTIME_DIRECTORY__", string(runtimePath)))
-		for name, data := range map[string][]byte{"compose.yml": compose, "browser-seccomp.json": seccompProfile} {
+		assets := map[string][]byte{"compose.yml": compose, "browser-seccomp.json": seccompProfile}
+		if j.Kind == "tor" {
+			if !v.TorSupported {
+				return ErrUnsupported
+			}
+			j.Stage = "downloading"
+			if err := s.save(j); err != nil {
+				return err
+			}
+			if err := s.config.DownloadTor(ctx, s.config.StateDir); err != nil {
+				return err
+			}
+			assets = map[string][]byte{"compose.yml": torComposeTemplate, "tor.Dockerfile": torDockerfile, "tor-start.sh": torStart, "tor-browser.tar.xz.asc": torSignature, "tor-signing-key.asc": torSigningKey, ".dockerignore": []byte("*\n!tor.Dockerfile\n!tor-start.sh\n!tor-browser.tar.xz\n!tor-browser.tar.xz.asc\n!tor-signing-key.asc\n")}
+		}
+		for name, data := range assets {
 			if _, err := (atomicfile.Writer{}).WritePrivate(s.config.StateDir, filepath.Join(s.config.StateDir, name), ".config-*", data); err != nil {
 				return err
 			}
@@ -398,11 +443,33 @@ func (s *Service) execute(ctx context.Context, j *contract.BrowserComponentJob) 
 		if err := s.save(j); err != nil {
 			return err
 		}
-		_, err := s.docker(ctx, "compose", "--ansi", "never", "--progress", "quiet", "--project-name", "kpanel-browser", "--project-directory", s.config.StateDir, "--file", filepath.Join(s.config.StateDir, "compose.yml"), "up", "--detach", "--wait", "--wait-timeout", "90", "browser")
+		prefix := []string{"compose", "--ansi", "never", "--progress", "quiet", "--project-name", "kpanel-browser", "--project-directory", s.config.StateDir, "--file", filepath.Join(s.config.StateDir, "compose.yml")}
+		if j.Kind == "tor" {
+			j.Stage = "building"
+			if err := s.save(j); err != nil {
+				return err
+			}
+			if _, err := s.docker(ctx, append(append([]string{}, prefix...), "build", "browser")...); err != nil {
+				return err
+			}
+		}
+		// Recheck after slow preparation before replacing any Docker resource.
+		current, err := s.snapshot(ctx)
 		if err != nil {
 			return err
 		}
-		return s.enableDefaultConnection()
+		if current.ResourceVersion != j.ExpectedResourceVersion {
+			return ErrConflict
+		}
+		args := append(append([]string{}, prefix...), "up", "--detach", "--wait", "--wait-timeout", "90")
+		if j.Kind == "tor" {
+			args = append(args, "--no-build", "--pull", "never")
+		}
+		_, err = s.docker(ctx, append(args, "browser")...)
+		if err != nil {
+			return err
+		}
+		return s.enableDefaultConnection(j.Kind)
 	}
 	j.Stage = j.Action
 	if err := s.save(j); err != nil {

@@ -1,6 +1,9 @@
 import { useI18n } from '@/i18n'
 
 const zh = {
+  browserKind: '浏览器类型', chooseKindHint: '安装时选择一种浏览器组件。', switchKindHint: '先卸载当前组件，再选择其他浏览器安装。',
+  torInstallHint: '从 Tor 官方下载并校验签名，在本机构建组件镜像。首次安装需要较长时间；使用完整 Tor Browser 界面。', torArchitecture: 'Tor Browser 当前仅支持 Linux amd64 主机。',
+  torSessionHint: '在浏览器画面中连接 Tor 网络。所有窗口共享此桌面；停止或卸载组件后会话不保留。', torScreen: '完整 Tor Browser 远程桌面', torInputHint: '先点击远程输入框，再在这里输入并发送文字',
   settings: '浏览器设置', component: '浏览器服务组件', refreshStatus: '刷新状态', checking: '正在检查组件…',
   installHint: '安装独立浏览器组件后，即可在工作台中浏览网页。运行时最高使用 1.5 GB 内存，首次安装需要下载镜像。',
   notInstalled: '尚未安装', serviceReady: '服务已就绪', serviceStarting: '服务运行中，正在检查连接', serviceStopped: '服务已停止',
@@ -31,6 +34,9 @@ const zh = {
   input: '向网页输入文字', send: '输入', clear: '关闭提示', sessionHint: '短暂断线可重新连接；浏览器组件停止后，网页登录状态不会保留。',
 }
 const en: Record<keyof typeof zh, string> = {
+  browserKind: 'Browser type', chooseKindHint: 'Choose one browser component when installing.', switchKindHint: 'Uninstall the current component before choosing a different browser.',
+  torInstallHint: 'Download Tor Browser from Tor, verify its signature and build the image locally. First installation takes longer. Uses the full Tor Browser interface.', torArchitecture: 'Tor Browser currently supports Linux amd64 hosts only.',
+  torSessionHint: 'Connect to Tor inside the browser screen. All windows share this desktop. Sessions are lost when the component stops or is uninstalled.', torScreen: 'Full Tor Browser remote desktop', torInputHint: 'Focus a remote input, then enter and insert text here',
   settings: 'Browser settings', component: 'Browser service component', refreshStatus: 'Refresh status', checking: 'Checking component…',
   installHint: 'Install the separate browser component to browse in the workspace. It uses up to 1.5 GB of memory. Initial installation downloads an image.',
   notInstalled: 'Not installed', serviceReady: 'Service ready', serviceStarting: 'Service running, checking connection', serviceStopped: 'Service stopped',
@@ -52,6 +58,9 @@ const en: Record<keyof typeof zh, string> = {
 }
 const tw: Record<keyof typeof zh, string> = {
   ...zh,
+  browserKind: '瀏覽器類型', chooseKindHint: '安裝時選擇一種瀏覽器元件。', switchKindHint: '先解除安裝目前元件，再選擇其他瀏覽器安裝。',
+  torInstallHint: '從 Tor 官方下載並驗證簽章，在本機建置元件映像。首次安裝需要較長時間；使用完整 Tor Browser 介面。', torArchitecture: 'Tor Browser 目前僅支援 Linux amd64 主機。',
+  torSessionHint: '在瀏覽器畫面中連線 Tor 網路。所有視窗共用此桌面；停止或解除安裝元件後不保留工作階段。', torScreen: '完整 Tor Browser 遠端桌面', torInputHint: '先點選遠端輸入框，再在此輸入並傳送文字',
   settings: '瀏覽器設定', component: '瀏覽器服務元件', refreshStatus: '重新整理狀態', checking: '正在檢查元件…',
   installHint: '安裝獨立瀏覽器元件後，即可在工作台中瀏覽網頁。執行時最高使用 1.5 GB 記憶體，首次安裝需要下載映像。',
   notInstalled: '尚未安裝', serviceReady: '服務已就緒', serviceStarting: '服務執行中，正在檢查連線', serviceStopped: '服務已停止',

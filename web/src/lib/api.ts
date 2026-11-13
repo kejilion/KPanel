@@ -1335,8 +1335,8 @@ export const api = {
   },
   browser: {
     component: (signal?: AbortSignal) => request<import('./webBrowser').BrowserComponent>('/browser/component', { signal }),
-    componentAction: (action: import('./webBrowser').BrowserComponentAction, expectedResourceVersion: string) => request<import('./webBrowser').BrowserComponentJob>('/browser/component/actions', { method: 'POST', body: { action, expectedResourceVersion } }),
-    status: (signal?: AbortSignal) => request<{ ready: boolean; reason?: string; maxTabs: number }>('/browser/status', { signal }),
+    componentAction: (action: import('./webBrowser').BrowserComponentAction, expectedResourceVersion: string, kind?: import('./webBrowser').BrowserComponentKind) => request<import('./webBrowser').BrowserComponentJob>('/browser/component/actions', { method: 'POST', body: { action, expectedResourceVersion, ...(kind ? { kind } : {}) } }),
+    status: (signal?: AbortSignal) => request<{ ready: boolean; reason?: string; kind?: import('./webBrowser').BrowserComponentKind; maxTabs: number }>('/browser/status', { signal }),
     csrf: () => csrfToken,
   },
   virtualMachines: {

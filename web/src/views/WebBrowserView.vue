@@ -9,6 +9,7 @@ import { useBrowserText } from '@/i18n/webBrowser'
 import { usePhraseCatalog } from '@/i18n/phrase'
 import ModalDialog from '@/components/common/ModalDialog.vue'
 import BrowserSettings from '@/components/browser/BrowserSettings.vue'
+import TorDesktop from '@/components/browser/TorDesktop.vue'
 import DesktopGroupPreviewIcon from '@/components/desktop/DesktopGroupPreviewIcon.vue'
 import type RFB from '@novnc/novnc'
 
@@ -39,6 +40,8 @@ const mobile = ref(false)
 const tabsOpen = ref(false)
 const moreOpen = ref(false)
 const settingsOpen = ref(false)
+const kind = ref<'chromium' | 'tor'>('chromium')
+const serviceRevision = ref(0)
 const startURL = ref('')
 let preferencesController: AbortController | undefined
 const tabCount = computed(() => tabs.value.length + Number(startPage.value && newTabPending.value))
@@ -48,7 +51,7 @@ const width = ref(1280)
 const height = ref(720)
 const activeTab = computed(() => tabs.value.find(tab => tab.id === activeID.value))
 const workspace = Array.from(crypto.getRandomValues(new Uint8Array(16)), value => value.toString(16).padStart(2, '0')).join('')
-const visible = computed(() => windowVisible.value && !startPage.value && documentVisible.value && !tabsOpen.value && !moreOpen.value && !settingsOpen.value)
+const visible = computed(() => kind.value === 'chromium' && windowVisible.value && !startPage.value && documentVisible.value && !tabsOpen.value && !moreOpen.value && !settingsOpen.value)
 const documentVisible = ref(!document.hidden)
 let socket: WebSocket | undefined
 let epoch = 0
@@ -151,7 +154,9 @@ async function connect(): Promise<void> {
   try {
     const health = await api.browser.status(controller.signal)
     if (current !== epoch) return
+    kind.value = health.kind || 'chromium'
     if (!health.ready) { status.value = health.reason === 'browser_unconfigured' ? 'unconfigured' : 'unavailable'; return }
+    if (kind.value === 'tor') { status.value = 'connected'; setTitle?.('Tor Browser'); return }
     const url = new URL(`/api/v1/browser/stream/${workspace}`, location.href); url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
     const channel = new WebSocket(url); socket = channel
     let awaitingInitialState = true
@@ -289,7 +294,7 @@ async function initialize(): Promise<void> {
   if (!pendingURL && !tabs.value.length && startURL.value) openURL(startURL.value)
   await connect()
 }
-function serviceChanged(action: string): void { if (['install', 'start', 'restart'].includes(action)) void connect(); else { disconnect(); status.value = 'unavailable'; imageReady.value = false } }
+function serviceChanged(action: string): void { serviceRevision.value++; if (['install', 'start', 'restart'].includes(action)) void connect(); else { disconnect(); kind.value = 'chromium'; status.value = 'unavailable'; imageReady.value = false } }
 watch(() => [route.query.settings, route.query.request], () => { if (route.query.settings === '1') settingsOpen.value = true }, { immediate: true })
 watch(visible, value => { send({ type: 'visible', visible: value }); if (value) { void nextTick(resize); void connectVNC() } else { touchGesture = undefined; disconnectVNC() } })
 watch([activeID, startPage, newTabPending], () => void nextTick(() => tabStrip.value?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })))
@@ -301,7 +306,12 @@ onBeforeUnmount(() => { preferencesController?.abort(); disconnect(true); observ
 </script>
 
 <template>
-  <section class="web-browser" :aria-label="t('title')">
+  <section class="web-browser" :class="{ 'web-browser--tor-classic': kind === 'tor' && !titlebarTarget }" :aria-label="t('title')">
+    <template v-if="kind === 'tor'">
+      <div class="web-browser__toolbar"><strong>Tor Browser</strong><span>{{ t(status === 'connected' ? 'connected' : 'unavailable') }}</span><button class="button button--secondary" @click="connect">{{ t('retry') }}</button><button class="button button--secondary" @click="settingsOpen = true">{{ t('settings') }}</button></div>
+      <TorDesktop :key="serviceRevision" :workspace="workspace" :visible="windowVisible && documentVisible && !settingsOpen && status === 'connected'" />
+    </template>
+    <template v-else>
     <Teleport :to="titlebarTarget || 'body'" :disabled="!titlebarTarget || mobile">
     <div v-if="!mobile" ref="tabStrip" class="web-browser__tabs" :class="{ 'web-browser__tabs--titlebar': titlebarTarget }" role="tablist" :aria-label="t('title')" @dblclick.stop>
       <div class="web-browser__tab-track">
@@ -347,7 +357,6 @@ onBeforeUnmount(() => { preferencesController?.abort(); disconnect(true); observ
       </div>
     </main>
     <footer class="web-browser__footer"><span :title="t('sessionHint')"><span class="web-browser__dot" :class="{ 'is-connected': status === 'connected' }" />{{ t(status === 'connected' ? 'connected' : status === 'connecting' ? 'connecting' : 'disconnected') }}</span><span class="web-browser__network"><Network :size="13" />{{ t('server') }}</span></footer>
-    <BrowserSettings :open="settingsOpen" @close="settingsOpen = false" @saved="startURL = $event" @changed="serviceChanged" />
     <ModalDialog :open="tabsOpen" :title="`${t('tabs')} · ${tabCount}/${BROWSER_MAX_TABS}`" size="medium" @close="tabsOpen = false">
       <div class="web-browser__tab-grid">
         <div v-for="tab in tabs" :key="tab.id" class="web-browser__tab-card" :class="{ 'is-active': !startPage && tab.id === activeID }">
@@ -364,11 +373,14 @@ onBeforeUnmount(() => { preferencesController?.abort(); disconnect(true); observ
       <p class="web-browser__menu-hint">{{ t('sessionHint') }}</p>
     </ModalDialog>
     <ModalDialog :open="Boolean(dialog)" :title="t('dialog')" size="compact" @close="answer(false)"><p class="web-browser__dialog">{{ dialog?.text }}</p><template #footer><button class="button button--secondary" @click="answer(false)">{{ t('cancel') }}</button><button class="button button--primary" @click="answer(true)">{{ t('accept') }}</button></template></ModalDialog>
+    </template>
+    <BrowserSettings :open="settingsOpen" @close="settingsOpen = false" @saved="startURL = $event" @changed="serviceChanged" />
   </section>
 </template>
 
 <style scoped>
 .web-browser{display:flex;flex-direction:column;width:100%;height:100%;min-height:24rem;overflow:hidden;background:var(--surface);color:var(--text);font-size:.875rem}
+.web-browser--tor-classic{height:calc(100dvh - 12rem)}
 .web-browser__tabs{display:flex;align-items:center;gap:.25rem;padding:.4rem .65rem 0;min-width:0;min-height:2.6rem;background:var(--surface-subtle);font-size:.875rem}
 .web-browser__tabs--titlebar{height:42px;min-height:42px;padding:0 .25rem;background:transparent}.web-browser__tab-track{display:flex;align-items:center;flex:0 1 auto;min-width:0;gap:.25rem;overflow-x:auto;scrollbar-width:thin}.web-browser__tab-count{margin-left:auto;flex-shrink:0;font-size:.8125rem;color:var(--muted);padding:0 .25rem}.web-browser__tabs--titlebar .web-browser__tab{border-radius:var(--radius-sm);height:32px}.web-browser__tabs--titlebar .web-browser__tab button{padding:.4rem}.web-browser__tabs--titlebar .web-browser__tab.is-active{border-color:var(--border)}
 .web-browser__tab{display:flex;align-items:center;flex:0 0 12rem;width:12rem;min-width:0;border:1px solid transparent;border-radius:var(--radius-sm) var(--radius-sm) 0 0}

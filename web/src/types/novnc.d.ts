@@ -7,5 +7,7 @@ declare module '@novnc/novnc' {
     disconnect(): void
     sendCtrlAltDel(): void
     sendCredentials(credentials: { password: string }): void
+    clipboardPasteFrom(text: string): void
+    sendKey(keysym: number, code: string, down?: boolean): void
   }
 }

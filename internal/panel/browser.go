@@ -23,6 +23,7 @@ var browserWorkspacePattern = regexp.MustCompile(`^[a-f0-9]{32}$`)
 func (s *Server) browserServiceRequest(ctx context.Context, path string) (*http.Request, error) {
 	serviceURL, tokenFile := s.config.BrowserServiceURL, s.config.BrowserTokenFile
 	implicit := serviceURL == "" && tokenFile == ""
+	tor := false
 	if implicit {
 		markerFile, err := os.Open("/run/kejilion-panel/browser/browser-enabled")
 		if err != nil {
@@ -30,10 +31,14 @@ func (s *Server) browserServiceRequest(ctx context.Context, path string) (*http.
 		}
 		marker, err := io.ReadAll(io.LimitReader(markerFile, 8))
 		_ = markerFile.Close()
-		if err != nil || string(marker) != "enabled" {
+		if err != nil || (string(marker) != "enabled" && string(marker) != "tor") {
 			return nil, errors.New("browser_unconfigured")
 		}
 		serviceURL, tokenFile = "http://browser:8092", "/run/kejilion-panel/browser/browser-token"
+		tor = string(marker) == "tor"
+	}
+	if tor {
+		return torBrowserRequest(ctx, serviceURL, path)
 	}
 	file, err := os.Open(tokenFile)
 	if err != nil {
@@ -87,16 +92,26 @@ func (s *Server) handleBrowser(w http.ResponseWriter, r *http.Request) {
 		response, err := client.Do(request)
 		ready := err == nil && response.StatusCode == 200
 		transport := ""
+		kind := "chromium"
+		tor := request.URL.Path == "/"
+		if tor {
+			kind = "tor"
+		}
 		if response != nil {
 			defer response.Body.Close()
-			var health struct {
-				Ready     bool   `json:"ready"`
-				Transport string `json:"transport"`
+			if tor {
+				transport, kind = "vnc", "tor"
+				_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
+			} else {
+				var health struct {
+					Ready     bool   `json:"ready"`
+					Transport string `json:"transport"`
+				}
+				if json.NewDecoder(io.LimitReader(response.Body, 1024)).Decode(&health) != nil || !health.Ready {
+					ready = false
+				}
+				transport = health.Transport
 			}
-			if json.NewDecoder(io.LimitReader(response.Body, 1024)).Decode(&health) != nil || !health.Ready {
-				ready = false
-			}
-			transport = health.Transport
 		}
 		reason := "browser_unavailable"
 		if ready && transport != "vnc" {
@@ -105,7 +120,7 @@ func (s *Server) handleBrowser(w http.ResponseWriter, r *http.Request) {
 		if ready {
 			reason = ""
 		}
-		s.writeJSON(w, 200, map[string]any{"ready": ready, "reason": reason, "transport": transport, "maxTabs": webbrowser.MaxTabs})
+		s.writeJSON(w, 200, map[string]any{"ready": ready, "reason": reason, "transport": transport, "kind": kind, "maxTabs": webbrowser.MaxTabs})
 		return
 	}
 	vnc := strings.HasPrefix(r.URL.Path, "/api/v1/browser/vnc/")
@@ -178,7 +193,12 @@ func (s *Server) handleBrowser(w http.ResponseWriter, r *http.Request) {
 	}
 	client := &http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{Proxy: nil, DisableKeepAlives: true}, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	openCtx, openStop := context.WithTimeout(ctx, 10*time.Second)
-	upstream, response, err := websocket.Dial(openCtx, upstreamURL.String(), &websocket.DialOptions{HTTPClient: client, HTTPHeader: request.Header, CompressionMode: websocket.CompressionDisabled})
+	nativeDesktop := request.URL.Path == "/websockify"
+	options := &websocket.DialOptions{HTTPClient: client, HTTPHeader: request.Header, CompressionMode: websocket.CompressionDisabled}
+	if nativeDesktop {
+		options.Subprotocols = []string{"binary"}
+	}
+	upstream, response, err := websocket.Dial(openCtx, upstreamURL.String(), options)
 	openStop()
 	if response != nil && err != nil && response.Body != nil {
 		_ = response.Body.Close()
@@ -193,7 +213,7 @@ func (s *Server) handleBrowser(w http.ResponseWriter, r *http.Request) {
 		closing := s.requestsClosed
 		s.requestsMu.Unlock()
 		_, authErr := s.auth.Authenticate(token)
-		if closing || authErr != nil || !time.Now().Before(session.ExpiresAt) {
+		if !nativeDesktop && (closing || authErr != nil || !time.Now().Before(session.ExpiresAt)) {
 			finish, stop := context.WithTimeout(context.Background(), 2*time.Second)
 			defer stop()
 			_ = upstream.Write(finish, websocket.MessageText, []byte(`{"type":"end"}`))

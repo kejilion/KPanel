@@ -612,6 +612,22 @@ async function collectBaseImages(repo) {
   return results.filter(Boolean);
 }
 
+export async function collectTorBrowser(repo, fetchRelease = fetchJson, fetchImage = dockerHubTag) {
+  const dockerfile = readFileSync(resolve(repo, 'packaging/browser/tor.Dockerfile'), 'utf8');
+  const version = dockerfile.match(/io\.kpanel\.tor\.version="([0-9.]+)"/)?.[1];
+  const base = dockerfile.match(/FROM jlesage\/baseimage-gui:([^@\s]+)@(sha256:[0-9a-f]{64})/);
+  if (!version || !base) throw new Error('Tor component pins are missing');
+  const [release, image] = await Promise.all([
+    fetchRelease('https://aus1.torproject.org/torbrowser/update_3/release/downloads.json'),
+    fetchImage('jlesage/baseimage-gui', base[1]),
+  ]);
+  if (!isStableVersion(release.version)) throw new Error('Tor release index did not return a stable version');
+  return [
+    candidate('Tor Browser', version, release.version, 'runtime', 'Tor official stable release index'),
+    immutableDigestCandidate('Tor browser base image', base[2], image.digest, 'Docker Hub tag metadata'),
+  ].filter(Boolean);
+}
+
 function workflowActionPins(repo) {
   const directory = resolve(repo, '.github/workflows');
   const pins = new Map();
@@ -786,6 +802,7 @@ export function auditSkillRevisionCandidate(component, pinnedCommit, headCommit,
 // Single table for what runs and what validatePolicy reconciles: a policy group without a collector here
 // is a declared-but-unimplemented detector and fails validation.
 export const COLLECTORS = [
+  { id: 'tor-browser-component', groups: ['tor-browser-component'], collect: (repo) => collectTorBrowser(repo) },
   { id: 'go-modules', groups: ['go-modules'], collect: (repo) => collectGoModules(repo) },
   { id: 'npm-packages', groups: ['npm-packages'], collect: (repo) => collectNpm(repo) },
   { id: 'toolchains-and-base-images', groups: ['go-toolchain', 'node-toolchain'], collect: (repo) => collectToolchains(repo) },

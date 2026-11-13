@@ -4,8 +4,9 @@ import type { DesktopEntry } from './desktopEntries'
 export const BROWSER_MAX_TABS = 8
 
 export type BrowserComponentAction = 'install' | 'start' | 'stop' | 'restart' | 'uninstall'
+export type BrowserComponentKind = 'chromium' | 'tor'
 export interface BrowserComponentJob { id: string; action: BrowserComponentAction; state: string; stage: string; message?: string }
-export interface BrowserComponent { supported: boolean; reason?: string; installed: boolean; running: boolean; healthy: boolean; image: string; resourceVersion: string; job?: BrowserComponentJob }
+export interface BrowserComponent { supported: boolean; reason?: string; kind?: BrowserComponentKind; torSupported?: boolean; installed: boolean; running: boolean; healthy: boolean; image: string; resourceVersion: string; job?: BrowserComponentJob }
 
 export interface BrowserTab { id: string; url: string; title: string; loading: boolean; back: boolean; forward: boolean }
 export interface BrowserEvent { type: string; tab?: string; active?: string; tabs?: BrowserTab[]; image?: string; width?: number; height?: number; code?: string; text?: string }
