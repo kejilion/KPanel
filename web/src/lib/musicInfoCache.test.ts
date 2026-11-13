@@ -70,3 +70,38 @@ it('does not reload an invalidated file version from persistent cache during the
   expect(api.music.cache).not.toHaveBeenCalled()
   expect(peekMusicInfo(old)).toBeUndefined()
 })
+
+it('repairs legacy empty quality without rereading cached tags', async () => {
+  setup(); const item = track()
+  const ref = { hostId: item.hostId, path: item.entry.path, resourceVersion: item.entry.resourceVersion, sizeBytes: item.entry.sizeBytes }
+  persisted.set(JSON.stringify(ref), { ref, info: { tags: { title: 'old' }, quality: {} }, schema: 1, source: 'file-header', detectedAt: '' })
+  expect((await loadMusicInfo(item, signal())).quality?.bitrate).toBe(256)
+  expect(readMusicQuality).toHaveBeenCalledOnce(); expect(readMusicTags).not.toHaveBeenCalled()
+})
+
+it('does not persist an empty detection as a completed quality result', async () => {
+  setup(); vi.mocked(readMusicQuality).mockResolvedValueOnce({}).mockResolvedValueOnce({ lossless: true })
+  expect((await loadMusicInfo(track(), signal())).quality).toBeUndefined()
+  expect([...persisted.values()][0]!.info.quality).toBeUndefined()
+  clearMusicInfoMemory()
+  expect((await loadMusicInfo(track(), signal())).quality?.lossless).toBe(true)
+  expect(readMusicQuality).toHaveBeenCalledTimes(2)
+})
+
+it('publishes verified quality before a slow tag read finishes and keeps it if that read times out', async () => {
+  setup(); let finish!: (value: {}) => void
+  vi.mocked(readMusicTags).mockImplementation(() => new Promise(resolve => { finish = resolve }))
+  const controller = new AbortController(), loading = loadMusicInfo(track(), controller.signal)
+  await vi.waitFor(() => expect(peekMusicInfo(track())?.quality?.bitrate).toBe(256))
+  controller.abort(); finish({}); await loading
+  expect(peekMusicInfo(track())?.quality?.bitrate).toBe(256)
+})
+
+it('does not publish a late quality observation for an invalidated file version', async () => {
+  setup(); let finish!: (value: {}) => void
+  vi.mocked(readMusicQuality).mockImplementation(() => new Promise(resolve => { finish = resolve }))
+  const item = track(), loading = loadMusicInfo(item, signal())
+  await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
+  invalidateMusicInfo(item); finish({ lossless: true }); await loading
+  expect(peekMusicInfo(item)).toBeUndefined(); expect(persisted.size).toBe(0)
+})

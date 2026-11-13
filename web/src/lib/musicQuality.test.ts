@@ -1,11 +1,43 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { id3AudioOffset, parseMusicQuality, readMusicQuality } from './musicQuality'
+import { hasMusicQuality, id3AudioOffset, parseMusicQuality, readMusicQuality } from './musicQuality'
 import { MusicVersionMismatchError } from './musicTags'
 import type { Track } from './music'
 vi.mock('./fileHostContext', () => ({ fileAPIForHost: (host: string) => ({ contentUrl: (path: string) => 'https://fixture.test/' + host + path }) }))
 afterEach(() => vi.unstubAllGlobals())
 const track: Track = { hostId: 'node-a', title: 'song', artist: '', entry: { name: 'song.mp3', path: '/music/song.mp3', kind: 'file', sizeBytes: 1000000, resourceVersion: 'v1', mode: '', owner: '', group: '', modifiedAt: '', editable: false, previewable: true } }
 function mp3() { const b = new Uint8Array(2200); b.set([255,251,224,0]); b.set([255,251,224,0],1044); return b }
+function flac() {
+  const b = new Uint8Array(42); b.set(new TextEncoder().encode('fLaC')); b[4] = 128; b[7] = 34
+  new DataView(b.buffer).setBigUint64(18, (96000n << 44n) | (1n << 41n) | (23n << 36n) | 9600000n)
+  return b
+}
+function tagged(body: Uint8Array, size = 0) {
+  const b = new Uint8Array(10 + size + body.length)
+  b.set([73, 68, 51, 4, 0, 0, (size >>> 21) & 127, (size >>> 14) & 127, (size >>> 7) & 127, size & 127])
+  b.set(body, 10 + size); return b
+}
+it('recognizes FLAC after ID3 tags and in a range already positioned after the tag', () => {
+  expect(parseMusicQuality(tagged(flac(), 128), 12000000)).toMatchObject({ lossless: true, sampleRate: 96000, bitsPerSample: 24 })
+  expect(parseMusicQuality(flac(), 12000000, true)).toMatchObject({ lossless: true })
+  expect(parseMusicQuality(tagged(mp3()), 1000000)).toMatchObject({ bitrate: 320 })
+  expect(parseMusicQuality(tagged(mp3()), 1000000).lossless).toBeUndefined()
+})
+it.each([65510, 70000])('reads FLAC headers crossing or beyond the initial range, ID3 size %i', async size => {
+  const bytes = tagged(flac(), size)
+  const fetcher = vi.fn(async (_url: string, options: RequestInit) => {
+    const range = /^bytes=(\d+)-(\d+)$/.exec(new Headers(options.headers).get('Range')!)!
+    const start = Number(range[1]), end = Math.min(Number(range[2]), bytes.length - 1)
+    return new Response(bytes.slice(start, end + 1), { status: 206, headers: { 'Content-Range': `bytes ${start}-${end}/${bytes.length}`, ETag: '"v1"' } })
+  })
+  vi.stubGlobal('fetch', fetcher)
+  expect(await readMusicQuality({ ...track, entry: { ...track.entry, sizeBytes: bytes.length } }, new AbortController().signal)).toMatchObject({ lossless: true })
+  expect(fetcher).toHaveBeenCalledTimes(2)
+  expect(new Headers(fetcher.mock.calls[1]![1].headers).get('Range')).toBe(`bytes=${size + 10}-${size + 8201}`)
+})
+it('treats empty quality as unknown while retaining a confirmed lossy result', () => {
+  expect(hasMusicQuality({})).toBe(false); expect(hasMusicQuality(undefined)).toBe(false)
+  expect(hasMusicQuality({ lossless: false })).toBe(true); expect(hasMusicQuality({ bitrate: 320 })).toBe(true)
+})
 it('reads sampled MPEG-1 Layer III bitrate and rejects missing or reserved frame headers', () => {
   expect(parseMusicQuality(mp3(),1000000)).toMatchObject({ bitrate:320,bitrateKind:'frame',sampleRate:44100 })
   const b=mp3(); b[1044]=0

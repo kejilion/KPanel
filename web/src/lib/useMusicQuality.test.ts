@@ -20,7 +20,7 @@ vi.stubGlobal('IntersectionObserver', class {
   observe(element: Element) { observed.push(element) }
   disconnect = disconnect
 })
-afterEach(() => { clearMusicInfoMemory(); readers.mockReset(); disconnect.mockClear() })
+afterEach(() => { clearMusicInfoMemory(); readers.mockReset(); disconnect.mockClear(); vi.useRealTimers() })
 function track(index: number): Track {
   return tracksFromEntries([{ name: index + '.mp3', path: '/music/' + index + '.mp3', kind: 'file', sizeBytes: 100, resourceVersion: '1' } as FileEntry], '')[0]!
 }
@@ -66,4 +66,31 @@ it('invalidates by host and resource version and bounds error cache', async () =
   }
   expect(quality(original)).toBeUndefined(); expect(api.music.cache).toHaveBeenCalled()
   wrapper.unmount()
+})
+
+it('retries transient quality failures and stops retrying after success', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+  readers.mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ lossless: true, bitrate: 960 })
+  const { wrapper, tracks, quality } = await setup(1)
+  try {
+    visible(); await flushPromises(); expect(readers).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(1000); await flushPromises()
+    expect(readers).toHaveBeenCalledTimes(2); expect(quality(tracks.value[0]!)?.lossless).toBe(true)
+    await vi.advanceTimersByTimeAsync(60000); expect(readers).toHaveBeenCalledTimes(2)
+  } finally { wrapper.unmount() }
+})
+
+it('pauses retries offscreen, bounds automatic attempts and permits a later visible retry', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+  readers.mockRejectedValue(new Error('offline'))
+  const { wrapper } = await setup(1)
+  try {
+    visible(); await flushPromises()
+    callback(observed.map(target => ({ target, isIntersecting: false }) as IntersectionObserverEntry), {} as IntersectionObserver)
+    await vi.advanceTimersByTimeAsync(1000); expect(readers).toHaveBeenCalledOnce()
+    visible(); await flushPromises(); expect(readers).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(2000); await flushPromises(); expect(readers).toHaveBeenCalledTimes(3)
+    await vi.advanceTimersByTimeAsync(60000); expect(readers).toHaveBeenCalledTimes(3)
+    visible(); await flushPromises(); expect(readers).toHaveBeenCalledTimes(4)
+  } finally { wrapper.unmount() }
 })

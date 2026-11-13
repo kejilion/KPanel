@@ -10,6 +10,9 @@ export interface MusicQuality {
   bitsPerSample?: number
   vbr?: boolean
 }
+export function hasMusicQuality(value: MusicQuality | undefined): value is MusicQuality {
+  return Boolean(value && (typeof value.lossless === 'boolean' || Number.isFinite(value.bitrate) || Number.isFinite(value.sampleRate) || Number.isFinite(value.bitsPerSample)))
+}
 const prefixBytes = 64 * 1024
 const text = (b: Uint8Array, at: number, size: number) => String.fromCharCode(...b.subarray(at, at + size))
 const u32 = (b: Uint8Array, at: number, little = false) => at + 4 <= b.length ? new DataView(b.buffer, b.byteOffset, b.byteLength).getUint32(at, little) : 0
@@ -32,15 +35,18 @@ function mp3Frame(b: Uint8Array, i: number) {
 }
 
 /** Parse format headers only; labels describe the encoding, not recording provenance. */
-export function parseMusicQuality(b: Uint8Array, fileBytes: number, audioOnly = false): MusicQuality {
-  if (!audioOnly && b.length >= 42 && text(b, 0, 4) === 'fLaC' && (b[4]! & 127) === 0 && ((b[5]! << 16) | (b[6]! << 8) | b[7]!) === 34) {
+export function parseMusicQuality(input: Uint8Array, fileBytes: number, afterTag = false): MusicQuality {
+  const offset = afterTag ? 0 : id3AudioOffset(input)
+  if (!afterTag && text(input, 0, 3) === 'ID3' && !offset) return {}
+  const b = input.subarray(offset)
+  if (b.length >= 42 && text(b, 0, 4) === 'fLaC' && (b[4]! & 127) === 0 && ((b[5]! << 16) | (b[6]! << 8) | b[7]!) === 34) {
     const sampleRate = (b[18]! << 12) | (b[19]! << 4) | (b[20]! >> 4)
     const bitsPerSample = (((b[20]! & 1) << 4) | (b[21]! >> 4)) + 1
     const samples = (b[21]! & 15) * 2 ** 32 + u32(b, 22)
     if (!sampleRate || bitsPerSample < 4 || bitsPerSample > 32) return {}
     return { lossless: true, sampleRate, bitsPerSample, ...(samples && fileBytes > 0 ? { bitrate: Math.round(fileBytes * 8 * sampleRate / samples / 1000), bitrateKind: 'average' as const } : {}) }
   }
-  if (!audioOnly && text(b, 0, 4) === 'RIFF' && text(b, 8, 4) === 'WAVE') {
+  if (text(b, 0, 4) === 'RIFF' && text(b, 8, 4) === 'WAVE') {
     for (let at = 12, chunks = 0; at + 8 <= b.length && chunks++ < 256;) {
       const size = u32(b, at + 4, true), start = at + 8
       if (text(b, at, 4) === 'fmt ' && size >= 16 && start + 16 <= b.length) {
@@ -55,10 +61,8 @@ export function parseMusicQuality(b: Uint8Array, fileBytes: number, audioOnly = 
     return {}
   }
   // APE/AIFF/DSD are recognized as lossless encodings; no invented bitrate.
-  if (!audioOnly && b.length >= 32 && (text(b, 0, 4) === 'MAC ' || (text(b, 0, 4) === 'FORM' && text(b, 8, 4) === 'AIFF') || text(b, 0, 4) === 'DSD ')) return { lossless: true }
-  const offset = audioOnly ? 0 : id3AudioOffset(b)
-  if (!audioOnly && text(b, 0, 3) === 'ID3' && !offset) return {}
-  for (let i = offset; i < Math.min(b.length - 4, offset + 4096); i++) {
+  if (b.length >= 32 && (text(b, 0, 4) === 'MAC ' || (text(b, 0, 4) === 'FORM' && text(b, 8, 4) === 'AIFF') || text(b, 0, 4) === 'DSD ')) return { lossless: true }
+  for (let i = 0; i < Math.min(b.length - 4, 4096); i++) {
     const first = mp3Frame(b, i)
     if (!first) continue
     const next = mp3Frame(b, i + first.frameBytes)
@@ -108,7 +112,7 @@ export async function readMusicQuality(track: Track, signal: AbortSignal): Promi
   const version = track.entry.resourceVersion || undefined
   const bytes = await prefix(url, 0, prefixBytes, signal, version)
   const offset = id3AudioOffset(bytes)
-  if (offset >= bytes.length && offset < track.entry.sizeBytes - 4) {
+  if (offset > 0 && bytes.length - offset < 8192 && offset < track.entry.sizeBytes - 4) {
     return parseMusicQuality(await prefix(url, offset, 8192, signal, version), track.entry.sizeBytes, true)
   }
   return parseMusicQuality(bytes, track.entry.sizeBytes)
