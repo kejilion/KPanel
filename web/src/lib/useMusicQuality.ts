@@ -39,12 +39,13 @@ export function useMusicQuality(root: Ref<HTMLElement | undefined>, tracks: () =
     const timer = setTimeout(stop, 6000)
     try {
       const info = await loadMusicInfo(track, probe.signal)
-      const value = hasMusicQuality(info.quality) ? info.quality : peekMusicInfo(track)?.quality
+      const currentKey = musicQualityKey(track)
+      const value = currentKey === key && hasMusicQuality(info.quality) ? info.quality : peekMusicInfo(track)?.quality
       if (!controller.signal.aborted) {
-        if (hasMusicQuality(value)) remember(key, value)
-        else failed(key)
+        if (hasMusicQuality(value)) remember(currentKey, value)
+        else failed(currentKey)
       }
-    } catch { if (!controller.signal.aborted) failed(key) }
+    } catch { if (!controller.signal.aborted) failed(musicQualityKey(track)) }
     finally {
       clearTimeout(timer); controller.signal.removeEventListener('abort', stop)
       pending.delete(key); active--; pump(); scheduleRetry()

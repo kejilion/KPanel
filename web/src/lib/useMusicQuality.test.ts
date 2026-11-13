@@ -9,7 +9,7 @@ import { clearMusicInfoMemory } from './musicInfoCache'
 import { api } from './api'
 import type { FileEntry } from '@/types/api'
 
-vi.mock('./api', () => ({ api: { music: { cache: vi.fn(async () => ({ items: [] })) }, files: { contentUrl: (path: string) => path } } }))
+vi.mock('./api', () => ({ api: { music: { cache: vi.fn(async () => ({ items: [] })) }, files: { entry: vi.fn(), contentUrl: (path: string) => path } } }))
 vi.mock('./musicTags', () => ({ readMusicTags: vi.fn(async () => ({})) }))
 vi.mock('./musicQuality', async importOriginal => ({ ...await importOriginal<typeof import('./musicQuality')>(), readMusicQuality: vi.fn() }))
 const readers = vi.mocked(readMusicQuality)
@@ -92,5 +92,19 @@ it('pauses retries offscreen, bounds automatic attempts and permits a later visi
     await vi.advanceTimersByTimeAsync(2000); await flushPromises(); expect(readers).toHaveBeenCalledTimes(3)
     await vi.advanceTimersByTimeAsync(60000); expect(readers).toHaveBeenCalledTimes(3)
     visible(); await flushPromises(); expect(readers).toHaveBeenCalledTimes(4)
+  } finally { wrapper.unmount() }
+})
+
+it('retries using the resolved file version when restoring an unversioned queue entry', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+  readers.mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ lossless: true })
+  const { wrapper, tracks, quality } = await setup(1)
+  try {
+    vi.mocked(api.files.entry).mockResolvedValue({ ...track(0).entry, resourceVersion: 'resolved' })
+    tracks.value = [{ ...track(0), entry: { ...track(0).entry, resourceVersion: '' } }]
+    await flushPromises(); visible(); await flushPromises()
+    expect(tracks.value[0]!.entry.resourceVersion).toBe('resolved')
+    await vi.advanceTimersByTimeAsync(1000); await flushPromises()
+    expect(readers).toHaveBeenCalledTimes(2); expect(quality(tracks.value[0]!)?.lossless).toBe(true)
   } finally { wrapper.unmount() }
 })
