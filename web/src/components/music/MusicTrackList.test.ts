@@ -30,7 +30,7 @@ async function setup() {
     slots: { default: ({ track, index }: { track: Track; index: number }) => h('li', { 'data-index': index }, track.title) } })
   mounted.push(wrapper)
   await flushPromises()
-  await vi.waitFor(() => expect(wrapper.findAll('[data-index]').length).toBeLessThan(20))
+  await vi.waitFor(() => expect(wrapper.findAll('[data-index]').length).toBeLessThan(40))
   return { root, wrapper }
 }
 it('mounts a bounded window and reaches the last song without mounting the whole library', async () => {
@@ -39,7 +39,7 @@ it('mounts a bounded window and reaches the last song without mounting the whole
   expect(wrapper.find('[data-index="499"]').exists()).toBe(false)
   root.scrollTop = 76 * 490; root.dispatchEvent(new Event('scroll'))
   await vi.waitFor(() => expect(wrapper.find('[data-index="499"]').exists()).toBe(true))
-  expect(wrapper.findAll('[data-index]').length).toBeLessThan(30)
+  expect(wrapper.findAll('[data-index]').length).toBeLessThan(180)
   expect(wrapper.get('[data-music-spacer]').attributes('aria-hidden')).toBe('true')
   expect(wrapper.emitted('rangeChange')!.length).toBeGreaterThan(1)
 })
@@ -48,10 +48,11 @@ it('uses measured row heights, responds to resize and keeps filtered results rea
   callback([0, 1].map((index) => ({ target: wrapper.get(`[data-index="${index}"]`).element,
     borderBoxSize: [{ blockSize: index === 0 ? 100 : 200 }] } as unknown as ResizeObserverEntry)), {} as ResizeObserver)
   await flushPromises()
-  root.scrollTop = 1600; root.dispatchEvent(new Event('scroll'))
-  await vi.waitFor(() => expect(wrapper.findAll('[data-index]')[0]!.attributes('data-index')).toBe('13'))
-  callback([{ target: wrapper.get('[data-index="13"]').element, borderBoxSize: [{ blockSize: 80 }] } as unknown as ResizeObserverEntry], {} as ResizeObserver)
-  expect(root.scrollTop).toBe(1604)
+  root.scrollTop = 10000
+  callback([{ target: root } as unknown as ResizeObserverEntry], {} as ResizeObserver)
+  await vi.waitFor(() => expect(wrapper.findAll('[data-index]')[0]!.attributes('data-index')).toBe('108'))
+  callback([{ target: wrapper.get('[data-index="108"]').element, borderBoxSize: [{ blockSize: 80 }] } as unknown as ResizeObserverEntry], {} as ResizeObserver)
+  expect(root.scrollTop).toBe(10004)
   const previous = wrapper.findAll('[data-index]').length
   Object.defineProperty(root, 'clientHeight', { value: 900, configurable: true })
   callback([{ target: root } as unknown as ResizeObserverEntry], {} as ResizeObserver)
@@ -59,4 +60,13 @@ it('uses measured row heights, responds to resize and keeps filtered results rea
   await wrapper.setProps({ tracks: tracks(1) })
   expect(wrapper.findAll('[data-index]')).toHaveLength(1)
   expect(wrapper.get('[data-index]').text()).toBe('Song 0')
+})
+
+it('updates the mounted range on scroll without waiting for another animation frame', async () => {
+  const { root, wrapper } = await setup()
+  vi.spyOn(window, 'requestAnimationFrame').mockReturnValue(0)
+  root.scrollTop = 10000; root.dispatchEvent(new Event('scroll'))
+  await flushPromises()
+  expect(Number(wrapper.findAll('[data-index]')[0]!.attributes('data-index'))).toBeGreaterThan(80)
+  expect(wrapper.findAll('[data-index]').length).toBeLessThan(180)
 })

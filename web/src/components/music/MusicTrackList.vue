@@ -6,7 +6,7 @@ const props = defineProps<{ tracks: Track[]; scrollRoot?: HTMLElement }>()
 const emit = defineEmits<{ rangeChange: [] }>()
 const list = shallowRef<HTMLOListElement>()
 const heights = shallowReactive(new Map<string, number>())
-const viewport = shallowRef({ top: 0, height: 600 })
+const viewport = shallowRef({ top: 0, height: 600, padding: 1600 })
 const offsets = computed(() => {
   const values = [0]
   for (const track of props.tracks) values.push(values[values.length - 1]! + (heights.get(trackKey(track)) ?? 76))
@@ -23,8 +23,8 @@ function rowAt(position: number) {
 }
 const range = computed(() => {
   const count = props.tracks.length
-  const start = Math.max(0, Math.min(count - 1, rowAt(viewport.value.top)) - 6)
-  const end = Math.min(count, Math.max(start + 1, rowAt(viewport.value.top + viewport.value.height) + 7))
+  const start = Math.max(0, Math.min(count - 1, rowAt(Math.max(0, viewport.value.top - viewport.value.padding))))
+  const end = Math.min(count, Math.max(start + 1, rowAt(viewport.value.top + viewport.value.height + viewport.value.padding) + 1))
   return { start, end }
 })
 const rows = computed(() => props.tracks.slice(range.value.start, range.value.end).map((track, index) => ({ track, index: range.value.start + index })))
@@ -38,10 +38,14 @@ function refresh() {
   if (!root || !target) return
   const padding = Number.parseFloat(getComputedStyle(target).paddingTop) || 0
   const top = root.getBoundingClientRect().top + root.clientTop - target.getBoundingClientRect().top - target.clientTop - padding
-  const next = { top: Math.max(0, top), height: root.clientHeight }
+  const next = { top: Math.max(0, top), height: root.clientHeight, padding: viewport.value.padding }
   if (next.top !== viewport.value.top || next.height !== viewport.value.height) viewport.value = next
 }
 function schedule() { if (!frame && !destroyed) frame = requestAnimationFrame(refresh) }
+function scrolled() {
+  if (frame) cancelAnimationFrame(frame)
+  refresh()
+}
 async function observeRows() {
   await nextTick()
   if (destroyed || !list.value) return
@@ -60,8 +64,8 @@ async function observeRows() {
   schedule()
 }
 watch(() => props.scrollRoot, (root, previous) => {
-  previous?.removeEventListener('scroll', schedule)
-  root?.addEventListener('scroll', schedule, { passive: true })
+  previous?.removeEventListener('scroll', scrolled)
+  root?.addEventListener('scroll', scrolled, { passive: true })
   schedule()
 }, { immediate: true })
 watch(() => props.tracks.map(trackKey), keys => {
@@ -91,7 +95,7 @@ watch([list, rows], () => {
 }, { flush: 'post' })
 onBeforeUnmount(() => {
   destroyed = true
-  props.scrollRoot?.removeEventListener('scroll', schedule)
+  props.scrollRoot?.removeEventListener('scroll', scrolled)
   observer?.disconnect()
   if (frame) cancelAnimationFrame(frame)
 })
