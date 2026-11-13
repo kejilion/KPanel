@@ -69,6 +69,7 @@ it('bounds oversized responses and skips large ID3 tags with a second bounded ra
   expect(id3AudioOffset(head)).toBe(65546)
   expect(await readMusicQuality(track,new AbortController().signal)).toMatchObject({bitrate:320})
   expect(fetcher.mock.calls[0]?.[0]).toContain('/node-a/music/song.mp3')
+  expect(fetcher.mock.calls[0]?.[1].cache).toBe('no-store')
   expect(fetcher.mock.calls[1]?.[1].headers.get('Range')).toBe('bytes=65546-73737')
 })
 it('rejects metadata ranges from a different file version', async () => {

@@ -114,7 +114,7 @@ export class MusicVersionMismatchError extends Error {
 
 export async function readMusicTags(url: string, signal: AbortSignal, expectedResourceVersion?: string): Promise<MusicTags> {
   const headers = new Headers({ Range: 'bytes=0-' + (TAG_BUDGET - 1) })
-  const response = await fetch(url, { headers, signal })
+  const response = await fetch(url, { headers, signal, cache: 'no-store' })
   if (response.status === 412) {
     await response.body?.cancel(); throw new MusicVersionMismatchError()
   }

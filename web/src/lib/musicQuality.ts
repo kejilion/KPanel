@@ -81,7 +81,7 @@ export function parseMusicQuality(input: Uint8Array, fileBytes: number, afterTag
 
 async function prefix(url: string, start: number, length: number, signal: AbortSignal, expectedResourceVersion?: string): Promise<Uint8Array> {
   const headers = new Headers({ Range: 'bytes=' + start + '-' + (start + length - 1) })
-  const response = await fetch(url, { headers, signal })
+  const response = await fetch(url, { headers, signal, cache: 'no-store' })
   if (response.status === 412) {
     await response.body?.cancel(); throw new MusicVersionMismatchError()
   }
