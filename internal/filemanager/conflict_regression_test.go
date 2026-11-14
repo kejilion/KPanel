@@ -148,11 +148,13 @@ func TestIndependentCancelledDirectoryReceiveReleasesReservation(t *testing.T) {
 	if err := m.AbortReceive(ctx, session.ID, key); err != nil {
 		t.Fatal(err)
 	}
+	m.receives.mu.Lock()
 	record := m.receives.records[session.ID]
 	if record != nil {
 		_, statErr := os.Stat(filepath.Join(root, "target", ".kpanel-upload-"+session.ID))
 		t.Logf("after terminal cancellation: receiveState=%s reservation=%d bodyStat=%v", record.Session.State, receiveReservation(record.Input), statErr)
 	}
+	m.receives.mu.Unlock()
 	input.Name = "another"
 	input.SourceKey = strings.Repeat("b", 64)
 	next, err := m.BeginReceive(ctx, input)
