@@ -93,10 +93,13 @@ import { TransferRates } from '@/lib/transferRate'
 import type { FileUploadBytes } from '@/lib/fileReceiveUpload'
 import {
   collectExternalDrop,
+  collectExternalFiles,
   DesktopExternalDropError,
   uploadExternalDrop,
   type ExternalDropManifest,
 } from '@/lib/desktopExternalDrop'
+import { clipboardFiles, keepsNativeClipboard } from '@/lib/systemClipboard'
+import { copyText } from '@/lib/clipboard'
 import FileEntryIcon from '@/components/files/FileEntryIcon.vue'
 import { fileEntryIconKind as entryIconKind } from '@/lib/fileEntryPresentation'
 import { fileAPIForHost } from '@/lib/fileHostContext'
@@ -2032,11 +2035,14 @@ function cancelArchive(): void {
   archiveController?.abort()
 }
 
-function setClipboard(mode: FileTransferOperation, entry?: FileEntry): void {
+function setClipboard(mode: FileTransferOperation, entry?: FileEntry, syncSystem = true): void {
   contextMenu.value = undefined
   const entriesToStore = entriesForBatch(entry)
   if (!entriesToStore.length) return
   fileClipboard.set(mode, entriesToStore, fileHostId.value)
+  // Menu copy/cut should replace a previous system image too. Native keyboard
+  // copy/cut supplies its data synchronously in handleFileCopy instead.
+  if (syncSystem) void copyText(entriesToStore.map((item) => item.path).join('\n')).catch(() => undefined)
   clearSelection()
 }
 
@@ -3005,6 +3011,42 @@ function closeContextMenuOnScroll(event: Event): void {
   newMenuOpen.value = false
 }
 
+function ownsFileClipboardEvent(event: ClipboardEvent): boolean {
+  return !event.defaultPrevented && desktopWindowActive.value && !previewEntry.value
+    && !document.body.classList.contains('has-modal') && !keepsNativeClipboard(event.target)
+    && Boolean(filesPage.value?.contains(event.target as Node))
+}
+
+function handleFileCopy(event: ClipboardEvent): void {
+  if (!ownsFileClipboardEvent(event) || !selectedEntries.value.length || !event.clipboardData) return
+  const paths = selectedEntries.value.map((entry) => entry.path).join('\n')
+  event.clipboardData.setData('text/plain', paths)
+  event.preventDefault()
+  setClipboard(event.type === 'cut' ? 'move' : 'copy', undefined, false)
+}
+
+async function handleFilePaste(event: ClipboardEvent): Promise<void> {
+  if (!ownsFileClipboardEvent(event)) return
+  const files = clipboardFiles(event)
+  if (!files.length) {
+    const paths = clipboard.value?.entries.map((entry) => entry.path).join('\n')
+    if (paths && event.clipboardData?.getData('text/plain') === paths) {
+      event.preventDefault()
+      await pasteClipboard()
+    }
+    return
+  }
+  event.preventDefault()
+  const target = currentPath.value
+  const hostId = fileHostId.value
+  try {
+    const manifest = collectExternalFiles(files)
+    await uploadFiles(manifest.files.map((item) => item.file), target, hostId)
+  } catch (error) {
+    toast.danger('文件上传失败', externalUploadErrorMessage(error))
+  }
+}
+
 function handleFileShortcut(event: KeyboardEvent): void {
   if (!desktopWindowActive.value) return
   if (shortcutFilePreviewOnly.value && !shortcutPreviewStarted.value && event.key === 'Escape'
@@ -3044,15 +3086,6 @@ function handleFileShortcut(event: KeyboardEvent): void {
     event.preventDefault()
     selected.value = new Set(entries.value.map((entry) => entry.path))
     selectionAnchor.value = entries.value[0]?.path
-  } else if ((event.ctrlKey || event.metaKey) && key === 'c' && selectedEntries.value.length) {
-    event.preventDefault()
-    setClipboard('copy')
-  } else if ((event.ctrlKey || event.metaKey) && key === 'x' && selectedEntries.value.length) {
-    event.preventDefault()
-    setClipboard('move')
-  } else if ((event.ctrlKey || event.metaKey) && key === 'v' && clipboard.value?.entries.length) {
-    event.preventDefault()
-    void pasteClipboard()
   } else if (event.key === 'Delete' && selectedEntries.value.length) {
     event.preventDefault()
     openDialog('trash')
@@ -3090,6 +3123,9 @@ onMounted(() => {
   unregisterSplitBusyCheck = filesSplit?.registerBusyCheck(fileOperationsRunning)
   window.addEventListener('click', handleWindowClick)
   window.addEventListener('keydown', handleFileShortcut)
+  window.addEventListener('copy', handleFileCopy)
+  window.addEventListener('cut', handleFileCopy)
+  window.addEventListener('paste', handleFilePaste)
   window.addEventListener('resize', closeContextMenuOnViewportChange)
   document.addEventListener('scroll', closeContextMenuOnScroll, true)
   window.visualViewport?.addEventListener?.('resize', closeContextMenuOnViewportChange)
@@ -3176,6 +3212,9 @@ onBeforeUnmount(() => {
   clearMediaLoadTimer()
   window.removeEventListener('click', handleWindowClick)
   window.removeEventListener('keydown', handleFileShortcut)
+  window.removeEventListener('copy', handleFileCopy)
+  window.removeEventListener('cut', handleFileCopy)
+  window.removeEventListener('paste', handleFilePaste)
   window.removeEventListener('resize', closeContextMenuOnViewportChange)
   document.removeEventListener('scroll', closeContextMenuOnScroll, true)
   window.visualViewport?.removeEventListener?.('resize', closeContextMenuOnViewportChange)

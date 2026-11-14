@@ -1422,6 +1422,52 @@ describe('DesktopView dynamic entries', () => {
     wrapper.unmount()
   })
 
+  it('pastes a screenshot onto the desktop and creates a server-file icon through the upload pipeline', async () => {
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await flushPromises()
+    const event = new Event('paste', { bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'clipboardData', { value: {
+      files: [new File(['pixels'], 'image.png', { type: 'image/png' })], items: [],
+    } })
+    wrapper.element.dispatchEvent(event)
+    await flushPromises()
+    expect(event.defaultPrevented).toBe(true)
+    expect(mockedFileUpload).toHaveBeenCalledTimes(1)
+    const uploaded = mockedFileUpload.mock.calls[0]![1]
+    expect(uploaded.name).toMatch(/^clipboard-\d+-1\.png$/)
+    expect(mockedWorkspaceUpdate.mock.calls.at(-1)?.[0]?.shortcuts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: `/home/KPanel Desktop/${uploaded.name}`, targetType: 'file' }),
+    ]))
+    expect(wrapper.get('.desktop-transfer').text()).toContain('已传到桌面')
+    wrapper.unmount()
+  })
+
+  it('does not paste desktop files through a window, editor, modal or already handled event', async () => {
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await flushPromises()
+    const windowBody = document.createElement('div')
+    windowBody.className = 'desktop-window'
+    const editor = document.createElement('div')
+    editor.setAttribute('contenteditable', '')
+    wrapper.element.append(windowBody, editor)
+    for (const target of [windowBody, editor]) {
+      const event = new Event('paste', { bubbles: true, cancelable: true })
+      Object.defineProperty(event, 'clipboardData', { value: { files: [new File(['x'], 'test.png')] } })
+      target.dispatchEvent(event)
+      expect(event.defaultPrevented).toBe(false)
+    }
+    document.body.classList.add('has-modal')
+    const event = new Event('paste', { bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'clipboardData', { value: { files: [new File(['x'], 'test.png')] } })
+    wrapper.element.dispatchEvent(event)
+    document.body.classList.remove('has-modal')
+    event.preventDefault()
+    wrapper.element.dispatchEvent(event)
+    await flushPromises()
+    expect(mockedFileUpload).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   it('uploads an external operating-system file and creates a real server-file desktop entry', async () => {
     const wrapper = mount(DesktopView, { attachTo: document.body })
     await flushPromises()

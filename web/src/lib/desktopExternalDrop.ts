@@ -213,6 +213,22 @@ export function hasExternalFileDrop(event: DragEvent): boolean {
   return Array.from(event.dataTransfer?.types || []).includes('Files')
 }
 
+export function collectExternalFiles(files: readonly File[]): ExternalDropManifest {
+  const manifest: ExternalDropManifest = { roots: [], directories: [], files: [], totalBytes: 0 }
+  if (files.length > MAX_EXTERNAL_DROP_FILES) {
+    throw new DesktopExternalDropError('too_many', `每次最多上传 ${MAX_EXTERNAL_DROP_FILES} 个文件。`)
+  }
+  for (const file of files) addFallbackFile(file, manifest)
+  const roots = new Map<string, ExternalDropRootKind>()
+  for (const directory of manifest.directories) roots.set(directory[0]!, 'directory')
+  for (const value of manifest.files) {
+    if (!roots.has(value.segments[0]!)) roots.set(value.segments[0]!, value.segments.length > 1 ? 'directory' : 'file')
+  }
+  manifest.roots = [...roots].map(([name, kind]) => ({ name, kind }))
+  if (!manifest.roots.length) throw new DesktopExternalDropError('unsupported', '没有检测到可上传的文件。')
+  return manifest
+}
+
 export async function collectExternalDrop(dataTransfer: DataTransfer, signal?: AbortSignal): Promise<ExternalDropManifest> {
   signal?.throwIfAborted()
   const manifest: ExternalDropManifest = { roots: [], directories: [], files: [], totalBytes: 0 }
@@ -240,20 +256,7 @@ export async function collectExternalDrop(dataTransfer: DataTransfer, signal?: A
       await walkEntry(entry, [], manifest, signal)
     }
   } else {
-    const files = dataTransfer.files || []
-    if (files.length > MAX_EXTERNAL_DROP_FILES) {
-      throw new DesktopExternalDropError('too_many', `每次最多拖入 ${MAX_EXTERNAL_DROP_FILES} 个文件。`)
-    }
-    for (const file of Array.from(files)) {
-      signal?.throwIfAborted()
-      addFallbackFile(file, manifest)
-    }
-    const roots = new Map<string, ExternalDropRootKind>()
-    for (const directory of manifest.directories) roots.set(directory[0]!, 'directory')
-    for (const value of manifest.files) {
-      if (!roots.has(value.segments[0]!)) roots.set(value.segments[0]!, value.segments.length > 1 ? 'directory' : 'file')
-    }
-    manifest.roots = [...roots].map(([name, kind]) => ({ name, kind }))
+    return collectExternalFiles(Array.from(dataTransfer.files || []))
   }
   if (!manifest.roots.length) throw new DesktopExternalDropError('unsupported', '没有检测到可上传的文件或目录。')
   return manifest

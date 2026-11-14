@@ -106,6 +106,7 @@ import {
 } from '@/lib/desktopFileShortcuts'
 import {
   collectExternalDrop,
+  collectExternalFiles,
   DESKTOP_UPLOAD_DIRECTORY,
   DesktopExternalDropError,
   hasExternalFileDrop,
@@ -113,6 +114,7 @@ import {
   type DesktopExternalTransferAPI,
   type DesktopExternalTransferProgress,
 } from '@/lib/desktopExternalDrop'
+import { clipboardFiles, keepsNativeClipboard } from '@/lib/systemClipboard'
 import {
   DESKTOP_NEW_ITEM_LABELS,
   DESKTOP_NEW_ITEM_TYPES,
@@ -3426,6 +3428,25 @@ async function addInternalFileDrop(event: DragEvent, destination: DesktopIconPos
 async function addExternalFileDrop(event: DragEvent, destination: DesktopIconPosition): Promise<void> {
   const dataTransfer = event.dataTransfer
   if (!dataTransfer) return
+  await addExternalFiles((signal) => collectExternalDrop(dataTransfer, signal), destination, event)
+}
+
+function onDesktopPaste(event: ClipboardEvent): void {
+  if (event.defaultPrevented || document.body.classList.contains('has-modal') || keepsNativeClipboard(event.target)) return
+  const target = event.target instanceof Element ? event.target : undefined
+  if (target?.closest('.desktop-window, .desktop-widget-slot, .desktop__taskbar, .desktop-start-menu, .desktop__context-menu')) return
+  const files = clipboardFiles(event)
+  if (!files.length) return
+  event.preventDefault()
+  event.stopPropagation()
+  void addExternalFiles(async () => collectExternalFiles(files), { x: 0, y: 0 })
+}
+
+async function addExternalFiles(
+  collect: (signal: AbortSignal) => Promise<ReturnType<typeof collectExternalFiles>>,
+  destination: DesktopIconPosition,
+  dropEvent?: DragEvent,
+): Promise<void> {
   if (desktopTransfer.value && ['preparing', 'uploading'].includes(desktopTransfer.value.phase)) {
     toast.show(i18n.t('desktop.transferBusyTitle'), { message: i18n.t('desktop.transferBusyMessage') })
     return
@@ -3437,9 +3458,10 @@ async function addExternalFileDrop(event: DragEvent, destination: DesktopIconPos
     phase: 'preparing', roots: 0, failed: 0, detail: '', currentName: '',
     completedFiles: 0, totalFiles: 0, loadedBytes: 0, totalBytes: 0,
   }
-  showDropPulse(event)
+  if (dropEvent) showDropPulse(dropEvent)
   try {
-    const manifest = await collectExternalDrop(dataTransfer, controller.signal)
+    const manifest = await collect(controller.signal)
+    controller.signal.throwIfAborted()
     desktopTransfer.value = {
       phase: 'uploading', roots: manifest.roots.length, failed: 0, detail: '',
       currentName: manifest.roots[0]?.name || '', completedFiles: 0,
@@ -4561,6 +4583,7 @@ function onViewportResize(): void {
     @dragover="onDesktopFileDragOver"
     @dragleave="onDesktopFileDragLeave"
     @drop="onDesktopFileDrop"
+    @paste="onDesktopPaste"
   >
     <div v-if="appearanceReady" class="desktop__wallpaper" :class="{ 'desktop__wallpaper--scene': liveScenePack }" aria-hidden="true">
       <DesktopWallpaper
