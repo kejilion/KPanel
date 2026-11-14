@@ -11,6 +11,7 @@
 ### Fixed
 - 标准显式浏览器配置和网络恢复流程能够识别 Tor 组件，卸载后可继续选择 Chromium。
 - 构建可选 Tor 镜像时同步安装 Ubuntu 基础系统安全更新，避免沿用旧版 apt 与 OpenSSL 包。
+- 从固定上游源码重建 Tor 的 Conjure、Lyrebird 网桥助手，升级安全依赖，并保留模块锁、来源与许可证清单。
 
 ### Compatibility
 - 保留 RC1 的音乐长列表、当前曲目定位与 FLAC 音质修复；不新增宿主脚本要求，默认 Chromium 组件和稳定更新通道保持原有行为。

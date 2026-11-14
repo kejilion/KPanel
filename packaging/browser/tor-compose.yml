@@ -1,7 +1,7 @@
 # Native Tor Browser desktop. Private control network; no published ports or host data mounts.
 services:
   browser:
-    image: kpanel-browser-tor:16.0.1
+    image: kpanel-browser-tor:16.0.1-kpanel.1
     build:
       context: .
       dockerfile: tor.Dockerfile

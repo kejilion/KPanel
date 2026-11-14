@@ -547,15 +547,20 @@ export function npmCandidatesFromOutdated(outdated, directNames = new Set(), roo
   ])).values()];
 }
 
-async function collectGoModules(repo) {
-  const values = parseConcatenatedJson(run(repo, goExecutable(), ['list', '-m', '-u', '-json', 'all']));
-  return values.filter((module) => module.Update?.Version && isStableVersion(module.Update.Version))
-    .map((module) => candidate(module.Path, module.Version, module.Update.Version, 'package', 'go list -m -u', {
+export async function collectGoModules(repo, policy, execute = run) {
+  const manifests = policy.groups.find((group) => group.id === 'go-modules').manifests.filter((path) => basename(path) === 'go.mod');
+  return manifests.flatMap((manifest) => {
+    const context = manifest === 'go.mod' ? '' : 'Tor ' + basename(dirname(manifest)) + ' helper: ';
+    const values = parseConcatenatedJson(execute(resolve(repo, dirname(manifest)), goExecutable(), ['list', '-mod=readonly', '-m', '-u', '-json', 'all']));
+    return values.filter((module) => module.Update?.Version && isStableVersion(module.Update.Version))
+    .map((module) => candidate(context + module.Path, module.Version, module.Update.Version, 'package', 'go list -m -u', {
+      dependencyManifest: manifest,
       dependencyScope: module.Indirect ? 'transitive' : 'direct',
       actionability: module.Indirect ? 'owned-by-direct-dependency' : 'direct-action',
       adoptionLane: module.Indirect ? 'owning-module' : 'direct-module',
     }))
     .filter(Boolean);
+  });
 }
 
 async function collectNpm(repo) {
@@ -803,7 +808,7 @@ export function auditSkillRevisionCandidate(component, pinnedCommit, headCommit,
 // is a declared-but-unimplemented detector and fails validation.
 export const COLLECTORS = [
   { id: 'tor-browser-component', groups: ['tor-browser-component'], collect: (repo) => collectTorBrowser(repo) },
-  { id: 'go-modules', groups: ['go-modules'], collect: (repo) => collectGoModules(repo) },
+  { id: 'go-modules', groups: ['go-modules'], collect: (repo, policy) => collectGoModules(repo, policy) },
   { id: 'npm-packages', groups: ['npm-packages'], collect: (repo) => collectNpm(repo) },
   { id: 'toolchains-and-base-images', groups: ['go-toolchain', 'node-toolchain'], collect: (repo) => collectToolchains(repo) },
   { id: 'docker-base-images', groups: ['docker-base-images'], collect: (repo) => collectBaseImages(repo) },

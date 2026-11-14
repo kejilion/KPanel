@@ -7,6 +7,7 @@ import {
   auditSkillRevisionCandidate,
   classifyUpdate,
   collectTorBrowser,
+  collectGoModules,
   COLLECTORS,
   compareVersions,
   goExecutable,
@@ -26,6 +27,31 @@ import {
   summarize,
   validatePolicy,
 } from '../report-dependency-freshness.mjs';
+
+test('Go freshness includes isolated Tor helper graphs and retains ownership scope', async () => {
+  const manifests = ['go.mod', 'go.sum', 'packaging/browser/tor-helpers/conjure/go.mod', 'packaging/browser/tor-helpers/lyrebird/go.mod'];
+  const calls = [];
+  const policy = { groups: [{ id: 'go-modules', manifests }] };
+  const results = await collectGoModules('/project', policy, (cwd, command, args) => {
+    calls.push(cwd);
+    assert.ok(args.includes('-mod=readonly'));
+    return JSON.stringify({ Path: 'golang.org/x/net', Version: 'v0.61.0', Update: { Version: 'v0.62.0' }, Indirect: cwd.includes('conjure') });
+  });
+  assert.equal(calls.length, 3);
+  assert.equal(results.length, 3);
+  assert.equal(results[0].component, 'golang.org/x/net');
+  assert.equal(results[1].component, 'Tor conjure helper: golang.org/x/net');
+  assert.equal(results[1].dependencyScope, 'transitive');
+  assert.equal(results[2].dependencyManifest, 'packaging/browser/tor-helpers/lyrebird/go.mod');
+});
+
+test('a failed Tor helper graph is reported as a detector failure', async () => {
+  const policy = { groups: [{ id: 'go-modules', manifests: ['go.mod', 'packaging/browser/tor-helpers/lyrebird/go.mod'] }] };
+  await assert.rejects(collectGoModules('/project', policy, (cwd) => {
+    if (cwd.includes('lyrebird')) throw Error('helper module source unavailable');
+    return '{}';
+  }), /helper module source unavailable/);
+});
 
 test('Tor runtime and its base image are both checked against primary sources', async () => {
   const repo = resolve(import.meta.dirname, '../..');

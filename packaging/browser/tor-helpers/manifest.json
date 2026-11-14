@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "goVersion": "1.27.4",
+  "goImage": "golang:1.27.4-alpine@sha256:0a5f7fe796599ff487605987432e7619ae45beeb2fba4c2ce0b907879932aebf",
+  "govulncheckVersion": "v1.6.0",
+  "CGO_ENABLED": "0",
+  "dependencyOverrides": {
+    "golang.org/x/net": "v0.62.0",
+    "golang.org/x/crypto": "v0.59.0",
+    "golang.org/x/text": "v0.44.0",
+    "github.com/klauspost/compress": "v1.20.4",
+    "github.com/refraction-networking/utls": "v1.8.2",
+    "github.com/andybalholm/brotli": "v1.3.0"
+  },
+  "sources": {
+    "conjure": {
+      "commit": "14e660f0a64bcbb2b55f01f69c1aafdfd5a6dcfa",
+      "package": "./client",
+      "url": "https://gitlab.torproject.org/api/v4/projects/tpo%2Fanti-censorship%2Fpluggable-transports%2Fconjure/repository/archive.tar.gz?sha=14e660f0a64bcbb2b55f01f69c1aafdfd5a6dcfa",
+      "archiveSha256": "145bb11353ca6d1b18fa29fb249e15ba603326835c2672569f972ae4d0f264c0",
+      "moduleSha256": "4d30dabd0ab2564796743e63b7be6eb3dc1da432d1be3b0db49325a0ad911781",
+      "sumSha256": "0591d4cd2e300d24edd1a5d430d1940eee8dc6844f58bf6159759c501058e73f"
+    },
+    "lyrebird": {
+      "commit": "59ac7e400c384773f5584dbe366516ad04a33d9f",
+      "package": "./cmd/lyrebird",
+      "url": "https://gitlab.torproject.org/api/v4/projects/tpo%2Fanti-censorship%2Fpluggable-transports%2Flyrebird/repository/archive.tar.gz?sha=59ac7e400c384773f5584dbe366516ad04a33d9f",
+      "archiveSha256": "a8e294e74a0737576f020e273000969ab4bb427ad93846291b6d9c8be33a7e75",
+      "moduleSha256": "c42888a84c42eee88ae15bb9ee3ffe3fcda13cfda1a12c06a8b97bcac3819968",
+      "sumSha256": "3820dbfd1ed260785089adc7b338c86d51e25ae887f410da82d611e524f0379b"
+    }
+  },
+  "origin": "KPanel rebuild of pinned Tor helper sources with security dependency updates; these two helper binaries are not the original Tor-signed bytes"
+}

@@ -168,7 +168,11 @@
       "scope": "direct-and-transitive",
       "manifests": [
         "go.mod",
-        "go.sum"
+        "go.sum",
+        "packaging/browser/tor-helpers/conjure/go.mod",
+        "packaging/browser/tor-helpers/conjure/go.sum",
+        "packaging/browser/tor-helpers/lyrebird/go.mod",
+        "packaging/browser/tor-helpers/lyrebird/go.sum"
       ],
       "detector": "go-list"
     },

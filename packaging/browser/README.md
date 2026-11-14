@@ -12,8 +12,17 @@ Agent 从 Tor 官方固定 URL 流式下载 16.0.1，单文件上限 256 MiB，�
 用随候选保存的官方签名和公钥执行 `gpgv`，限定主密钥指纹
 `EF6E286DDA85EA2A4BA7DE684E2C6E8793298290`。2026-11-14 已核验安装包签名。
 `tor.Dockerfile` 固定 jlesage Ubuntu 24.04 GUI 基座摘要，运行时安装 Ubuntu 签名仓库的 GTK、字体与图形依赖；
-镜像在宿主机构建为 `kpanel-browser-tor:16.0.1`，不依赖尚未发布的 KPanel Tor 镜像。
-Docker 构建上下文只允许配方、启动脚本、安装包、签名和公钥，不包含 Agent 的 token/任务状态。
+镜像在宿主机构建为 `kpanel-browser-tor:16.0.1-kpanel.1`，不依赖尚未发布的 KPanel Tor 镜像。
+Docker 构建上下文只允许配方、启动脚本、安装包、签名、公钥及下述助手锁定包/构建脚本，不包含 Agent 的 token/任务状态。
+
+两个网桥助手由 KPanel 重建，不再是 Tor 官方签名包内的原始助手字节：保留该版本上游使用的
+Conjure `14e660f0a64bcbb2b55f01f69c1aafdfd5a6dcfa` 与 Lyrebird
+`59ac7e400c384773f5584dbe366516ad04a33d9f` 应用源码，只升级六项安全依赖。
+`tor-helpers/manifest.json` 记录来源、归档摘要、固定 Go 工具链与版本；各自 `go.mod`/`go.sum`
+和随安装器嵌入的 `tor-helper-locks.tar` 由自动测试逐字核对。构建校验来源归档与锁文件，
+采用 `-mod=readonly`，并用固定版本 govulncheck 的普通文本模式检查实际二进制，检出漏洞即失败。
+最终镜像 `/opt/kpanel-tor-helpers` 保留来源说明、模块清单、许可证与二进制摘要。
+这增加了 KPanel 对重建助手及其依赖升级的维护责任；网桥由原生 Tor 界面配置，不能将扫描通过解释为匿名性保证。
 
 `tor-compose.yml` 不发布端口、不挂载宿主数据或 Docker Socket；浏览器进程 UID/GID 65532，根文件系统只读。
 内存 1536 MiB、CPU 1.5、PID 512，临时配置 512 MiB、临时目录 256 MiB、共享内存 256 MiB，日志 2×5 MiB。

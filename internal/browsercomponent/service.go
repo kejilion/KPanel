@@ -436,7 +436,12 @@ func (s *Service) execute(ctx context.Context, j *contract.BrowserComponentJob) 
 			if err := s.config.DownloadTor(ctx, s.config.StateDir); err != nil {
 				return err
 			}
-			assets = map[string][]byte{"compose.yml": torComposeTemplate, "tor.Dockerfile": torDockerfile, "tor-start.sh": torStart, "tor-browser.tar.xz.asc": torSignature, "tor-signing-key.asc": torSigningKey, ".dockerignore": []byte("*\n!tor.Dockerfile\n!tor-start.sh\n!tor-browser.tar.xz\n!tor-browser.tar.xz.asc\n!tor-signing-key.asc\n")}
+			assets = map[string][]byte{
+				"compose.yml": torComposeTemplate, "tor.Dockerfile": torDockerfile, "tor-start.sh": torStart,
+				"tor-browser.tar.xz.asc": torSignature, "tor-signing-key.asc": torSigningKey,
+				"tor-helper-locks.tar": torHelperLocks, "tor-helpers-build.sh": torHelpersBuild,
+				".dockerignore": []byte("*\n!tor.Dockerfile\n!tor-start.sh\n!tor-browser.tar.xz\n!tor-browser.tar.xz.asc\n!tor-signing-key.asc\n!tor-helper-locks.tar\n!tor-helpers-build.sh\n"),
+			}
 		}
 		for name, data := range assets {
 			if _, err := (atomicfile.Writer{}).WritePrivate(s.config.StateDir, filepath.Join(s.config.StateDir, name), ".config-*", data); err != nil {

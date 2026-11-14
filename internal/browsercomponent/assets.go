@@ -20,6 +20,12 @@ var torDockerfile []byte
 //go:embed assets/tor-start.sh
 var torStart []byte
 
+//go:embed assets/tor-helper-locks.tar
+var torHelperLocks []byte
+
+//go:embed assets/tor-helpers-build.sh
+var torHelpersBuild []byte
+
 // Public Tor release signature and signing key; verified against the primary
 // fingerprint in tor.Dockerfile, never credentials.
 //
@@ -29,6 +35,6 @@ var torSignature []byte
 //go:embed assets/tor-signing-key.asc
 var torSigningKey []byte
 
-const componentTorImage = "kpanel-browser-tor:16.0.1"
+const componentTorImage = "kpanel-browser-tor:16.0.1-kpanel.1"
 
 const componentImage = "docker.io/kjlion/kpanel-browser@sha256:9a5cd79bef4262cf675331a8ce07e9e5df9121d26fb3721440c6256ad444ea03"
