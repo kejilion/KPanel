@@ -17,7 +17,7 @@ Docker 构建上下文只允许配方、启动脚本、安装包、签名、公�
 
 两个网桥助手由 KPanel 重建，不再是 Tor 官方签名包内的原始助手字节：保留该版本上游使用的
 Conjure `14e660f0a64bcbb2b55f01f69c1aafdfd5a6dcfa` 与 Lyrebird
-`59ac7e400c384773f5584dbe366516ad04a33d9f` 应用源码，只升级六项安全依赖。
+`59ac7e400c384773f5584dbe366516ad04a33d9f` 应用源码，升级六项显式安全依赖及其必要传递依赖。
 `tor-helpers/manifest.json` 记录来源、归档摘要、固定 Go 工具链与版本；各自 `go.mod`/`go.sum`
 和随安装器嵌入的 `tor-helper-locks.tar` 由自动测试逐字核对。构建校验来源归档与锁文件，
 采用 `-mod=readonly`，并用固定版本 govulncheck 的普通文本模式检查实际二进制，检出漏洞即失败。

@@ -47,7 +47,7 @@ Tor 是显式选择的可选组件，不改变默认 Chromium，不新增脚本�
 
 候选 CI `43506292984` 的 Chromium hosted 生命周期在首次安装与两次真实导航后被旧测试夹具的四字段资源指纹拦截；生产观察已添加组件类型。夹具同步第五字段，保留全部七动作与生产乐观并发检查，必须在新候选的 GitHub-hosted CI 验证，不能将旧失败抹去。系统安全升级与该夹具增量共三文件已完成独立源码复核；OCR 权威圈选将两份 tor.Dockerfile 作为 unsupported_ext、testdata 脚本作为既有 user_exclude，均人工逐文件核对且记录真实排除原因，未调整圈选策略或伪造覆盖率。
 
-用户授权后的修复保持 Tor 16.0.1 使用的两个助手上游应用源码提交，只升级 x/net、x/crypto、x/text、compress、uTLS 与 Brotli 的固定依赖；模块锁、来源归档摘要和 Go 1.27.4 工具链写入安装资产。重建的两个二进制不再属于 Tor 官方签名包的原始字节，来源、模块和许可证保留在最终镜像中。两套上游源码测试及固定 govulncheck v1.6.0 普通文本 binary 检查已通过；新增锁包一致性测试与依赖检测器 32 项测试通过。这不替代最终可选镜像扫描、运行时检查、新精确候选 CI/L3 与公开验收。
+用户授权后的修复保持 Tor 16.0.1 使用的两个助手上游应用源码提交，升级 x/net、x/crypto、x/text、compress、uTLS 与 Brotli 六项显式安全依赖及其必要传递依赖；模块锁、来源归档摘要和 Go 1.27.4 工具链写入安装资产。重建的两个二进制不再属于 Tor 官方签名包的原始字节，来源、模块和许可证保留在最终镜像中。两套上游源码测试及固定 govulncheck v1.6.0 普通文本 binary 检查已通过；新增锁包一致性测试与依赖检测器 32 项测试通过。最终可选镜像 sha256:9e8cfb634187d55a0009e8c85c2b37712a5e251b84428149324666c413d892f1 已完成本地重建；固定 Trivy 对 Ubuntu 及两助手的 HIGH/CRITICAL 与秘密匹配均为 0，两个实际二进制的普通文本 govuln 检查通过。无网络受限启动 GUI 200，Firefox UID/GID 65532、有效 capability 0、NNP 1、Seccomp 2；7 种 Lyrebird 传输和 Conjure 的 managed protocol 启动及 stdin 关闭退出检查通过，但未新增真实外部网桥或 Tor 出口验证。首轮协议采集器的 TextIO/selectors 缓冲漏读和本地治理检查首次缺少 Go PATH 的失败原件均保留，修正验证前提后通过，未修改产品绕过。此次源码和依赖检测策略独立复核 PASS WITH FOLLOW-UP，唯一 LOW 文案遗漏传递依赖已修正；新精确候选 CI/L3 与公开验收仍待执行。
 
 ### 2026-11-12 v1.30.0 稳定版准备
 
