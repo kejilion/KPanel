@@ -163,3 +163,36 @@ func TestIndependentCancelledDirectoryReceiveReleasesReservation(t *testing.T) {
 		t.Fatalf("terminal cancelled directory still blocks next receive: %v", err)
 	}
 }
+
+func TestQueuedRenamePreservesMapVersion(t *testing.T) {
+	m, root := newTestManager(t)
+	mustMkdirAll(t, filepath.Join(root, "source"))
+	mustMkdirAll(t, filepath.Join(root, "target"))
+	mustWrite(t, filepath.Join(root, "source", "a.txt"), "original")
+	entry, err := m.Stat("/source/a.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.ArchiveJobs(); err != nil {
+		t.Fatal(err)
+	}
+	m.archiveJobs.gate <- struct{}{}
+	job, err := m.StartArchiveJob(contract.FileActionRequest{Action: "rename", Sources: []string{entry.Path}, Target: "/target", Name: "renamed.txt", ExpectedResourceVersions: map[string]string{entry.Path: entry.ResourceVersion}, ConflictPolicies: &contract.FileConflictPolicies{}})
+	if err != nil {
+		<-m.archiveJobs.gate
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(root, "source", "a.txt"), "replacement-source-content")
+	<-m.archiveJobs.gate
+	current := waitConflictJob(t, m, job.ID, "error")
+	if len(current.Result.Succeeded) > 0 || len(current.Result.Failed) != 1 {
+		t.Fatalf("receipt: %+v", current)
+	}
+	if _, err := os.Stat(filepath.Join(root, "target", "renamed.txt")); !os.IsNotExist(err) {
+		t.Fatalf("changed source moved: %v", err)
+	}
+	body, err := os.ReadFile(filepath.Join(root, "source", "a.txt"))
+	if err != nil || string(body) != "replacement-source-content" {
+		t.Fatalf("source: %q %v", body, err)
+	}
+}

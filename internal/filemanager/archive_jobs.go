@@ -534,6 +534,9 @@ func (m *Manager) runArchiveJob(ctx context.Context, cancel context.CancelFunc, 
 				item.Sources = nil
 			}
 			source := input.Sources[index]
+			if input.Action == "rename" {
+				item.ExpectedResourceVersion = input.ExpectedResourceVersions[source]
+			}
 			if input.Action == "extract" {
 				item.Sources = []string{source}
 				item.Format = archiveFormatForName(source)
