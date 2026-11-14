@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { resolve, join } from 'node:path';
+import { tmpdir } from 'node:os';
 import test from 'node:test';
 
 import {
   auditSkillRevisionCandidate,
   classifyUpdate,
+  collectTorBrowser,
+  collectGoModules,
   COLLECTORS,
   compareVersions,
   goExecutable,
@@ -25,6 +28,69 @@ import {
   summarize,
   validatePolicy,
 } from '../report-dependency-freshness.mjs';
+
+test('Go freshness includes isolated Tor helper graphs and retains ownership scope', async () => {
+  const manifests = ['go.mod', 'go.sum', 'packaging/browser/tor-helpers/conjure/go.mod', 'packaging/browser/tor-helpers/lyrebird/go.mod'];
+  const calls = [];
+  const policy = { groups: [{ id: 'go-modules', manifests }] };
+  const results = await collectGoModules('/project', policy, (cwd, command, args) => {
+    calls.push(cwd);
+    assert.ok(args.includes('-mod=readonly'));
+    return JSON.stringify({ Path: 'golang.org/x/net', Version: 'v0.61.0', Update: { Version: 'v0.62.0' }, Indirect: cwd.includes('conjure') });
+  });
+  assert.equal(calls.length, 3);
+  assert.equal(results.length, 3);
+  assert.equal(results[0].component, 'golang.org/x/net');
+  assert.equal(results[1].component, 'Tor conjure helper: golang.org/x/net');
+  assert.equal(results[1].dependencyScope, 'transitive');
+  assert.equal(results[2].dependencyManifest, 'packaging/browser/tor-helpers/lyrebird/go.mod');
+});
+
+test('a failed Tor helper graph is reported as a detector failure', async () => {
+  const policy = { groups: [{ id: 'go-modules', manifests: ['go.mod', 'packaging/browser/tor-helpers/lyrebird/go.mod'] }] };
+  await assert.rejects(collectGoModules('/project', policy, (cwd) => {
+    if (cwd.includes('lyrebird')) throw Error('helper module source unavailable');
+    return '{}';
+  }), /helper module source unavailable/);
+});
+
+test('Tor runtime and its base image are both checked against primary sources', async (t) => {
+  const repo = mkdtempSync(join(tmpdir(), 'kpanel-tor-detector-'));
+  t.after(() => rmSync(repo, { recursive: true, force: true }));
+  mkdirSync(join(repo, 'packaging/browser'), { recursive: true });
+  writeFileSync(join(repo, 'packaging/browser/tor.Dockerfile'), 'FROM jlesage/baseimage-gui:ubuntu-24.04-v4@sha256:e7c54da3446b4c65b6755bf00a874463c640a1f579f25bed99532051e81649ef\nLABEL io.kpanel.tor.version="16.0.1"\n');
+  const same = await collectTorBrowser(repo, async () => ({ version: '16.0.1' }), async () => ({ digest: 'sha256:e7c54da3446b4c65b6755bf00a874463c640a1f579f25bed99532051e81649ef' }));
+  assert.deepEqual(same, []);
+  const newer = await collectTorBrowser(repo, async () => ({ version: '16.0.2' }), async () => ({ digest: 'sha256:' + 'a'.repeat(64) }));
+  assert.equal(newer.length, 2);
+  await assert.rejects(collectTorBrowser(repo, async () => ({ version: '17.0a1' }), async () => ({ digest: 'sha256:' + 'a'.repeat(64) })), /stable/);
+  // Registered runtimes must also pass against the actual repository pins.
+  const actual = resolve(import.meta.dirname, '../..');
+  const policy = JSON.parse(readFileSync(join(actual, 'dependency-policy.json'), 'utf8'));
+  for (const group of policy.groups.filter((item) => item.id === 'tor-browser-component')) {
+    assert.ok(group.manifests.includes('packaging/browser/tor.Dockerfile'));
+    assert.deepEqual(await collectTorBrowser(actual, async () => ({ version: '16.0.1' }), async () => ({ digest: 'sha256:e7c54da3446b4c65b6755bf00a874463c640a1f579f25bed99532051e81649ef' })), []);
+  }
+});
+
+test('Tor source is absent before registration and fails closed when registered inputs are missing', async () => {
+  const { collectSources, reportExitCode } = await import('../report-dependency-freshness.mjs');
+  let calls = 0;
+  const fake = [{ id: 'tor-browser-component', collect: () => { calls++; throw Error('must not read or fetch'); } }];
+  const absent = await collectSources({}, { groups: [] }, fake);
+  assert.deepEqual(absent, []);
+  assert.equal(calls, 0);
+  assert.equal(summarize({ policyVersion: 'test' }, absent).sourceCount, 0);
+  const missing = await collectSources({ repo: '/nonexistent/kpanel-tor-detector' }, { groups: [{ id: 'tor-browser-component' }] }, COLLECTORS.filter((source) => source.id === 'tor-browser-component'));
+  assert.equal(missing[0].status, 'error');
+  assert.equal(reportExitCode(summarize({ policyVersion: 'test' }, missing)), 2);
+});
+
+test('a root-only policy does not attempt helper module graph discovery', async () => {
+  const calls = [];
+  assert.deepEqual(await collectGoModules('/project', { groups: [{ id: 'go-modules', manifests: ['go.mod', 'go.sum'] }] }, (cwd) => { calls.push(cwd); return '{}'; }), []);
+  assert.equal(calls.length, 1);
+});
 
 test('stable version filter excludes prereleases and floating labels', () => {
   assert.equal(isStableVersion('v1.2.3'), true);

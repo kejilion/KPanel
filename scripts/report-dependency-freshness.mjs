@@ -547,15 +547,20 @@ export function npmCandidatesFromOutdated(outdated, directNames = new Set(), roo
   ])).values()];
 }
 
-async function collectGoModules(repo) {
-  const values = parseConcatenatedJson(run(repo, goExecutable(), ['list', '-m', '-u', '-json', 'all']));
-  return values.filter((module) => module.Update?.Version && isStableVersion(module.Update.Version))
-    .map((module) => candidate(module.Path, module.Version, module.Update.Version, 'package', 'go list -m -u', {
+export async function collectGoModules(repo, policy, execute = run) {
+  const manifests = policy.groups.find((group) => group.id === 'go-modules').manifests.filter((path) => basename(path) === 'go.mod');
+  return manifests.flatMap((manifest) => {
+    const context = manifest === 'go.mod' ? '' : 'Tor ' + basename(dirname(manifest)) + ' helper: ';
+    const values = parseConcatenatedJson(execute(resolve(repo, dirname(manifest)), goExecutable(), ['list', '-mod=readonly', '-m', '-u', '-json', 'all']));
+    return values.filter((module) => module.Update?.Version && isStableVersion(module.Update.Version))
+    .map((module) => candidate(context + module.Path, module.Version, module.Update.Version, 'package', 'go list -m -u', {
+      dependencyManifest: manifest,
       dependencyScope: module.Indirect ? 'transitive' : 'direct',
       actionability: module.Indirect ? 'owned-by-direct-dependency' : 'direct-action',
       adoptionLane: module.Indirect ? 'owning-module' : 'direct-module',
     }))
     .filter(Boolean);
+  });
 }
 
 async function collectNpm(repo) {
@@ -610,6 +615,22 @@ async function collectBaseImages(repo) {
     return immutableDigestCandidate(match[1] + ':' + match[2] + ' index digest', match[3], metadata.digest, 'Docker Hub tag metadata');
   }));
   return results.filter(Boolean);
+}
+
+export async function collectTorBrowser(repo, fetchRelease = fetchJson, fetchImage = dockerHubTag) {
+  const dockerfile = readFileSync(resolve(repo, 'packaging/browser/tor.Dockerfile'), 'utf8');
+  const version = dockerfile.match(/io\.kpanel\.tor\.version="([0-9.]+)"/)?.[1];
+  const base = dockerfile.match(/FROM jlesage\/baseimage-gui:([^@\s]+)@(sha256:[0-9a-f]{64})/);
+  if (!version || !base) throw new Error('Tor component pins are missing');
+  const [release, image] = await Promise.all([
+    fetchRelease('https://aus1.torproject.org/torbrowser/update_3/release/downloads.json'),
+    fetchImage('jlesage/baseimage-gui', base[1]),
+  ]);
+  if (!isStableVersion(release.version)) throw new Error('Tor release index did not return a stable version');
+  return [
+    candidate('Tor Browser', version, release.version, 'runtime', 'Tor official stable release index'),
+    immutableDigestCandidate('Tor browser base image', base[2], image.digest, 'Docker Hub tag metadata'),
+  ].filter(Boolean);
 }
 
 function workflowActionPins(repo) {
@@ -786,7 +807,8 @@ export function auditSkillRevisionCandidate(component, pinnedCommit, headCommit,
 // Single table for what runs and what validatePolicy reconciles: a policy group without a collector here
 // is a declared-but-unimplemented detector and fails validation.
 export const COLLECTORS = [
-  { id: 'go-modules', groups: ['go-modules'], collect: (repo) => collectGoModules(repo) },
+  { id: 'tor-browser-component', groups: ['tor-browser-component'], collect: (repo) => collectTorBrowser(repo) },
+  { id: 'go-modules', groups: ['go-modules'], collect: (repo, policy) => collectGoModules(repo, policy) },
   { id: 'npm-packages', groups: ['npm-packages'], collect: (repo) => collectNpm(repo) },
   { id: 'toolchains-and-base-images', groups: ['go-toolchain', 'node-toolchain'], collect: (repo) => collectToolchains(repo) },
   { id: 'docker-base-images', groups: ['docker-base-images'], collect: (repo) => collectBaseImages(repo) },
@@ -943,7 +965,11 @@ export function reportExitCode(report, allowPartial = false) {
 
 // CF tool maintenance must not schedule network work or adoption deadlines in ordinary product checks.
 export async function collectSources(options, policy, collectors = COLLECTORS) {
-  return Promise.all(collectors.map((source) => source.id === 'security-audit-skill' && !options.includeOptionalAuditTool
+  // The collector can be trusted on main before the optional runtime is introduced.
+  // An undeclared component is absent, not a successful/current dependency source.
+  const declared = collectors.filter((source) => source.id !== 'tor-browser-component'
+    || policy.groups?.some((group) => group.id === 'tor-browser-component'));
+  return Promise.all(declared.map((source) => source.id === 'security-audit-skill' && !options.includeOptionalAuditTool
     ? { id: source.id, status: 'not-requested', candidates: [], error: null }
     : collectSource(source.id, () => source.collect(options.repo, policy))));
 }
