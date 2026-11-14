@@ -59,4 +59,20 @@ describe('system clipboard files', () => {
     expect(keepsNativeClipboard(child)).toBe(true)
     expect(keepsNativeClipboard(document.createElement('div'))).toBe(false)
   })
+
+  it('lets a non-modal desktop window route paste to its file pane while preserving nested editors and dialogs', () => {
+    const window = document.createElement('section')
+    window.className = 'desktop-window'
+    window.setAttribute('role', 'dialog')
+    const pane = document.createElement('section')
+    const input = document.createElement('input')
+    const modal = document.createElement('div')
+    modal.setAttribute('role', 'dialog')
+    const modalChild = document.createElement('span')
+    modal.append(modalChild)
+    window.append(pane); pane.append(input, modal)
+    expect(keepsNativeClipboard(pane)).toBe(false)
+    expect(keepsNativeClipboard(input)).toBe(true)
+    expect(keepsNativeClipboard(modalChild)).toBe(true)
+  })
 })

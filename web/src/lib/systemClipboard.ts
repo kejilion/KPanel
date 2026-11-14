@@ -15,7 +15,9 @@ export function clipboardFiles(event: ClipboardEvent): File[] {
 }
 
 export function keepsNativeClipboard(target: EventTarget | null): boolean {
+  // DesktopWindow is a non-modal dialog; its embedded file pane owns paste.
+  // Real nested dialogs and modal overlays still keep their native behavior.
   return target instanceof Element && Boolean(target.closest(
-    'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], .cm-editor, .xterm, [role="dialog"], [aria-modal="true"]',
+    'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], .cm-editor, .xterm, [role="dialog"]:not(.desktop-window), [aria-modal="true"]',
   ))
 }

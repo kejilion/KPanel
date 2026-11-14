@@ -88,6 +88,30 @@ it.each(['copy', 'cut'])('keeps native %s / paste working for internal files and
   expect(mocks.upload).not.toHaveBeenCalled()
 })
 
+it('uploads and internally pastes in a desktop file window with the dialog role used by DesktopWindow', async () => {
+  const wrapper = await page()
+  const windowShell = document.createElement('section')
+  windowShell.className = 'desktop-window'
+  windowShell.setAttribute('role', 'dialog')
+  document.body.append(windowShell)
+  windowShell.append(wrapper.element)
+  try {
+    wrapper.element.dispatchEvent(clipboardEvent('paste', [new File(['pixels'], 'screenshot.png', { type: 'image/png' })]).event)
+    await flushPromises()
+    expect(mocks.upload).toHaveBeenCalledWith('/home', expect.any(File), false, expect.any(Function), undefined, '')
+    const vm = wrapper.vm as unknown as { selected: Set<string> }
+    vm.selected = new Set([entry.path])
+    const copied = clipboardEvent('copy')
+    wrapper.element.dispatchEvent(copied.event)
+    expect(copied.data.setData).toHaveBeenCalledWith('text/plain', entry.path)
+    wrapper.element.dispatchEvent(clipboardEvent('paste', [], entry.path).event)
+    await flushPromises()
+    expect(mocks.action).toHaveBeenCalledWith(expect.objectContaining({ action: 'copy', target: '/home' }), undefined, '')
+  } finally {
+    windowShell.remove()
+  }
+})
+
 it('keeps text, edited controls, modal dialogs, inactive windows and other panes out of the upload path', async () => {
   const wrapper = await page()
   const inactive = await page('/files?path=/other', false)
