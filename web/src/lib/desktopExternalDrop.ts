@@ -1,5 +1,7 @@
 import type { FileActionInput, FileActionResult, FileEntry } from '@/types/api'
 import type { FileUploadProgress } from './fileReceiveUpload'
+import type { FileConflictBatch } from './fileConflicts'
+import { uploadDirectoryWithConflicts } from './fileConflictUpload'
 
 export const DESKTOP_UPLOAD_DIRECTORY = '/home/KPanel Desktop'
 export const MAX_EXTERNAL_DROP_FILES = 500
@@ -37,11 +39,17 @@ export interface DesktopExternalTransferProgress {
 }
 
 export interface DesktopExternalTransferResult {
+  completedFiles?: number
+  loadedBytes?: number
+  skipped?: string[]
+  cancelled?: boolean
   entries: Array<Pick<FileEntry, 'name' | 'path' | 'kind'>>
   failed: Array<{ name: string; detail: string }>
 }
 
 export interface DesktopExternalTransferAPI {
+  resolveName?: (directory: string, name: string, kind: 'file' | 'directory') => Promise<string>
+  uploadVersion?: (path: string, file: File, overwrite: boolean, version?: string, onProgress?: FileUploadProgress, signal?: AbortSignal, directoryIdentity?: string) => Promise<FileEntry>
   entry: (path: string, signal?: AbortSignal, fileHostId?: string | null) => Promise<FileEntry>
   action: (input: FileActionInput, signal?: AbortSignal, fileHostId?: string | null) => Promise<FileActionResult>
   upload: (
@@ -213,6 +221,22 @@ export function hasExternalFileDrop(event: DragEvent): boolean {
   return Array.from(event.dataTransfer?.types || []).includes('Files')
 }
 
+export function collectExternalFiles(files: readonly File[]): ExternalDropManifest {
+  const manifest: ExternalDropManifest = { roots: [], directories: [], files: [], totalBytes: 0 }
+  if (files.length > MAX_EXTERNAL_DROP_FILES) {
+    throw new DesktopExternalDropError('too_many', `每次最多上传 ${MAX_EXTERNAL_DROP_FILES} 个文件。`)
+  }
+  for (const file of files) addFallbackFile(file, manifest)
+  const roots = new Map<string, ExternalDropRootKind>()
+  for (const directory of manifest.directories) roots.set(directory[0]!, 'directory')
+  for (const value of manifest.files) {
+    if (!roots.has(value.segments[0]!)) roots.set(value.segments[0]!, value.segments.length > 1 ? 'directory' : 'file')
+  }
+  manifest.roots = [...roots].map(([name, kind]) => ({ name, kind }))
+  if (!manifest.roots.length) throw new DesktopExternalDropError('unsupported', '没有检测到可上传的文件。')
+  return manifest
+}
+
 export async function collectExternalDrop(dataTransfer: DataTransfer, signal?: AbortSignal): Promise<ExternalDropManifest> {
   signal?.throwIfAborted()
   const manifest: ExternalDropManifest = { roots: [], directories: [], files: [], totalBytes: 0 }
@@ -240,20 +264,7 @@ export async function collectExternalDrop(dataTransfer: DataTransfer, signal?: A
       await walkEntry(entry, [], manifest, signal)
     }
   } else {
-    const files = dataTransfer.files || []
-    if (files.length > MAX_EXTERNAL_DROP_FILES) {
-      throw new DesktopExternalDropError('too_many', `每次最多拖入 ${MAX_EXTERNAL_DROP_FILES} 个文件。`)
-    }
-    for (const file of Array.from(files)) {
-      signal?.throwIfAborted()
-      addFallbackFile(file, manifest)
-    }
-    const roots = new Map<string, ExternalDropRootKind>()
-    for (const directory of manifest.directories) roots.set(directory[0]!, 'directory')
-    for (const value of manifest.files) {
-      if (!roots.has(value.segments[0]!)) roots.set(value.segments[0]!, value.segments.length > 1 ? 'directory' : 'file')
-    }
-    manifest.roots = [...roots].map(([name, kind]) => ({ name, kind }))
+    return collectExternalFiles(Array.from(dataTransfer.files || []))
   }
   if (!manifest.roots.length) throw new DesktopExternalDropError('unsupported', '没有检测到可上传的文件或目录。')
   return manifest
@@ -375,8 +386,13 @@ export async function uploadExternalDrop(
   onProgress: (progress: DesktopExternalTransferProgress) => void,
   destination = DESKTOP_UPLOAD_DIRECTORY,
   fileHostId?: string | null,
+  batch?: FileConflictBatch,
 ): Promise<DesktopExternalTransferResult> {
   await ensureDestinationDirectory(api, destination, signal, fileHostId)
+  if (batch) {
+    if (!api.uploadVersion) throw new Error('当前入口缺少版本化上传适配器。')
+    return uploadDirectoryWithConflicts({ entry: (path, signal) => fileEntry(api, path, signal!, fileHostId), action: (input, signal) => fileAction(api, input, signal!, fileHostId), uploadVersion: api.uploadVersion }, destination, manifest, batch, onProgress)
+  }
   const rootNames = new Map<string, string>()
   for (const root of manifest.roots) {
     rootNames.set(root.name, await uniqueName(api, destination, root.name, signal, fileHostId))

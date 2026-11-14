@@ -1,6 +1,10 @@
 import type { CrossPanelFileTransferEvent, FileEntry, FileRemoteDownloadJob } from '@/types/api'
 
+export class FileTransferSkippedError extends Error { readonly code = 'file_skipped' }
+export class FileTransferPartialError extends Error { readonly code = 'file_partial'; constructor(readonly entry: FileEntry) { super('部分项目已复制，其余项目被跳过。') } }
+
 interface JobWatcher {
+  resolve?: (job: FileRemoteDownloadJob) => Promise<void>
   get: (id: string) => Promise<FileRemoteDownloadJob>
   cancel: (id: string) => Promise<unknown>
 }
@@ -32,6 +36,9 @@ export async function watchFileTransferJob(initial: FileRemoteDownloadJob, watch
       onEvent({ state: 'complete', job, loadedBytes: job.loadedBytes, totalBytes: job.totalBytes, entry: job.entry })
       return job.entry
     }
+    if (job.state === 'skipped') throw new FileTransferSkippedError('已跳过同名项目。')
+    if (job.state === 'partial' && job.entry) throw new FileTransferPartialError(job.entry)
+    if (job.state === 'waiting_input' && watcher.resolve) await watcher.resolve(job)
     if (signal?.aborted) {
       if (signal.reason !== 'file-transfer-detach') {
         try {

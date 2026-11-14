@@ -182,9 +182,9 @@ func (m *Manager) compressArchive(
 	if err := m.mutationError(outputVirtual); err != nil {
 		return contract.FileEntry{}, err
 	}
-	if _, err := m.rootFS.Lstat(rootName(outputVirtual)); err == nil {
+	if _, err := m.rootFS.Lstat(rootName(outputVirtual)); err == nil && fileConflicts(ctx) == nil {
 		return contract.FileEntry{}, ErrAlreadyExists
-	} else if !errors.Is(err, os.ErrNotExist) {
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return contract.FileEntry{}, err
 	}
 
@@ -310,6 +310,18 @@ func (m *Manager) compressArchive(
 	visible, err := workspace.Lstat(tempName)
 	if err != nil || !os.SameFile(ownedStage, visible) {
 		return contract.FileEntry{}, ErrConflict
+	}
+	if fileConflicts(ctx) != nil {
+		return m.publishConflictTree(ctx, stage, "body", normalizedTarget, name, joinVirtual(joinVirtual(workspacePath, tempName), "body"), func() error {
+			if err := m.verifyArchiveOutputParent(normalizedTarget, openedTarget); err != nil {
+				return err
+			}
+			visible, err := workspace.Lstat(tempName)
+			if err != nil || !os.SameFile(ownedStage, visible) {
+				return ErrConflict
+			}
+			return nil
+		}, 0)
 	}
 	if err := publishReceiveObject(stage, "body", parent, name, false); err != nil {
 		if errors.Is(err, os.ErrExist) {
@@ -593,9 +605,9 @@ func (m *Manager) extractArchive(
 	if err := m.mutationError(outputVirtual); err != nil {
 		return contract.FileEntry{}, err
 	}
-	if _, err := m.rootFS.Lstat(rootName(outputVirtual)); err == nil {
+	if _, err := m.rootFS.Lstat(rootName(outputVirtual)); err == nil && fileConflicts(ctx) == nil {
 		return contract.FileEntry{}, ErrAlreadyExists
-	} else if !errors.Is(err, os.ErrNotExist) {
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return contract.FileEntry{}, err
 	}
 
@@ -698,6 +710,18 @@ func (m *Manager) extractArchive(
 	resultInfo, err := stage.Stat(".")
 	if err != nil {
 		return contract.FileEntry{}, err
+	}
+	if fileConflicts(ctx) != nil {
+		return m.publishConflictTree(ctx, publication, "result", normalizedTarget, name, joinVirtual(joinVirtual(workspacePath, tempName), "result"), func() error {
+			if err := m.verifyArchiveOutputParent(normalizedTarget, openedTarget); err != nil {
+				return err
+			}
+			visible, err := workspace.Lstat(tempName)
+			if err != nil || !os.SameFile(ownedStage, visible) {
+				return ErrConflict
+			}
+			return nil
+		}, 0)
 	}
 	if err := publishReceiveObject(publication, "result", parent, name, false); err != nil {
 		if errors.Is(err, os.ErrExist) {

@@ -18,51 +18,88 @@ const FileShareFingerprintTimeout = 5 * time.Minute
 const MaxFileTransferBytes int64 = 10 << 30
 const FileTransferChunkBytes = 8 << 20
 
+// File and directory choices deliberately have independent task scope.
+type FileConflictPolicies struct {
+	File      string `json:"file,omitempty"`
+	Directory string `json:"directory,omitempty"`
+}
+
+type FileConflict struct {
+	Source  FileEntry `json:"source"`
+	Target  FileEntry `json:"target"`
+	Changed bool      `json:"changed,omitempty"`
+}
+
+type FileConflictDecision struct {
+	Revision    uint64 `json:"revision"`
+	Policy      string `json:"policy"`
+	ApplyToRest bool   `json:"applyToRest,omitempty"`
+}
+
+type FileConflictResolution struct {
+	DirectoryIdentity string `json:"directoryIdentity,omitempty"`
+	Name              string `json:"name"`
+	Overwrite         bool   `json:"overwrite,omitempty"`
+	Merge             bool   `json:"merge,omitempty"`
+	Skipped           bool   `json:"skipped,omitempty"`
+	Version           string `json:"version,omitempty"`
+}
+
 type FileReceiveInput struct {
-	Directory  string     `json:"directory"`
-	Name       string     `json:"name"`
-	Kind       string     `json:"kind"`
-	SizeBytes  int64      `json:"sizeBytes"`
-	SourceKey  string     `json:"sourceKey"`
-	Overwrite  bool       `json:"overwrite,omitempty"`
-	Mode       string     `json:"mode,omitempty"`
-	ModifiedAt *time.Time `json:"modifiedAt,omitempty"`
+	ExpectedDirectoryIdentity     string                `json:"expectedDirectoryIdentity,omitempty"`
+	RequestedName                 string                `json:"-"`
+	ConflictPolicies              *FileConflictPolicies `json:"conflictPolicies,omitempty"`
+	Directory                     string                `json:"directory"`
+	Name                          string                `json:"name"`
+	Kind                          string                `json:"kind"`
+	SizeBytes                     int64                 `json:"sizeBytes"`
+	SourceKey                     string                `json:"sourceKey"`
+	Overwrite                     bool                  `json:"overwrite,omitempty"`
+	ExpectedTargetResourceVersion string                `json:"expectedTargetResourceVersion,omitempty"`
+	Mode                          string                `json:"mode,omitempty"`
+	ModifiedAt                    *time.Time            `json:"modifiedAt,omitempty"`
 }
 
 type FileReceiveRequest struct {
-	Operation string            `json:"operation"`
-	ID        string            `json:"id,omitempty"`
-	SourceKey string            `json:"sourceKey,omitempty"`
-	Input     *FileReceiveInput `json:"input,omitempty"`
-	SizeBytes int64             `json:"sizeBytes,omitempty"`
-	SHA256    string            `json:"sha256,omitempty"`
+	Decision  *FileConflictDecision `json:"decision,omitempty"`
+	Operation string                `json:"operation"`
+	ID        string                `json:"id,omitempty"`
+	SourceKey string                `json:"sourceKey,omitempty"`
+	Input     *FileReceiveInput     `json:"input,omitempty"`
+	SizeBytes int64                 `json:"sizeBytes,omitempty"`
+	SHA256    string                `json:"sha256,omitempty"`
 }
 
 type FileReceiveSession struct {
-	ID           string     `json:"id"`
-	State        string     `json:"state"`
-	Offset       int64      `json:"offset"`
-	SizeBytes    int64      `json:"sizeBytes"`
-	PrefixSHA256 string     `json:"prefixSha256"`
-	ChunkBytes   int        `json:"chunkBytes"`
-	ExpiresAt    time.Time  `json:"expiresAt"`
-	Entry        *FileEntry `json:"entry,omitempty"`
+	PublishJobID string            `json:"publishJobId,omitempty"`
+	Conflict     *FileConflict     `json:"conflict,omitempty"`
+	Revision     uint64            `json:"revision,omitempty"`
+	Result       *FileActionResult `json:"result,omitempty"`
+	ID           string            `json:"id"`
+	State        string            `json:"state"`
+	Offset       int64             `json:"offset"`
+	SizeBytes    int64             `json:"sizeBytes"`
+	PrefixSHA256 string            `json:"prefixSha256"`
+	ChunkBytes   int               `json:"chunkBytes"`
+	ExpiresAt    time.Time         `json:"expiresAt"`
+	Entry        *FileEntry        `json:"entry,omitempty"`
 }
 
 type FileEntry struct {
-	Name            string    `json:"name"`
-	Path            string    `json:"path"`
-	Kind            string    `json:"kind"`
-	MIME            string    `json:"mime,omitempty"`
-	SizeBytes       int64     `json:"sizeBytes"`
-	Mode            string    `json:"mode"`
-	Owner           string    `json:"owner"`
-	Group           string    `json:"group"`
-	ModifiedAt      time.Time `json:"modifiedAt"`
-	ResourceVersion string    `json:"resourceVersion"`
-	Editable        bool      `json:"editable"`
-	Previewable     bool      `json:"previewable"`
-	OfficeEditable  bool      `json:"officeEditable,omitempty"`
+	DirectoryIdentity string    `json:"directoryIdentity,omitempty"`
+	Name              string    `json:"name"`
+	Path              string    `json:"path"`
+	Kind              string    `json:"kind"`
+	MIME              string    `json:"mime,omitempty"`
+	SizeBytes         int64     `json:"sizeBytes"`
+	Mode              string    `json:"mode"`
+	Owner             string    `json:"owner"`
+	Group             string    `json:"group"`
+	ModifiedAt        time.Time `json:"modifiedAt"`
+	ResourceVersion   string    `json:"resourceVersion"`
+	Editable          bool      `json:"editable"`
+	Previewable       bool      `json:"previewable"`
+	OfficeEditable    bool      `json:"officeEditable,omitempty"`
 	// ShareVersion is an Agent-local, content-bound proof used by public file shares.
 	// It is deliberately excluded from ordinary file API responses.
 	ShareVersion string `json:"-"`
@@ -76,6 +113,7 @@ type FileShareEntry struct {
 const FileShareVersionHeader = "X-KPanel-File-Share-Version"
 
 type FileDirectory struct {
+	FileConflictVersion            int         `json:"fileConflictVersion,omitempty"`
 	Path                           string      `json:"path"`
 	Entries                        []FileEntry `json:"entries"`
 	Offset                         int         `json:"offset"`
@@ -111,16 +149,22 @@ type FileArchiveMemberDownload struct {
 }
 
 type FileActionRequest struct {
-	Action                   string            `json:"action"`
-	Sources                  []string          `json:"sources,omitempty"`
-	TrashIDs                 []string          `json:"trashIds,omitempty"`
-	Target                   string            `json:"target,omitempty"`
-	Name                     string            `json:"name,omitempty"`
-	Mode                     string            `json:"mode,omitempty"`
-	Format                   string            `json:"format,omitempty"`
-	ExpectedResourceVersion  string            `json:"expectedResourceVersion,omitempty"`
-	ExpectedResourceVersions map[string]string `json:"expectedResourceVersions,omitempty"`
-	ArchiveEntries           []string          `json:"archiveEntries,omitempty"`
+	ExpectedDirectoryIdentity     string                `json:"expectedDirectoryIdentity,omitempty"`
+	ConflictPolicies              *FileConflictPolicies `json:"conflictPolicies,omitempty"`
+	SourceKind                    string                `json:"sourceKind,omitempty"`
+	DestinationName               string                `json:"destinationName,omitempty"`
+	Overwrite                     bool                  `json:"overwrite,omitempty"`
+	ExpectedTargetResourceVersion string                `json:"expectedTargetResourceVersion,omitempty"`
+	Action                        string                `json:"action"`
+	Sources                       []string              `json:"sources,omitempty"`
+	TrashIDs                      []string              `json:"trashIds,omitempty"`
+	Target                        string                `json:"target,omitempty"`
+	Name                          string                `json:"name,omitempty"`
+	Mode                          string                `json:"mode,omitempty"`
+	Format                        string                `json:"format,omitempty"`
+	ExpectedResourceVersion       string                `json:"expectedResourceVersion,omitempty"`
+	ExpectedResourceVersions      map[string]string     `json:"expectedResourceVersions,omitempty"`
+	ArchiveEntries                []string              `json:"archiveEntries,omitempty"`
 }
 
 // Archive paths are relative member names, never host filesystem paths.
@@ -151,26 +195,31 @@ type FileArchiveDirectory struct {
 }
 
 type FileArchiveJob struct {
-	ID             string           `json:"id"`
-	Action         string           `json:"action"`
-	Name           string           `json:"name"`
-	Target         string           `json:"target"`
-	State          string           `json:"state"`
-	Entries        int              `json:"entries"`
-	ProcessedBytes int64            `json:"processedBytes"`
-	CreatedAt      time.Time        `json:"createdAt"`
-	UpdatedAt      time.Time        `json:"updatedAt"`
-	Result         FileActionResult `json:"result"`
-	Detail         string           `json:"detail,omitempty"`
-	Sources        []string         `json:"sources"`
-	ArchiveEntries []string         `json:"archiveEntries,omitempty"`
-	Format         string           `json:"format,omitempty"`
+	Entry            *FileEntry            `json:"entry,omitempty"`
+	ConflictPolicies *FileConflictPolicies `json:"conflictPolicies,omitempty"`
+	Conflict         *FileConflict         `json:"conflict,omitempty"`
+	Revision         uint64                `json:"revision,omitempty"`
+	ID               string                `json:"id"`
+	Action           string                `json:"action"`
+	Name             string                `json:"name"`
+	Target           string                `json:"target"`
+	State            string                `json:"state"`
+	Entries          int                   `json:"entries"`
+	ProcessedBytes   int64                 `json:"processedBytes"`
+	CreatedAt        time.Time             `json:"createdAt"`
+	UpdatedAt        time.Time             `json:"updatedAt"`
+	Result           FileActionResult      `json:"result"`
+	Detail           string                `json:"detail,omitempty"`
+	Sources          []string              `json:"sources"`
+	ArchiveEntries   []string              `json:"archiveEntries,omitempty"`
+	Format           string                `json:"format,omitempty"`
 }
 
 type FileArchiveJobRequest struct {
-	Operation string             `json:"operation"`
-	ID        string             `json:"id,omitempty"`
-	Input     *FileActionRequest `json:"input,omitempty"`
+	Decision  *FileConflictDecision `json:"decision,omitempty"`
+	Operation string                `json:"operation"`
+	ID        string                `json:"id,omitempty"`
+	Input     *FileActionRequest    `json:"input,omitempty"`
 }
 
 type FileTrashEntry struct {
@@ -195,20 +244,26 @@ type FileTrashDirectory struct {
 }
 
 type FileActionItem struct {
-	Path            string `json:"path"`
-	Destination     string `json:"destination,omitempty"`
-	ResourceVersion string `json:"resourceVersion,omitempty"`
+	DirectoryIdentity string `json:"directoryIdentity,omitempty"`
+	Path              string `json:"path"`
+	Destination       string `json:"destination,omitempty"`
+	ResourceVersion   string `json:"resourceVersion,omitempty"`
 }
 
 type FileActionFailure struct {
+	Code   string `json:"code,omitempty"`
 	Path   string `json:"path"`
 	Detail string `json:"detail"`
 }
 
 type FileActionResult struct {
-	Action    string              `json:"action"`
-	Succeeded []FileActionItem    `json:"succeeded"`
-	Failed    []FileActionFailure `json:"failed"`
+	CompletedCount int                     `json:"completedCount,omitempty"`
+	SkippedCount   int                     `json:"skippedCount,omitempty"`
+	Skipped        []string                `json:"skipped,omitempty"`
+	Resolution     *FileConflictResolution `json:"resolution,omitempty"`
+	Action         string                  `json:"action"`
+	Succeeded      []FileActionItem        `json:"succeeded"`
+	Failed         []FileActionFailure     `json:"failed"`
 }
 
 type FileWriteRequest struct {
@@ -277,42 +332,51 @@ type FileTransferMetadata struct {
 }
 
 type FileTransferRequest struct {
-	SourceNodeID    string `json:"sourceNodeId"`
-	Path            string `json:"path"`
-	ResourceVersion string `json:"resourceVersion"`
-	TargetDirectory string `json:"targetDirectory"`
-	Background      bool   `json:"background,omitempty"`
+	ConflictPolicies *FileConflictPolicies `json:"conflictPolicies,omitempty"`
+	BatchID          string                `json:"batchId,omitempty"`
+	SourceNodeID     string                `json:"sourceNodeId"`
+	Path             string                `json:"path"`
+	ResourceVersion  string                `json:"resourceVersion"`
+	TargetDirectory  string                `json:"targetDirectory"`
+	Background       bool                  `json:"background,omitempty"`
 }
 
 type FileRemoteDownloadRequest struct {
-	URL             string `json:"url"`
-	TargetDirectory string `json:"targetDirectory"`
-	Name            string `json:"name,omitempty"`
-	Background      bool   `json:"background,omitempty"`
-	Acceleration    string `json:"acceleration,omitempty"`
-	Torrent         []byte `json:"torrent,omitempty"`
-	SourceKind      string `json:"sourceKind,omitempty"`
+	ConflictPolicies *FileConflictPolicies `json:"conflictPolicies,omitempty"`
+	URL              string                `json:"url"`
+	TargetDirectory  string                `json:"targetDirectory"`
+	Name             string                `json:"name,omitempty"`
+	Background       bool                  `json:"background,omitempty"`
+	Acceleration     string                `json:"acceleration,omitempty"`
+	Torrent          []byte                `json:"torrent,omitempty"`
+	SourceKind       string                `json:"sourceKind,omitempty"`
 }
 
 type FileRemoteDownloadJob struct {
-	ID              string     `json:"id"`
-	State           string     `json:"state"`
-	Source          string     `json:"source"`
-	SourceKind      string     `json:"sourceKind,omitempty"`
-	TargetHostID    string     `json:"targetHostId,omitempty"`
-	TargetDirectory string     `json:"targetDirectory"`
-	Name            string     `json:"name,omitempty"`
-	LoadedBytes     int64      `json:"loadedBytes,omitempty"`
-	TotalBytes      int64      `json:"totalBytes,omitempty"`
-	Entry           *FileEntry `json:"entry,omitempty"`
-	Code            string     `json:"code,omitempty"`
-	TransferMode    string     `json:"transferMode,omitempty"`
-	Peers           int        `json:"peers,omitempty"`
-	SpeedBytes      int64      `json:"speedBytes,omitempty"`
-	SourceBytes     int64      `json:"sourceBytes,omitempty"`
-	CreatedAt       time.Time  `json:"createdAt"`
-	UpdatedAt       time.Time  `json:"updatedAt"`
-	FinishedAt      *time.Time `json:"finishedAt,omitempty"`
+	Result           *FileActionResult     `json:"result,omitempty"`
+	ConflictPolicies *FileConflictPolicies `json:"conflictPolicies,omitempty"`
+	Conflict         *FileConflict         `json:"conflict,omitempty"`
+	Decision         *FileConflictDecision `json:"decision,omitempty"`
+	Revision         uint64                `json:"revision,omitempty"`
+	BatchID          string                `json:"batchId,omitempty"`
+	ID               string                `json:"id"`
+	State            string                `json:"state"`
+	Source           string                `json:"source"`
+	SourceKind       string                `json:"sourceKind,omitempty"`
+	TargetHostID     string                `json:"targetHostId,omitempty"`
+	TargetDirectory  string                `json:"targetDirectory"`
+	Name             string                `json:"name,omitempty"`
+	LoadedBytes      int64                 `json:"loadedBytes,omitempty"`
+	TotalBytes       int64                 `json:"totalBytes,omitempty"`
+	Entry            *FileEntry            `json:"entry,omitempty"`
+	Code             string                `json:"code,omitempty"`
+	TransferMode     string                `json:"transferMode,omitempty"`
+	Peers            int                   `json:"peers,omitempty"`
+	SpeedBytes       int64                 `json:"speedBytes,omitempty"`
+	SourceBytes      int64                 `json:"sourceBytes,omitempty"`
+	CreatedAt        time.Time             `json:"createdAt"`
+	UpdatedAt        time.Time             `json:"updatedAt"`
+	FinishedAt       *time.Time            `json:"finishedAt,omitempty"`
 }
 
 type FileRemoteDownloadJobList struct {
@@ -320,15 +384,17 @@ type FileRemoteDownloadJobList struct {
 }
 
 type FileTransferEvent struct {
-	State        string     `json:"state"`
-	LoadedBytes  int64      `json:"loadedBytes,omitempty"`
-	TotalBytes   int64      `json:"totalBytes,omitempty"`
-	Name         string     `json:"name,omitempty"`
-	Entry        *FileEntry `json:"entry,omitempty"`
-	Code         string     `json:"code,omitempty"`
-	Detail       string     `json:"detail,omitempty"`
-	TransferMode string     `json:"transferMode,omitempty"`
-	Peers        int        `json:"peers,omitempty"`
-	SpeedBytes   int64      `json:"speedBytes,omitempty"`
-	SourceBytes  int64      `json:"sourceBytes,omitempty"`
+	Result       *FileActionResult `json:"result,omitempty"`
+	Conflict     *FileConflict     `json:"conflict,omitempty"`
+	State        string            `json:"state"`
+	LoadedBytes  int64             `json:"loadedBytes,omitempty"`
+	TotalBytes   int64             `json:"totalBytes,omitempty"`
+	Name         string            `json:"name,omitempty"`
+	Entry        *FileEntry        `json:"entry,omitempty"`
+	Code         string            `json:"code,omitempty"`
+	Detail       string            `json:"detail,omitempty"`
+	TransferMode string            `json:"transferMode,omitempty"`
+	Peers        int               `json:"peers,omitempty"`
+	SpeedBytes   int64             `json:"speedBytes,omitempty"`
+	SourceBytes  int64             `json:"sourceBytes,omitempty"`
 }

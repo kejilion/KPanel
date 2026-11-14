@@ -11,6 +11,7 @@ import (
 
 	"github.com/kejilion/kejilion-panel/internal/cluster"
 	"github.com/kejilion/kejilion-panel/internal/contract"
+	"github.com/kejilion/kejilion-panel/internal/filemanager"
 	"github.com/kejilion/kejilion-panel/internal/remotedownload"
 )
 
@@ -100,7 +101,30 @@ func (s *Server) executeFileRemoteDownload(ctx context.Context, input contract.F
 		emit(event)
 		return event
 	}
-	name, err := s.uniqueFileTransferName(ctx, input.TargetDirectory, fileRemoteDownloadName(input.Name, response), requestID)
+	name := fileRemoteDownloadName(input.Name, response)
+	choice := contract.FileConflictResolution{Name: name}
+	if input.ConflictPolicies == nil {
+		name, err = s.uniqueFileTransferName(ctx, input.TargetDirectory, name, requestID)
+	} else {
+		var closed bool
+		first := response
+		choice, closed, err = s.resolveTransferConflict(ctx, contract.FileEntry{Name: name, Kind: "file", SizeBytes: response.ContentLength}, input.TargetDirectory, "", "", requestID, false, func() { _ = response.Body.Close() })
+		if err == nil && choice.Skipped {
+			event := contract.FileTransferEvent{State: "skipped", Name: name}
+			emit(event)
+			return event
+		}
+		if err == nil && closed {
+			response, err = s.remoteDownloadOpen(ctx, input.URL)
+			if err == nil && (response == nil || response.Body == nil || fileRemoteDownloadName(input.Name, response) != name || response.ContentLength != first.ContentLength || first.Header.Get("ETag") != "" && response.Header.Get("ETag") != first.Header.Get("ETag") || first.Header.Get("Last-Modified") != "" && response.Header.Get("Last-Modified") != first.Header.Get("Last-Modified")) {
+				if response != nil && response.Body != nil {
+					response.Body.Close()
+				}
+				err = remotedownload.ErrSourceChanged
+			}
+		}
+		name = choice.Name
+	}
 	if err != nil {
 		return fail(err, 0, 0, input.Name)
 	}
@@ -154,8 +178,8 @@ func (s *Server) executeFileRemoteDownload(ctx context.Context, input contract.F
 		ok = true
 		return next.Body, nil
 	}
-	receive := contract.FileReceiveInput{Directory: input.TargetDirectory, Name: name, Kind: "file", SizeBytes: response.ContentLength,
-		SourceKey: transferSourceKey(input.URL + "\n" + validator + "\n" + modified + "\n" + strconv.FormatInt(response.ContentLength, 10))}
+	receive := contract.FileReceiveInput{RequestedName: fileRemoteDownloadName(input.Name, response), Directory: input.TargetDirectory, Name: name, Kind: "file", SizeBytes: response.ContentLength,
+		Overwrite: choice.Overwrite, ExpectedTargetResourceVersion: choice.Version, SourceKey: transferSourceKey(input.URL + "\n" + validator + "\n" + modified + "\n" + strconv.FormatInt(response.ContentLength, 10) + "\n" + name + "\n" + choice.Version)}
 	adaptEvent := func(event contract.FileTransferEvent) bool {
 		if mode, ok := response.Body.(interface{ TransferMode() string }); ok {
 			event.TransferMode = mode.TransferMode()
@@ -167,6 +191,9 @@ func (s *Server) executeFileRemoteDownload(ctx context.Context, input contract.F
 	}
 	var legacyEvent *contract.FileTransferEvent
 	entry, loaded, err := s.receiveFileTransfer(ctx, receive, response.Body, reopen, s.fileReceiver("", "", requestID), adaptEvent, func(body io.ReadCloser) (contract.FileEntry, error) {
+		if input.ConflictPolicies != nil {
+			return contract.FileEntry{}, errReceiveUnsupported
+		}
 		legacy := s.executeLegacyFileRemoteDownload(ctx, input, requestID, emit, response)
 		legacyEvent = &legacy
 		if legacy.Entry != nil && legacy.State == "complete" {
@@ -176,6 +203,11 @@ func (s *Server) executeFileRemoteDownload(ctx context.Context, input contract.F
 	})
 	if legacyEvent != nil {
 		return *legacyEvent
+	}
+	if errors.Is(err, filemanager.ErrFileSkipped) {
+		event := contract.FileTransferEvent{State: "skipped", Name: name}
+		emit(event)
+		return event
 	}
 	if err != nil {
 		var legacy *fileTransferEventError

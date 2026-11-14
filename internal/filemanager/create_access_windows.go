@@ -4,14 +4,43 @@ package filemanager
 
 import (
 	"errors"
+	"github.com/kejilion/kejilion-panel/internal/contract"
 	"os"
+	"path"
 
 	"golang.org/x/sys/windows"
 )
 
 // Windows keeps the destination's inherited ACL policy.
-func (m *Manager) mkdirUserDirectory(virtual string) error {
-	return m.rootFS.Mkdir(rootName(virtual), 0755)
+func (m *Manager) mkdirUserDirectory(virtual string, expected ...string) (contract.FileEntry, error) {
+	parent, info, err := m.openReceiveDirectory(path.Dir(virtual), false)
+	if err != nil {
+		return contract.FileEntry{}, err
+	}
+	defer parent.Close()
+	if len(expected) > 0 {
+		if err := checkDirectoryIdentity(parent, info, expected[0]); err != nil {
+			return contract.FileEntry{}, err
+		}
+	}
+	file, err := parent.openWithSecurity(path.Base(virtual), windows.FILE_GENERIC_READ|windows.FILE_GENERIC_WRITE, windows.FILE_CREATE, windows.FILE_DIRECTORY_FILE, nil)
+	if err != nil {
+		return contract.FileEntry{}, err
+	}
+	defer file.Close()
+	created, err := file.Stat()
+	if err != nil {
+		return contract.FileEntry{}, err
+	}
+	if err := m.verifyDirectoryIdentity(path.Dir(virtual), info); err != nil {
+		return contract.FileEntry{}, err
+	}
+	entry := m.entry(virtual, created)
+	entry.DirectoryIdentity = stableReceiveIdentity(created, file)
+	if entry.DirectoryIdentity == "" {
+		return contract.FileEntry{}, ErrDirectoryConflict
+	}
+	return entry, nil
 }
 
 // Capture the effective DACL from the pinned source, and prevent the new

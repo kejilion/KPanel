@@ -1,3 +1,4 @@
+import { FileTransferSkippedError, FileTransferPartialError } from './fileTransferJob'
 import type { CrossPanelFileDragItem, CrossPanelFileDragPayload } from './desktopFileShortcuts'
 import type { CrossPanelFileTransferEvent, CrossPanelFileTransferInput, FileEntry } from '@/types/api'
 
@@ -22,6 +23,7 @@ export interface CrossPanelBatchFailure {
 export interface CrossPanelBatchResult {
   succeeded: CrossPanelBatchSuccess[]
   failed: CrossPanelBatchFailure[]
+  skipped?: CrossPanelFileDragItem[]
   cancelled: boolean
 }
 
@@ -42,6 +44,7 @@ export async function transferCrossPanelFileBatch(
   onProgress?: (progress: CrossPanelBatchProgress) => void,
   signal?: AbortSignal,
 ): Promise<CrossPanelBatchResult> {
+  const batchId = crypto.randomUUID().replaceAll('-', '')
   const result: CrossPanelBatchResult = { succeeded: [], failed: [], cancelled: false }
   for (const [index, source] of payload.entries.entries()) {
     if (signal?.aborted) {
@@ -50,6 +53,7 @@ export async function transferCrossPanelFileBatch(
     }
     try {
       const entry = await transferOne({
+        batchId, conflictPolicies: {file:'ask',directory:'ask'},
         sourceNodeId: payload.sourceNodeId,
         path: source.path,
         resourceVersion: source.resourceVersion,
@@ -63,6 +67,8 @@ export async function transferCrossPanelFileBatch(
       }), signal)
       result.succeeded.push({ source, entry })
     } catch (error) {
+      if (error instanceof FileTransferSkippedError) { (result.skipped ||= []).push(source); continue }
+      if (error instanceof FileTransferPartialError) { result.succeeded.push({source,entry:error.entry}); (result.skipped ||= []).push(source); continue }
       if (isAbort(error, signal)) {
         result.cancelled = true
         break

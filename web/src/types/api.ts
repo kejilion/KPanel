@@ -2614,6 +2614,7 @@ export interface SecurityEntranceSettings {
 export type FileKind = 'file' | 'directory' | 'symlink' | 'special'
 
 export interface FileEntry {
+ directoryIdentity?: string
   name: string
   path: string
   kind: FileKind
@@ -2671,6 +2672,7 @@ export interface FileEntryBatchResult {
 }
 
 export interface FileDirectory {
+  fileConflictVersion?: number
   path: string
   entries: FileEntry[]
   offset: number
@@ -2726,6 +2728,8 @@ export interface PublicFileShareView {
 }
 
 export interface CrossPanelFileTransferInput {
+  conflictPolicies?: FileConflictPolicies
+  batchId?: string
   sourceNodeId: string
   path: string
   resourceVersion: string
@@ -2753,6 +2757,7 @@ export interface CrossPanelFileTransferEvent {
 }
 
 export interface FileRemoteDownloadInput {
+  conflictPolicies?: FileConflictPolicies
   url: string
   targetDirectory: string
   name?: string
@@ -2779,6 +2784,9 @@ export interface FileRemoteDownloadEvent {
 }
 
 export type FileRemoteDownloadJobState =
+  | 'waiting_input'
+  | 'skipped'
+  | 'partial'
   | 'queued'
   | 'connecting'
   | 'transferring'
@@ -2789,6 +2797,10 @@ export type FileRemoteDownloadJobState =
   | 'interrupted'
 
 export interface FileRemoteDownloadJob {
+  conflictPolicies?: FileConflictPolicies
+  conflict?: FileConflict
+  revision?: number
+  result?: FileActionResult
   id: string
   state: FileRemoteDownloadJobState
   source: string
@@ -2814,6 +2826,8 @@ export interface FileRemoteDownloadJobList {
 }
 
 export type FileAction =
+  | 'resolve'
+  | 'rmdir'
   | 'mkdir'
   | 'rename'
   | 'copy'
@@ -2826,7 +2840,18 @@ export type FileAction =
   | 'trash_delete'
   | 'trash_empty'
 
+export interface FileConflictPolicies { file?: 'ask' | 'overwrite' | 'keep-both' | 'skip'; directory?: 'ask' | 'merge' | 'keep-both' | 'skip' }
+export interface FileConflict { source: FileEntry; target: FileEntry; changed?: boolean }
+export interface FileConflictDecision { revision: number; policy: 'overwrite' | 'merge' | 'keep-both' | 'skip'; applyToRest?: boolean }
+export interface FileConflictResolution { name: string; overwrite?: boolean; merge?: boolean; skipped?: boolean; version?: string }
+
 export interface FileActionInput {
+ expectedDirectoryIdentity?: string
+  conflictPolicies?: FileConflictPolicies
+  sourceKind?: 'file' | 'directory'
+  destinationName?: string
+  overwrite?: boolean
+  expectedTargetResourceVersion?: string
   action: FileAction
   sources?: string[]
   trashIds?: string[]
@@ -2864,13 +2889,16 @@ export interface FileArchiveDirectory {
 }
 export interface FileArchiveJob {
   id: string
-  action: 'compress' | 'extract'
+  action: 'compress' | 'extract' | 'copy' | 'move' | 'rename' | 'trash_restore'
+  conflictPolicies?: FileConflictPolicies
+  conflict?: FileConflict
+  revision?: number
   name: string
   target: string
   sources: string[]
   archiveEntries?: string[]
   format?: 'tar.gz' | 'zip' | 'tar'
-  state: 'queued' | 'running' | 'cancelling' | 'complete' | 'partial' | 'error' | 'cancelled' | 'interrupted'
+  state: 'queued' | 'running' | 'cancelling' | 'waiting_input' | 'skipped' | 'complete' | 'partial' | 'error' | 'cancelled' | 'interrupted'
   entries: number
   processedBytes: number
   createdAt: string
@@ -2901,14 +2929,20 @@ export interface FileTrashDirectory {
 }
 
 export interface FileActionResult {
+  completedCount?: number
+  skippedCount?: number
+  skipped?: string[]
+  resolution?: FileConflictResolution
   action: FileAction
   succeeded: Array<{
+    directoryIdentity?: string
     path: string
     destination?: string
     resourceVersion?: string
   }>
   failed: Array<{
     path: string
+    code?: string
     detail: string
   }>
 }

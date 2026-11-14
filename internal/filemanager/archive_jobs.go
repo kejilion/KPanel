@@ -26,6 +26,8 @@ const maxArchiveStateBytes = 2 << 20
 var ErrArchiveJobsUnavailable = errors.New("归档任务状态不可用，请检查 Agent 状态目录")
 
 type archiveJobRecord struct {
+	Private        *receivePublication            `json:"private,omitempty"`
+	Decision       *contract.FileConflictDecision `json:"decision,omitempty"`
 	Job            contract.FileArchiveJob        `json:"job"`
 	Temps          []string                       `json:"temps"`
 	TempIdentities map[string]archiveTempIdentity `json:"tempIdentities,omitempty"`
@@ -50,10 +52,10 @@ type archiveJobs struct {
 }
 
 func archiveJobActive(state string) bool {
-	return state == "queued" || state == "running" || state == "cancelling"
+	return state == "queued" || state == "running" || state == "cancelling" || state == "waiting_input"
 }
 func (m *Manager) archiveStatePath() string {
-	return path.Join(path.Dir(m.trashRoot), "archive-jobs.json")
+	return path.Join(path.Dir(m.trashRoot), "archive-jobs-v2.json")
 }
 
 func (m *Manager) initializeArchiveJobsLocked() error {
@@ -94,14 +96,20 @@ func (m *Manager) initializeArchiveJobsLocked() error {
 	if err != nil {
 		return ErrArchiveJobsUnavailable
 	}
-	storedInfo, statErr := a.store.Lstat("archive-jobs.json")
+	stateName := "archive-jobs-v2.json"
+	if _, err := a.store.Lstat(stateName); errors.Is(err, os.ErrNotExist) {
+		if _, oldErr := a.store.Lstat("archive-jobs.json"); oldErr == nil {
+			stateName = "archive-jobs.json"
+		}
+	}
+	storedInfo, statErr := a.store.Lstat(stateName)
 	if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
 		return ErrArchiveJobsUnavailable
 	}
 	if statErr == nil && !storedInfo.Mode().IsRegular() {
 		return ErrArchiveJobsUnavailable
 	}
-	file, err := a.store.Open("archive-jobs.json")
+	file, err := a.store.Open(stateName)
 	if err == nil {
 		defer file.Close()
 		info, statErr := file.Stat()
@@ -129,15 +137,17 @@ func (m *Manager) initializeArchiveJobsLocked() error {
 			j := record.Job
 			id, idErr := hex.DecodeString(j.ID)
 			target, pathErr := normalizeVirtual(j.Target)
-			if idErr != nil || len(id) != 16 || pathErr != nil || target != j.Target || (j.Action != "compress" && j.Action != "extract") || len(record.Temps) > MaxBatchItems || j.CreatedAt.IsZero() {
+			if idErr != nil || len(id) != 16 || pathErr != nil || target != j.Target || !storedFileJobAction(j.Action) || len(record.Temps) > MaxBatchItems || j.CreatedAt.IsZero() {
 				return ErrArchiveJobsUnavailable
 			}
-			if j.ID != hex.EncodeToString(id) || len(j.Sources) == 0 || len(j.Sources) > MaxBatchItems || validateArchiveSelection(j.ArchiveEntries) != nil || len(j.Result.Succeeded) > MaxBatchItems || len(j.Result.Failed) > MaxBatchItems || len(j.Name) > maxPathBytes || j.UpdatedAt.IsZero() {
+			if !ValidFileConflictPolicies(j.ConflictPolicies) || j.State == "waiting_input" && (j.Conflict == nil || j.Revision == 0) || j.ID != hex.EncodeToString(id) || len(j.Sources) == 0 || len(j.Sources) > MaxBatchItems || validateArchiveSelection(j.ArchiveEntries) != nil || len(j.Result.Succeeded) > MaxBatchItems || len(j.Result.Failed) > MaxBatchItems || len(j.Name) > maxPathBytes || j.UpdatedAt.IsZero() {
 				return ErrArchiveJobsUnavailable
 			}
 			for _, source := range j.Sources {
-				if normalized, err := normalizeVirtual(source); err != nil || normalized != source {
-					return ErrArchiveJobsUnavailable
+				if j.Action != "trash_restore" {
+					if normalized, err := normalizeVirtual(source); err != nil || normalized != source {
+						return ErrArchiveJobsUnavailable
+					}
 				}
 			}
 			if _, exists := a.records[j.ID]; exists {
@@ -149,8 +159,24 @@ func (m *Manager) initializeArchiveJobsLocked() error {
 				}
 			}
 			switch j.State {
-			case "queued", "running", "cancelling", "complete", "partial", "error", "cancelled", "interrupted":
+			case "queued", "running", "cancelling", "waiting_input", "complete", "partial", "error", "cancelled", "interrupted", "skipped":
 			default:
+				return ErrArchiveJobsUnavailable
+			}
+			if j.Action == "receive" {
+				if record.Private == nil || !strings.HasPrefix(record.Private.StageName, ".kpanel-extract-"+j.ID) || len(record.Private.StageName) != len(".kpanel-extract-")+64 || record.Private.StageIdentity == "" || record.Private.WorkspaceIdentity == "" {
+					return ErrArchiveJobsUnavailable
+				}
+				if _, err := hex.DecodeString(strings.TrimPrefix(record.Private.StageName, ".kpanel-extract-")); err != nil {
+					return ErrArchiveJobsUnavailable
+				}
+				if canonical, err := normalizeVirtual(record.Private.Workspace); err != nil || canonical != record.Private.Workspace {
+					return ErrArchiveJobsUnavailable
+				}
+				if record.Private.TargetIdentity == "" {
+					return ErrArchiveJobsUnavailable
+				}
+			} else if record.Private != nil {
 				return ErrArchiveJobsUnavailable
 			}
 			copy := record
@@ -162,6 +188,9 @@ func (m *Manager) initializeArchiveJobsLocked() error {
 				continue
 			}
 			record.Job.State = "interrupted"
+			if record.Private != nil {
+				_ = m.cleanupReceivePublication(record.Private)
+			}
 			record.Job.Detail = "Agent 已重启，请核对目标目录后重试"
 			record.Job.UpdatedAt = m.now().UTC()
 			for _, temp := range record.Temps {
@@ -252,7 +281,7 @@ func (m *Manager) persistArchiveJobsLocked() error {
 		err = temp.Close()
 	}
 	if err == nil {
-		err = a.store.Rename(tempPath, "archive-jobs.json")
+		err = a.store.Rename(tempPath, "archive-jobs-v2.json")
 	}
 	if err == nil {
 		err = syncRootDirectory(a.store, ".")
@@ -272,10 +301,23 @@ func archiveJobTemp(target, action, id string, index int) string {
 }
 
 func cloneArchiveJob(job contract.FileArchiveJob) contract.FileArchiveJob {
+	if job.Entry != nil {
+		entry := *job.Entry
+		job.Entry = &entry
+	}
 	job.Sources = append([]string{}, job.Sources...)
 	job.ArchiveEntries = append([]string{}, job.ArchiveEntries...)
 	job.Result.Succeeded = append([]contract.FileActionItem{}, job.Result.Succeeded...)
 	job.Result.Failed = append([]contract.FileActionFailure{}, job.Result.Failed...)
+	job.Result.Skipped = append([]string{}, job.Result.Skipped...)
+	if job.ConflictPolicies != nil {
+		p := *job.ConflictPolicies
+		job.ConflictPolicies = &p
+	}
+	if job.Conflict != nil {
+		c := *job.Conflict
+		job.Conflict = &c
+	}
 	return job
 }
 
@@ -298,9 +340,10 @@ func (m *Manager) ArchiveJobs() ([]contract.FileArchiveJob, error) {
 
 func (m *Manager) StartArchiveJob(input contract.FileActionRequest) (contract.FileArchiveJob, error) {
 	var empty contract.FileArchiveJob
-	if (input.Action != "compress" && input.Action != "extract") || len(input.Sources) == 0 || len(input.Sources) > MaxBatchItems {
+	if !fileJobAction(input.Action) || !ValidFileConflictPolicies(input.ConflictPolicies) || len(input.Sources) == 0 || len(input.Sources) > MaxBatchItems {
 		return empty, ErrAction
 	}
+	deduplicateConflictSources(&input)
 	if err := validateArchiveSelection(input.ArchiveEntries); err != nil {
 		return empty, err
 	}
@@ -316,7 +359,7 @@ func (m *Manager) StartArchiveJob(input contract.FileActionRequest) (contract.Fi
 	if err != nil || !info.IsDir() {
 		return empty, ErrNotDirectory
 	}
-	if len(input.Sources) == 1 || input.Action == "compress" {
+	if input.Action == "extract" && len(input.Sources) == 1 || input.Action == "compress" {
 		if err := validateName(input.Name); err != nil {
 			return empty, err
 		}
@@ -331,8 +374,10 @@ func (m *Manager) StartArchiveJob(input contract.FileActionRequest) (contract.Fi
 	versions := make(map[string]string, len(input.Sources))
 	seen := make(map[string]bool)
 	for _, source := range input.Sources {
-		if canonical, err := normalizeVirtual(source); err != nil || canonical != source {
-			return empty, ErrInvalidPath
+		if input.Action != "trash_restore" {
+			if canonical, err := normalizeVirtual(source); err != nil || canonical != source {
+				return empty, ErrInvalidPath
+			}
 		}
 		if seen[source] {
 			return empty, ErrAction
@@ -345,7 +390,20 @@ func (m *Manager) StartArchiveJob(input contract.FileActionRequest) (contract.Fi
 		if version == "" {
 			return empty, ErrConflict
 		}
-		if err := m.checkExpectedVersion(source, version); err != nil {
+		checkSource := source
+		if input.Action == "trash_restore" {
+			if _, err := m.readTrashMetadata(source); err != nil {
+				return empty, err
+			}
+			checkSource = joinVirtual(m.trashRoot, source)
+			info, err := m.rootFS.Lstat(rootName(checkSource))
+			if err != nil {
+				return empty, err
+			}
+			if resourceVersion(checkSource, info) != version {
+				return empty, ErrConflict
+			}
+		} else if err := m.checkExpectedVersion(source, version); err != nil {
 			return empty, err
 		}
 		if input.Action == "extract" && archiveFormatForName(source) == "" {
@@ -381,6 +439,13 @@ func (m *Manager) StartArchiveJob(input contract.FileActionRequest) (contract.Fi
 	}
 	id := hex.EncodeToString(idBytes)
 	name := input.Name
+	if name == "" {
+		name = path.Base(input.Sources[0])
+	}
+	if input.ConflictPolicies != nil {
+		p := *input.ConflictPolicies
+		input.ConflictPolicies = &p
+	}
 	jobFormat := input.Format
 	if input.Action == "extract" && len(input.Sources) > 1 {
 		name = fmt.Sprintf("%d 个压缩包", len(input.Sources))
@@ -388,14 +453,16 @@ func (m *Manager) StartArchiveJob(input contract.FileActionRequest) (contract.Fi
 	} else if input.Action == "extract" {
 		jobFormat = archiveFormatForName(input.Sources[0])
 	}
-	job := contract.FileArchiveJob{ID: id, Action: input.Action, Name: name, Target: target, Sources: input.Sources, ArchiveEntries: input.ArchiveEntries, Format: jobFormat, State: "queued", CreatedAt: m.now().UTC(), UpdatedAt: m.now().UTC(), Result: contract.FileActionResult{Action: input.Action, Succeeded: []contract.FileActionItem{}, Failed: []contract.FileActionFailure{}}}
+	job := contract.FileArchiveJob{ConflictPolicies: input.ConflictPolicies, ID: id, Action: input.Action, Name: name, Target: target, Sources: input.Sources, ArchiveEntries: input.ArchiveEntries, Format: jobFormat, State: "queued", CreatedAt: m.now().UTC(), UpdatedAt: m.now().UTC(), Result: contract.FileActionResult{Action: input.Action, Succeeded: []contract.FileActionItem{}, Failed: []contract.FileActionFailure{}}}
 	record := &archiveJobRecord{Job: job}
 	count := len(input.Sources)
-	if input.Action == "compress" {
+	if input.Action != "extract" {
 		count = 1
 	}
-	for i := 0; i < count; i++ {
-		record.Temps = append(record.Temps, archiveJobTemp(target, input.Action, id, i))
+	if input.Action == "compress" || input.Action == "extract" {
+		for i := 0; i < count; i++ {
+			record.Temps = append(record.Temps, archiveJobTemp(target, input.Action, id, i))
+		}
 	}
 	a.records[id] = record
 	if err := m.persistArchiveJobsLocked(); err != nil {
@@ -434,7 +501,11 @@ func (m *Manager) runArchiveJob(ctx context.Context, cancel context.CancelFunc, 
 	case <-ctx.Done():
 	}
 	if acquired {
-		defer func() { <-a.gate }()
+		defer func() {
+			if acquired {
+				<-a.gate
+			}
+		}()
 	}
 	update := func(fn func(*contract.FileArchiveJob)) bool {
 		a.mu.Lock()
@@ -453,12 +524,19 @@ func (m *Manager) runArchiveJob(ctx context.Context, cancel context.CancelFunc, 
 	budget := &copyBudget{maxEntries: m.maxCopyEntries, maxBytes: m.maxCopyBytes}
 	if ctx.Err() == nil && update(func(job *contract.FileArchiveJob) { job.State = "running" }) {
 		count := len(input.Sources)
-		if input.Action == "compress" {
+		if input.Action != "extract" {
 			count = 1
 		}
 		for index := 0; index < count && ctx.Err() == nil; index++ {
 			item := input
+			if item.Action == "trash_restore" {
+				item.TrashIDs = item.Sources
+				item.Sources = nil
+			}
 			source := input.Sources[index]
+			if input.Action == "rename" {
+				item.ExpectedResourceVersion = input.ExpectedResourceVersions[source]
+			}
 			if input.Action == "extract" {
 				item.Sources = []string{source}
 				item.Format = archiveFormatForName(source)
@@ -482,10 +560,47 @@ func (m *Manager) runArchiveJob(ctx context.Context, cancel context.CancelFunc, 
 				a.records[id].Job.ProcessedBytes = value.bytes
 				a.mu.Unlock()
 			}}
-			result, err := m.Action(context.WithValue(ctx, archiveContextKey{}, operation), item)
+			if item.Action == "rename" {
+				item.Target = joinVirtual(item.Target, item.Name)
+			}
+			operationContext := context.WithValue(ctx, archiveContextKey{}, operation)
+			if input.ConflictPolicies != nil {
+				session := &ConflictSession{Policies: *input.ConflictPolicies}
+				session.Prompt = func(promptContext context.Context, conflict contract.FileConflict) (contract.FileConflictDecision, error) {
+					// Action owns writeMu. Release it and the archive work slot
+					// while the durable task waits for its administrator.
+					m.writeMu.Unlock()
+					if acquired {
+						<-a.gate
+						acquired = false
+					}
+					decision, err := m.awaitArchiveConflict(promptContext, id, conflict)
+					if err == nil {
+						select {
+						case a.gate <- struct{}{}:
+							acquired = true
+						case <-promptContext.Done():
+							err = promptContext.Err()
+						}
+					}
+					m.writeMu.Lock()
+					return decision, err
+				}
+				operationContext = WithFileConflicts(operationContext, session)
+			}
+			result, err := m.Action(operationContext, item)
 			if !update(func(job *contract.FileArchiveJob) {
 				job.Result.Succeeded = append(job.Result.Succeeded, result.Succeeded...)
 				job.Result.Failed = append(job.Result.Failed, result.Failed...)
+				job.Result.Skipped = append(job.Result.Skipped, result.Skipped...)
+				if len(job.Result.Skipped) > 64 {
+					job.Result.Skipped = job.Result.Skipped[:64]
+				}
+				job.Result.CompletedCount += result.CompletedCount
+				job.Result.SkippedCount += result.SkippedCount
+				if job.ConflictPolicies != nil {
+					*input.ConflictPolicies = *job.ConflictPolicies
+				}
 				if err != nil {
 					job.Result.Failed = append(job.Result.Failed, contract.FileActionFailure{Path: source, Detail: archiveFailureDetail(err)})
 				}
@@ -502,7 +617,11 @@ func (m *Manager) runArchiveJob(ctx context.Context, cancel context.CancelFunc, 
 		case ctx.Err() != nil:
 			job.State = "cancelled"
 			job.Detail = "任务已停止，请核对目标目录中的已完成结果"
-		case len(job.Result.Failed) > 0 && len(job.Result.Succeeded) > 0:
+		case len(job.Result.Skipped) > 0 && len(job.Result.Succeeded)+job.Result.CompletedCount > 0:
+			job.State = "partial"
+		case len(job.Result.Skipped) > 0 && len(job.Result.Failed) == 0:
+			job.State = "skipped"
+		case len(job.Result.Failed) > 0 && len(job.Result.Succeeded)+job.Result.CompletedCount > 0:
 			job.State = "partial"
 		case len(job.Result.Failed) > 0:
 			job.State = "error"

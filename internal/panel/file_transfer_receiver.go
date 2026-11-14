@@ -17,11 +17,19 @@ import (
 
 	"github.com/kejilion/kejilion-panel/internal/cluster"
 	"github.com/kejilion/kejilion-panel/internal/contract"
+	"github.com/kejilion/kejilion-panel/internal/filemanager"
 	"github.com/kejilion/kejilion-panel/internal/httpstream"
 	"github.com/kejilion/kejilion-panel/internal/remotedownload"
 )
 
 var errReceiveUnsupported = errors.New("target does not support receiving sessions")
+
+type partialFileTransfer struct {
+	entry  contract.FileEntry
+	result *contract.FileActionResult
+}
+
+func (e *partialFileTransfer) Error() string { return "部分文件已处理，其余项目被跳过" }
 
 type fileReceiveHTTPError struct {
 	status int
@@ -33,16 +41,20 @@ func (e *fileReceiveHTTPError) Error() string {
 }
 
 type fileReceiveTarget struct {
+	lookup   func(context.Context, string) (*contract.FileEntry, error)
 	open     func(context.Context, string, string, io.Reader, int64) (*http.Response, error)
 	supports func(context.Context, contract.FileReceiveInput) error
 }
 
 func (s *Server) fileReceiver(hostID string, kind cluster.HostKind, requestID string) fileReceiveTarget {
-	return fileReceiveTarget{supports: func(ctx context.Context, input contract.FileReceiveInput) error {
-		if hostID == "" {
+	return fileReceiveTarget{lookup: func(ctx context.Context, virtual string) (*contract.FileEntry, error) {
+		return s.transferConflictEntry(ctx, hostID, kind, virtual, requestID)
+	}, supports: func(ctx context.Context, input contract.FileReceiveInput) error {
+		requiresConflict := input.ConflictPolicies != nil || input.ExpectedTargetResourceVersion != ""
+		if hostID == "" && !requiresConflict {
 			return nil // The local Agent has an ordinary 404 compatibility signal.
 		}
-		return s.fileReceiveSupport(ctx, hostID, kind, input.Directory, requestID)
+		return s.fileReceiveSupport(ctx, hostID, kind, input.Directory, requestID, requiresConflict)
 	}, open: func(ctx context.Context, method, query string, body io.Reader, size int64) (*http.Response, error) {
 		mediaType := "application/json"
 		if method == http.MethodPut {
@@ -62,7 +74,7 @@ func (s *Server) fileReceiver(hostID string, kind cluster.HostKind, requestID st
 	}}
 }
 
-func (s *Server) fileReceiveSupport(ctx context.Context, hostID string, kind cluster.HostKind, directory, requestID string) error {
+func (s *Server) fileReceiveSupport(ctx context.Context, hostID string, kind cluster.HostKind, directory, requestID string, requiresConflict ...bool) error {
 	query := url.Values{"path": {directory}, "limit": {"1"}}.Encode()
 	var payload []byte
 	if hostID == "" {
@@ -115,6 +127,9 @@ func (s *Server) fileReceiveSupport(ctx context.Context, hostID string, kind clu
 	if result.FileReceiveVersion != 1 || hostID != "" && kind == cluster.HostKindPanel && result.PanelFileReceiveVersion != 1 {
 		return errReceiveUnsupported
 	}
+	if len(requiresConflict) > 0 && requiresConflict[0] && result.FileConflictVersion != 1 {
+		return errReceiveUnsupported
+	}
 	return nil
 }
 
@@ -145,7 +160,7 @@ func readReceiveResponse(ctx context.Context, response *http.Response, err error
 	if decoder.Decode(&session) != nil || decoder.Decode(&extra) != io.EOF ||
 		len(session.ID) != 64 || len(session.PrefixSHA256) != 64 || session.Offset < 0 ||
 		session.ChunkBytes != contract.FileTransferChunkBytes ||
-		(session.State != "receiving" && session.State != "committing" && session.State != "complete") {
+		(session.State != "receiving" && session.State != "committing" && session.State != "waiting_input" && session.State != "complete") {
 		return contract.FileReceiveSession{}, errors.New("receiver result invalid")
 	}
 	return session, nil
@@ -199,7 +214,7 @@ func transferRetryPause(ctx context.Context, attempt int) error {
 // Every source adapter uses the same durable acknowledgements, retry policy,
 // end verification and atomic commit. Source identity/permissions stay in the
 // adapter, and retries never publish a request's partially read chunk.
-func (s *Server) receiveFileTransfer(
+func (s *Server) receiveFileTransferOnce(
 	ctx context.Context, input contract.FileReceiveInput, initial io.ReadCloser,
 	reopen func(context.Context, int64, string) (io.ReadCloser, error), target fileReceiveTarget,
 	emit func(contract.FileTransferEvent) bool,
@@ -337,7 +352,46 @@ func (s *Server) receiveFileTransfer(
 			return contract.FileEntry{}, 0, err
 		}
 	}
-	if session.State != "complete" || session.Entry == nil || session.Entry.Path != pathForReceive(input) ||
+	if session.PublishJobID != "" {
+		_ = body.Close()
+		for session.State != "complete" {
+			if err := ctx.Err(); err != nil {
+				return contract.FileEntry{}, received, err
+			}
+			if session.State == "waiting_input" && session.Conflict != nil {
+				policy := filemanager.FileConflicts(ctx)
+				if policy == nil || policy.Prompt == nil {
+					return contract.FileEntry{}, received, filemanager.ErrConflict
+				}
+				decision, err := policy.Prompt(ctx, *session.Conflict)
+				if err != nil {
+					return contract.FileEntry{}, received, err
+				}
+				decision.Revision = session.Revision
+				_, err = target.command(ctx, contract.FileReceiveRequest{Operation: "decide", ID: id, SourceKey: input.SourceKey, Decision: &decision})
+				if err != nil {
+					var remote *fileReceiveHTTPError
+					if !errors.As(err, &remote) || remote.status != 409 {
+						return contract.FileEntry{}, received, err
+					}
+				}
+			}
+			if err := transferRetryPause(ctx, 0); err != nil {
+				return contract.FileEntry{}, received, err
+			}
+			session, err = target.status(ctx, id, input.SourceKey)
+			if err != nil {
+				return contract.FileEntry{}, received, err
+			}
+		}
+		if session.Result != nil && len(session.Result.Skipped) > 0 && len(session.Result.Succeeded)+session.Result.CompletedCount == 0 {
+			return contract.FileEntry{}, received, filemanager.ErrFileSkipped
+		}
+		if session.Result != nil && len(session.Result.Skipped) > 0 && session.Entry != nil {
+			return *session.Entry, received, &partialFileTransfer{*session.Entry, session.Result}
+		}
+	}
+	if session.State != "complete" || session.Entry == nil || (input.ConflictPolicies == nil && session.Entry.Path != pathForReceive(input) || input.ConflictPolicies != nil && path.Dir(session.Entry.Path) != input.Directory) ||
 		session.Entry.Kind != input.Kind || input.Kind == "file" && session.Entry.SizeBytes != session.Offset {
 		return contract.FileEntry{}, session.Offset, errors.New("receiver commit result invalid")
 	}

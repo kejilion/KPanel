@@ -19,11 +19,12 @@ import (
 	"unicode/utf8"
 
 	"github.com/kejilion/kejilion-panel/internal/contract"
+	"github.com/kejilion/kejilion-panel/internal/filemanager"
 )
 
 const (
 	jobSchemaVersion = 1
-	transferJobFile  = "jobs-v2.json"
+	transferJobFile  = "jobs-v3.json"
 	MaxJobs          = 100
 	MaxQueuedJobs    = 10
 	MaxJobStateBytes = 256 << 10
@@ -74,8 +75,12 @@ func OpenTransferJobStore(root, legacyRoot string) (*JobStore, error) {
 	// The v2 record shape adds BT sources and source-stage progress. Keep the
 	// v1 journal byte-for-byte intact so older binaries can still roll back.
 	// The envelope is unchanged; its schemaVersion remains one.
-	previousPath := filepath.Join(root, "jobs-v1.json")
+	previousPath := filepath.Join(root, "jobs-v2.json")
 	legacy, err := readPersistedJobs(previousPath)
+	if errors.Is(err, os.ErrNotExist) {
+		previousPath = filepath.Join(root, "jobs-v1.json")
+		legacy, err = readPersistedJobs(previousPath)
+	}
 	if errors.Is(err, os.ErrNotExist) {
 		previousPath = filepath.Join(root, "jobs.json")
 		legacy, err = readPersistedJobs(previousPath)
@@ -327,6 +332,8 @@ func (s *JobStore) interruptActiveLocked(now time.Time) bool {
 			continue
 		}
 		job.State = "interrupted"
+		job.Conflict = nil
+		job.Decision = nil
 		job.Code = "remote_download_interrupted"
 		job.UpdatedAt = now
 		job.FinishedAt = timePointer(now)
@@ -424,6 +431,12 @@ func readPersistedJobs(statePath string) (persistedJobs, error) {
 }
 
 func validateJob(job contract.FileRemoteDownloadJob) error {
+	if !filemanager.ValidFileConflictPolicies(job.ConflictPolicies) || job.BatchID != "" && !jobIDPattern.MatchString(job.BatchID) {
+		return errors.New("invalid conflict policy")
+	}
+	if job.Conflict != nil && (len(job.Conflict.Source.Path) > 4096 || len(job.Conflict.Target.Path) > 4096 || len(job.Conflict.Target.ResourceVersion) > 256) {
+		return errors.New("invalid conflict summary")
+	}
 	validName := validJobName(job.Name)
 	if job.SourceKind == "cross-host" {
 		validName = validCrossTransferName(job.Name)
@@ -442,7 +455,7 @@ func validateJob(job contract.FileRemoteDownloadJob) error {
 	if terminal != (job.FinishedAt != nil) || job.FinishedAt != nil && job.FinishedAt.Before(job.CreatedAt) {
 		return errors.New("invalid remote download job timestamps")
 	}
-	if job.State == "complete" {
+	if job.State == "complete" || job.State == "partial" {
 		if job.Code != "" || job.Name == "" || job.Entry == nil || (job.Entry.Kind != "file" && !((job.SourceKind == "cross-host" || job.SourceKind == "bittorrent") && job.Entry.Kind == "directory")) ||
 			job.Entry.Name != job.Name || job.Entry.Path != path.Join(job.TargetDirectory, job.Name) ||
 			(job.Entry.Kind == "file" && job.Entry.SizeBytes != job.LoadedBytes) || job.Entry.ResourceVersion == "" || len(job.Entry.ResourceVersion) > 256 {
@@ -465,7 +478,7 @@ func validTransferMode(mode string) bool {
 
 func validJobState(state string) bool {
 	switch state {
-	case "queued", "connecting", "transferring", "confirming", "complete", "cancelled", "error", "interrupted":
+	case "queued", "connecting", "transferring", "confirming", "waiting_input", "skipped", "partial", "complete", "cancelled", "error", "interrupted":
 		return true
 	default:
 		return false
@@ -473,7 +486,7 @@ func validJobState(state string) bool {
 }
 
 func activeJobState(state string) bool {
-	return state == "queued" || state == "connecting" || state == "transferring" || state == "confirming"
+	return state == "queued" || state == "connecting" || state == "transferring" || state == "confirming" || state == "waiting_input"
 }
 
 func validSource(value string) bool {
@@ -516,6 +529,25 @@ func validCrossTransferName(value string) bool {
 
 func cloneJob(job contract.FileRemoteDownloadJob) contract.FileRemoteDownloadJob {
 	result := job
+	if job.Result != nil {
+		r := *job.Result
+		r.Succeeded = append([]contract.FileActionItem{}, r.Succeeded...)
+		r.Failed = append([]contract.FileActionFailure{}, r.Failed...)
+		r.Skipped = append([]string{}, r.Skipped...)
+		result.Result = &r
+	}
+	if job.ConflictPolicies != nil {
+		p := *job.ConflictPolicies
+		result.ConflictPolicies = &p
+	}
+	if job.Conflict != nil {
+		c := *job.Conflict
+		result.Conflict = &c
+	}
+	if job.Decision != nil {
+		d := *job.Decision
+		result.Decision = &d
+	}
 	if job.Entry != nil {
 		entry := *job.Entry
 		result.Entry = &entry

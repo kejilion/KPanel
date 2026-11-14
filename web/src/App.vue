@@ -3,6 +3,8 @@ import { computed, onBeforeUnmount, onMounted, watch, watchEffect, type WatchSto
 import { RouterView } from 'vue-router'
 import { useRoute } from 'vue-router'
 import ToastHost from '@/components/feedback/ToastHost.vue'
+import FileConflictDialog from '@/components/files/FileConflictDialog.vue'
+import { cancelFileConflicts } from '@/lib/fileConflicts'
 import MusicMiniPlayer from '@/components/music/MusicMiniPlayer.vue'
 import { useMusicPlayer } from '@/stores/musicPlayer'
 import { useI18n } from '@/i18n'
@@ -22,6 +24,7 @@ const session = useSession()
 const music = useMusicPlayer()
 // Navigation does not own audio. Authentication and app teardown do.
 watch(() => session.state.authenticated ? session.state.user?.id : undefined, (id, previous) => {
+  if (!id || id !== previous) cancelFileConflicts()
   if ((!id || (previous && id !== previous)) && music.state.current) { stopPreferencesSync(); music.stop() }
   if (id) {
     retryPendingTerminalCloses()
@@ -75,4 +78,5 @@ watchEffect(() => {
   <RouterView />
   <MusicMiniPlayer v-if="session.state.authenticated && !route.meta.public" />
   <ToastHost />
+  <FileConflictDialog v-if="session.state.authenticated && !route.meta.public" />
 </template>

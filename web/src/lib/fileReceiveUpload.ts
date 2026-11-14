@@ -93,9 +93,10 @@ function validate(session: FileReceiveSession, file: File): void {
 export async function uploadFileInSession(
   directory: string, file: File, overwrite: boolean, hostId: string,
   receiver: FileUploadReceiver, onProgress?: FileUploadProgress, signal?: AbortSignal,
+  expectedTargetResourceVersion?: string, expectedDirectoryIdentity?: string,
 ): Promise<FileEntry> {
   aborted(signal)
-  const identity = new FileTransferHash().update(new TextEncoder().encode(JSON.stringify([hostId, directory, file.name, file.size, file.lastModified, overwrite])))
+  const identity = new FileTransferHash().update(new TextEncoder().encode(JSON.stringify([hostId, directory, file.name, file.size, file.lastModified, overwrite, expectedTargetResourceVersion, expectedDirectoryIdentity])))
   identity.update(await readBlob(file.slice(0, chunkBytes), signal))
   if (file.size > chunkBytes) identity.update(await readBlob(file.slice(Math.max(chunkBytes, file.size - chunkBytes)), signal))
   const sourceKey = identity.hex()
@@ -114,6 +115,8 @@ export async function uploadFileInSession(
         session = await receiver.command({ operation: 'create', input: {
           directory, name: file.name, kind: 'file', sizeBytes: file.size, sourceKey, overwrite,
           modifiedAt: new Date(file.lastModified).toISOString(),
+          ...(expectedTargetResourceVersion ? { expectedTargetResourceVersion } : {}),
+ ...(expectedDirectoryIdentity ? { expectedDirectoryIdentity } : {}),
         } }, signal)
       } catch (error) {
         if (statusOf(error) === 404 || statusOf(error) === 405) return receiver.legacy()

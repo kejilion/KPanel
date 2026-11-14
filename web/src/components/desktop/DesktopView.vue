@@ -76,6 +76,7 @@ import {
   type DesktopEntry,
 } from '@/lib/desktopEntries'
 import { api, ApiError, type SystemResourceSnapshot } from '@/lib/api'
+import { fileAPIForHost } from '@/lib/fileHostContext'
 import {
   contextMenuFocusOrigin,
   focusFirstContextMenuItem,
@@ -106,6 +107,7 @@ import {
 } from '@/lib/desktopFileShortcuts'
 import {
   collectExternalDrop,
+  collectExternalFiles,
   DESKTOP_UPLOAD_DIRECTORY,
   DesktopExternalDropError,
   hasExternalFileDrop,
@@ -113,6 +115,8 @@ import {
   type DesktopExternalTransferAPI,
   type DesktopExternalTransferProgress,
 } from '@/lib/desktopExternalDrop'
+import { clipboardFiles, keepsNativeClipboard } from '@/lib/systemClipboard'
+import { FileConflictBatch } from '@/lib/fileConflicts'
 import {
   DESKTOP_NEW_ITEM_LABELS,
   DESKTOP_NEW_ITEM_TYPES,
@@ -322,7 +326,7 @@ function localFileContentURL(path: string, disposition: 'inline' | 'attachment')
 function localFileArchiveURL(entries: readonly Pick<FileEntry, 'path' | 'resourceVersion'>[], name: string) {
   return api.files.archiveUrl(entries, name)
 }
-function localDesktopFileAPI(): DesktopExternalTransferAPI { return api.files }
+function localDesktopFileAPI(): DesktopExternalTransferAPI { return { ...api.files, resolveName: (directory,name,kind) => fileAPIForHost('').resolveName(directory,name,kind), uploadVersion: (path, file, overwrite, version, progress, signal, identity) => identity ? api.files.upload(path,file,overwrite,progress,signal,undefined,version,identity) : version === undefined ? api.files.upload(path,file,overwrite,progress,signal) : api.files.upload(path, file, overwrite, progress, signal, undefined, version) } }
 function localPanelTransfer(
   input: Parameters<typeof api.files.transferFromPanel>[0],
   onEvent: Parameters<typeof api.files.transferFromPanel>[1],
@@ -3426,6 +3430,25 @@ async function addInternalFileDrop(event: DragEvent, destination: DesktopIconPos
 async function addExternalFileDrop(event: DragEvent, destination: DesktopIconPosition): Promise<void> {
   const dataTransfer = event.dataTransfer
   if (!dataTransfer) return
+  await addExternalFiles((signal) => collectExternalDrop(dataTransfer, signal), destination, event)
+}
+
+function onDesktopPaste(event: ClipboardEvent): void {
+  if (event.defaultPrevented || document.body.classList.contains('has-modal') || keepsNativeClipboard(event.target)) return
+  const target = event.target instanceof Element ? event.target : undefined
+  if (target?.closest('.desktop-window, .desktop-widget-slot, .desktop__taskbar, .desktop-start-menu, .desktop__context-menu')) return
+  const files = clipboardFiles(event)
+  if (!files.length) return
+  event.preventDefault()
+  event.stopPropagation()
+  void addExternalFiles(async () => collectExternalFiles(files), { x: 0, y: 0 })
+}
+
+async function addExternalFiles(
+  collect: (signal: AbortSignal) => Promise<ReturnType<typeof collectExternalFiles>>,
+  destination: DesktopIconPosition,
+  dropEvent?: DragEvent,
+): Promise<void> {
   if (desktopTransfer.value && ['preparing', 'uploading'].includes(desktopTransfer.value.phase)) {
     toast.show(i18n.t('desktop.transferBusyTitle'), { message: i18n.t('desktop.transferBusyMessage') })
     return
@@ -3433,13 +3456,15 @@ async function addExternalFileDrop(event: DragEvent, destination: DesktopIconPos
   if (desktopTransferClearTimer !== undefined) window.clearTimeout(desktopTransferClearTimer)
   const controller = new AbortController()
   desktopTransferController = controller
+  const batch = new FileConflictBatch('上传到桌面', '本机', controller.signal)
   desktopTransfer.value = {
     phase: 'preparing', roots: 0, failed: 0, detail: '', currentName: '',
     completedFiles: 0, totalFiles: 0, loadedBytes: 0, totalBytes: 0,
   }
-  showDropPulse(event)
+  if (dropEvent) showDropPulse(dropEvent)
   try {
-    const manifest = await collectExternalDrop(dataTransfer, controller.signal)
+    const manifest = await collect(controller.signal)
+    controller.signal.throwIfAborted()
     desktopTransfer.value = {
       phase: 'uploading', roots: manifest.roots.length, failed: 0, detail: '',
       currentName: manifest.roots[0]?.name || '', completedFiles: 0,
@@ -3451,7 +3476,7 @@ async function addExternalFileDrop(event: DragEvent, destination: DesktopIconPos
         ...progress,
         phase: 'uploading', roots: manifest.roots.length, failed: 0, detail: '',
       }
-    }, desktopUploadDirectory.value)
+    }, desktopUploadDirectory.value, undefined, batch)
     if (controller.signal.aborted) return
     let addedCount = 0
     let shortcutDetail = ''
@@ -3467,16 +3492,16 @@ async function addExternalFileDrop(event: DragEvent, destination: DesktopIconPos
         : workspaceErrorMessage(error)
     }
     const shortcutFailed = shortcutSaveFailed && addedCount < result.entries.length
-    const phase = result.failed.length || shortcutFailed ? 'partial' : 'complete'
+    const phase = result.cancelled ? 'cancelled' : result.failed.length || shortcutFailed || result.skipped?.length ? 'partial' : 'complete'
     desktopTransfer.value = {
       phase,
       roots: manifest.roots.length,
       failed: result.failed.length + (shortcutFailed ? result.entries.length - addedCount : 0),
-      detail: shortcutDetail || (result.failed[0]?.detail ?? ''),
+      detail: result.skipped?.length ? `${result.skipped.length} 项跳过；${result.failed.length} 项失败。` : shortcutDetail || (result.failed[0]?.detail ?? ''),
       currentName: result.entries.at(-1)?.name || manifest.roots.at(-1)?.name || '',
-      completedFiles: manifest.files.length - result.failed.length,
+      completedFiles: result.completedFiles ?? desktopTransfer.value?.completedFiles ?? 0,
       totalFiles: manifest.files.length,
-      loadedBytes: manifest.totalBytes,
+      loadedBytes: result.loadedBytes ?? desktopTransfer.value?.loadedBytes ?? 0,
       totalBytes: manifest.totalBytes,
     }
     if (phase === 'complete') {
@@ -3485,7 +3510,8 @@ async function addExternalFileDrop(event: DragEvent, destination: DesktopIconPos
       }))
       scheduleDesktopTransferClear()
     } else {
-      toast.danger(i18n.t('desktop.transferPartialTitle'), shortcutDetail || result.failed[0]?.detail || '')
+      if (!result.failed.length && !shortcutFailed) toast.show(`${result.skipped?.length || 0} 项跳过`)
+      else toast.danger(i18n.t('desktop.transferPartialTitle'), shortcutDetail || result.failed[0]?.detail || '')
     }
   } catch (error) {
     if (controller.signal.aborted || (error instanceof DOMException && error.name === 'AbortError')) {
@@ -3513,6 +3539,7 @@ async function addExternalFileDrop(event: DragEvent, destination: DesktopIconPos
     }
     toast.danger(i18n.t('desktop.transferFailedTitle'), detail)
   } finally {
+    batch.close()
     if (desktopTransferController === controller) desktopTransferController = undefined
   }
 }
@@ -3580,8 +3607,8 @@ async function addCrossPanelFileDrop(event: DragEvent, destination: DesktopIconP
     const failureDetail = result.failed[0]?.detail || shortcutDetail
     const phase: DesktopTransferPhase = result.cancelled
       ? copiedEntries.length ? 'partial' : 'cancelled'
-      : copiedEntries.length === 0 ? 'error'
-        : failures > 0 ? 'partial' : 'complete'
+      : copiedEntries.length === 0 ? result.skipped?.length ? 'partial' : 'error'
+        : failures > 0 || result.skipped?.length ? 'partial' : 'complete'
     const detail = result.cancelled
       ? i18n.t('desktop.panelCopyCancelledPartial', { count: copiedEntries.length })
       : failures > 0
@@ -3726,14 +3753,17 @@ async function createNewItem(): Promise<void> {
     return
   }
   newItemBusy.value = true
+  const batch = new FileConflictBatch('新建', '本机')
   try {
     const result = await uploadExternalDrop(
       desktopNewItemManifest(pending.type, name),
       localDesktopFileAPI(),
-      new AbortController().signal,
+      batch.signal,
       () => {},
       desktopUploadDirectory.value,
+      undefined, batch,
     )
+    if (result.cancelled || result.skipped?.length) { toast.show(i18n.t('files.conflict.skip')); newItem.value = undefined; return }
     if (result.failed.length) throw new Error(result.failed[0]!.detail)
     const destination = desktopPositionAt(pending.origin.x, pending.origin.y) ?? { x: 0, y: 0 }
     const created = await addDroppedFileEntries(result.entries, destination)
@@ -3753,6 +3783,7 @@ async function createNewItem(): Promise<void> {
       )
     }
   } finally {
+    batch.close()
     newItemBusy.value = false
   }
 }
@@ -4561,6 +4592,7 @@ function onViewportResize(): void {
     @dragover="onDesktopFileDragOver"
     @dragleave="onDesktopFileDragLeave"
     @drop="onDesktopFileDrop"
+    @paste="onDesktopPaste"
   >
     <div v-if="appearanceReady" class="desktop__wallpaper" :class="{ 'desktop__wallpaper--scene': liveScenePack }" aria-hidden="true">
       <DesktopWallpaper

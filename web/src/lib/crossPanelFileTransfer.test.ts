@@ -32,6 +32,7 @@ describe('cross-panel file batch', () => {
 
     expect(transfer).toHaveBeenCalledTimes(2)
     expect(transfer.mock.calls[1]?.[0]).toEqual({
+      batchId: expect.stringMatching(/^[a-f0-9]{32}$/), conflictPolicies: {file:'ask',directory:'ask'},
       sourceNodeId: 'a'.repeat(32), path: '/app', resourceVersion: 'sha256:app',
       targetDirectory: '/target',
     })

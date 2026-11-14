@@ -1880,4 +1880,8 @@ export default [
   ["暂停", "Pause"],
   ["播放", "Play"],
   ["下一首", "Next track"],
+  ["上传到桌面","Upload to desktop"],
+  ["{0} 项跳过；{1} 项失败。","{0} skipped; {1} failed."],
+  ["{0} 项跳过","{0} skipped"],
+  ["新建","Create"],
 ] as const satisfies PhraseCatalog

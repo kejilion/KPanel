@@ -4,6 +4,8 @@ import type { TerminalBatch, TerminalBatchList } from '@/types/terminalBatch'
 import type { DockerImageUpdateResult } from '@/lib/dockerImageUpdate'
 import { TerminalStreamClient } from '@/lib/terminalStream'
 import { uploadFileInSession, type FileReceiveSession, type FileUploadProgress } from '@/lib/fileReceiveUpload'
+import { FileConflictBatch } from '@/lib/fileConflicts'
+import { decideRemoteConflict } from '@/lib/fileConflictJobs'
 import { watchFileTransferJob } from '@/lib/fileTransferJob'
 import type { PasskeyList } from '@/types/api'
 import type { SystemServicesSnapshot, SystemServiceDetail, SystemServiceLogs, SystemServiceActionInput, SystemServiceActionResult } from '@/types/systemServices'
@@ -2471,6 +2473,8 @@ export const api = {
       request<{ items: FileArchiveJob[] }>('/files/archive-jobs', { signal, fileHostId }),
     createArchiveJob: (input: FileActionInput, fileHostId?: string | null): Promise<FileArchiveJob> =>
       request<FileArchiveJob>('/files/archive-jobs', { method: 'POST', body: { operation: 'create', input }, fileHostId }),
+    decideArchiveJob: (id: string, decision: import('@/types/api').FileConflictDecision, fileHostId?: string | null): Promise<{ ok: boolean }> =>
+      request('/files/archive-jobs', { method: 'POST', body: { operation: 'decide', id, decision }, fileHostId }),
     changeArchiveJob: (id: string, operation: 'cancel' | 'clear', fileHostId?: string | null): Promise<{ ok: boolean }> =>
       request<{ ok: boolean }>('/files/archive-jobs', { method: 'POST', body: { operation, id }, fileHostId }),
     share: (
@@ -2506,6 +2510,19 @@ export const api = {
         // can always address an accepted job rather than lose its response ID.
         const job = await request<FileRemoteDownloadJob>('/files/transfers', { method: 'POST', body: input, fileHostId })
         return watchFileTransferJob(job, {
+          resolve: async job => {
+            if (!job.conflict) return
+            const batch = new FileConflictBatch('跨主机复制', fileHostId || '本机', signal)
+            try {
+              await decideRemoteConflict({
+                decideRemoteDownloadJob: (id,decision) => request(`/files/remote-downloads/${encodeURIComponent(id)}/decide`,{method:'POST',body:decision}),
+                cancelRemoteDownloadJob: id => request(`/files/remote-downloads/${encodeURIComponent(id)}/cancel`,{method:'POST'}),
+              },job,batch)
+            } catch (error) {
+              if (signal?.aborted && signal.reason !== 'file-transfer-detach') await request(`/files/remote-downloads/${encodeURIComponent(job.id)}/cancel`, {method:'POST'})
+              throw error
+            } finally { batch.close() }
+          },
           get: (id) => request<FileRemoteDownloadJob>(`/files/remote-downloads/${encodeURIComponent(id)}`),
           cancel: (id) => request<FileRemoteDownloadJob>(`/files/remote-downloads/${encodeURIComponent(id)}/cancel`, { method: 'POST' }),
         }, onEvent, signal)
@@ -2542,6 +2559,7 @@ export const api = {
       request<FileRemoteDownloadJobList>('/files/remote-downloads', { signal }),
     remoteDownloadJob: (id: string, signal?: AbortSignal): Promise<FileRemoteDownloadJob> =>
       request<FileRemoteDownloadJob>(`/files/remote-downloads/${encodeURIComponent(id)}`, { signal }),
+    decideRemoteDownloadJob: (id: string, decision: import('@/types/api').FileConflictDecision): Promise<{ok:boolean}> => request(`/files/remote-downloads/${encodeURIComponent(id)}/decide`, {method:'POST',body:decision}),
     cancelRemoteDownloadJob: (id: string): Promise<FileRemoteDownloadJob> =>
       request<FileRemoteDownloadJob>(`/files/remote-downloads/${encodeURIComponent(id)}/cancel`, {
         method: 'POST',
@@ -2589,14 +2607,15 @@ export const api = {
     upload: async (
       path: string, file: File, overwrite = false, onProgress?: FileUploadProgress,
       signal?: AbortSignal, fileHostId?: string | null,
+      expectedTargetResourceVersion?: string, expectedDirectoryIdentity?: string,
     ): Promise<FileEntry> => uploadFileInSession(path, file, overwrite, fileHostId || '', {
       command: (body, signal) => request<FileReceiveSession>('/files/transfer/sessions', { method: 'POST', body, signal, fileHostId }),
       status: (id, sourceKey, signal) => request<FileReceiveSession>('/files/transfer/sessions', { query: { id, sourceKey }, signal, fileHostId }),
       chunk: (id, sourceKey, offset, sha256, blob, progress, signal) => fileUploadBody<FileReceiveSession>(
         '/files/transfer/sessions', 'PUT', { id, sourceKey, offset, sha256 }, blob, progress, signal, fileHostId,
       ),
-      legacy: () => fileUploadBody<FileEntry>('/files/upload', 'POST', { path, name: file.name, overwrite }, file, onProgress, signal, fileHostId),
-    }, onProgress, signal),
+      legacy: () => fileUploadBody<FileEntry>('/files/upload', 'POST', { path, name: file.name, overwrite, expectedTargetResourceVersion, expectedDirectoryIdentity }, file, onProgress, signal, fileHostId),
+    }, onProgress, signal, expectedTargetResourceVersion, expectedDirectoryIdentity),
     action: (
       input: FileActionInput,
       signal?: AbortSignal,

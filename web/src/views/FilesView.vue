@@ -93,10 +93,16 @@ import { TransferRates } from '@/lib/transferRate'
 import type { FileUploadBytes } from '@/lib/fileReceiveUpload'
 import {
   collectExternalDrop,
+  collectExternalFiles,
   DesktopExternalDropError,
   uploadExternalDrop,
   type ExternalDropManifest,
 } from '@/lib/desktopExternalDrop'
+import { clipboardFiles, keepsNativeClipboard } from '@/lib/systemClipboard'
+import { copyText } from '@/lib/clipboard'
+import { decideRemoteConflict, runConflictJob } from '@/lib/fileConflictJobs'
+import { FileConflictBatch, pendingFileConflict, isFileBatchCancelled } from '@/lib/fileConflicts'
+import { uploadConflictFile } from '@/lib/fileConflictUpload'
 import FileEntryIcon from '@/components/files/FileEntryIcon.vue'
 import { fileEntryIconKind as entryIconKind } from '@/lib/fileEntryPresentation'
 import { fileAPIForHost } from '@/lib/fileHostContext'
@@ -201,7 +207,7 @@ type PreviewMode = 'text' | 'office' | 'image' | 'audio' | 'video' | 'pdf' | 'me
 type ArchiveFormat = 'tar.gz' | 'zip' | 'tar'
 type FileViewMode = 'list' | 'grid'
 
-type UploadTaskPhase = 'running' | 'success' | 'error'
+type UploadTaskPhase = 'running' | 'success' | 'error' | 'skipped' | 'cancelled'
 
 interface UploadTask {
   id: string
@@ -215,8 +221,8 @@ interface UploadTask {
 }
 
 type UploadTaskSource =
-  | { kind: 'file'; file: File; target: string; hostId: string }
-  | { kind: 'directory'; manifest: ExternalDropManifest; target: string; hostId: string }
+  | { kind: 'file'; file: File; target: string; hostId: string; conflictVersion?: number }
+  | { kind: 'directory'; manifest: ExternalDropManifest; target: string; hostId: string; conflictVersion?: number }
 
 const toast = useToast()
 const i18n = useI18n()
@@ -555,6 +561,7 @@ let externalUploadController: AbortController | undefined
 let fileTransferController: AbortController | undefined
 let fileTransferClearTimer: number | undefined
 const uploadTaskSources = new Map<string, UploadTaskSource>()
+const activeConflictBatches = new Set<FileConflictBatch>()
 const uploadTaskClearTimers = new Map<string, number>()
 let uploadTaskSequence = 0
 let remoteDownloadJobsController: AbortController | undefined
@@ -579,7 +586,7 @@ const remoteDownloadPollDelay = 2_500
 const remoteDownloadPollRetryDelay = 10_000
 const remoteDownloadSubmissionClockSkew = 5_000
 const activeRemoteDownloadStates = new Set<FileRemoteDownloadJobState>([
-  'queued', 'connecting', 'transferring', 'confirming',
+  'queued', 'connecting', 'transferring', 'confirming', 'waiting_input',
 ])
 
 const activeRemoteDownloadCount = computed(() => remoteDownloadJobs.value.filter(isRemoteDownloadJobActive).length)
@@ -668,6 +675,9 @@ function remoteDownloadJobProgressLabel(job: FileRemoteDownloadJob): string {
 }
 
 function remoteDownloadJobStateLabel(job: FileRemoteDownloadJob): string {
+  if (job.state === 'waiting_input') return i18n.t('files.conflict.waiting')
+  if (job.state === 'skipped') return i18n.t('files.conflict.skip')
+  if (job.state === 'partial') return i18n.t('files.conflict.partial')
   if (job.sourceKind === 'cross-host') return i18n.t(`files.transfer.state.${job.state}`)
   switch (job.state) {
     case 'queued':
@@ -1565,7 +1575,7 @@ function updateInternalDropTarget(event: DragEvent, target: string): boolean {
   }
   const entries = peekDesktopFileDragEntries(event)
   const operation = fileTransferOperation(event)
-  const invalid = fileTransferTargetError(entries, target)
+  const invalid = fileTransferTargetError(entries, target, directory.value?.fileConflictVersion === 1 ? operation : undefined)
   event.preventDefault()
   if (event.dataTransfer) event.dataTransfer.dropEffect = invalid ? 'none' : operation
   internalDropMode.value = operation
@@ -1633,6 +1643,24 @@ function dismissFileTransfer(): void {
 
 function cancelFileTransfer(): void {
   fileTransferController?.abort()
+  activeFileTransferBatch?.cancel(true)
+}
+
+let activeFileTransferBatch: FileConflictBatch | undefined
+async function resolveFileTransfer(entries: readonly (Pick<FileEntry, 'name' | 'path' | 'kind'> & { resourceVersion?: string })[], target: string, mode: FileTransferOperation, hostId: string) {
+  const batch = new FileConflictBatch(mode === 'copy' ? '复制' : '移动', activeFileHostLabel.value)
+  activeFileTransferBatch = batch
+  activeConflictBatches.add(batch)
+  try {
+    const api = fileAPIForHost(hostId)
+    if (directory.value?.fileConflictVersion !== 1) {
+      const result = await api.action({action:mode,sources:entries.map(entry => entry.path),target,expectedResourceVersions:Object.fromEntries(entries.map(entry => [entry.path,entry.resourceVersion!]))}, fileTransferController?.signal)
+      return {...result,skipped:result.skipped || [],cancelled:false}
+    }
+    const fresh = await Promise.all(entries.map(async entry => entry.resourceVersion ? entry : await api.entry(entry.path)))
+    return await runConflictJob(api, { action: mode, sources: fresh.map(entry => entry.path), target, expectedResourceVersions: Object.fromEntries(fresh.map(entry => [entry.path, entry.resourceVersion!])) }, batch, hostId)
+  }
+  finally { activeConflictBatches.delete(batch); batch.close(); if (activeFileTransferBatch === batch) activeFileTransferBatch = undefined }
 }
 
 async function transferInternalFileDrop(event: DragEvent, target: string): Promise<void> {
@@ -1646,7 +1674,7 @@ async function transferInternalFileDrop(event: DragEvent, target: string): Promi
   const operation = fileTransferOperation(event)
   clearInternalDropTarget()
   clearDesktopFileDrag()
-  if (!entries.length || fileTransferTargetError(entries, target)) return
+  if (!entries.length || fileTransferTargetError(entries, target, directory.value?.fileConflictVersion === 1 ? operation : undefined)) return
   if (fileTransferState.value?.phase === 'running') {
     toast.show('已有文件操作正在进行')
     return
@@ -1664,26 +1692,19 @@ async function transferInternalFileDrop(event: DragEvent, target: string): Promi
   fileTransferController = controller
   fileTransferState.value = { mode: operation, target, count: entries.length, phase: 'running' }
   try {
-    const result = await fileAPI.value.action({
-      action: operation,
-      sources: entries.map((entry) => entry.path),
-      target,
-      expectedResourceVersions: Object.fromEntries(
-        entries.flatMap((entry) => entry.resourceVersion ? [[entry.path, entry.resourceVersion]] : []),
-      ),
-    }, controller?.signal)
+    const result = await resolveFileTransfer(entries, target, operation, hostId)
     const shortcutSyncFailed = await applySuccessfulFileChanges(result, target, hostId)
     if (!isCurrentFileTransfer(sequence)) return
-    const partial = Boolean(result.failed.length || shortcutSyncFailed)
+    const partial = Boolean(result.failed.length || shortcutSyncFailed || result.skipped.length || result.cancelled)
     fileTransferState.value = {
       mode: operation,
       target,
       count: result.succeeded.length,
-      phase: partial ? 'partial' : 'success',
+      phase: result.cancelled ? 'cancelled' : partial ? 'partial' : 'success',
       detail: partial
         ? shortcutSyncFailed
           ? '真实文件已移动，但桌面快捷方式路径同步失败，请刷新后重试。'
-          : `${result.succeeded.length} 项成功，${result.failed.length} 项失败：${result.failed[0]?.detail || '请刷新后重试'}`
+          : `${result.succeeded.length} 项成功，${result.skipped.length ? `${result.skipped.length} 项跳过，` : ''}${result.failed.length} 项失败${result.cancelled ? '；后续已取消' : ''}${result.failed[0] ? `：${result.failed[0].detail}` : ''}`
         : undefined,
     }
     await revealEntries(destinationPaths(result), hostId)
@@ -2032,11 +2053,14 @@ function cancelArchive(): void {
   archiveController?.abort()
 }
 
-function setClipboard(mode: FileTransferOperation, entry?: FileEntry): void {
+function setClipboard(mode: FileTransferOperation, entry?: FileEntry, syncSystem = true): void {
   contextMenu.value = undefined
   const entriesToStore = entriesForBatch(entry)
   if (!entriesToStore.length) return
   fileClipboard.set(mode, entriesToStore, fileHostId.value)
+  // Menu copy/cut should replace a previous system image too. Native keyboard
+  // copy/cut supplies its data synchronously in handleFileCopy instead.
+  if (syncSystem) void copyText(entriesToStore.map((item) => item.path).join('\n')).catch(() => undefined)
   clearSelection()
 }
 
@@ -2082,32 +2106,28 @@ async function pasteClipboard(target = currentPath.value): Promise<void> {
     phase: 'running',
   }
   try {
-    const result = await fileAPI.value.action({
-      action: stored.mode,
-      sources: stored.entries.map((entry) => entry.path),
-      target,
-      expectedResourceVersions: Object.fromEntries(
-        stored.entries.map((entry) => [entry.path, entry.resourceVersion]),
-      ),
-    })
+    const result = await resolveFileTransfer(stored.entries, target, stored.mode, hostId)
     if (stored.mode === 'move' && fileClipboard.clipboard.value === stored) {
-      const failed = new Set(result.failed.map((item) => item.path))
-      const remaining = stored.entries.filter((entry) => failed.has(entry.path))
-      if (remaining.length) fileClipboard.set('move', remaining, stored.hostId)
-      else fileClipboard.clear()
+      const moved = new Set(result.succeeded.map((item) => item.path))
+      let remaining = stored.entries.filter((entry) => !moved.has(entry.path))
+      if (result.completedCount) remaining = await Promise.all(remaining.map(async entry => {
+        try { const fresh = await fileAPIForHost(hostId).entry(entry.path); return {...entry,resourceVersion:fresh.resourceVersion} } catch { return entry }
+      }))
+      if (fileClipboard.clipboard.value === stored && remaining.length) fileClipboard.set('move', remaining, stored.hostId)
+      else if (fileClipboard.clipboard.value === stored) fileClipboard.clear()
     }
     const shortcutSyncFailed = await applySuccessfulFileChanges(result, target, hostId)
     if (!isCurrentFileTransfer(sequence)) return
-    const partial = Boolean(result.failed.length || shortcutSyncFailed)
+    const partial = Boolean(result.failed.length || shortcutSyncFailed || result.skipped.length || result.cancelled)
     fileTransferState.value = {
       mode: stored.mode,
       target,
       count: result.succeeded.length,
-      phase: partial ? 'partial' : 'success',
+      phase: result.cancelled ? 'cancelled' : partial ? 'partial' : 'success',
       detail: partial
         ? shortcutSyncFailed
           ? '文件已移动，但桌面快捷方式路径同步失败，请刷新后重试。'
-          : `${result.succeeded.length} 项成功，${result.failed.length} 项失败：${result.failed[0]?.detail || '请刷新后重试'}`
+          : `${result.succeeded.length} 项成功，${result.skipped.length ? `${result.skipped.length} 项跳过，` : ''}${result.failed.length} 项失败${result.cancelled ? '；后续已取消' : ''}${result.failed[0] ? `：${result.failed[0].detail}` : ''}`
         : undefined,
     }
     await revealEntries(destinationPaths(result), hostId)
@@ -2127,6 +2147,25 @@ async function pasteClipboard(target = currentPath.value): Promise<void> {
   }
 }
 
+async function runResolvedAction(input: FileActionInput, hostId: string) {
+  const api = fileAPIForHost(hostId)
+  const batch = new FileConflictBatch('文件操作', activeFileHostLabel.value)
+  activeConflictBatches.add(batch)
+  try {
+    if (directory.value?.fileConflictVersion !== 1) return await api.action(input)
+    if (input.action === 'mkdir') {
+      const choice = await batch.resolve({name: input.name!, kind:'directory'}, input.target!, path => api.entry(path))
+      if (choice.skipped) return {action:input.action,succeeded:[],failed:[],skipped:[input.name!]}
+      if (choice.merge) return {action:input.action,succeeded:[],failed:[],skipped:[input.name!]}
+      return await api.action({...input,name:choice.name})
+    }
+    const jobInput = input.action === 'rename'
+      ? {...input, target:input.target!.slice(0,input.target!.lastIndexOf('/')) || '/',name:input.target!.split('/').at(-1)!}
+      : input.action === 'trash_restore' ? {...input,sources:input.trashIds,trashIds:undefined,target:currentPath.value} : input
+    return await runConflictJob(api,jobInput,batch,hostId)
+  } finally { activeConflictBatches.delete(batch); batch.close() }
+}
+
 async function submitDialog(): Promise<void> {
   const hostId = fileHostId.value
   const action = dialogAction.value
@@ -2141,14 +2180,21 @@ async function submitDialog(): Promise<void> {
     if (newType?.kind === 'file') {
       const name = desktopNewItemName(newType, dialogValue.value)
       if (!name) throw new Error('名称不可用，请更换。')
-      await fileAPI.value.upload(currentPath.value, new File([newType.template], name, { type: newType.mime }), false)
-      toast.success('已创建', name)
+      const batch = new FileConflictBatch('新建',activeFileHostLabel.value)
+      activeConflictBatches.add(batch)
+      let created: FileEntry | undefined
+      try { created = directory.value?.fileConflictVersion === 1
+        ? await uploadConflictFile(fileAPIForHost(hostId),currentPath.value,new File([newType.template],name,{type:newType.mime}),batch)
+        : await fileAPIForHost(hostId).upload(currentPath.value,new File([newType.template],name,{type:newType.mime}),false)
+      } finally { activeConflictBatches.delete(batch); batch.close() }
+      if (!created) { toast.show(i18n.t('files.conflict.skip')); dialogAction.value=undefined; return }
+      toast.success('已创建', created.name)
       dialogAction.value = undefined
       dialogValue.value = ''
       dialogEntries.value = []
       dialogNewType.value = undefined
       await loadDirectory()
-      await selectCreatedEntry(name)
+      await selectCreatedEntry(created.name)
       return
     }
     const createdFolder = action === 'mkdir' ? dialogValue.value.trim() : ''
@@ -2208,9 +2254,9 @@ async function submitDialog(): Promise<void> {
       const unsupportedAction: never = action
       throw new Error(`不支持的文件操作：${unsupportedAction}`)
     }
-    const result = controller
-      ? await fileAPI.value.action(input, controller.signal)
-      : await fileAPI.value.action(input)
+    const result = directory.value?.fileConflictVersion === 1 && ['mkdir','rename','compress','extract'].includes(input.action)
+      ? await runResolvedAction(input,hostId)
+      : controller ? await fileAPI.value.action(input,controller.signal) : await fileAPI.value.action(input)
     const shortcutSyncFailed = await applySuccessfulFileChanges(result, undefined, hostId)
     if (result.failed.length || shortcutSyncFailed) {
       toast.danger(
@@ -2219,6 +2265,8 @@ async function submitDialog(): Promise<void> {
           ? '真实文件操作已完成，请刷新桌面后重试路径同步。'
           : `${result.succeeded.length} 项成功，${result.failed.length} 项失败：${result.failed[0]?.detail || '请刷新后重试'}`,
       )
+    } else if (result.skipped?.length || 'cancelled' in result && result.cancelled) {
+      toast.show(result.skipped?.length ? i18n.t('files.conflict.skip') : '后续已取消，已完成的内容保留。')
     } else {
       toast.success(
         action === 'trash'
@@ -2307,7 +2355,7 @@ async function runTrashAction(action: 'trash_restore' | 'trash_delete' | 'trash_
           ? undefined
           : Object.fromEntries(chosen.map((entry) => [entry.id, entry.resourceVersion])),
     }
-    const result = await fileAPI.value.action(input)
+    const result = action === 'trash_restore' ? await runResolvedAction(input,fileHostId.value) : await fileAPI.value.action(input)
     if (result.failed.length) {
       toast.danger(
         result.succeeded.length ? '部分回收站项目未处理' : '回收站操作失败',
@@ -2315,7 +2363,8 @@ async function runTrashAction(action: 'trash_restore' | 'trash_delete' | 'trash_
       )
     } else {
       const title = action === 'trash_restore' ? '恢复完成' : action === 'trash_empty' ? '回收站已清空' : '已彻底删除'
-      toast.success(title, `${result.succeeded.length} 项已处理`)
+      if (result.skipped?.length) toast.show(`${result.succeeded.length} 项已处理，${result.skipped.length} 项跳过`)
+      else toast.success(title, `${result.succeeded.length} 项已处理`)
     }
     selectedTrash.value = new Set()
     await Promise.all([loadTrash(), loadDirectory()])
@@ -2619,6 +2668,7 @@ async function submitRemoteDownload(): Promise<void> {
   stopRemoteDownloadPolling()
   try {
     const job = await api.files.createRemoteDownloadJob({
+      ...(directory.value?.fileConflictVersion === 1 ? {conflictPolicies:{file:'ask' as const,directory:'ask' as const}} : {}),
       url: sourceURL, targetDirectory: target, ...(requestedName ? { name: requestedName } : {}),
       acceleration: remoteDownloadAcceleration.value ? 'auto' : 'off',
       ...(remoteDownloadTorrent.value ? { torrent: remoteDownloadTorrent.value } : {}),
@@ -2651,6 +2701,17 @@ async function submitRemoteDownload(): Promise<void> {
       }
     }
   }
+}
+
+async function resolveRemoteDownloadJob(job: FileRemoteDownloadJob) {
+  if (!job.conflict) return
+  const batch = new FileConflictBatch(job.name || '文件传输',job.targetHostId || '本机')
+  activeConflictBatches.add(batch)
+  try {
+    await decideRemoteConflict(api.files,job,batch)
+    scheduleRemoteDownloadPoll(100)
+  } catch (error) { if (!batch.signal.aborted) toast.danger('文件任务未完成',errorMessage(error)) }
+  finally { activeConflictBatches.delete(batch); batch.close() }
 }
 
 async function cancelRemoteDownloadJob(job: FileRemoteDownloadJob): Promise<void> {
@@ -2733,12 +2794,14 @@ function scheduleUploadTaskClear(id: string): void {
 }
 
 function uploadTaskStatus(task: UploadTask): string {
-  if (task.phase === 'running') return '上传中'
+  if (task.phase === 'running') return pendingFileConflict.value?.source.name === task.name ? i18n.t('files.conflict.waiting') : '上传中'
   if (task.phase === 'success') return '上传完成'
+  if (task.phase === 'skipped') return '已跳过'
+  if (task.phase === 'cancelled') return '已取消'
   return '上传失败'
 }
 
-async function runFileUploadTask(id: string, source: Extract<UploadTaskSource, { kind: 'file' }>): Promise<string | undefined> {
+async function runFileUploadTask(id: string, source: Extract<UploadTaskSource, { kind: 'file' }>, sharedBatch?: FileConflictBatch): Promise<string | undefined> {
   uploadRates.remove(id)
   updateUploadTask(id, { phase: 'running', progress: 0, loadedBytes: 0, totalBytes: source.file.size, detail: undefined })
   const onProgress = (progress: number, bytes?: FileUploadBytes): void => {
@@ -2748,25 +2811,18 @@ async function runFileUploadTask(id: string, source: Extract<UploadTaskSource, {
       ...(bytes ? { loadedBytes: bytes.loadedBytes, totalBytes: bytes.totalBytes } : {}),
     })
   }
-  let uploaded: FileEntry
+  const batch = sharedBatch || new FileConflictBatch('上传', activeFileHostLabel.value)
+  let uploaded: FileEntry | undefined
   try {
-    uploaded = await fileAPIForHost(source.hostId).upload(source.target, source.file, false, onProgress)
+    uploaded = source.conflictVersion === 1
+      ? await uploadConflictFile(fileAPIForHost(source.hostId), source.target, source.file, batch, onProgress)
+      : await fileAPIForHost(source.hostId).upload(source.target,source.file,false,onProgress,batch.signal)
+    if (!uploaded) { updateUploadTask(id, { phase: 'skipped', detail: '目标文件保持不变。' }); return undefined }
   } catch (error) {
-    if (
-      error instanceof ApiError
-      && error.status === 409
-      && window.confirm(`${source.file.name} 已存在，是否覆盖？`)
-    ) {
-      try {
-        uploaded = await fileAPIForHost(source.hostId).upload(source.target, source.file, true, onProgress)
-      } catch (overwriteError) {
-        updateUploadTask(id, { phase: 'error', detail: errorMessage(overwriteError) })
-        return undefined
-      }
-    } else {
-      updateUploadTask(id, { phase: 'error', detail: errorMessage(error) })
-      return undefined
-    }
+    updateUploadTask(id, { phase: isFileBatchCancelled(error) ? 'cancelled' : 'error', detail: errorMessage(error) })
+    return undefined
+  } finally {
+    if (!sharedBatch) batch.close()
   }
   updateUploadTask(id, { phase: 'success', progress: 100, detail: undefined })
   scheduleUploadTaskClear(id)
@@ -2780,19 +2836,25 @@ async function uploadFiles(
 ): Promise<void> {
   const values = Array.from(files)
   if (!values.length) return
+  const batch = new FileConflictBatch('上传', activeFileHostLabel.value)
+  const conflictVersion = directory.value?.fileConflictVersion
+  activeConflictBatches.add(batch)
   // A few uploads in flight hide per-file round trips (request, atomic
   // commit, audit) without competing with one another for bandwidth.
   let cursor = 0
   const uploaded: string[] = []
   await Promise.all(Array.from({ length: Math.min(FILE_UPLOAD_CONCURRENCY, values.length) }, async () => {
-    while (cursor < values.length) {
+    while (cursor < values.length && !batch.signal.aborted) {
       const file = values[cursor++]!
-      const source = { kind: 'file', file, target, hostId } as const
+      const source = { kind: 'file', file, target, hostId, conflictVersion } as const
       const task = createUploadTask(source)
-      const path = await runFileUploadTask(task.id, source)
+      const path = await runFileUploadTask(task.id, source, batch)
       if (path) uploaded.push(path)
     }
   }))
+  if (batch.signal.aborted) { for (const file of values.slice(cursor)) { const task = createUploadTask({kind:'file',file,target,hostId}); updateUploadTask(task.id,{phase:'cancelled',detail:'本批后续已取消。'}) } }
+  activeConflictBatches.delete(batch)
+  batch.close()
   if (uploadInput.value) uploadInput.value.value = ''
   if (!unmounted && fileHostId.value === hostId && currentPath.value === target) {
     await loadDirectory(target)
@@ -2817,10 +2879,13 @@ async function runDirectoryUploadTask(
   target: string,
   signal: AbortSignal,
   hostId: string,
+  conflictVersion?: number,
 ): Promise<void> {
   uploadRates.remove(id)
   updateUploadTask(id, { phase: 'running', progress: 0, loadedBytes: 0, totalBytes: manifest.totalBytes, detail: undefined })
   let uploaded: string[] = []
+  const batch = new FileConflictBatch('上传文件夹', activeFileHostLabel.value, signal)
+  activeConflictBatches.add(batch)
   try {
     const result = await uploadExternalDrop(manifest, fileAPIForHost(hostId), signal, (progress) => {
       const percent = progress.totalBytes > 0
@@ -2830,11 +2895,15 @@ async function runDirectoryUploadTask(
           : 100
       if (progress.rateBaseline) uploadRates.remove(id)
       updateUploadTask(id, { progress: Math.max(0, Math.min(100, percent)), loadedBytes: progress.loadedBytes, totalBytes: progress.totalBytes })
-    }, target)
+    }, target, undefined, conflictVersion === 1 ? batch : undefined)
     uploaded = result.entries.map((entry) => entry.path)
     if (signal.aborted || unmounted) return
-    if (result.failed.length) {
+    if (result.cancelled) {
+      updateUploadTask(id, { phase: 'cancelled', detail: '后续已取消，已上传的文件保留。' })
+    } else if (result.failed.length) {
       updateUploadTask(id, { phase: 'error', detail: result.failed[0]!.detail })
+    } else if (result.skipped?.length) {
+      updateUploadTask(id, { phase: 'skipped', detail: `${result.skipped.length} 项跳过。` })
     } else {
       updateUploadTask(id, { phase: 'success', progress: 100, detail: undefined })
       scheduleUploadTaskClear(id)
@@ -2843,6 +2912,8 @@ async function runDirectoryUploadTask(
     if (signal.aborted || (error instanceof DOMException && error.name === 'AbortError')) return
     updateUploadTask(id, { phase: 'error', detail: externalUploadErrorMessage(error) })
   } finally {
+    activeConflictBatches.delete(batch)
+    batch.close()
     if (!unmounted) {
       if (fileHostId.value === hostId && currentPath.value === target) {
         await loadDirectory(target)
@@ -2860,9 +2931,9 @@ async function uploadDirectoryManifest(
   hostId = fileHostId.value,
 ): Promise<void> {
   if (hostId !== fileHostId.value) return
-  const source = { kind: 'directory', manifest, target, hostId } as const
+  const source = { kind: 'directory', manifest, target, hostId, conflictVersion: directory.value?.fileConflictVersion } as const
   const task = createUploadTask(source)
-  await runDirectoryUploadTask(task.id, manifest, target, signal, source.hostId)
+  await runDirectoryUploadTask(task.id, manifest, target, signal, source.hostId, source.conflictVersion)
 }
 
 async function retryUploadTask(id: string): Promise<void> {
@@ -2886,7 +2957,7 @@ async function retryUploadTask(id: string): Promise<void> {
   const controller = new AbortController()
   externalUploadController = controller
   try {
-    await runDirectoryUploadTask(id, source.manifest, source.target, controller.signal, source.hostId)
+    await runDirectoryUploadTask(id, source.manifest, source.target, controller.signal, source.hostId, source.conflictVersion)
   } finally {
     if (externalUploadController === controller) externalUploadController = undefined
   }
@@ -3005,6 +3076,42 @@ function closeContextMenuOnScroll(event: Event): void {
   newMenuOpen.value = false
 }
 
+function ownsFileClipboardEvent(event: ClipboardEvent): boolean {
+  return !event.defaultPrevented && desktopWindowActive.value && !previewEntry.value
+    && !document.body.classList.contains('has-modal') && !keepsNativeClipboard(event.target)
+    && Boolean(filesPage.value?.contains(event.target as Node))
+}
+
+function handleFileCopy(event: ClipboardEvent): void {
+  if (!ownsFileClipboardEvent(event) || !selectedEntries.value.length || !event.clipboardData) return
+  const paths = selectedEntries.value.map((entry) => entry.path).join('\n')
+  event.clipboardData.setData('text/plain', paths)
+  event.preventDefault()
+  setClipboard(event.type === 'cut' ? 'move' : 'copy', undefined, false)
+}
+
+async function handleFilePaste(event: ClipboardEvent): Promise<void> {
+  if (!ownsFileClipboardEvent(event)) return
+  const files = clipboardFiles(event)
+  if (!files.length) {
+    const paths = clipboard.value?.entries.map((entry) => entry.path).join('\n')
+    if (paths && event.clipboardData?.getData('text/plain') === paths) {
+      event.preventDefault()
+      await pasteClipboard()
+    }
+    return
+  }
+  event.preventDefault()
+  const target = currentPath.value
+  const hostId = fileHostId.value
+  try {
+    const manifest = collectExternalFiles(files)
+    await uploadFiles(manifest.files.map((item) => item.file), target, hostId)
+  } catch (error) {
+    toast.danger('文件上传失败', externalUploadErrorMessage(error))
+  }
+}
+
 function handleFileShortcut(event: KeyboardEvent): void {
   if (!desktopWindowActive.value) return
   if (shortcutFilePreviewOnly.value && !shortcutPreviewStarted.value && event.key === 'Escape'
@@ -3044,15 +3151,6 @@ function handleFileShortcut(event: KeyboardEvent): void {
     event.preventDefault()
     selected.value = new Set(entries.value.map((entry) => entry.path))
     selectionAnchor.value = entries.value[0]?.path
-  } else if ((event.ctrlKey || event.metaKey) && key === 'c' && selectedEntries.value.length) {
-    event.preventDefault()
-    setClipboard('copy')
-  } else if ((event.ctrlKey || event.metaKey) && key === 'x' && selectedEntries.value.length) {
-    event.preventDefault()
-    setClipboard('move')
-  } else if ((event.ctrlKey || event.metaKey) && key === 'v' && clipboard.value?.entries.length) {
-    event.preventDefault()
-    void pasteClipboard()
   } else if (event.key === 'Delete' && selectedEntries.value.length) {
     event.preventDefault()
     openDialog('trash')
@@ -3090,6 +3188,9 @@ onMounted(() => {
   unregisterSplitBusyCheck = filesSplit?.registerBusyCheck(fileOperationsRunning)
   window.addEventListener('click', handleWindowClick)
   window.addEventListener('keydown', handleFileShortcut)
+  window.addEventListener('copy', handleFileCopy)
+  window.addEventListener('cut', handleFileCopy)
+  window.addEventListener('paste', handleFilePaste)
   window.addEventListener('resize', closeContextMenuOnViewportChange)
   document.addEventListener('scroll', closeContextMenuOnScroll, true)
   window.visualViewport?.addEventListener?.('resize', closeContextMenuOnViewportChange)
@@ -3172,10 +3273,15 @@ onBeforeUnmount(() => {
   uploadTaskClearTimers.forEach((timer) => window.clearTimeout(timer))
   uploadTaskClearTimers.clear()
   uploadTaskSources.clear()
+  activeConflictBatches.forEach((batch) => batch.cancel())
+  activeConflictBatches.clear()
   if (searchTimer !== undefined) window.clearTimeout(searchTimer)
   clearMediaLoadTimer()
   window.removeEventListener('click', handleWindowClick)
   window.removeEventListener('keydown', handleFileShortcut)
+  window.removeEventListener('copy', handleFileCopy)
+  window.removeEventListener('cut', handleFileCopy)
+  window.removeEventListener('paste', handleFilePaste)
   window.removeEventListener('resize', closeContextMenuOnViewportChange)
   document.removeEventListener('scroll', closeContextMenuOnScroll, true)
   window.visualViewport?.removeEventListener?.('resize', closeContextMenuOnViewportChange)
@@ -3383,6 +3489,7 @@ onBeforeUnmount(() => {
       </Transition>
 
       <FileArchiveTools
+        :conflict-version="directory?.fileConflictVersion"
         v-if="!shortcutFilePreviewOnly"
         ref="archiveTools"
         :host-id="fileHostId"
@@ -3482,6 +3589,7 @@ onBeforeUnmount(() => {
                 />
               </div>
               <div class="remote-download-task__actions">
+                <button v-if="job.state === 'waiting_input'" type="button" @click="resolveRemoteDownloadJob(job)">{{ i18n.t('files.conflict.waiting') }}</button>
                 <button
                   v-if="isRemoteDownloadJobActive(job)"
                   type="button"

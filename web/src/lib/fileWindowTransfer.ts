@@ -54,11 +54,12 @@ export function fileTransferOperation(event: Pick<DragEvent, 'ctrlKey' | 'altKey
 export function fileTransferTargetError(
   entries: readonly Pick<FileTransferEntry, 'path' | 'kind'>[],
   target: string,
+  operation?: FileTransferOperation,
 ): FileTransferTargetError | undefined {
   if (!entries.length || !isCanonicalAbsolutePath(target)) return 'invalid'
   for (const entry of entries) {
     if (!isCanonicalAbsolutePath(entry.path)) return 'invalid'
-    if (parentPath(entry.path) === target) return 'same_location'
+    if (parentPath(entry.path) === target && operation !== 'copy') return 'same_location'
     if (entry.kind === 'directory' && pathAtOrInside(target, entry.path)) return 'inside_source'
   }
   return undefined

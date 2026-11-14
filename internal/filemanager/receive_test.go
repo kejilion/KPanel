@@ -150,7 +150,7 @@ func TestReceiveRecoveryRejectsChangedPrefixAndCorruptJournal(t *testing.T) {
 		t.Fatalf("changed prefix accepted: %v", err)
 	}
 	_ = m.Close()
-	if err := os.WriteFile(filepath.Join(root, ".kpanel-trash", "receive-sessions.json"), []byte(`{"version":1,"records":[]}{}`), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, ".kpanel-trash", "receive-sessions-v2.json"), []byte(`{"version":1,"records":[]}{}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	m = newReceiveManager(t, root)
