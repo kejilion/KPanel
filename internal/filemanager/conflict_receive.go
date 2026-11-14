@@ -121,6 +121,7 @@ func (m *Manager) runReceivePublication(ctx context.Context, cancel context.Canc
 	defer m.finalizeReceivePublication(id)
 	gateHeld := false
 	writeHeld := false
+	finishAfterCleanup := func() {}
 	defer func() {
 		if writeHeld {
 			m.writeMu.Unlock()
@@ -128,6 +129,7 @@ func (m *Manager) runReceivePublication(ctx context.Context, cancel context.Canc
 		if gateHeld {
 			<-a.gate
 		}
+		finishAfterCleanup()
 		a.mu.Lock()
 		delete(a.cancels, id)
 		a.mu.Unlock()
@@ -147,22 +149,27 @@ func (m *Manager) runReceivePublication(ctx context.Context, cancel context.Canc
 	a.mu.Unlock()
 	result := job.Result
 	finish := func(state string, entry *contract.FileEntry, err error) {
-		a.mu.Lock()
-		defer a.mu.Unlock()
-		record := a.records[id]
-		record.Job.State = state
-		record.Job.Entry = entry
-		record.Job.Conflict = nil
-		record.Decision = nil
-		record.Job.Result = result
-		record.Job.UpdatedAt = m.now().UTC()
-		if err != nil {
-			record.Job.Detail = archiveFailureDetail(err)
-			record.Job.Result.Failed = append(record.Job.Result.Failed, contract.FileActionFailure{Path: job.Name, Detail: record.Job.Detail, Code: conflictErrorCode(err)})
-		}
-		if err := m.persistArchiveJobsLocked(); err != nil {
-			record.Job.State = "interrupted"
-			record.Job.Detail = "任务状态保存失败，请核对目标目录"
+		finishAfterCleanup = func() {
+			a.mu.Lock()
+			defer a.mu.Unlock()
+			// Publish terminal state and resource-release ownership together.
+			// Readers must not observe cancelled/complete while cleanup is pending.
+			delete(a.cancels, id)
+			record := a.records[id]
+			record.Job.State = state
+			record.Job.Entry = entry
+			record.Job.Conflict = nil
+			record.Decision = nil
+			record.Job.Result = result
+			record.Job.UpdatedAt = m.now().UTC()
+			if err != nil {
+				record.Job.Detail = archiveFailureDetail(err)
+				record.Job.Result.Failed = append(record.Job.Result.Failed, contract.FileActionFailure{Path: job.Name, Detail: record.Job.Detail, Code: conflictErrorCode(err)})
+			}
+			if err := m.persistArchiveJobsLocked(); err != nil {
+				record.Job.State = "interrupted"
+				record.Job.Detail = "任务状态保存失败，请核对目标目录"
+			}
 		}
 	}
 	if persistErr != nil {
@@ -178,9 +185,9 @@ func (m *Manager) runReceivePublication(ctx context.Context, cancel context.Canc
 		finish("error", nil, err)
 		return
 	}
+	defer func() { _ = m.cleanupReceivePublication(&private) }()
 	defer workspace.Close()
 	defer stage.Close()
-	defer func() { _ = m.cleanupReceivePublication(&private) }()
 	if err := m.writeMu.LockContext(ctx); err != nil {
 		finish("cancelled", nil, err)
 		return
