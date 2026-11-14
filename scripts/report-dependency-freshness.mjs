@@ -965,7 +965,11 @@ export function reportExitCode(report, allowPartial = false) {
 
 // CF tool maintenance must not schedule network work or adoption deadlines in ordinary product checks.
 export async function collectSources(options, policy, collectors = COLLECTORS) {
-  return Promise.all(collectors.map((source) => source.id === 'security-audit-skill' && !options.includeOptionalAuditTool
+  // The collector can be trusted on main before the optional runtime is introduced.
+  // An undeclared component is absent, not a successful/current dependency source.
+  const declared = collectors.filter((source) => source.id !== 'tor-browser-component'
+    || policy.groups?.some((group) => group.id === 'tor-browser-component'));
+  return Promise.all(declared.map((source) => source.id === 'security-audit-skill' && !options.includeOptionalAuditTool
     ? { id: source.id, status: 'not-requested', candidates: [], error: null }
     : collectSource(source.id, () => source.collect(options.repo, policy))));
 }
