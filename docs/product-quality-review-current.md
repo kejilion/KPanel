@@ -1,5 +1,15 @@
 # KPanel 当前业务事实与规范适配基线
 
+### 2026-11-14 v1.30.1-rc.3 剪贴板与统一文件冲突候选
+
+- 基线为已公开 RC2 d07215f8；纳入 feature/file-conflict-policy@a4b31d1e，其祖先已包含 system-clipboard-upload@31efb62c 及设计稿重放7e624ee0，不重复合并剪贴板或旧设计分支。RC2验收记录以ae1ddd7f的精确blob纳入。
+- 新增系统剪贴板图片/文件上传与覆盖、保留两份、跳过；目录合并保留目标独有内容，任务内文件/目录选择分别记忆，后台冲突可继续决策。真实文件系统仍是业务真源，不新增数据库或外联模板。
+- 来源精确a4b31d1e的完整L2、独立/安全/OCR复核与9条UI mock旅程原件已核对；排队rename版本、目录身份、取消/接收资源顺序等原反例已修复，首次失败原件保留。复用来源结果不代替本RC精确CI、GitHub-hosted L3及公开验收。
+- 来源Linux ext4和Panel/Agent集成验证通过；Windows只有编译证据，Windows完整动态文件语义、实体手机、真实跨服务器配对、长时等待和全部网络/磁盘故障组合未实测。旧节点按已通告能力工作，不将现代请求错误静默降级。
+- scriptLinkageState=not-required，无需发布脚本（不适用）；沿用 kejilion/sh@1faee13f3faef164efbfa899e244fc19ad58aaff，SHA-256 5c5acccac56bba480046f28ac0d5d34af736fcfb5ab187647684b52c6689ad23。现有原生文件动作不新增脚本协议、安装路径或外联配置。
+- 文件操作会修改真实数据；代码回退不恢复已覆盖或移动内容，没有备份不得宣称数据可恢复。当前仅授权发布RC产物，生产部署不适用，稳定Latest/latest保持v1.30.0。
+
+
 ### 2026-11-14 v1.30.1-rc.2 Tor Browser 预览候选
 
 - 从已公开 RC1 e82c1a5d 继续，合入 feature/browser-tor-component@b7cdcb4a 的四个本地提交；来源基线 f8adf55b，按 Git 合并保留 RC1 全部音乐修复。
@@ -34,9 +44,9 @@
 > 产品验证与已证实漏洞处置要求继续有效。
 
 - 复核日期：`2026-11-14`
-- 基线提交：`e82c1a5dea2ac224450d054e886c13626c43d35e`
+- 基线提交：`d07215f8a544bd47f0dace1b0ced8587a325e1cd`
 - 基线版本：`v1.30.0`
-- 当前公开预览：`v1.30.1-rc.1`，提交 `e82c1a5dea2ac224450d054e886c13626c43d35e`，镜像摘要 `sha256:862081f408a273cdb0e4f94de798f6d7ba99f43d3d97e19213a2fca98a2babd4`。
+- 当前公开预览：`v1.30.1-rc.2`，提交 `d07215f8a544bd47f0dace1b0ced8587a325e1cd`，镜像摘要 `sha256:2dda9c65a1defaaa77b8fbbc9c7360465f37018f1bebec7b42ccf31302856b51`。
 
 ### 2026-11-14 发布业务复核与证据边界
 
