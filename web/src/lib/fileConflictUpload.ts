@@ -55,14 +55,18 @@ export async function uploadDirectoryWithConflicts(
         if (choice.skipped) { paths.set(key, null); created = true; break }
         if (choice.name !== name && api.resolveName) choice.name = await api.resolveName(parent,name,'directory')
         const path = joinFilePath(parent, choice.name)
+        let createdIdentity: string | undefined
         if (!choice.merge) {
           let outcome: FileActionResult
           try { outcome = await api.action({ action: 'mkdir', target: parent, name: choice.name, expectedDirectoryIdentity: identities.get(parent) }, batch.signal) } catch (error) { if (error && typeof error === 'object' && 'code' in error && error.code === 'file_directory_conflict') throw error; if (error && typeof error === 'object' && 'status' in error && error.status === 409) continue; throw error }
           if (outcome.failed.some(item => item.code === 'already_exists' || item.code === 'resource_conflict')) continue
           if (outcome.failed.length) throw new Error(outcome.failed[0]!.detail)
+          createdIdentity = outcome.succeeded.find(item => item.destination === path || item.path === path)?.directoryIdentity
+          if (!createdIdentity) throw new Error('目标主机未返回新建文件夹身份，请升级后重试。')
         }
         const current = await api.entry(path, batch.signal)
         if (current.kind !== 'directory' || choice.merge && (current.resourceVersion !== choice.version || !choice.directoryIdentity || current.directoryIdentity !== choice.directoryIdentity)) continue
+        if (createdIdentity && current.directoryIdentity !== createdIdentity) throw new Error('刚创建的目标文件夹已被替换，本项已停止。')
         if (!current.directoryIdentity) throw new Error('目标主机需要升级后才能安全导入文件夹。')
         identities.set(path, current.directoryIdentity)
         paths.set(key, path)

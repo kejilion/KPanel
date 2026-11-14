@@ -34,3 +34,15 @@ func TestDirectoryImportPinsParent(t *testing.T) {
 		t.Fatalf("replacement modified: %v %v", children, err)
 	}
 }
+
+func TestMkdirReceiptCarriesCreatedDirectoryIdentity(t *testing.T) {
+	m, _ := newTestManager(t)
+	result, err := m.Action(context.Background(), contract.FileActionRequest{Action: "mkdir", Target: "/", Name: "created"})
+	if err != nil || len(result.Succeeded) != 1 || result.Succeeded[0].DirectoryIdentity == "" {
+		t.Fatalf("receipt %+v %v", result, err)
+	}
+	current, err := m.Stat("/created")
+	if err != nil || current.DirectoryIdentity != result.Succeeded[0].DirectoryIdentity {
+		t.Fatalf("identity %+v %+v %v", current, result, err)
+	}
+}

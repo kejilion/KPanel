@@ -2935,6 +2935,7 @@ export interface FileActionResult {
   resolution?: FileConflictResolution
   action: FileAction
   succeeded: Array<{
+    directoryIdentity?: string
     path: string
     destination?: string
     resourceVersion?: string

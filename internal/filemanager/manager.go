@@ -841,7 +841,8 @@ func (m *Manager) mkdir(parentVirtual, name string, expected ...string) (contrac
 	if err := m.mutationError(targetVirtual); err != nil {
 		return contract.FileEntry{}, err
 	}
-	if err := m.mkdirUserDirectory(targetVirtual, expected...); err != nil {
+	entry, err := m.mkdirUserDirectory(targetVirtual, expected...)
+	if err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return contract.FileEntry{}, ErrAlreadyExists
 		}
@@ -850,7 +851,7 @@ func (m *Manager) mkdir(parentVirtual, name string, expected ...string) (contrac
 	if err := syncRootDirectory(m.rootFS, rootName(normalized)); err != nil {
 		return contract.FileEntry{}, err
 	}
-	return m.Stat(targetVirtual)
+	return entry, nil
 }
 
 func (m *Manager) rename(
@@ -2137,7 +2138,7 @@ func viewerSupport(name, mimeType string, size int64, kind string) (bool, bool) 
 }
 
 func actionItem(path string, entry contract.FileEntry, destination string) contract.FileActionItem {
-	return contract.FileActionItem{
+	return contract.FileActionItem{DirectoryIdentity: entry.DirectoryIdentity,
 		Path: path, Destination: destination, ResourceVersion: entry.ResourceVersion,
 	}
 }

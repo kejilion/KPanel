@@ -10,7 +10,7 @@ afterEach(() => cancelFileConflicts())
 it('pins imported directory identities through mkdir and upload and stops on replacement', async () => {
  const batch = new FileConflictBatch('导入','host')
  const uploadVersion = vi.fn(async (..._args: unknown[]) => { throw Object.assign(new Error('目录已替换'), { status:409, code:'file_directory_conflict' }) })
- const action = vi.fn(async () => ({action:'mkdir' as const,succeeded:[],failed:[]}))
+ const action = vi.fn(async () => ({action:'mkdir' as const,succeeded:[{path:'/d/folder/nested',directoryIdentity:'inode:/d/folder/nested'}],failed:[]}))
  const api = { action, uploadVersion, entry:vi.fn(async (path:string) => {
   if(path==='/d' || path==='/d/folder') return {...entry(path,'directory'),directoryIdentity:'inode:'+path}
   throw Object.assign(new Error('missing'),{status:404})
@@ -25,6 +25,22 @@ it('pins imported directory identities through mkdir and upload and stops on rep
  expect(result.failed).toContainEqual({name:'a.txt',detail:'目录已替换'})
  expect(result.completedFiles).toBe(0)
  expect(pendingFileConflict.value).toBeUndefined()
+})
+
+it('rejects a directory replaced between mkdir receipt and stat', async () => {
+ const batch = new FileConflictBatch('导入','host')
+ let created = false
+ const uploadVersion = vi.fn()
+ const action = vi.fn(async () => { created=true; return {action:'mkdir' as const,succeeded:[{path:'/d/new',directoryIdentity:'created-inode'}],failed:[]} })
+ const api = {action,uploadVersion,entry:vi.fn(async (path:string) => {
+   if(path==='/d') return {...entry(path,'directory'),directoryIdentity:'parent'}
+   if(created) return {...entry(path,'directory'),directoryIdentity:'replacement-inode'}
+   throw Object.assign(new Error('missing'),{status:404})
+ })}
+ const result = await uploadDirectoryWithConflicts(api,'/d',{roots:[{name:'new',kind:'directory'}],directories:[['new']],files:[{segments:['new','a'],file:new File(['a'],'a')}],totalBytes:1},batch,()=>{})
+ expect(result.failed[0]?.detail).toContain('已被替换')
+ expect(uploadVersion).not.toHaveBeenCalled()
+ expect(result.completedFiles).toBe(0)
 })
 
 it('serializes concurrent prompts and applies a choice to queued conflicts only in this batch', async () => {

@@ -244,9 +244,10 @@ type FileTrashDirectory struct {
 }
 
 type FileActionItem struct {
-	Path            string `json:"path"`
-	Destination     string `json:"destination,omitempty"`
-	ResourceVersion string `json:"resourceVersion,omitempty"`
+	DirectoryIdentity string `json:"directoryIdentity,omitempty"`
+	Path              string `json:"path"`
+	Destination       string `json:"destination,omitempty"`
+	ResourceVersion   string `json:"resourceVersion,omitempty"`
 }
 
 type FileActionFailure struct {
