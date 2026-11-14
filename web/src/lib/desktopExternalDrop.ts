@@ -49,7 +49,7 @@ export interface DesktopExternalTransferResult {
 
 export interface DesktopExternalTransferAPI {
   resolveName?: (directory: string, name: string, kind: 'file' | 'directory') => Promise<string>
-  uploadVersion?: (path: string, file: File, overwrite: boolean, version?: string, onProgress?: FileUploadProgress, signal?: AbortSignal) => Promise<FileEntry>
+  uploadVersion?: (path: string, file: File, overwrite: boolean, version?: string, onProgress?: FileUploadProgress, signal?: AbortSignal, directoryIdentity?: string) => Promise<FileEntry>
   entry: (path: string, signal?: AbortSignal, fileHostId?: string | null) => Promise<FileEntry>
   action: (input: FileActionInput, signal?: AbortSignal, fileHostId?: string | null) => Promise<FileActionResult>
   upload: (

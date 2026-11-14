@@ -2614,6 +2614,7 @@ export interface SecurityEntranceSettings {
 export type FileKind = 'file' | 'directory' | 'symlink' | 'special'
 
 export interface FileEntry {
+ directoryIdentity?: string
   name: string
   path: string
   kind: FileKind
@@ -2845,6 +2846,7 @@ export interface FileConflictDecision { revision: number; policy: 'overwrite' | 
 export interface FileConflictResolution { name: string; overwrite?: boolean; merge?: boolean; skipped?: boolean; version?: string }
 
 export interface FileActionInput {
+ expectedDirectoryIdentity?: string
   conflictPolicies?: FileConflictPolicies
   sourceKind?: 'file' | 'directory'
   destinationName?: string

@@ -308,7 +308,19 @@ func (m *Manager) Stat(virtual string) (contract.FileEntry, error) {
 	if err != nil {
 		return contract.FileEntry{}, err
 	}
-	return m.entry(normalized, info), nil
+	entry := m.entry(normalized, info)
+	if info.IsDir() {
+		root, opened, err := m.openReceiveDirectory(normalized, false)
+		if err != nil {
+			return contract.FileEntry{}, err
+		}
+		defer root.Close()
+		if !os.SameFile(info, opened) {
+			return contract.FileEntry{}, ErrDirectoryConflict
+		}
+		entry.DirectoryIdentity = stableRootReceiveIdentity(root, ".", opened)
+	}
+	return entry, nil
 }
 
 // VerifyOpenIdentity checks that a protected virtual path still names the
@@ -541,6 +553,9 @@ func (m *Manager) Action(
 		return contract.FileActionResult{}, ErrBatchTooLarge
 	}
 	deduplicateConflictSources(&input)
+	if len(input.ExpectedDirectoryIdentity) > 256 || input.ExpectedDirectoryIdentity != "" && input.Action != "mkdir" {
+		return contract.FileActionResult{}, ErrAction
+	}
 	if input.Action == "resolve" {
 		return m.resolveAction(ctx, input)
 	}
@@ -577,7 +592,7 @@ func (m *Manager) Action(
 	}
 	switch input.Action {
 	case "mkdir":
-		entry, err := m.mkdir(input.Target, input.Name)
+		entry, err := m.mkdir(input.Target, input.Name, input.ExpectedDirectoryIdentity)
 		if errors.Is(err, ErrFileSkipped) {
 			return result, nil
 		}
@@ -598,6 +613,9 @@ func (m *Manager) Action(
 			}
 		} else {
 			entry, err = m.rename(input.Sources[0], input.Target, input.ExpectedResourceVersion)
+		}
+		if errors.Is(err, ErrFileSkipped) {
+			return result, nil
 		}
 		if err != nil {
 			return result, err
@@ -625,6 +643,9 @@ func (m *Manager) Action(
 			ctx, input.Sources, input.Target, input.Name, input.Format,
 			input.ExpectedResourceVersions,
 		)
+		if errors.Is(err, ErrFileSkipped) {
+			return result, nil
+		}
 		if err != nil {
 			return result, err
 		}
@@ -638,6 +659,9 @@ func (m *Manager) Action(
 			ctx, input.Sources[0], input.Target, input.Name, input.Format,
 			input.ExpectedResourceVersion,
 		)
+		if errors.Is(err, ErrFileSkipped) {
+			return result, nil
+		}
 		if err != nil {
 			return result, err
 		}
@@ -798,7 +822,7 @@ func (m *Manager) ListTrash(ctx context.Context) (contract.FileTrashDirectory, e
 	return result, nil
 }
 
-func (m *Manager) mkdir(parentVirtual, name string) (contract.FileEntry, error) {
+func (m *Manager) mkdir(parentVirtual, name string, expected ...string) (contract.FileEntry, error) {
 	if err := validateName(name); err != nil {
 		return contract.FileEntry{}, err
 	}
@@ -817,7 +841,7 @@ func (m *Manager) mkdir(parentVirtual, name string) (contract.FileEntry, error) 
 	if err := m.mutationError(targetVirtual); err != nil {
 		return contract.FileEntry{}, err
 	}
-	if err := m.mkdirUserDirectory(targetVirtual); err != nil {
+	if err := m.mkdirUserDirectory(targetVirtual, expected...); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return contract.FileEntry{}, ErrAlreadyExists
 		}
@@ -966,6 +990,9 @@ func (m *Manager) moveOneResolved(ctx context.Context, sourceVirtual, targetDire
 		return contract.FileEntry{}, err
 	}
 	defer targetParent.Close()
+	if err := checkConflictDirectory(ctx, normalizedTarget, targetParent, targetInfo); err != nil {
+		return contract.FileEntry{}, err
+	}
 	if !os.SameFile(info, targetInfo) {
 		return contract.FileEntry{}, ErrConflict
 	}
@@ -1153,6 +1180,9 @@ func (m *Manager) copyOneResolved(ctx context.Context, sourceVirtual, targetDire
 		return contract.FileEntry{}, err
 	}
 	defer targetParent.Close()
+	if err := checkConflictDirectory(ctx, normalizedTarget, targetParent, targetInfo); err != nil {
+		return contract.FileEntry{}, err
+	}
 	if !os.SameFile(targetPathInfo, targetInfo) {
 		return contract.FileEntry{}, ErrConflict
 	}

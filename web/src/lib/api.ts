@@ -2607,15 +2607,15 @@ export const api = {
     upload: async (
       path: string, file: File, overwrite = false, onProgress?: FileUploadProgress,
       signal?: AbortSignal, fileHostId?: string | null,
-      expectedTargetResourceVersion?: string,
+      expectedTargetResourceVersion?: string, expectedDirectoryIdentity?: string,
     ): Promise<FileEntry> => uploadFileInSession(path, file, overwrite, fileHostId || '', {
       command: (body, signal) => request<FileReceiveSession>('/files/transfer/sessions', { method: 'POST', body, signal, fileHostId }),
       status: (id, sourceKey, signal) => request<FileReceiveSession>('/files/transfer/sessions', { query: { id, sourceKey }, signal, fileHostId }),
       chunk: (id, sourceKey, offset, sha256, blob, progress, signal) => fileUploadBody<FileReceiveSession>(
         '/files/transfer/sessions', 'PUT', { id, sourceKey, offset, sha256 }, blob, progress, signal, fileHostId,
       ),
-      legacy: () => fileUploadBody<FileEntry>('/files/upload', 'POST', { path, name: file.name, overwrite, expectedTargetResourceVersion }, file, onProgress, signal, fileHostId),
-    }, onProgress, signal, expectedTargetResourceVersion),
+      legacy: () => fileUploadBody<FileEntry>('/files/upload', 'POST', { path, name: file.name, overwrite, expectedTargetResourceVersion, expectedDirectoryIdentity }, file, onProgress, signal, fileHostId),
+    }, onProgress, signal, expectedTargetResourceVersion, expectedDirectoryIdentity),
     action: (
       input: FileActionInput,
       signal?: AbortSignal,

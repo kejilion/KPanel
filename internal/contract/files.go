@@ -37,14 +37,16 @@ type FileConflictDecision struct {
 }
 
 type FileConflictResolution struct {
-	Name      string `json:"name"`
-	Overwrite bool   `json:"overwrite,omitempty"`
-	Merge     bool   `json:"merge,omitempty"`
-	Skipped   bool   `json:"skipped,omitempty"`
-	Version   string `json:"version,omitempty"`
+	DirectoryIdentity string `json:"directoryIdentity,omitempty"`
+	Name              string `json:"name"`
+	Overwrite         bool   `json:"overwrite,omitempty"`
+	Merge             bool   `json:"merge,omitempty"`
+	Skipped           bool   `json:"skipped,omitempty"`
+	Version           string `json:"version,omitempty"`
 }
 
 type FileReceiveInput struct {
+	ExpectedDirectoryIdentity     string                `json:"expectedDirectoryIdentity,omitempty"`
 	RequestedName                 string                `json:"-"`
 	ConflictPolicies              *FileConflictPolicies `json:"conflictPolicies,omitempty"`
 	Directory                     string                `json:"directory"`
@@ -84,19 +86,20 @@ type FileReceiveSession struct {
 }
 
 type FileEntry struct {
-	Name            string    `json:"name"`
-	Path            string    `json:"path"`
-	Kind            string    `json:"kind"`
-	MIME            string    `json:"mime,omitempty"`
-	SizeBytes       int64     `json:"sizeBytes"`
-	Mode            string    `json:"mode"`
-	Owner           string    `json:"owner"`
-	Group           string    `json:"group"`
-	ModifiedAt      time.Time `json:"modifiedAt"`
-	ResourceVersion string    `json:"resourceVersion"`
-	Editable        bool      `json:"editable"`
-	Previewable     bool      `json:"previewable"`
-	OfficeEditable  bool      `json:"officeEditable,omitempty"`
+	DirectoryIdentity string    `json:"directoryIdentity,omitempty"`
+	Name              string    `json:"name"`
+	Path              string    `json:"path"`
+	Kind              string    `json:"kind"`
+	MIME              string    `json:"mime,omitempty"`
+	SizeBytes         int64     `json:"sizeBytes"`
+	Mode              string    `json:"mode"`
+	Owner             string    `json:"owner"`
+	Group             string    `json:"group"`
+	ModifiedAt        time.Time `json:"modifiedAt"`
+	ResourceVersion   string    `json:"resourceVersion"`
+	Editable          bool      `json:"editable"`
+	Previewable       bool      `json:"previewable"`
+	OfficeEditable    bool      `json:"officeEditable,omitempty"`
 	// ShareVersion is an Agent-local, content-bound proof used by public file shares.
 	// It is deliberately excluded from ordinary file API responses.
 	ShareVersion string `json:"-"`
@@ -146,6 +149,7 @@ type FileArchiveMemberDownload struct {
 }
 
 type FileActionRequest struct {
+	ExpectedDirectoryIdentity     string                `json:"expectedDirectoryIdentity,omitempty"`
 	ConflictPolicies              *FileConflictPolicies `json:"conflictPolicies,omitempty"`
 	SourceKind                    string                `json:"sourceKind,omitempty"`
 	DestinationName               string                `json:"destinationName,omitempty"`

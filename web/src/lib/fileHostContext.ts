@@ -32,8 +32,8 @@ export function fileAPIForHost(hostId = '') {
     trash: () => files.trash(hostId),
     upload: (path: string, file: File, overwrite = false, onProgress?: (percent: number) => void, signal?: AbortSignal) =>
       files.upload(path, file, overwrite, onProgress, signal, hostId),
-    uploadVersion: (path: string, file: File, overwrite: boolean, version?: string, onProgress?: Parameters<typeof files.upload>[3], signal?: AbortSignal) =>
-      version === undefined ? files.upload(path, file, overwrite, onProgress, signal, hostId) : files.upload(path, file, overwrite, onProgress, signal, hostId, version),
+    uploadVersion: (path: string, file: File, overwrite: boolean, version?: string, onProgress?: Parameters<typeof files.upload>[3], signal?: AbortSignal, directoryIdentity?: string) =>
+      directoryIdentity ? files.upload(path, file, overwrite, onProgress, signal, hostId, version, directoryIdentity) : version === undefined ? files.upload(path, file, overwrite, onProgress, signal, hostId) : files.upload(path, file, overwrite, onProgress, signal, hostId, version),
     transferFromPanel: (input: Parameters<typeof files.transferFromPanel>[0], onEvent: Parameters<typeof files.transferFromPanel>[1], signal?: AbortSignal) =>
       files.transferFromPanel({ ...input, background: true }, onEvent, signal, hostId),
   }

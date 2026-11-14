@@ -73,6 +73,9 @@ func validateReceiveInput(input contract.FileReceiveInput) error {
 	if !ValidFileConflictPolicies(input.ConflictPolicies) {
 		return ErrInvalidPath
 	}
+	if len(input.ExpectedDirectoryIdentity) > 256 {
+		return ErrInvalidPath
+	}
 	if len(input.ExpectedTargetResourceVersion) > 256 || (input.ExpectedTargetResourceVersion != "" && (!input.Overwrite || input.Kind != "file")) {
 		return ErrInvalidPath
 	}
@@ -267,6 +270,14 @@ func (m *Manager) persistReceivesLocked() error {
 func (m *Manager) cleanupReceivesLocked() error {
 	changed := false
 	for id, record := range m.receives.records {
+		if record.busy == nil && record.Session.PublishJobID != "" && record.Session.State != "complete" {
+			if _, err := m.receivePublicationStatusLocked(record); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+			if m.receives.records[id] == nil {
+				continue
+			}
+		}
 		if record.busy != nil || m.now().Before(record.Session.ExpiresAt) {
 			continue
 		}
@@ -494,6 +505,9 @@ func (m *Manager) BeginReceive(ctx context.Context, input contract.FileReceiveIn
 		return contract.FileReceiveSession{}, err
 	}
 	defer parent.Close()
+	if err := checkDirectoryIdentity(parent, info, input.ExpectedDirectoryIdentity); err != nil {
+		return contract.FileReceiveSession{}, err
+	}
 	target := joinVirtual(input.Directory, input.Name)
 	if err := m.mutationError(target); err != nil {
 		return contract.FileReceiveSession{}, err
@@ -1197,7 +1211,11 @@ func (m *Manager) AbortReceive(ctx context.Context, id, sourceKey string) error 
 		if err := m.ChangeArchiveJob(record.Session.PublishJobID, "cancel"); err != nil && !errors.Is(err, ErrConflict) {
 			return err
 		}
-		return nil
+		_, err := m.receivePublicationStatusLocked(record)
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
 	}
 	if record.Session.State == "committing" {
 		if err := m.reconcileReceiveCommit(ctx, record); err != nil {

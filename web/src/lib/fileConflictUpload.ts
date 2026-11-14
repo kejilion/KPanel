@@ -7,9 +7,9 @@ import type { ExternalDropManifest, DesktopExternalTransferProgress, DesktopExte
 export interface ConflictUploadAPI {
   resolveName?: (directory: string, name: string, kind: 'file' | 'directory') => Promise<string>
   entry: (path: string, signal?: AbortSignal) => Promise<FileEntry>
-  uploadVersion: (path: string, file: File, overwrite: boolean, version?: string, onProgress?: FileUploadProgress, signal?: AbortSignal) => Promise<FileEntry>
+  uploadVersion: (path: string, file: File, overwrite: boolean, version?: string, onProgress?: FileUploadProgress, signal?: AbortSignal, directoryIdentity?: string) => Promise<FileEntry>
 }
-export async function uploadConflictFile(api: ConflictUploadAPI, directory: string, file: File, batch: FileConflictBatch, onProgress?: FileUploadProgress): Promise<FileEntry | undefined> {
+export async function uploadConflictFile(api: ConflictUploadAPI, directory: string, file: File, batch: FileConflictBatch, onProgress?: FileUploadProgress, directoryIdentity?: string): Promise<FileEntry | undefined> {
   let changed = false
   for (let attempt = 0; attempt < 8; attempt++) {
     batch.signal.throwIfAborted()
@@ -17,7 +17,8 @@ export async function uploadConflictFile(api: ConflictUploadAPI, directory: stri
     if (choice.skipped) return undefined
     if (choice.name !== file.name && api.resolveName) choice.name = await api.resolveName(directory,file.name,'file')
     const named = choice.name === file.name ? file : new File([file], choice.name, { type: file.type, lastModified: file.lastModified })
-    try { return await api.uploadVersion(directory, named, choice.overwrite, choice.version, onProgress, batch.signal) } catch (error) {
+    try { return await api.uploadVersion(directory, named, choice.overwrite, choice.version, onProgress, batch.signal, directoryIdentity) } catch (error) {
+      if (error && typeof error === 'object' && 'code' in error && error.code === 'file_directory_conflict') throw error
       if (!error || typeof error !== 'object' || !('status' in error) || error.status !== 409) throw error
       changed = true
     }
@@ -31,6 +32,12 @@ export async function uploadDirectoryWithConflicts(
   onProgress: (progress: DesktopExternalTransferProgress) => void,
 ): Promise<DesktopExternalTransferResult> {
   const paths = new Map<string, string | null>([['', destination]])
+  const identities = new Map<string, string>()
+  if (manifest.directories.length) {
+    const base = await api.entry(destination, batch.signal)
+    if (!base.directoryIdentity) throw new Error('目标主机需要升级后才能安全导入文件夹。')
+    identities.set(destination, base.directoryIdentity)
+  }
   const entries = new Map<string, Pick<FileEntry, 'name' | 'kind' | 'path'>>()
   const failed: DesktopExternalTransferResult['failed'] = []
   let completedFiles = 0; let loadedBytes = 0
@@ -50,13 +57,14 @@ export async function uploadDirectoryWithConflicts(
         const path = joinFilePath(parent, choice.name)
         if (!choice.merge) {
           let outcome: FileActionResult
-          try { outcome = await api.action({ action: 'mkdir', target: parent, name: choice.name }, batch.signal) } catch (error) { if (error && typeof error === 'object' && 'status' in error && error.status === 409) continue; throw error }
+          try { outcome = await api.action({ action: 'mkdir', target: parent, name: choice.name, expectedDirectoryIdentity: identities.get(parent) }, batch.signal) } catch (error) { if (error && typeof error === 'object' && 'code' in error && error.code === 'file_directory_conflict') throw error; if (error && typeof error === 'object' && 'status' in error && error.status === 409) continue; throw error }
           if (outcome.failed.some(item => item.code === 'already_exists' || item.code === 'resource_conflict')) continue
           if (outcome.failed.length) throw new Error(outcome.failed[0]!.detail)
-        } else {
-          const current = await api.entry(path, batch.signal)
-          if (current.kind !== 'directory' || current.resourceVersion !== choice.version) continue
         }
+        const current = await api.entry(path, batch.signal)
+        if (current.kind !== 'directory' || choice.merge && (current.resourceVersion !== choice.version || !choice.directoryIdentity || current.directoryIdentity !== choice.directoryIdentity)) continue
+        if (!current.directoryIdentity) throw new Error('目标主机需要升级后才能安全导入文件夹。')
+        identities.set(path, current.directoryIdentity)
         paths.set(key, path)
         if (segments.length === 1) entries.set(segments[0]!, { name: choice.name, kind: 'directory', path })
         created = true; break
@@ -78,7 +86,7 @@ export async function uploadDirectoryWithConflicts(
         const entry = await uploadConflictFile(api, parent, file, batch, (percent, progress) => {
           const bytes = Math.min(file.size, progress?.loadedBytes ?? Math.round(file.size * percent / 100))
           loadedBytes += bytes - (loaded.get(index) || 0); loaded.set(index, bytes); report(file.name)
-        })
+        }, identities.get(parent))
         if (entry) {
           loadedBytes += file.size - (loaded.get(index) || 0); loaded.set(index, file.size); completedFiles++
           if (item.segments.length === 1) entries.set(item.segments[0]!, entry)

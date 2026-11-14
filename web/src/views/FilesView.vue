@@ -2899,10 +2899,10 @@ async function runDirectoryUploadTask(
     if (signal.aborted || unmounted) return
     if (result.cancelled) {
       updateUploadTask(id, { phase: 'cancelled', detail: '后续已取消，已上传的文件保留。' })
-    } else if (result.skipped?.length) {
-      updateUploadTask(id, { phase: 'skipped', detail: `${result.skipped.length} 项跳过，${result.failed.length} 项失败。` })
     } else if (result.failed.length) {
       updateUploadTask(id, { phase: 'error', detail: result.failed[0]!.detail })
+    } else if (result.skipped?.length) {
+      updateUploadTask(id, { phase: 'skipped', detail: `${result.skipped.length} 项跳过。` })
     } else {
       updateUploadTask(id, { phase: 'success', progress: 100, detail: undefined })
       scheduleUploadTaskClear(id)

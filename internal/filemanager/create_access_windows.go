@@ -5,13 +5,27 @@ package filemanager
 import (
 	"errors"
 	"os"
+	"path"
 
 	"golang.org/x/sys/windows"
 )
 
 // Windows keeps the destination's inherited ACL policy.
-func (m *Manager) mkdirUserDirectory(virtual string) error {
-	return m.rootFS.Mkdir(rootName(virtual), 0755)
+func (m *Manager) mkdirUserDirectory(virtual string, expected ...string) error {
+	parent, info, err := m.openReceiveDirectory(path.Dir(virtual), false)
+	if err != nil {
+		return err
+	}
+	defer parent.Close()
+	if len(expected) > 0 {
+		if err := checkDirectoryIdentity(parent, info, expected[0]); err != nil {
+			return err
+		}
+	}
+	if err := parent.Mkdir(path.Base(virtual), 0755); err != nil {
+		return err
+	}
+	return m.verifyDirectoryIdentity(path.Dir(virtual), info)
 }
 
 // Capture the effective DACL from the pinned source, and prevent the new

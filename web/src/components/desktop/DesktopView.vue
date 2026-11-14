@@ -326,7 +326,7 @@ function localFileContentURL(path: string, disposition: 'inline' | 'attachment')
 function localFileArchiveURL(entries: readonly Pick<FileEntry, 'path' | 'resourceVersion'>[], name: string) {
   return api.files.archiveUrl(entries, name)
 }
-function localDesktopFileAPI(): DesktopExternalTransferAPI { return { ...api.files, resolveName: (directory,name,kind) => fileAPIForHost('').resolveName(directory,name,kind), uploadVersion: (path, file, overwrite, version, progress, signal) => version === undefined ? api.files.upload(path,file,overwrite,progress,signal) : api.files.upload(path, file, overwrite, progress, signal, undefined, version) } }
+function localDesktopFileAPI(): DesktopExternalTransferAPI { return { ...api.files, resolveName: (directory,name,kind) => fileAPIForHost('').resolveName(directory,name,kind), uploadVersion: (path, file, overwrite, version, progress, signal, identity) => identity ? api.files.upload(path,file,overwrite,progress,signal,undefined,version,identity) : version === undefined ? api.files.upload(path,file,overwrite,progress,signal) : api.files.upload(path, file, overwrite, progress, signal, undefined, version) } }
 function localPanelTransfer(
   input: Parameters<typeof api.files.transferFromPanel>[0],
   onEvent: Parameters<typeof api.files.transferFromPanel>[1],

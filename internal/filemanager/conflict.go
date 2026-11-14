@@ -75,9 +75,13 @@ func (m *Manager) removeEmptyDirectory(virtual, expected string) (contract.FileE
 
 // Preserve the old upload entry point for legacy callers. New clients bind
 // overwrite consent to the exact destination version shown in their dialog.
-func (m *Manager) UploadExpected(ctx context.Context, directory, name string, content io.Reader, length int64, overwrite bool, expected string) (contract.FileEntry, error) {
+func (m *Manager) UploadExpected(ctx context.Context, directory, name string, content io.Reader, length int64, overwrite bool, expected string, directoryIdentity ...string) (contract.FileEntry, error) {
 	if length > MaxUploadBytes {
 		return contract.FileEntry{}, ErrTooLarge
 	}
-	return m.ReceiveStream(ctx, contract.FileReceiveInput{Directory: directory, Name: name, Kind: "file", SizeBytes: length, Overwrite: overwrite, ExpectedTargetResourceVersion: expected}, content, MaxUploadBytes)
+	identity := ""
+	if len(directoryIdentity) > 0 {
+		identity = directoryIdentity[0]
+	}
+	return m.ReceiveStream(ctx, contract.FileReceiveInput{ExpectedDirectoryIdentity: identity, Directory: directory, Name: name, Kind: "file", SizeBytes: length, Overwrite: overwrite, ExpectedTargetResourceVersion: expected}, content, MaxUploadBytes)
 }

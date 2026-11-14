@@ -26,6 +26,10 @@ func (m *Manager) publishConflictTree(ctx context.Context, source *fileRoot, sou
 	}
 	incoming := m.entry(display, info)
 	incoming.Name = name
+	ctx, err = m.bindConflictDirectory(ctx, directory)
+	if err != nil {
+		return contract.FileEntry{}, err
+	}
 	changed := false
 	checkedBudget := false
 	for attempt := 0; attempt < 8; attempt++ {
@@ -57,12 +61,28 @@ func (m *Manager) publishConflictTree(ctx context.Context, source *fileRoot, sou
 		if err != nil {
 			return contract.FileEntry{}, err
 		}
+		if err := checkConflictDirectory(ctx, directory, parent, parentInfo); err != nil {
+			parent.Close()
+			return contract.FileEntry{}, err
+		}
 		if choice.Merge {
 			targetInfo, err := parent.Lstat(choice.Name)
 			parent.Close()
 			if err != nil || !targetInfo.IsDir() || resourceVersion(target, targetInfo) != choice.Version {
 				changed = true
 				continue
+			}
+			childContext, err := m.bindConflictDirectory(ctx, target)
+			if err != nil {
+				return contract.FileEntry{}, err
+			}
+			expected, _ := childContext.Value(conflictDirectoryKey{}).(conflictDirectory)
+			if choice.DirectoryIdentity == "" || expected.identity != choice.DirectoryIdentity {
+				changed = true
+				continue
+			}
+			if err := m.verifyDirectoryIdentity(target, targetInfo); err != nil {
+				return contract.FileEntry{}, err
 			}
 			root, err := source.OpenRoot(sourceName)
 			if err != nil {
@@ -90,7 +110,7 @@ func (m *Manager) publishConflictTree(ctx context.Context, source *fileRoot, sou
 					root.Close()
 					return contract.FileEntry{}, err
 				}
-				entry, err := m.publishConflictTree(ctx, root, child.Name(), target, child.Name(), joinVirtual(display, child.Name()), validate, depth+1)
+				entry, err := m.publishConflictTree(childContext, root, child.Name(), target, child.Name(), joinVirtual(display, child.Name()), validate, depth+1)
 				if errors.Is(err, ErrFileSkipped) {
 					complete = false
 					continue
@@ -107,6 +127,9 @@ func (m *Manager) publishConflictTree(ctx context.Context, source *fileRoot, sou
 			root.Close()
 			if !complete {
 				return contract.FileEntry{}, ErrFileSkipped
+			}
+			if err := m.verifyDirectoryIdentity(target, targetInfo); err != nil {
+				return contract.FileEntry{}, err
 			}
 			if err := removeCheckedEmptyDirectory(source, sourceName, info); err != nil {
 				return contract.FileEntry{}, err

@@ -116,6 +116,9 @@ func (m *Manager) runReceivePublication(ctx context.Context, cancel context.Canc
 	a := &m.archiveJobs
 	defer a.wg.Done()
 	defer cancel()
+	// Registered before resource cleanup: reconcile only after stage handles,
+	// the write lock and worker slot have all been released.
+	defer m.finalizeReceivePublication(id)
 	gateHeld := false
 	writeHeld := false
 	defer func() {
@@ -245,27 +248,31 @@ func (m *Manager) runReceivePublication(ctx context.Context, cancel context.Canc
 	finish("complete", &entry, nil)
 }
 
-// The receive journal lock is held. Archive workers never acquire it, so this
-// lock order is shared by status, decision and cancellation.
+// The receive journal lock is held. Workers acquire it only after releasing
+// their archive lock and publication resources. Lock order is receive -> archive.
 func (m *Manager) receivePublicationStatusLocked(record *receiveRecord) (contract.FileReceiveSession, error) {
 	a := &m.archiveJobs
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	if err := m.initializeArchiveJobsLocked(); err != nil {
+		a.mu.Unlock()
 		return record.Session, err
 	}
 	jobRecord := a.records[record.Session.PublishJobID]
 	if jobRecord == nil {
+		a.mu.Unlock()
 		return record.Session, ErrConflict
 	}
 	job := cloneArchiveJob(jobRecord.Job)
+	_, workerActive := a.cancels[job.ID]
 	if job.Action != "receive" || job.Target != record.Input.Directory || jobRecord.Private == nil || jobRecord.Private.StageName != ".kpanel-extract-"+record.Session.ID {
+		a.mu.Unlock()
 		return record.Session, ErrConflict
 	}
+	a.mu.Unlock()
 	session := record.Session
 	session.Conflict = job.Conflict
 	session.Revision = job.Revision
-	if archiveJobActive(job.State) {
+	if archiveJobActive(job.State) || workerActive {
 		session.State = "committing"
 		if job.State == "waiting_input" {
 			session.State = "waiting_input"
@@ -273,7 +280,14 @@ func (m *Manager) receivePublicationStatusLocked(record *receiveRecord) (contrac
 		return session, nil
 	}
 	if job.State != "complete" && job.State != "partial" && job.State != "skipped" {
-		return session, ErrConflict
+		// Terminal workers can no longer publish. Free the reservation even if
+		// a substituted parent prevents identity-safe removal of its old spool.
+		_ = m.removeReceiveTemp(record)
+		delete(m.receives.records, record.Session.ID)
+		if err := m.persistReceivesLocked(); err != nil {
+			return session, err
+		}
+		return session, os.ErrNotExist
 	}
 	session.State = "complete"
 	session.Entry = job.Entry
@@ -288,6 +302,17 @@ func (m *Manager) receivePublicationStatusLocked(record *receiveRecord) (contrac
 	}
 	_ = m.removeReceiveTemp(record)
 	return session, nil
+}
+
+func (m *Manager) finalizeReceivePublication(jobID string) {
+	m.receives.mu.Lock()
+	defer m.receives.mu.Unlock()
+	for _, record := range m.receives.records {
+		if record.Session.PublishJobID == jobID {
+			_, _ = m.receivePublicationStatusLocked(record)
+			return
+		}
+	}
 }
 
 func (m *Manager) DecideReceive(ctx context.Context, id, key string, decision contract.FileConflictDecision) (contract.FileReceiveSession, error) {

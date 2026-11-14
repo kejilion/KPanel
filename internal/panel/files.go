@@ -381,7 +381,7 @@ func (s *Server) handleFileUpload(w http.ResponseWriter, r *http.Request) {
 		s.writeProblem(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed", "")
 		return
 	}
-	if r.URL.RawPath != "" || !strictPanelQuery(r.URL.Query(), "path", "name", "overwrite", "expectedTargetResourceVersion") {
+	if r.URL.RawPath != "" || !strictPanelQuery(r.URL.Query(), "path", "name", "overwrite", "expectedTargetResourceVersion", "expectedDirectoryIdentity") {
 		s.writeProblem(w, r, http.StatusBadRequest, "file_query_invalid", "上传参数无效", "")
 		return
 	}

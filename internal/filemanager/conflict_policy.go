@@ -165,6 +165,7 @@ func ResolveFileConflict(ctx context.Context, source contract.FileEntry, directo
 	case "merge":
 		result.Merge = target.Kind != "missing"
 		result.Version = target.ResourceVersion
+		result.DirectoryIdentity = target.DirectoryIdentity
 	default:
 		return result, ErrAction
 	}
@@ -243,6 +244,10 @@ func (m *Manager) transferWithPolicy(ctx context.Context, source, directory, nam
 	}
 	changed := false
 	checkedBudget := false
+	ctx, err = m.bindConflictDirectory(ctx, directory)
+	if err != nil {
+		return entry, err
+	}
 	for attempt := 0; attempt < 8; attempt++ {
 		choice, err := m.resolvePublication(ctx, entry, directory, changed)
 		if err != nil {
@@ -265,6 +270,17 @@ func (m *Manager) transferWithPolicy(ctx context.Context, source, directory, nam
 			checkedBudget = true
 		}
 		if choice.Merge {
+			targetRoot, targetInfo, targetErr := m.openReceiveDirectory(target, false)
+			if targetErr != nil {
+				return entry, targetErr
+			}
+			if choice.DirectoryIdentity == "" || checkDirectoryIdentity(targetRoot, targetInfo, choice.DirectoryIdentity) != nil || resourceVersion(target, targetInfo) != choice.Version {
+				targetRoot.Close()
+				changed = true
+				continue
+			}
+			childContext := withConflictDirectory(ctx, target, stableRootReceiveIdentity(targetRoot, ".", targetInfo))
+			targetRoot.Close()
 			if budget.entries++; budget.entries > budget.maxEntries {
 				return entry, ErrTooLarge
 			}
@@ -292,7 +308,7 @@ func (m *Manager) transferWithPolicy(ctx context.Context, source, directory, nam
 				if err := m.verifyDirectoryIdentity(source, info); err != nil {
 					return entry, err
 				}
-				published, err := m.transferWithPolicy(ctx, joinVirtual(source, child.Name()), target, "", move, budget, depth+1)
+				published, err := m.transferWithPolicy(childContext, joinVirtual(source, child.Name()), target, "", move, budget, depth+1)
 				if errors.Is(err, ErrFileSkipped) {
 					complete = false
 					continue
@@ -306,6 +322,9 @@ func (m *Manager) transferWithPolicy(ctx context.Context, source, directory, nam
 				}
 			}
 			if move && complete {
+				if err := m.verifyDirectoryIdentity(target, targetInfo); err != nil {
+					return entry, err
+				}
 				if err := m.verifyDirectoryIdentity(source, info); err != nil {
 					return entry, err
 				}

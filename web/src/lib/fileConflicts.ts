@@ -122,6 +122,6 @@ export class FileConflictBatch {
       }
       throw new Error('同名副本过多，请更换目标目录。')
     }
-    return { name: source.name, overwrite: target.kind !== ('missing' as string), skipped: false, merge: target.kind === 'directory', version: target.resourceVersion }
+    return { name: source.name, overwrite: target.kind !== ('missing' as string), skipped: false, merge: target.kind === 'directory', version: target.resourceVersion, directoryIdentity: target.directoryIdentity }
   }
 }

@@ -10,13 +10,18 @@ import (
 
 // User-created directories must be traversable by web servers even when the
 // Agent runs with umask 0077. Keep the parent and chmod target pinned.
-func (m *Manager) mkdirUserDirectory(virtual string) error {
+func (m *Manager) mkdirUserDirectory(virtual string, expected ...string) error {
 	parentVirtual := path.Dir(virtual)
 	parent, info, err := m.openReceiveDirectory(parentVirtual, false)
 	if err != nil {
 		return err
 	}
 	defer parent.Close()
+	if len(expected) > 0 {
+		if err := checkDirectoryIdentity(parent, info, expected[0]); err != nil {
+			return err
+		}
+	}
 	base := path.Base(virtual)
 	// mkdir cannot return an inode handle. Never reopen a new name in a
 	// directory where a local writer can replace it before chmod.

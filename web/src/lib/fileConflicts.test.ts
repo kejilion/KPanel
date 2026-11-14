@@ -2,10 +2,30 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
 import { FileConflictBatch, cancelFileConflicts, pendingFileConflict, copyFileName } from './fileConflicts'
-import { uploadConflictFile } from './fileConflictUpload'
+import { uploadConflictFile, uploadDirectoryWithConflicts } from './fileConflictUpload'
 import type { FileEntry } from '@/types/api'
 const entry = (path: string, kind: FileEntry['kind'] = 'file'): FileEntry => ({path,kind,name:path.split('/').at(-1)!,sizeBytes:3,resourceVersion:'version:'+path,mode:'0644',owner:'root',group:'root',modifiedAt:'2026-11-14T00:00:00Z',editable:true,previewable:true})
 afterEach(() => cancelFileConflicts())
+
+it('pins imported directory identities through mkdir and upload and stops on replacement', async () => {
+ const batch = new FileConflictBatch('导入','host')
+ const uploadVersion = vi.fn(async (..._args: unknown[]) => { throw Object.assign(new Error('目录已替换'), { status:409, code:'file_directory_conflict' }) })
+ const action = vi.fn(async () => ({action:'mkdir' as const,succeeded:[],failed:[]}))
+ const api = { action, uploadVersion, entry:vi.fn(async (path:string) => {
+  if(path==='/d' || path==='/d/folder') return {...entry(path,'directory'),directoryIdentity:'inode:'+path}
+  throw Object.assign(new Error('missing'),{status:404})
+ }) }
+ const manifest = {roots:[{name:'folder',kind:'directory' as const}],directories:[['folder'],['folder','nested']],files:[{segments:['folder','a.txt'],file:new File(['a'],'a.txt')}],totalBytes:1}
+ const pending = uploadDirectoryWithConflicts(api,'/d',manifest,batch,()=>{})
+ await flushPromises(); pendingFileConflict.value!.decide('overwrite',false)
+ const result = await pending
+ expect(action).toHaveBeenCalledWith(expect.objectContaining({target:'/d/folder',expectedDirectoryIdentity:'inode:/d/folder'}),batch.signal)
+ expect(uploadVersion).toHaveBeenCalledTimes(1)
+ expect(uploadVersion.mock.calls[0]?.at(-1)).toBe('inode:/d/folder')
+ expect(result.failed).toContainEqual({name:'a.txt',detail:'目录已替换'})
+ expect(result.completedFiles).toBe(0)
+ expect(pendingFileConflict.value).toBeUndefined()
+})
 
 it('serializes concurrent prompts and applies a choice to queued conflicts only in this batch', async () => {
  const batch = new FileConflictBatch('上传','host-a')

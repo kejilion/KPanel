@@ -1017,7 +1017,7 @@ func (s *Server) fileWrite(w http.ResponseWriter, r *http.Request, requestID str
 
 func (s *Server) fileUpload(w http.ResponseWriter, r *http.Request) {
 	requestID := requestIDFrom(w)
-	if r.URL.RawPath != "" || !strictQuery(r.URL.Query(), "path", "name", "overwrite", "expectedTargetResourceVersion") {
+	if r.URL.RawPath != "" || !strictQuery(r.URL.Query(), "path", "name", "overwrite", "expectedTargetResourceVersion", "expectedDirectoryIdentity") {
 		writeProblem(w, requestID, http.StatusBadRequest, "invalid_query", "上传参数无效", "")
 		return
 	}
@@ -1052,6 +1052,7 @@ func (s *Server) fileUpload(w http.ResponseWriter, r *http.Request) {
 		r.ContentLength,
 		overwrite,
 		r.URL.Query().Get("expectedTargetResourceVersion"),
+		r.URL.Query().Get("expectedDirectoryIdentity"),
 	)
 	if err != nil {
 		writeFileProblem(w, requestID, err)
@@ -1327,6 +1328,8 @@ func writeFileProblem(w http.ResponseWriter, requestID string, err error) {
 		status, code, title = http.StatusForbidden, "file_path_read_only", "系统虚拟目录仅支持查看"
 	case errors.Is(err, filemanager.ErrSymlink):
 		status, code, title = http.StatusUnprocessableEntity, "file_symlink_rejected", "符号链接不能在面板中打开"
+	case errors.Is(err, filemanager.ErrDirectoryConflict):
+		status, code, title = http.StatusConflict, "file_directory_conflict", "目标文件夹已被替换"
 	case errors.Is(err, filemanager.ErrConflict),
 		errors.Is(err, filemanager.ErrAlreadyExists):
 		status, code, title = http.StatusConflict, "file_conflict", "文件状态冲突"
