@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { Archive, ArrowLeft, Download, RefreshCw } from '@lucide/vue'
+import { FileConflictBatch } from '@/lib/fileConflicts'
+import { activeConflictJob, decideConflictJob } from '@/lib/fileConflictJobs'
 import FileEntryIcon from './FileEntryIcon.vue'
 import ModalDialog from '@/components/common/ModalDialog.vue'
 import { useI18n } from '@/i18n'
@@ -8,7 +10,7 @@ import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
 import { fileAPIForHost } from '@/lib/fileHostContext'
 import type { FileActionInput, FileArchiveDirectory, FileArchiveJob, FileEntry } from '@/types/api'
 
-const props = defineProps<{ hostId: string; path: string; archiveManagementAvailable?: boolean; memberDownloadsAvailable?: boolean }>()
+const props = defineProps<{ hostId: string; path: string; archiveManagementAvailable?: boolean; memberDownloadsAvailable?: boolean; conflictVersion?: number }>()
 const emit = defineEmits<{ changed: [hostId: string, path: string, reveal: string[]]; open: [hostId: string, path: string]; download: [entry: FileEntry]; closed: [] }>()
 const i18n = useI18n()
 const jobs = ref<FileArchiveJob[]>([])
@@ -21,6 +23,7 @@ const legacy = computed(() => capability.value === 'legacy')
 const jobsError = ref('')
 const expanded = ref(false)
 const pending = ref(new Set<string>())
+const promptBatches = new Set<FileConflictBatch>()
 const browser = ref<FileEntry>()
 const directory = ref('')
 const search = ref('')
@@ -48,7 +51,7 @@ const entries = computed(() => contents.value?.entries || [])
 const allSelected = computed(() => entries.value.length > 0 && entries.value.every(entry => selection.value.has(entry.path)))
 const canSelectPage = computed(() => entries.value.length > 0 && entries.value.length <= 100)
 const selectionLimitVisible = computed(() => entries.value.length > 100 || selection.value.size >= 100)
-const active = (job: FileArchiveJob) => ['queued', 'running', 'cancelling'].includes(job.state)
+const active = activeConflictJob
 const baseName = (value: string) => value.replace(/\.(tar\.gz|tgz|zip|tar)$/i, '') || 'archive'
 const size = (bytes: number) => bytes < 1024 ? `${bytes} B` : bytes < 1048576 ? `${(bytes / 1024).toFixed(1)} KiB` : bytes < 1073741824 ? `${(bytes / 1048576).toFixed(1)} MiB` : `${(bytes / 1073741824).toFixed(2)} GiB`
 const archiveDetails = new Set([
@@ -61,7 +64,7 @@ const archiveDetails = new Set([
 ])
 function detail(value: string) { phraseCatalogVersion.value; return archiveDetails.has(value) ? translatePhrase(value) : value }
 const errorDetail = (error: unknown) => error instanceof Error ? detail(error.message) : i18n.t('files.archive.error')
-const stateLabel = (job: FileArchiveJob) => i18n.t(`files.archive.state.${job.state}`)
+const stateLabel = (job: FileArchiveJob) => job.state === 'waiting_input' ? i18n.t('files.conflict.waiting') : job.state === 'skipped' ? i18n.t('files.conflict.skip') : i18n.t(`files.archive.state.${job.state}`)
 const selectionDownloadName = computed(() => `${baseName(browser.value?.name || 'archive')}-selected.zip`)
 function memberURL(members: string[], raw: boolean, name: string) {
   return browser.value ? fileAPIForHost(props.hostId).archiveMemberUrl(browser.value, members, name, raw) : ''
@@ -80,7 +83,7 @@ async function refreshJobs() {
     for (const job of result.items) {
       if (old.has(job.id) && active(old.get(job.id)!) && !active(job)) emit('changed', host, job.target, job.result.succeeded.flatMap((item) => item.destination ? [item.destination] : []))
     }
-    jobs.value = result.items; jobsError.value = ''; discoveryFailures = 0
+    jobs.value = result.items.filter(job => (job.action as string) !== 'receive'); jobsError.value = ''; discoveryFailures = 0
   } catch (error) {
     if (disposed || current.signal.aborted || token !== generation) return
     jobsError.value = errorDetail(error)
@@ -146,7 +149,7 @@ async function submit() {
   const snapshot = form.value
   const saveName = name.value.trim(); const target = destination.value.trim()
   if ((!batch.value && (!saveName || /[/\\\u0000]/.test(saveName) || ['.', '..'].includes(saveName))) || !target.startsWith('/')) { formError.value = i18n.t('files.archive.invalid'); return }
-  const input: FileActionInput = { action: snapshot.action, sources: snapshot.sources.map(source => source.path), target, name: saveName,
+  const input: FileActionInput = { ...(props.conflictVersion === 1 ? {conflictPolicies: {file:'ask' as const,directory:'ask' as const}} : {}), action: snapshot.action, sources: snapshot.sources.map(source => source.path), target, name: saveName,
     ...(snapshot.action === 'compress' ? { format: format.value } : {}), archiveEntries: snapshot.members,
     expectedResourceVersions: Object.fromEntries(snapshot.sources.map(source => [source.path, source.resourceVersion])) }
   submitting.value = true; formError.value = ''
@@ -159,6 +162,14 @@ async function submit() {
   } catch (error) { if (!disposed && form.value === snapshot) formError.value = errorDetail(error) }
   finally { submitting.value = false }
 }
+async function resolveJob(job: FileArchiveJob) {
+  const host = props.hostId
+  const batch = new FileConflictBatch(job.name, host)
+  promptBatches.add(batch)
+  try { await decideConflictJob(fileAPIForHost(host), job, batch, host); await refreshJobs() }
+  catch (error) { if (!batch.signal.aborted) jobsError.value = errorDetail(error) }
+  finally { promptBatches.delete(batch); batch.close() }
+}
 async function changeJob(job: FileArchiveJob, operation: 'cancel' | 'clear') {
   const host = props.hostId; const token = generation
   pending.value = new Set(pending.value).add(job.id)
@@ -167,7 +178,7 @@ async function changeJob(job: FileArchiveJob, operation: 'cancel' | 'clear') {
   finally { if (token === generation) { const next = new Set(pending.value); next.delete(job.id); pending.value = next } }
 }
 function retrySources(job: FileArchiveJob): string[] {
-  if (active(job) || job.state === 'complete') return []
+  if (active(job) || job.state === 'complete' || !['compress', 'extract'].includes(job.action)) return []
   if (job.action === 'compress') return job.result.succeeded.length ? [] : job.sources
   const completed = new Set(job.result.succeeded.map(item => item.path))
   return job.sources.filter(path => !completed.has(path))
@@ -186,6 +197,7 @@ async function retry(job: FileArchiveJob) {
       if (sources.unavailable.length) { jobsError.value = i18n.t('files.archive.sourceChanged'); return }
       entries.push(...sources.entries)
     }
+    if (job.action !== 'compress' && job.action !== 'extract') return
     configure(job.action, entries, job.archiveEntries); destination.value = job.target
     if (job.action === 'compress' || job.sources.length === 1) name.value = job.name
     if (job.format) format.value = job.format
@@ -197,19 +209,21 @@ watch([() => props.hostId, () => props.archiveManagementAvailable], () => {
   jobs.value = []; jobsError.value = ''; pending.value = new Set(); discoveryFailures = 0
   if (available.value) void refreshJobs()
 }, { immediate: true })
-onBeforeUnmount(() => { disposed = true; ++generation; jobsController?.abort(); contentsController?.abort(); clearTimeout(polling); clearTimeout(searching) })
+onBeforeUnmount(() => { for (const batch of promptBatches) batch.close(); disposed = true; ++generation; jobsController?.abort(); contentsController?.abort(); clearTimeout(polling); clearTimeout(searching) })
 const hasJobs = computed(() => jobs.value.length > 0 || Boolean(jobsError.value))
 defineExpose({ configure, browse, closeBrowser, capability, available, checking, legacy, hasJobs })
 </script>
 
 <template>
-  <section v-if="hasJobs" class="archive-jobs" :aria-label="i18n.t('files.archive.jobs')">
+  <section v-if="hasJobs" class="archive-jobs" :aria-label="i18n.t(jobs.some(job => !['compress','extract'].includes(job.action)) ? 'files.conflict.jobs' : 'files.archive.jobs')">
     <header><strong>{{ i18n.t('files.archive.jobs') }}</strong><span>{{ i18n.t('files.archive.background') }}</span><button type="button" class="button button--secondary" :aria-label="i18n.t('files.archive.refresh')" @click="refreshJobs"><RefreshCw :size="15" /></button></header>
     <p v-if="jobsError" class="archive-error" role="alert">{{ jobsError }}</p>
     <div v-for="job in expanded ? jobs : jobs.slice(0, 3)" :key="job.id" class="archive-job">
-      <Archive :size="18" /><div class="archive-job__body"><strong>{{ job.name }}</strong><p>{{ stateLabel(job) }}<template v-if="active(job)"> · {{ size(job.processedBytes) }} · {{ i18n.t('files.archive.count', { count: job.entries }) }}</template></p>
+      <Archive :size="18" /><div class="archive-job__body"><strong>{{ job.name }}</strong><p>{{ stateLabel(job) }}<template v-if="active(job) && ['compress','extract'].includes(job.action)"> · {{ size(job.processedBytes) }} · {{ i18n.t('files.archive.count', { count: job.entries }) }}</template></p>
+        <p v-if="job.result.skipped?.length || job.result.completedCount">{{ i18n.t('files.conflict.summary', { completed: job.result.completedCount || job.result.succeeded.length, skipped: job.result.skippedCount || job.result.skipped?.length || 0, failed: job.result.failed.length }) }}</p>
         <details v-if="job.detail || job.result.failed.length || job.result.succeeded.length"><summary>{{ i18n.t('files.archive.details') }}</summary><p v-if="job.detail">{{ detail(job.detail) }}</p><p v-for="item in job.result.failed" :key="item.path" class="archive-error"><span data-i18n-ignore>{{ item.path }}</span> · {{ detail(item.detail) }}</p><p v-for="item in job.result.succeeded" :key="item.path" data-i18n-ignore>{{ item.destination }}</p></details>
-      </div><div class="archive-job__actions"><button v-if="active(job)" type="button" class="button button--secondary" :disabled="pending.has(job.id) || job.state === 'cancelling'" @click="changeJob(job, 'cancel')">{{ i18n.t('files.archive.stop') }}</button><template v-else><button v-if="job.result.succeeded.length" type="button" class="button button--secondary" @click="emit('open', props.hostId, job.target)">{{ i18n.t('files.archive.openResult') }}</button><button v-if="retryable(job)" type="button" class="button button--secondary" :disabled="pending.has(job.id)" @click="retry(job)">{{ i18n.t('files.archive.retryFailed') }}</button><button type="button" class="button button--secondary" :disabled="pending.has(job.id)" @click="changeJob(job, 'clear')">{{ i18n.t('files.archive.clear') }}</button></template></div>
+      </div><div class="archive-job__actions"><button v-if="job.state === 'waiting_input'" class="button button--primary" @click="resolveJob(job)">{{ i18n.t('files.conflict.waiting') }}</button>
+          <button v-if="active(job)" type="button" class="button button--secondary" :disabled="pending.has(job.id) || job.state === 'cancelling'" @click="changeJob(job, 'cancel')">{{ i18n.t('files.archive.stop') }}</button><template v-else><button v-if="job.result.succeeded.length" type="button" class="button button--secondary" @click="emit('open', props.hostId, job.target)">{{ i18n.t('files.archive.openResult') }}</button><button v-if="retryable(job)" type="button" class="button button--secondary" :disabled="pending.has(job.id)" @click="retry(job)">{{ i18n.t('files.archive.retryFailed') }}</button><button type="button" class="button button--secondary" :disabled="pending.has(job.id)" @click="changeJob(job, 'clear')">{{ i18n.t('files.archive.clear') }}</button></template></div>
     </div>
     <button v-if="jobs.length > 3" type="button" class="button button--secondary" :aria-expanded="expanded" @click="expanded = !expanded">{{ i18n.t(expanded ? 'files.archive.collapse' : 'files.archive.showAll', { count: jobs.length }) }}</button>
   </section>
@@ -251,15 +265,15 @@ defineExpose({ configure, browse, closeBrowser, capability, available, checking,
 <style scoped>
 .archive-jobs{background:var(--surface-subtle);border:1px solid var(--border);border-radius:var(--radius);padding:12px 16px;max-height:290px;overflow:auto;font-size:14px}
 .archive-jobs>header,.archive-toolbar,.archive-job,.archive-job__actions,.archive-entry,footer{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.archive-jobs>header>span{font-size:13px;color:var(--text-soft);flex:1}
+.archive-jobs>header>span{font-size:14px;color:var(--text-soft);flex:1}
 .archive-job{padding:12px 0;border-top:1px solid var(--border);margin-top:10px;align-items:flex-start}
 .archive-job>svg,.archive-entry>svg{color:var(--brand);flex-shrink:0}
 .archive-job__body{flex:1;min-width:160px;overflow-wrap:anywhere}
-.archive-job__body p{margin:4px 0;font-size:13px;color:var(--text-soft)}
+.archive-job__body p{margin:4px 0;font-size:14px;color:var(--text-soft)}
 .archive-job__body strong{font-weight:500}
 .archive-job__actions .button,.archive-toolbar .button,.archive-form footer .button{font-size:14px;min-height:40px}
 .archive-error,.archive-job__body .archive-error{color:var(--danger);overflow-wrap:anywhere}
-.archive-selection-note{margin:0 0 12px;color:var(--text-soft);font-size:13px;overflow-wrap:anywhere}
+.archive-selection-note{margin:0 0 12px;color:var(--text-soft);font-size:14px;overflow-wrap:anywhere}
 .archive-browser,.archive-form{font-size:14px;line-height:1.55}
 .archive-browser{container:archive-browser / inline-size}
 .archive-toolbar{margin-bottom:14px}
@@ -270,16 +284,16 @@ defineExpose({ configure, browse, closeBrowser, capability, available, checking,
 .archive-browser input[type=search]{margin-bottom:14px}
 .archive-browser table{width:100%;border-collapse:collapse;table-layout:fixed}
 .archive-browser th,.archive-browser td{padding:12px 8px;text-align:left;border-bottom:1px solid var(--border);overflow-wrap:anywhere}
-.archive-browser th{font-size:13px;color:var(--text-soft);font-weight:500}
+.archive-browser th{font-size:14px;color:var(--text-soft);font-weight:500}
 .archive-browser th:first-child{width:36px}.archive-browser th:last-child{width:100px}
-.archive-browser td:last-child{font-size:13px;color:var(--text-soft)}
+.archive-browser td:last-child{font-size:14px;color:var(--text-soft)}
 .archive-browser input[type=checkbox]{accent-color:var(--brand);width:24px;height:24px}
 .archive-browser tr.selected{background:var(--brand-soft)}
 .archive-entry{flex-wrap:nowrap}
 .archive-member-download{display:inline-flex;align-items:center;gap:4px;min-height:40px;color:var(--brand);font-size:14px}
 .archive-browser footer{justify-content:space-between;margin-top:14px;color:var(--text-soft)}
 .archive-form label{display:grid;gap:8px;margin:16px 0}.archive-form p{overflow-wrap:anywhere}
-.archive-form small{font-size:13px;color:var(--text-soft)}
+.archive-form small{font-size:14px;color:var(--text-soft)}
 .archive-form footer{justify-content:flex-end;margin-top:22px}
 @container archive-browser (max-width:540px){
   .archive-toolbar>.button:not(:first-child){flex:0 0 100%;width:100%;min-height:44px;justify-content:center;margin-inline:0}

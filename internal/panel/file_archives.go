@@ -60,8 +60,8 @@ func (s *Server) proxyFileArchives(w http.ResponseWriter, r *http.Request, feder
 		var err error
 		if request, ok := input.(*contract.FileArchiveJobRequest); ok {
 			validCreate := request.Operation == "create" && request.Input != nil && request.ID == "" &&
-				(request.Input.Action == "compress" || request.Input.Action == "extract")
-			valid := validCreate ||
+				(request.Input.Action == "compress" || request.Input.Action == "extract" || request.Input.Action == "copy" || request.Input.Action == "move" || request.Input.Action == "rename" || request.Input.Action == "trash_restore")
+			valid := validCreate || request.Operation == "decide" && request.Decision != nil && request.Input == nil && ownerJobIDPattern.MatchString(request.ID) ||
 				((request.Operation == "cancel" || request.Operation == "clear") && request.Input == nil && ownerJobIDPattern.MatchString(request.ID))
 			if !valid {
 				s.writeProblem(w, r, http.StatusBadRequest, "file_request_invalid", "文件请求无效", "")

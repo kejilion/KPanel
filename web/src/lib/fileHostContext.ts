@@ -14,6 +14,12 @@ export function fileAPIForHost(hostId = '') {
     archiveContents: (input: Parameters<typeof files.archiveContents>[0], signal?: AbortSignal) => files.archiveContents(input, signal, hostId),
     archiveJobs: (signal?: AbortSignal) => files.archiveJobs(signal, hostId),
     createArchiveJob: (input: Parameters<typeof files.createArchiveJob>[0]) => files.createArchiveJob(input, hostId),
+    decideArchiveJob: (id: string, decision: Parameters<typeof files.decideArchiveJob>[1]) => files.decideArchiveJob(id, decision, hostId),
+    resolveName: async (directory: string, name: string, kind: 'file' | 'directory') => {
+      const result = await files.action({action:'resolve',target:directory,name,sourceKind:kind,conflictPolicies:{file:'keep-both',directory:'keep-both'}}, undefined, hostId)
+      if (!result.resolution?.name) throw new Error('目标主机不支持统一同名处理。')
+      return result.resolution.name
+    },
     changeArchiveJob: (id: string, operation: 'cancel' | 'clear') => files.changeArchiveJob(id, operation, hostId),
     previewUrl: (path: string, version: string) => files.previewUrl(path, version, hostId),
     thumbnailUrl: (path: string, version: string) => files.thumbnailUrl(path, version, hostId),
@@ -26,6 +32,8 @@ export function fileAPIForHost(hostId = '') {
     trash: () => files.trash(hostId),
     upload: (path: string, file: File, overwrite = false, onProgress?: (percent: number) => void, signal?: AbortSignal) =>
       files.upload(path, file, overwrite, onProgress, signal, hostId),
+    uploadVersion: (path: string, file: File, overwrite: boolean, version?: string, onProgress?: Parameters<typeof files.upload>[3], signal?: AbortSignal) =>
+      version === undefined ? files.upload(path, file, overwrite, onProgress, signal, hostId) : files.upload(path, file, overwrite, onProgress, signal, hostId, version),
     transferFromPanel: (input: Parameters<typeof files.transferFromPanel>[0], onEvent: Parameters<typeof files.transferFromPanel>[1], signal?: AbortSignal) =>
       files.transferFromPanel({ ...input, background: true }, onEvent, signal, hostId),
   }

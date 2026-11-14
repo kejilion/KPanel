@@ -1,8 +1,10 @@
 import type { LocaleMessages } from './zh-CN'
 import { passkeyEnUS } from '../passkeys'
+import { fileConflictsEn } from '../fileConflicts'
 import { panelAccessEnUS } from '../panelAccess'
 
 export const enUSMessages = {
+  ...fileConflictsEn,
   'files.permissions.mixed': 'Selected permissions differ or cannot be read. Enter the permissions to apply to all selected items.',
   'route.browser': 'Browser',
   'desktop.internalBrowserOpen': 'Open in built-in browser',

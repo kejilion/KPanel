@@ -83,7 +83,7 @@ func TestReceiveSlowChunkDoesNotBlockUnrelatedSession(t *testing.T) {
 		t.Fatalf("unrelated status blocked: %#v %v", status, err)
 	}
 	// Another session's journal flush must never publish speculative bytes.
-	payload, err := os.ReadFile(filepath.Join(m.root, ".kpanel-trash", "receive-sessions.json"))
+	payload, err := os.ReadFile(filepath.Join(m.root, ".kpanel-trash", "receive-sessions-v2.json"))
 	var journal struct {
 		Records []receiveRecord `json:"records"`
 	}
@@ -180,9 +180,9 @@ func TestReceiveExpiryCleanupRetainsInFlightStaging(t *testing.T) {
 func TestReceiveJournalFailureRollsBackAndRetriesWrittenChunk(t *testing.T) {
 	m, session, input, unblock, result := blockedReceiveWriter(t)
 	m.receives.mu.Lock()
-	err := m.receives.store.Rename("receive-sessions.json", "test-saved-receives.json")
+	err := m.receives.store.Rename("receive-sessions-v2.json", "test-saved-receives.json")
 	if err == nil {
-		err = m.receives.store.Mkdir("receive-sessions.json", 0700)
+		err = m.receives.store.Mkdir("receive-sessions-v2.json", 0700)
 	}
 	m.receives.mu.Unlock()
 	if err != nil {
@@ -195,9 +195,9 @@ func TestReceiveJournalFailureRollsBackAndRetriesWrittenChunk(t *testing.T) {
 	m.receives.mu.Lock()
 	record := m.receives.records[session.ID]
 	rolledBack := record.Session.Offset == 0 && record.Session.PrefixSHA256 == session.PrefixSHA256 && record.hasher == nil
-	err = m.receives.store.Remove("receive-sessions.json")
+	err = m.receives.store.Remove("receive-sessions-v2.json")
 	if err == nil {
-		err = m.receives.store.Rename("test-saved-receives.json", "receive-sessions.json")
+		err = m.receives.store.Rename("test-saved-receives.json", "receive-sessions-v2.json")
 	}
 	m.receives.mu.Unlock()
 	if !rolledBack || err != nil {

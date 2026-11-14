@@ -77,6 +77,14 @@ func (s *Server) fileArchiveJobs(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusAccepted, job)
 			return
 		}
+		if input.Operation == "decide" && input.Decision != nil && input.Input == nil && input.ID != "" {
+			if err := s.files.DecideArchiveJob(input.ID, *input.Decision); err != nil {
+				fail(err)
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+			return
+		}
 		if (input.Operation == "cancel" || input.Operation == "clear") && input.Input == nil && input.ID != "" {
 			if err := s.files.ChangeArchiveJob(input.ID, input.Operation); err != nil {
 				fail(err)

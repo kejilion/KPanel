@@ -70,6 +70,12 @@ func validReceiveKey(value string) bool {
 }
 
 func validateReceiveInput(input contract.FileReceiveInput) error {
+	if !ValidFileConflictPolicies(input.ConflictPolicies) {
+		return ErrInvalidPath
+	}
+	if len(input.ExpectedTargetResourceVersion) > 256 || (input.ExpectedTargetResourceVersion != "" && (!input.Overwrite || input.Kind != "file")) {
+		return ErrInvalidPath
+	}
 	directory, err := normalizeVirtual(input.Directory)
 	if err != nil || directory != input.Directory || validateName(input.Name) != nil ||
 		!validReceiveKey(input.SourceKey) || (input.Kind != "file" && input.Kind != "directory") ||
@@ -146,7 +152,13 @@ func (m *Manager) initializeReceivesLocked() error {
 			_ = store.Close()
 		}
 	}()
-	info, err := store.Lstat("receive-sessions.json")
+	stateName := "receive-sessions-v2.json"
+	if _, err := store.Lstat(stateName); errors.Is(err, os.ErrNotExist) {
+		if _, oldErr := store.Lstat("receive-sessions.json"); oldErr == nil {
+			stateName = "receive-sessions.json"
+		}
+	}
+	info, err := store.Lstat(stateName)
 	if errors.Is(err, os.ErrNotExist) {
 		s.store = store
 		ok = true
@@ -155,7 +167,7 @@ func (m *Manager) initializeReceivesLocked() error {
 	if err != nil || !info.Mode().IsRegular() || info.Size() > maxReceiveStateBytes {
 		return ErrReceiveUnavailable
 	}
-	file, err := store.Open("receive-sessions.json")
+	file, err := store.Open(stateName)
 	if err != nil {
 		return ErrReceiveUnavailable
 	}
@@ -188,12 +200,15 @@ func (m *Manager) initializeReceivesLocked() error {
 		if _, exists := s.records[record.Session.ID]; exists {
 			return ErrReceiveUnavailable
 		}
+		if record.Session.PublishJobID != "" && (record.Input.Kind != "directory" || record.Input.ConflictPolicies == nil || record.Session.PublishJobID != record.Session.ID[:32]) {
+			return ErrReceiveUnavailable
+		}
 		if record.ExtractDirectory != "" {
 			if directory, err := normalizeVirtual(record.ExtractDirectory); err != nil || directory != record.ExtractDirectory || directory != record.Input.Directory && !isWithin(record.Input.Directory, directory) {
 				return ErrReceiveUnavailable
 			}
 		}
-		if record.Session.State == "complete" && (record.Session.Entry == nil || record.Session.Entry.Path != joinVirtual(record.Input.Directory, record.Input.Name) || record.Session.Entry.Kind != record.Input.Kind) {
+		if record.Session.State == "complete" && record.Session.Result == nil && (record.Session.Entry == nil || record.Session.Entry.Path != joinVirtual(record.Input.Directory, record.Input.Name) || record.Session.Entry.Kind != record.Input.Kind) {
 			return ErrReceiveUnavailable
 		}
 		if record.Session.State == "receiving" || record.Session.State == "committing" {
@@ -243,7 +258,7 @@ func (m *Manager) persistReceivesLocked() error {
 	if err := file.Close(); err != nil {
 		return err
 	}
-	if err := s.store.Rename(name, "receive-sessions.json"); err != nil {
+	if err := s.store.Rename(name, "receive-sessions-v2.json"); err != nil {
 		return err
 	}
 	return syncRootDirectory(s.store, ".")
@@ -485,7 +500,12 @@ func (m *Manager) BeginReceive(ctx context.Context, input contract.FileReceiveIn
 	}
 	var source *os.File
 	var original string
-	if existing, err := parent.Lstat(input.Name); err == nil {
+	if _, err := parent.Lstat(input.Name); err == nil && input.Kind == "directory" && input.ConflictPolicies != nil {
+		// A validated directory is staged before conflict publication.
+	} else if existing, err := parent.Lstat(input.Name); err == nil {
+		if input.ExpectedTargetResourceVersion != "" && resourceVersion(target, existing) != input.ExpectedTargetResourceVersion {
+			return contract.FileReceiveSession{}, ErrConflict
+		}
 		if !input.Overwrite {
 			return contract.FileReceiveSession{}, ErrAlreadyExists
 		}
@@ -504,6 +524,9 @@ func (m *Manager) BeginReceive(ctx context.Context, input contract.FileReceiveIn
 		original = resourceVersion(target, existing)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return contract.FileReceiveSession{}, err
+	}
+	if original == "" && input.ExpectedTargetResourceVersion != "" {
+		return contract.FileReceiveSession{}, ErrConflict
 	}
 	var random [32]byte
 	if _, err := rand.Read(random[:]); err != nil {
@@ -665,6 +688,9 @@ func (m *Manager) ReceiveStatus(ctx context.Context, id, sourceKey string) (cont
 	record, err := m.receiveReadyLocked(ctx, id, sourceKey)
 	if err != nil {
 		return contract.FileReceiveSession{}, err
+	}
+	if record.Session.PublishJobID != "" {
+		return m.receivePublicationStatusLocked(record)
 	}
 	if record.Session.State == "committing" {
 		if err := m.reconcileReceiveCommit(ctx, record); err != nil {
@@ -937,6 +963,9 @@ func (m *Manager) CommitReceive(ctx context.Context, id, sourceKey string, size 
 	if size != record.Session.Offset || digest != record.Session.PrefixSHA256 || record.Input.SizeBytes >= 0 && size != record.Input.SizeBytes {
 		return contract.FileReceiveSession{}, ErrReceiveChecksum
 	}
+	if record.Session.PublishJobID != "" {
+		return m.receivePublicationStatusLocked(record)
+	}
 	if record.Session.State == "committing" {
 		if err := m.reconcileReceiveCommit(ctx, record); err != nil {
 			return contract.FileReceiveSession{}, err
@@ -977,6 +1006,9 @@ func (m *Manager) CommitReceive(ctx context.Context, id, sourceKey string, size 
 			record.extractInfo, record.ExtractIdentity = info, stableRootReceiveIdentity(workspace, path.Base(receiveExtract(record)), info)
 			return m.persistReceivesLocked()
 		}, func(stage *fileRoot, info os.FileInfo) error {
+			if record.Input.ConflictPolicies != nil {
+				return m.queueReceivePublicationLocked(record, workspace, info)
+			}
 			record.PublishVersion = resourceVersion(target, info)
 			identity, err := m.receivePublishIdentity(ctx, stage, "/", info)
 			if err != nil {
@@ -985,7 +1017,14 @@ func (m *Manager) CommitReceive(ctx context.Context, id, sourceKey string, size 
 			record.PublishIdentity = identity
 			return m.persistReceivesLocked()
 		})
+		if errors.Is(err, errPublicationQueued) {
+			return record.Session, nil
+		}
 		if err != nil {
+			if record.Input.ConflictPolicies != nil && record.Session.PublishJobID == "" {
+				record.Session.State = "receiving"
+				_ = m.persistReceivesLocked()
+			}
 			return contract.FileReceiveSession{}, err
 		}
 		record.Session.Entry, record.Session.State = &entry, "complete"
@@ -1153,6 +1192,12 @@ func (m *Manager) AbortReceive(ctx context.Context, id, sourceKey string) error 
 	}
 	if err != nil {
 		return err
+	}
+	if record.Session.PublishJobID != "" {
+		if err := m.ChangeArchiveJob(record.Session.PublishJobID, "cancel"); err != nil && !errors.Is(err, ErrConflict) {
+			return err
+		}
+		return nil
 	}
 	if record.Session.State == "committing" {
 		if err := m.reconcileReceiveCommit(ctx, record); err != nil {

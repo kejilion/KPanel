@@ -277,7 +277,7 @@ func TestTransferJobStoreRefusesUnknownAndDamagedIndexes(t *testing.T) {
 			if err != nil || current.Available() {
 				t.Fatalf("unknown/damaged history accepted: %v", err)
 			}
-			if _, err := os.Lstat(filepath.Join(currentRoot, "jobs-v2.json")); !errors.Is(err, os.ErrNotExist) {
+			if _, err := os.Lstat(filepath.Join(currentRoot, transferJobFile)); !errors.Is(err, os.ErrNotExist) {
 				t.Fatalf("created another history: %v", err)
 			}
 			after, err := os.ReadFile(filename)
@@ -296,7 +296,7 @@ func TestTransferJobStoreNeverReplacesDamagedVersionedIndex(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	filename := filepath.Join(currentRoot, "jobs-v2.json")
+	filename := filepath.Join(currentRoot, transferJobFile)
 	before := []byte("damaged authoritative history")
 	if err := os.WriteFile(filename, before, 0600); err != nil {
 		t.Fatal(err)

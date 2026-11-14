@@ -55,6 +55,8 @@ func (s *Server) fileReceives(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case input.Operation == "create" && input.Input != nil && input.ID == "" && input.SourceKey == "" && input.SizeBytes == 0 && input.SHA256 == "":
 			session, err = s.files.BeginReceive(ctx, *input.Input)
+		case input.Operation == "decide" && input.Input == nil && input.Decision != nil:
+			session, err = s.files.DecideReceive(r.Context(), input.ID, input.SourceKey, *input.Decision)
 		case input.Operation == "commit" && input.Input == nil:
 			session, err = s.files.CommitReceive(ctx, input.ID, input.SourceKey, input.SizeBytes, input.SHA256)
 		case input.Operation == "abort" && input.Input == nil && input.SizeBytes == 0 && input.SHA256 == "":

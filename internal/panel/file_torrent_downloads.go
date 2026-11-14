@@ -8,6 +8,7 @@ import (
 
 	"github.com/kejilion/kejilion-panel/internal/bittorrent"
 	"github.com/kejilion/kejilion-panel/internal/contract"
+	"github.com/kejilion/kejilion-panel/internal/filemanager"
 )
 
 func (s *Server) executeTorrentDownload(ctx context.Context, input contract.FileRemoteDownloadRequest, requestID string, emit func(contract.FileTransferEvent) bool) contract.FileTransferEvent {
@@ -74,15 +75,31 @@ func (s *Server) executeTorrentDownload(ctx context.Context, input contract.File
 	if name == "" {
 		name = result.Metadata.Name
 	}
-	name, err = s.uniqueFileTransferName(ctx, input.TargetDirectory, name, requestID)
-	if err != nil {
-		return fail(err)
-	}
 	kind, size := "file", result.Metadata.Size
 	if result.Directory() {
 		kind, size = "directory", -1
 	}
-	receive := contract.FileReceiveInput{Directory: input.TargetDirectory, Name: name, Kind: kind, SizeBytes: size, SourceKey: transferSourceKey("bittorrent:" + result.Metadata.Hash.HexString())}
+	choice := contract.FileConflictResolution{Name: name}
+	if input.ConflictPolicies == nil {
+		name, err = s.uniqueFileTransferName(ctx, input.TargetDirectory, name, requestID)
+	} else if kind == "file" {
+		choice, _, err = s.resolveTransferConflict(ctx, contract.FileEntry{Name: name, Kind: kind, SizeBytes: size}, input.TargetDirectory, "", "", requestID, false, nil)
+		if err == nil && choice.Skipped {
+			event := contract.FileTransferEvent{State: "skipped", Name: name}
+			emit(event)
+			return event
+		}
+		name = choice.Name
+	}
+	if err != nil {
+		return fail(err)
+	}
+	receive := contract.FileReceiveInput{RequestedName: name, Directory: input.TargetDirectory, Name: name, Kind: kind, SizeBytes: size, Overwrite: choice.Overwrite, ExpectedTargetResourceVersion: choice.Version, SourceKey: transferSourceKey("bittorrent:" + result.Metadata.Hash.HexString() + "\n" + name + "\n" + choice.Version)}
+	if input.ConflictPolicies != nil && kind == "directory" {
+		p := filemanager.FileConflicts(ctx).Policies
+		receive.ConflictPolicies = &p
+	}
+
 	reopen := func(ctx context.Context, offset int64, prefix string) (io.ReadCloser, error) {
 		body := result.Open(ctx)
 		if err := discardTransferPrefix(ctx, body, offset, prefix); err != nil {
@@ -101,6 +118,17 @@ func (s *Server) executeTorrentDownload(ctx context.Context, input contract.File
 		return emit(event)
 	}
 	entry, loaded, err := s.receiveFileTransfer(ctx, receive, result.Open(ctx), reopen, s.fileReceiver("", "", requestID), adapt, nil)
+	if errors.Is(err, filemanager.ErrFileSkipped) {
+		event := contract.FileTransferEvent{State: "skipped", Name: name}
+		emit(event)
+		return event
+	}
+	var partial *partialFileTransfer
+	if errors.As(err, &partial) {
+		event := contract.FileTransferEvent{State: "partial", Name: partial.entry.Name, Entry: &partial.entry, LoadedBytes: loaded, TotalBytes: result.Metadata.Size, Result: partial.result}
+		emit(event)
+		return event
+	}
 	if err != nil {
 		return fail(err)
 	}

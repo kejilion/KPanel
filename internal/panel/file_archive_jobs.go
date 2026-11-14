@@ -9,11 +9,11 @@ func jobsFromFileArchives(items []contract.FileArchiveJob) []contract.Job {
 		if item.State == "complete" {
 			state = contract.JobSucceeded
 		}
-		if item.State == "cancelling" {
+		if item.State == "cancelling" || item.State == "waiting_input" {
 			state = contract.JobRunning
 		}
 		job := contract.Job{ID: "file-archive:" + item.ID, Action: "file." + item.Action, Origin: contract.OriginWeb, State: state, Stage: item.State, TargetKind: "file", TargetID: item.Target, TargetLabel: item.Name, CreatedAt: item.CreatedAt}
-		if item.State != "queued" && item.State != "running" && item.State != "cancelling" {
+		if item.State != "queued" && item.State != "running" && item.State != "cancelling" && item.State != "waiting_input" {
 			finished := item.UpdatedAt
 			job.FinishedAt = &finished
 		}

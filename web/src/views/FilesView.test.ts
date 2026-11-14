@@ -531,7 +531,7 @@ describe('FilesView external upload', () => {
 
     await view.onDrop(externalFileDrop(externalFileEntry('notes.txt', 'hello')))
 
-    expect(mocks.upload).toHaveBeenCalledWith('/srv', expect.objectContaining({ name: 'notes.txt' }), false, expect.any(Function), undefined, '')
+    expect(mocks.upload).toHaveBeenCalledWith('/srv', expect.objectContaining({ name: 'notes.txt' }), false, expect.any(Function), expect.any(AbortSignal), '')
     expect(mocks.entry).not.toHaveBeenCalled()
     expect(mocks.action).not.toHaveBeenCalled()
     expect(mocks.danger).not.toHaveBeenCalled()
@@ -2391,6 +2391,7 @@ describe('FilesView directory loading', () => {
 
     expect(mocks.transferFromPanel).toHaveBeenCalledTimes(2)
     expect(mocks.transferFromPanel.mock.calls[0]?.[0]).toEqual({
+      batchId: expect.stringMatching(/^[a-f0-9]{32}$/), conflictPolicies: {file:'ask',directory:'ask'},
       sourceNodeId: 'a'.repeat(32), path: '/source/one.txt',
       resourceVersion: first.resourceVersion, targetDirectory: '/target',
       background: true,

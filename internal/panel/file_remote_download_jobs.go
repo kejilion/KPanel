@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/kejilion/kejilion-panel/internal/contract"
+	"github.com/kejilion/kejilion-panel/internal/filemanager"
 	"github.com/kejilion/kejilion-panel/internal/remotedownload"
 	"github.com/kejilion/kejilion-panel/internal/store"
 )
@@ -53,7 +54,7 @@ func (s *Server) handleFileRemoteDownloadJob(w http.ResponseWriter, r *http.Requ
 	}
 	suffix := strings.TrimPrefix(r.URL.Path, "/api/v1/files/remote-downloads/")
 	parts := strings.Split(suffix, "/")
-	if len(parts) == 0 || len(parts) > 2 || parts[0] == "" || len(parts) == 2 && parts[1] != "cancel" {
+	if len(parts) == 0 || len(parts) > 2 || parts[0] == "" || len(parts) == 2 && parts[1] != "cancel" && parts[1] != "decide" {
 		http.NotFound(w, r)
 		return
 	}
@@ -92,6 +93,23 @@ func (s *Server) handleFileRemoteDownloadJob(w http.ResponseWriter, r *http.Requ
 	}
 	if err != nil {
 		s.writeProblem(w, r, http.StatusServiceUnavailable, "remote_download_jobs_unavailable", "离线下载任务暂不可用", "")
+		return
+	}
+	if r.Method == http.MethodPost && len(parts) == 2 && parts[1] == "decide" {
+		var decision contract.FileConflictDecision
+		if s.decodeJSON(w, r, &decision) != nil {
+			return
+		}
+		if err := s.audit(r, session.User.ID, "file.transfer.decide", "file-transfer-job", job.ID, "intent", map[string]any{"policy": decision.Policy, "revision": decision.Revision}); err != nil {
+			s.writeProblem(w, r, 503, "audit_unavailable", "Audit storage unavailable", "")
+			return
+		}
+		if err := s.remoteDownloadJobs.Decide(job.ID, decision); err != nil {
+			s.writeProblem(w, r, 409, "file_conflict_stale", "同名项的任务状态已变化，请刷新后重试", "")
+			return
+		}
+		_ = s.audit(r, session.User.ID, "file.transfer.decide", "file-transfer-job", job.ID, "success", map[string]any{"policy": decision.Policy, "revision": decision.Revision})
+		s.writeJSON(w, 200, map[string]bool{"ok": true})
 		return
 	}
 	if r.Method == http.MethodPost && len(parts) == 2 {
@@ -141,7 +159,7 @@ func (s *Server) startFileRemoteDownloadJob(
 	}
 	now := time.Now().UTC()
 	job := contract.FileRemoteDownloadJob{
-		ID: newRequestID(), State: "queued", Source: source, TargetDirectory: input.TargetDirectory,
+		ConflictPolicies: input.ConflictPolicies, ID: newRequestID(), State: "queued", Source: source, TargetDirectory: input.TargetDirectory,
 		Name: input.Name, CreatedAt: now, UpdatedAt: now,
 	}
 	if input.SourceKind == "torrent" {
@@ -237,13 +255,18 @@ func (s *Server) runFileRemoteDownloadJob(ctx context.Context, cancel context.Ca
 	}
 	select {
 	case s.remoteDownloadGate <- struct{}{}:
-		defer func() { <-s.remoteDownloadGate }()
 	case <-ctx.Done():
 		result := contract.FileTransferEvent{State: "error", Code: "remote_download_cancelled"}
 		result = remoteDownloadJobCancellationResult(ctx, result)
 		s.finishRemoteDownloadJob(task, result)
 		return
 	}
+	gateHeld := true
+	defer func() {
+		if gateHeld {
+			<-s.remoteDownloadGate
+		}
+	}()
 	transferContext, transferCancel := context.WithTimeout(ctx, panelFileTransferMaxDuration)
 	defer transferCancel()
 	job := task.job
@@ -257,6 +280,13 @@ func (s *Server) runFileRemoteDownloadJob(ctx context.Context, cancel context.Ca
 		event = remoteDownloadJobCancellationResult(ctx, event)
 		now := time.Now().UTC()
 		job.State = event.State
+		job.Conflict = event.Conflict
+		if event.Conflict != nil {
+			job.Revision++
+			job.Decision = nil
+		} else {
+			job.Decision = nil
+		}
 		job.TransferMode, job.Peers, job.SpeedBytes = event.TransferMode, event.Peers, event.SpeedBytes
 		job.SourceBytes = event.SourceBytes
 		if event.State == "error" {
@@ -269,6 +299,16 @@ func (s *Server) runFileRemoteDownloadJob(ctx context.Context, cancel context.Ca
 			}
 			job.Code = event.Code
 			job.FinishedAt = timePointer(now)
+		}
+		if event.State == "skipped" {
+			job.FinishedAt = timePointer(now)
+			job.Code = ""
+		}
+		if event.State == "partial" {
+			job.FinishedAt = timePointer(now)
+			job.Entry = event.Entry
+			job.Result = event.Result
+			job.Code = ""
 		}
 		if event.State == "complete" {
 			job.State = "complete"
@@ -290,12 +330,33 @@ func (s *Server) runFileRemoteDownloadJob(ctx context.Context, cancel context.Ca
 		persist := terminal || event.State != "transferring" ||
 			time.Since(lastPersistedAt) >= remoteDownloadProgressPersistInterval ||
 			!persistFailed && job.LoadedBytes-lastPersistedBytes >= remoteDownloadProgressPersistBytes
-		if err := s.remoteDownloadJobs.Update(job, persist); persist {
+		persistErr := s.remoteDownloadJobs.Update(job, persist)
+		if persist {
 			lastPersistedAt = time.Now()
 			lastPersistedBytes = job.LoadedBytes
-			persistFailed = err != nil
+			persistFailed = persistErr != nil
 		}
-		return true
+		return persistErr == nil
+	}
+	if job.ConflictPolicies != nil {
+		session := &filemanager.ConflictSession{Policies: *job.ConflictPolicies}
+		session.Prompt = func(ctx context.Context, conflict contract.FileConflict) (contract.FileConflictDecision, error) {
+			return s.awaitTransferConflict(ctx, &job, conflict, update, func() {
+				if gateHeld {
+					<-s.remoteDownloadGate
+					gateHeld = false
+				}
+			}, func() error {
+				select {
+				case s.remoteDownloadGate <- struct{}{}:
+					gateHeld = true
+					return nil
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			})
+		}
+		transferContext = filemanager.WithFileConflicts(transferContext, session)
 	}
 	var result contract.FileTransferEvent
 	if task.execute != nil {
@@ -304,7 +365,7 @@ func (s *Server) runFileRemoteDownloadJob(ctx context.Context, cancel context.Ca
 		result = s.executeFileRemoteDownload(transferContext, task.input, task.requestID, update)
 	}
 	result = remoteDownloadJobCancellationResult(ctx, result)
-	if result.State != "complete" && result.State != "error" {
+	if result.State != "complete" && result.State != "error" && result.State != "skipped" && result.State != "partial" {
 		result = contract.FileTransferEvent{State: "error", LoadedBytes: job.LoadedBytes, TotalBytes: job.TotalBytes, Name: job.Name, Code: "remote_download_interrupted"}
 		update(result)
 	}

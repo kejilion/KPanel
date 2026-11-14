@@ -1,8 +1,10 @@
 import type { LocaleMessages } from './zh-CN'
 import { passkeyZhTW } from '../passkeys'
+import { fileConflictsZhTW } from '../fileConflicts'
 import { panelAccessZhTW } from '../panelAccess'
 
 export const zhTWMessages = {
+  ...fileConflictsZhTW,
   'files.permissions.mixed': '所選項目權限不同或無法識別，請輸入要統一設定的權限。',
   'route.browser': '瀏覽器',
   'desktop.internalBrowserOpen': '在內建瀏覽器中開啟',

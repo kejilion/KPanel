@@ -13,6 +13,7 @@ import (
 
 	"github.com/kejilion/kejilion-panel/internal/cluster"
 	"github.com/kejilion/kejilion-panel/internal/contract"
+	"github.com/kejilion/kejilion-panel/internal/filemanager"
 	"github.com/kejilion/kejilion-panel/internal/remotedownload"
 )
 
@@ -58,7 +59,12 @@ func (s *Server) startCrossFileTransferJob(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	now := time.Now().UTC()
-	job := contract.FileRemoteDownloadJob{ID: newRequestID(), State: "queued", Source: "kpanel://" + input.SourceNodeID,
+	if input.ConflictPolicies != nil {
+		if inherited := s.remoteDownloadJobs.BatchPolicies(input.BatchID, hostID, input.TargetDirectory); inherited != nil {
+			input.ConflictPolicies = inherited
+		}
+	}
+	job := contract.FileRemoteDownloadJob{ConflictPolicies: input.ConflictPolicies, BatchID: input.BatchID, ID: newRequestID(), State: "queued", Source: "kpanel://" + input.SourceNodeID,
 		SourceKind: "cross-host", TargetHostID: hostID, TargetDirectory: input.TargetDirectory, Name: path.Base(input.Path), CreatedAt: now, UpdatedAt: now}
 	ctx, cancel, ok := s.reserveRemoteDownloadJob(job.ID)
 	if !ok {
@@ -146,11 +152,31 @@ func (s *Server) executeCrossFileTransfer(ctx context.Context, input contract.Fi
 	if metadata.Name != path.Base(input.Path) || metadata.ResourceVersion != input.ResourceVersion || metadata.Offset != 0 {
 		return fail("source_changed", "来源文件在拖拽后已发生变化。", 0)
 	}
-	name := ""
-	if targetHostID == "" {
-		name, err = s.uniqueFileTransferName(ctx, input.TargetDirectory, metadata.Name, requestID)
-	} else {
-		name, err = s.uniqueFileHostTransferName(ctx, targetHostID, targetKind, input.TargetDirectory, metadata.Name, requestID)
+	name := metadata.Name
+	choice := contract.FileConflictResolution{Name: name}
+	if input.ConflictPolicies != nil && metadata.Kind == "file" {
+		var closed bool
+		choice, closed, err = s.resolveTransferConflict(ctx, contract.FileEntry{Name: metadata.Name, Kind: metadata.Kind, SizeBytes: metadata.SizeBytes}, input.TargetDirectory, targetHostID, targetKind, requestID, false, func() { _ = body.Close() })
+		if err == nil && choice.Skipped {
+			event := contract.FileTransferEvent{State: "skipped", Name: name}
+			emit(event)
+			return event
+		}
+		if err == nil && closed {
+			var next contract.FileTransferMetadata
+			body, next, err = s.openCrossTransferSource(ctx, input, options, requestID)
+			if err == nil && (next.ResourceVersion != metadata.ResourceVersion || next.Name != metadata.Name || next.Kind != metadata.Kind || next.SizeBytes != metadata.SizeBytes) {
+				body.Close()
+				err = remotedownload.ErrSourceChanged
+			}
+		}
+		name = choice.Name
+	} else if input.ConflictPolicies == nil {
+		if targetHostID == "" {
+			name, err = s.uniqueFileTransferName(ctx, input.TargetDirectory, metadata.Name, requestID)
+		} else {
+			name, err = s.uniqueFileHostTransferName(ctx, targetHostID, targetKind, input.TargetDirectory, metadata.Name, requestID)
+		}
 	}
 	if err != nil {
 		return fail("target_name_unavailable", "无法确定目标文件名。", 0)
@@ -159,8 +185,12 @@ func (s *Server) executeCrossFileTransfer(ctx context.Context, input contract.Fi
 	if metadata.Kind == "directory" {
 		size = -1
 	}
-	receive := contract.FileReceiveInput{Directory: input.TargetDirectory, Name: name, Kind: metadata.Kind, SizeBytes: size,
-		SourceKey: transferSourceKey(input.SourceNodeID + "\n" + input.Path + "\n" + input.ResourceVersion), Mode: metadata.Mode, ModifiedAt: metadata.ModifiedAt}
+	receive := contract.FileReceiveInput{RequestedName: metadata.Name, Directory: input.TargetDirectory, Name: name, Kind: metadata.Kind, SizeBytes: size,
+		Overwrite: choice.Overwrite, ExpectedTargetResourceVersion: choice.Version, SourceKey: transferSourceKey(input.SourceNodeID + "\n" + input.Path + "\n" + input.ResourceVersion + "\n" + name + "\n" + choice.Version), Mode: metadata.Mode, ModifiedAt: metadata.ModifiedAt}
+	if input.ConflictPolicies != nil && metadata.Kind == "directory" {
+		p := filemanager.FileConflicts(ctx).Policies
+		receive.ConflictPolicies = &p
+	}
 	reopen := func(ctx context.Context, offset int64, prefix string) (io.ReadCloser, error) {
 		request := options
 		if metadata.Kind == "file" {
@@ -195,15 +225,29 @@ func (s *Server) executeCrossFileTransfer(ctx context.Context, input contract.Fi
 		return next, nil
 	}
 	entry, loaded, err := s.receiveFileTransfer(ctx, receive, body, reopen, s.fileReceiver(targetHostID, targetKind, requestID), emit, func(body io.ReadCloser) (contract.FileEntry, error) {
+		if input.ConflictPolicies != nil {
+			return contract.FileEntry{}, errReceiveUnsupported
+		}
 		return s.importLegacyCrossTransfer(ctx, input.TargetDirectory, name, metadata, body, targetHostID, targetKind, requestID, emit)
 	})
+	if errors.Is(err, filemanager.ErrFileSkipped) {
+		event := contract.FileTransferEvent{State: "skipped", Name: name}
+		emit(event)
+		return event
+	}
+	var partial *partialFileTransfer
+	if errors.As(err, &partial) {
+		event := contract.FileTransferEvent{State: "partial", Name: partial.entry.Name, Entry: &partial.entry, LoadedBytes: loaded, TotalBytes: max(size, 0), Result: partial.result}
+		emit(event)
+		return event
+	}
 	if err != nil {
 		if errors.Is(err, remotedownload.ErrSourceChanged) {
 			return fail("source_changed", "来源文件在续传期间发生变化，已停止拼接。", loaded)
 		}
 		return fail("file_transfer_failed", "文件传输中断或校验失败，未发布半成品。", loaded)
 	}
-	event := contract.FileTransferEvent{State: "complete", Entry: &entry, Name: name, LoadedBytes: loaded, TotalBytes: max(size, 0)}
+	event := contract.FileTransferEvent{State: "complete", Entry: &entry, Name: entry.Name, LoadedBytes: loaded, TotalBytes: max(size, 0)}
 	emit(event)
 	return event
 }

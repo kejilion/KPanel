@@ -169,9 +169,9 @@ func (m *Manager) importDirectory(ctx context.Context, input contract.FileReceiv
 	if err := m.mutationError(outputVirtual); err != nil {
 		return contract.FileEntry{}, err
 	}
-	if _, err := parent.Lstat(name); err == nil {
+	if _, err := parent.Lstat(name); err == nil && input.ConflictPolicies == nil {
 		return contract.FileEntry{}, ErrAlreadyExists
-	} else if !errors.Is(err, os.ErrNotExist) {
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return contract.FileEntry{}, err
 	}
 
@@ -263,6 +263,9 @@ func (m *Manager) importDirectory(ctx context.Context, input contract.FileReceiv
 		return contract.FileEntry{}, err
 	}
 	if err := beforePublish(stage, info); err != nil {
+		if errors.Is(err, errPublicationQueued) {
+			ownedStage = nil
+		}
 		return contract.FileEntry{}, err
 	}
 	if err := ctx.Err(); err != nil {

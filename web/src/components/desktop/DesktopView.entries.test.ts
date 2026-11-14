@@ -1276,6 +1276,7 @@ describe('DesktopView dynamic entries', () => {
     wrapper.element.dispatchEvent(internalFileDragEvent('drop', dataTransfer, 190, 160))
     await flushPromises()
     expect(mockedPanelTransfer).toHaveBeenCalledWith({
+      batchId: expect.stringMatching(/^[a-f0-9]{32}$/), conflictPolicies: {file:'ask',directory:'ask'},
       sourceNodeId: 'a'.repeat(32), path: '/home/remote.txt', resourceVersion: 'sha256:source-remote',
       targetDirectory: '/home/KPanel Desktop',
     }, expect.any(Function), expect.any(AbortSignal))
@@ -1581,6 +1582,7 @@ describe('DesktopView dynamic entries', () => {
     wrapper.element.dispatchEvent(internalFileDragEvent('drop', dataTransfer, 190, 160))
     await flushPromises()
     expect(mockedPanelTransfer).toHaveBeenCalledWith({
+      batchId: expect.stringMatching(/^[a-f0-9]{32}$/), conflictPolicies: {file:'ask',directory:'ask'},
       sourceNodeId: 'a'.repeat(32), path: '/app', resourceVersion: 'sha256:source',
       targetDirectory: '/home/KPanel Desktop',
     }, expect.any(Function), expect.any(AbortSignal))

@@ -66,7 +66,7 @@ it('pastes screenshot and named files into the current remote directory, ahead o
   expect(event.defaultPrevented).toBe(true)
   expect(mocks.upload).toHaveBeenCalledTimes(2)
   expect(mocks.upload.mock.calls[0]![1].name).toMatch(/^clipboard-\d+-1\.png$/)
-  expect(mocks.upload).toHaveBeenCalledWith('/home', file, false, expect.any(Function), undefined, 'edge')
+  expect(mocks.upload).toHaveBeenCalledWith('/home', file, false, expect.any(Function), expect.any(AbortSignal), 'edge')
   expect(mocks.action).not.toHaveBeenCalled()
 })
 
@@ -98,7 +98,7 @@ it('uploads and internally pastes in a desktop file window with the dialog role 
   try {
     wrapper.element.dispatchEvent(clipboardEvent('paste', [new File(['pixels'], 'screenshot.png', { type: 'image/png' })]).event)
     await flushPromises()
-    expect(mocks.upload).toHaveBeenCalledWith('/home', expect.any(File), false, expect.any(Function), undefined, '')
+    expect(mocks.upload).toHaveBeenCalledWith('/home', expect.any(File), false, expect.any(Function), expect.any(AbortSignal), '')
     const vm = wrapper.vm as unknown as { selected: Set<string> }
     vm.selected = new Set([entry.path])
     const copied = clipboardEvent('copy')
@@ -150,13 +150,13 @@ it('uploads only in the focused pane and removes paste listeners on unmount', as
   expect(remove).toHaveBeenCalledWith('paste', expect.any(Function))
 })
 
-it('shows failed uploads and retains the existing overwrite confirmation for a name conflict', async () => {
+it('shows a legacy-node conflict without silently falling back to unversioned overwrite', async () => {
   const wrapper = await page()
   const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
   mocks.upload.mockRejectedValueOnce(new ApiError('exists', 409, 'conflict'))
   wrapper.element.dispatchEvent(clipboardEvent('paste', [new File(['x'], 'one.txt')]).event)
   await flushPromises()
-  expect(confirm).toHaveBeenCalledOnce()
+  expect(confirm).not.toHaveBeenCalled()
   expect(wrapper.text()).toContain('上传失败')
   expect(mocks.upload).toHaveBeenCalledTimes(1)
   expect(api.files.upload).toBe(mocks.upload)

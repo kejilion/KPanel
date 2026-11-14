@@ -1017,7 +1017,7 @@ func (s *Server) fileWrite(w http.ResponseWriter, r *http.Request, requestID str
 
 func (s *Server) fileUpload(w http.ResponseWriter, r *http.Request) {
 	requestID := requestIDFrom(w)
-	if r.URL.RawPath != "" || !strictQuery(r.URL.Query(), "path", "name", "overwrite") {
+	if r.URL.RawPath != "" || !strictQuery(r.URL.Query(), "path", "name", "overwrite", "expectedTargetResourceVersion") {
 		writeProblem(w, requestID, http.StatusBadRequest, "invalid_query", "上传参数无效", "")
 		return
 	}
@@ -1044,13 +1044,14 @@ func (s *Server) fileUpload(w http.ResponseWriter, r *http.Request) {
 	content := httpstream.NewIdleReader(
 		transferContext, w, r.Body, fileTransferIdleTimeout,
 	)
-	entry, err := s.files.Upload(
+	entry, err := s.files.UploadExpected(
 		transferContext,
 		r.URL.Query().Get("path"),
 		r.URL.Query().Get("name"),
 		content,
 		r.ContentLength,
 		overwrite,
+		r.URL.Query().Get("expectedTargetResourceVersion"),
 	)
 	if err != nil {
 		writeFileProblem(w, requestID, err)

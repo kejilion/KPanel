@@ -1,5 +1,7 @@
 import type { FileActionInput, FileActionResult, FileEntry } from '@/types/api'
 import type { FileUploadProgress } from './fileReceiveUpload'
+import type { FileConflictBatch } from './fileConflicts'
+import { uploadDirectoryWithConflicts } from './fileConflictUpload'
 
 export const DESKTOP_UPLOAD_DIRECTORY = '/home/KPanel Desktop'
 export const MAX_EXTERNAL_DROP_FILES = 500
@@ -37,11 +39,17 @@ export interface DesktopExternalTransferProgress {
 }
 
 export interface DesktopExternalTransferResult {
+  completedFiles?: number
+  loadedBytes?: number
+  skipped?: string[]
+  cancelled?: boolean
   entries: Array<Pick<FileEntry, 'name' | 'path' | 'kind'>>
   failed: Array<{ name: string; detail: string }>
 }
 
 export interface DesktopExternalTransferAPI {
+  resolveName?: (directory: string, name: string, kind: 'file' | 'directory') => Promise<string>
+  uploadVersion?: (path: string, file: File, overwrite: boolean, version?: string, onProgress?: FileUploadProgress, signal?: AbortSignal) => Promise<FileEntry>
   entry: (path: string, signal?: AbortSignal, fileHostId?: string | null) => Promise<FileEntry>
   action: (input: FileActionInput, signal?: AbortSignal, fileHostId?: string | null) => Promise<FileActionResult>
   upload: (
@@ -378,8 +386,13 @@ export async function uploadExternalDrop(
   onProgress: (progress: DesktopExternalTransferProgress) => void,
   destination = DESKTOP_UPLOAD_DIRECTORY,
   fileHostId?: string | null,
+  batch?: FileConflictBatch,
 ): Promise<DesktopExternalTransferResult> {
   await ensureDestinationDirectory(api, destination, signal, fileHostId)
+  if (batch) {
+    if (!api.uploadVersion) throw new Error('当前入口缺少版本化上传适配器。')
+    return uploadDirectoryWithConflicts({ entry: (path, signal) => fileEntry(api, path, signal!, fileHostId), action: (input, signal) => fileAction(api, input, signal!, fileHostId), uploadVersion: api.uploadVersion }, destination, manifest, batch, onProgress)
+  }
   const rootNames = new Map<string, string>()
   for (const root of manifest.roots) {
     rootNames.set(root.name, await uniqueName(api, destination, root.name, signal, fileHostId))

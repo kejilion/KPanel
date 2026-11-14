@@ -46,7 +46,7 @@ func (s *Server) handleFileRemoteDownload(w http.ResponseWriter, r *http.Request
 		return
 	}
 	source, err := validateRemoteDownloadInput(&input)
-	if err != nil || !validFileRemoteDownloadTarget(input.TargetDirectory) ||
+	if err != nil || !filemanager.ValidFileConflictPolicies(input.ConflictPolicies) || input.ConflictPolicies != nil && !input.Background || !validFileRemoteDownloadTarget(input.TargetDirectory) ||
 		(input.Name != "" && !validFileRemoteDownloadName(input.Name)) {
 		s.writeProblem(w, r, http.StatusUnprocessableEntity, "remote_download_invalid", "请检查下载地址、目标目录和保存名称。", "")
 		return

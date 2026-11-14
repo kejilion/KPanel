@@ -381,7 +381,7 @@ func (s *Server) handleFileUpload(w http.ResponseWriter, r *http.Request) {
 		s.writeProblem(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed", "")
 		return
 	}
-	if r.URL.RawPath != "" || !strictPanelQuery(r.URL.Query(), "path", "name", "overwrite") {
+	if r.URL.RawPath != "" || !strictPanelQuery(r.URL.Query(), "path", "name", "overwrite", "expectedTargetResourceVersion") {
 		s.writeProblem(w, r, http.StatusBadRequest, "file_query_invalid", "上传参数无效", "")
 		return
 	}
@@ -492,7 +492,7 @@ func (s *Server) handleFileTransfer(w http.ResponseWriter, r *http.Request) {
 	if err := s.decodeJSON(w, r, &input); err != nil {
 		return
 	}
-	if input.SourceNodeID == "" || !validFileDownloadPath(input.Path) || input.Path == "/" ||
+	if !filemanager.ValidFileConflictPolicies(input.ConflictPolicies) || input.ConflictPolicies != nil && !input.Background || input.BatchID != "" && !ownerJobIDPattern.MatchString(input.BatchID) || input.SourceNodeID == "" || !validFileDownloadPath(input.Path) || input.Path == "/" ||
 		input.ResourceVersion == "" || !validFileDownloadPath(input.TargetDirectory) {
 		s.writeProblem(w, r, http.StatusBadRequest, "file_transfer_invalid", "跨主机传输参数无效", "")
 		return
