@@ -222,7 +222,7 @@ interface UploadTask {
 
 type UploadTaskSource =
   | { kind: 'file'; file: File; target: string; hostId: string; conflictVersion?: number }
-  | { kind: 'directory'; manifest: ExternalDropManifest; target: string; hostId: string }
+  | { kind: 'directory'; manifest: ExternalDropManifest; target: string; hostId: string; conflictVersion?: number }
 
 const toast = useToast()
 const i18n = useI18n()
@@ -2879,6 +2879,7 @@ async function runDirectoryUploadTask(
   target: string,
   signal: AbortSignal,
   hostId: string,
+  conflictVersion?: number,
 ): Promise<void> {
   uploadRates.remove(id)
   updateUploadTask(id, { phase: 'running', progress: 0, loadedBytes: 0, totalBytes: manifest.totalBytes, detail: undefined })
@@ -2894,7 +2895,7 @@ async function runDirectoryUploadTask(
           : 100
       if (progress.rateBaseline) uploadRates.remove(id)
       updateUploadTask(id, { progress: Math.max(0, Math.min(100, percent)), loadedBytes: progress.loadedBytes, totalBytes: progress.totalBytes })
-    }, target, undefined, batch)
+    }, target, undefined, conflictVersion === 1 ? batch : undefined)
     uploaded = result.entries.map((entry) => entry.path)
     if (signal.aborted || unmounted) return
     if (result.cancelled) {
@@ -2930,9 +2931,9 @@ async function uploadDirectoryManifest(
   hostId = fileHostId.value,
 ): Promise<void> {
   if (hostId !== fileHostId.value) return
-  const source = { kind: 'directory', manifest, target, hostId } as const
+  const source = { kind: 'directory', manifest, target, hostId, conflictVersion: directory.value?.fileConflictVersion } as const
   const task = createUploadTask(source)
-  await runDirectoryUploadTask(task.id, manifest, target, signal, source.hostId)
+  await runDirectoryUploadTask(task.id, manifest, target, signal, source.hostId, source.conflictVersion)
 }
 
 async function retryUploadTask(id: string): Promise<void> {
@@ -2956,7 +2957,7 @@ async function retryUploadTask(id: string): Promise<void> {
   const controller = new AbortController()
   externalUploadController = controller
   try {
-    await runDirectoryUploadTask(id, source.manifest, source.target, controller.signal, source.hostId)
+    await runDirectoryUploadTask(id, source.manifest, source.target, controller.signal, source.hostId, source.conflictVersion)
   } finally {
     if (externalUploadController === controller) externalUploadController = undefined
   }

@@ -183,6 +183,7 @@ interface FileBindings {
       path: string
       entries: TestFileEntry[]
       nextOffset?: number
+      fileConflictVersion?: number
     }
   }
   selected: { value: Set<string> }
@@ -520,6 +521,26 @@ describe('file path copying', () => {
 })
 
 describe('FilesView external upload', () => {
+  it('uses pinned directory identities when the captured host advertises conflict support', async () => {
+    const view = setupView()
+    view.currentPath.value = '/srv'
+    view.directory.value = { path:'/srv',entries:[],fileConflictVersion:1 }
+    const directories = new Set(['/srv'])
+    mocks.entry.mockImplementation(async (path:string) => {
+      if (directories.has(path)) return { ...testEntry(path.split('/').at(-1)!),path,kind:'directory',directoryIdentity:`inode:${path}` }
+      throw Object.assign(new Error('missing'),{status:404})
+    })
+    mocks.action.mockImplementation(async (input:{action:string;target:string;name:string}) => {
+      const path=`${input.target}/${input.name}`;directories.add(path)
+      return {action:input.action,succeeded:[{path,directoryIdentity:`inode:${path}`}],failed:[]}
+    })
+    mocks.upload.mockImplementation(async (path:string,file:File) => ({...testEntry(file.name),path:`${path}/${file.name}`}))
+    await view.onDrop(externalDirectoryDrop(externalDirectoryEntry('project',[externalFileEntry('a.txt','a')])))
+    expect(mocks.action).toHaveBeenCalledWith({action:'mkdir',target:'/srv',name:'project',expectedDirectoryIdentity:'inode:/srv'},expect.any(AbortSignal),'')
+    expect(mocks.upload).toHaveBeenCalledWith('/srv/project',expect.objectContaining({name:'a.txt'}),false,expect.any(Function),expect.any(AbortSignal),'',undefined,'inode:/srv/project')
+    expect(mocks.danger).not.toHaveBeenCalled()
+  })
+
   it('keeps an ordinary operating-system file drop on the existing direct upload path', async () => {
     const view = setupView()
     view.currentPath.value = '/srv'
