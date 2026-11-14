@@ -83,7 +83,7 @@
 <!-- kpanel-release-metrics:end -->
 
 <!-- kpanel-release-process-metrics:start -->
-- 已记录发布流程异常或无效证据拦截次数：9
+- 已记录发布流程异常或无效证据拦截次数：10
 - 其中生产写操作开始后异常次数：0
 <!-- kpanel-release-process-metrics:end -->
 
@@ -168,6 +168,15 @@
     "impact": "唯一发布任务首次用本机Node直连DockerHub版本占用API时未继承系统代理，出现UND_ERR_CONNECT_TIMEOUT，未dispatch或解释为标签不存在。",
     "recoveryEvidence": "helper-rebuild/prepublish-registry-first-failure.json保留；只读复用既有系统代理后prepublish-registry-final-response.json返回404，publication-preflight-final.json确认版本未占用。",
     "permanentAction": "本任务后续注册表检查复用既有系统代理路由，保持TLS和失败即停止的占用判断；未改仓库发布规则或重复dispatch。",
+    "historicalReleases": []
+  },
+  {
+    "fingerprint": "acceptance-evidence/workflow-logs/direct-gh-routing",
+    "position": "before-production-write",
+    "count": 1,
+    "impact": "公开验收成功后的辅助gh格式化日志直连下载出现peer CANCEL或长时间无输出；此为取证通道问题，没有重新发布或生产写入。",
+    "recoveryEvidence": "停止唯一仍等待的自有只读gh进程，既有代理取GitHub原始日志API成功；canonical-workflow-log-receipt.json记录6517214字节ZIP与SHA256，主要L3/公开产物原件此前已保留。",
+    "permanentAction": "本次最终取证使用原始Actions日志ZIP并保留完整展开文件，格式化原文从ZIP提取；未修改canonical工作流或重跑发布。",
     "historicalReleases": []
   }
 ]
