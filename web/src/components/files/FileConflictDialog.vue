@@ -41,7 +41,7 @@ const date = (value?: string) => value && !value.startsWith('0001-') ? new Date(
 .file-conflict__compare p { margin: 6px 0 0; }
 .file-conflict__apply { display: flex; align-items: center; gap: 8px; }
 .file-conflict__scope { color: var(--text-secondary); }
-.file-conflict__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
-.file-conflict__actions .button { font-size: 14px; }
+.file-conflict__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; width: 100%; min-width: 0; }
+.file-conflict__actions .button { font-size: 14px; flex: 0 0 auto; white-space: nowrap; }
 @media (max-width: 580px) { .file-conflict__compare { grid-template-columns: 1fr; } }
 </style>
