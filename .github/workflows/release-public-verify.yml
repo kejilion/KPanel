@@ -100,7 +100,7 @@ jobs:
           git merge-base --is-ancestor HEAD origin/main
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "24.22.1"
+          node-version: "26.13.1"
       - name: Restore frozen publication identity
         run: |
           echo "PUBLIC_EVIDENCE=$RUNNER_TEMP/kpanel-public-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"

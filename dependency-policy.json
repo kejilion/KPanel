@@ -222,7 +222,10 @@
     {
       "id": "tor-browser-component",
       "scope": "optional-browser-runtime-and-base-image",
-      "manifests": ["packaging/browser/tor.Dockerfile", "internal/browsercomponent/tor_download.go"],
+      "manifests": [
+        "packaging/browser/tor.Dockerfile",
+        "internal/browsercomponent/tor_download.go"
+      ],
       "detector": "tor-release-index-and-docker-hub"
     },
     {
@@ -379,33 +382,6 @@
         "lockSha256": "d941e778d4f678990815db9ce28b3027e24515bed8b6ff92db18beee4c6c8927",
         "vueTscRelease": "https://github.com/vuejs/language-tools/releases/tag/v3.3.14",
         "upstreamCompatibilityIssue": "https://github.com/vuejs/language-tools/issues/6124"
-      }
-    },
-    {
-      "component": "@types/node",
-      "currentVersion": "24.19.0",
-      "candidateVersion": "26.6.6",
-      "reason": "2026-11-19 re-evaluation: Node.js 26.13.1 LTS with @types/node 26.6.6 passes Windows web and scene checks and the Linux amd64 Alpine web-build stage. The full migration of CI pins, the release runner and the final amd64/arm64 image gates still requires a separate L2/L3 candidate.",
-      "securityAndProductImpact": "This declaration change affects the build and test toolchain. The Node 26 trial reproduced all 1530 uncompressed web output files byte-for-byte. Node 24.22.3 includes high-severity security fixes for the currently pinned Node 24 line; handle that patch independently of the major migration.",
-      "mitigation": "Keep @types/node 24.19.0 paired with Node 24 while qualifying the full Node 26 migration. Track the Node 24.22.3 security patch and corresponding image digest separately.",
-      "owner": "KPanel base maintenance",
-      "reviewDate": "2026-12-07",
-      "exitCondition": "A separately reviewed Node 26 LTS runtime and matching @types/node candidate pass full Web typecheck, tests, scene-pack checks, production build and Linux amd64/arm64 image gates.",
-      "rollbackPoint": "9c5be9c293f98ad9bce260a4562e28743951b105",
-      "previousReviewDate": "2026-11-28",
-      "reviewedAt": "2026-11-19T07:33:48Z",
-      "reviewEvidence": {
-        "baseCommit": "f656291688401a7e5232f97659810d98ff0c95c8",
-        "node24SecurityRelease": "https://nodejs.org/en/blog/release/v24.22.3",
-        "node26LtsRelease": "https://nodejs.org/en/blog/release/v26.13.1",
-        "candidateTypes": "26.6.6",
-        "npm": "11.20.0",
-        "lockSha256": "fd128871fc5fcffab6e34e19ad044cc296885de035ab4d3550bd1b32250206b8",
-        "windows": "npm ci, high-severity npm audit (zero advisories), production build including Vue typecheck, 3784 tests and all three scene packs passed.",
-        "windowsTestLogSha256": "42de2ed452301859613470d53ea5e1028146601328f57c5775796f3dd5081197",
-        "linuxAmd64": "Built the repository Dockerfile web-build target with Node 26.13.1 on Alpine 3.24. First attempt timed out during build after the image download; the retry passed.",
-        "alpineImage": "node:26.13.1-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5",
-        "linuxAmd64BuildLogSha256": "ff8a884102e21b8503ad7a4b09bb37743c163d04004a7df7241f4988c36ac98f"
       }
     }
   ],
