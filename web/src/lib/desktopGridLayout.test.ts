@@ -37,6 +37,27 @@ function assertNoOverlap(
 }
 
 describe('desktop mixed grid layout', () => {
+  it('appends pasted icons across pages and skips cells occupied by widgets', () => {
+    const area = { width: 185, height: 196 }
+    const lastIcon = desktopIconPositionForGridSlot({ column: 1, row: 1 }, area)
+    const widget = desktopIconPositionForGridSlot({ column: 0, row: 2 }, area)
+    const layout = deriveDesktopGridLayout([
+      { key: 'icon:existing' },
+      { key: 'widget:clock' },
+      { key: 'icon:pasted-a', append: true },
+      { key: 'icon:pasted-b', append: true },
+    ], [
+      { key: 'icon:existing', position: lastIcon },
+      { key: 'widget:clock', position: widget },
+    ], area, false)
+    expect(layout.placements.map(({ position }) => position)).toEqual([
+      lastIcon, widget,
+      desktopIconPositionForGridSlot({ column: 0, row: 3 }, area),
+      desktopIconPositionForGridSlot({ column: 1, row: 2 }, area),
+    ])
+    assertNoOverlap(layout.placements, area)
+  })
+
   it('places variable-size widgets in the same collision-free grid as icons', () => {
     const layout = deriveDesktopGridLayout(items, [], bounds, false)
     expect(layout.placements).toHaveLength(4)

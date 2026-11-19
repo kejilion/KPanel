@@ -31,6 +31,8 @@ export interface DesktopGridItem {
   rows?: number
   /** Optional default anchor for a newly visible item. */
   defaultSlot?: DesktopIconGridSlot
+  /** Place a new 1×1 icon after the existing icons in page order. */
+  append?: boolean
   /** Runtime-only content bounds; these containers retain pixel-accurate anchors. */
   pixelSize?: { width: number; height: number }
 }
@@ -180,6 +182,7 @@ function firstFreeSlot(
   grid: DesktopIconGrid,
   occupied: readonly DesktopGridRect[],
   requested?: DesktopIconGridSlot,
+  after = -1,
 ): DesktopIconGridSlot | undefined {
   // Containers may extend below one viewport; icons/widgets retain their existing paging.
   if (item.key.startsWith('group:')) {
@@ -214,7 +217,9 @@ function firstFreeSlot(
       || left.row - right.row
     ))
   }
-  return candidates.find((candidate) => canPlace(item, candidate, grid, occupied))
+  const fits = (candidate: DesktopIconGridSlot) => canPlace(item, candidate, grid, occupied)
+  return candidates.find((candidate, index) => index > after && fits(candidate))
+    ?? (after >= 0 ? candidates.find(fits) : undefined)
 }
 
 /** Find an unoccupied cell near a drop without moving any existing entry. */
@@ -298,10 +303,16 @@ export function deriveDesktopGridLayout(
     const defaultSlot = !compact && item.defaultSlot
       ? clampSlot(item.defaultSlot, item, grid)
       : undefined
+    const after = item.append ? placements.reduce((last, placement) => {
+      if (placement.key.startsWith('widget:')) return last
+      const { column, row } = desktopIconGridSlotForPosition(placement.position, bounds, metrics)
+      const page = Math.floor(row / grid.rows)
+      return Math.max(last, page * grid.pageCapacity + column * grid.rows + row % grid.rows)
+    }, -1) : -1
     const slot = (defaultSlot && canPlace(item, defaultSlot, grid, occupied))
       ? defaultSlot
       : firstFreeSlot(item, grid, occupied, item.key.startsWith('group:') && savedByKey.has(item.key)
-        ? slotForPosition(savedByKey.get(item.key)!.position, item, grid) : undefined)
+        ? slotForPosition(savedByKey.get(item.key)!.position, item, grid) : undefined, after)
     if (!slot) {
       unplaced.push(item)
       continue
