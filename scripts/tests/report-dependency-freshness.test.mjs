@@ -58,8 +58,13 @@ test('Tor runtime and its base image are both checked against primary sources', 
   const repo = mkdtempSync(join(tmpdir(), 'kpanel-tor-detector-'));
   t.after(() => rmSync(repo, { recursive: true, force: true }));
   mkdirSync(join(repo, 'packaging/browser'), { recursive: true });
-  writeFileSync(join(repo, 'packaging/browser/tor.Dockerfile'), 'FROM jlesage/baseimage-gui:ubuntu-24.04-v4@sha256:e7c54da3446b4c65b6755bf00a874463c640a1f579f25bed99532051e81649ef\nLABEL io.kpanel.tor.version="16.0.1"\n');
-  const same = await collectTorBrowser(repo, async () => ({ version: '16.0.1' }), async () => ({ digest: 'sha256:e7c54da3446b4c65b6755bf00a874463c640a1f579f25bed99532051e81649ef' }));
+  const digest = 'sha256:73b999393d07f2bf65a40373778a44dc9a6d54ad7718d29247d8ff9413c4d6a8';
+  writeFileSync(join(repo, 'packaging/browser/tor.Dockerfile'), 'FROM ubuntu:24.04@' + digest + ' AS ubuntu-base\nLABEL io.kpanel.tor.version="16.0.1"\n');
+  const same = await collectTorBrowser(repo, async () => ({ version: '16.0.1' }), async (repository, tag) => {
+    assert.equal(repository, 'library/ubuntu');
+    assert.equal(tag, '24.04');
+    return { digest };
+  });
   assert.deepEqual(same, []);
   const newer = await collectTorBrowser(repo, async () => ({ version: '16.0.2' }), async () => ({ digest: 'sha256:' + 'a'.repeat(64) }));
   assert.equal(newer.length, 2);
@@ -69,7 +74,7 @@ test('Tor runtime and its base image are both checked against primary sources', 
   const policy = JSON.parse(readFileSync(join(actual, 'dependency-policy.json'), 'utf8'));
   for (const group of policy.groups.filter((item) => item.id === 'tor-browser-component')) {
     assert.ok(group.manifests.includes('packaging/browser/tor.Dockerfile'));
-    assert.deepEqual(await collectTorBrowser(actual, async () => ({ version: '16.0.1' }), async () => ({ digest: 'sha256:e7c54da3446b4c65b6755bf00a874463c640a1f579f25bed99532051e81649ef' })), []);
+    assert.deepEqual(await collectTorBrowser(actual, async () => ({ version: '16.0.1' }), async () => ({ digest })), []);
   }
 });
 

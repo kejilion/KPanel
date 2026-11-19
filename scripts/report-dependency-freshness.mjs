@@ -620,11 +620,11 @@ async function collectBaseImages(repo) {
 export async function collectTorBrowser(repo, fetchRelease = fetchJson, fetchImage = dockerHubTag) {
   const dockerfile = readFileSync(resolve(repo, 'packaging/browser/tor.Dockerfile'), 'utf8');
   const version = dockerfile.match(/io\.kpanel\.tor\.version="([0-9.]+)"/)?.[1];
-  const base = dockerfile.match(/FROM jlesage\/baseimage-gui:([^@\s]+)@(sha256:[0-9a-f]{64})/);
+  const base = dockerfile.match(/^FROM ubuntu:([^@\s]+)@(sha256:[0-9a-f]{64}) AS ubuntu-base$/m);
   if (!version || !base) throw new Error('Tor component pins are missing');
   const [release, image] = await Promise.all([
     fetchRelease('https://aus1.torproject.org/torbrowser/update_3/release/downloads.json'),
-    fetchImage('jlesage/baseimage-gui', base[1]),
+    fetchImage('library/ubuntu', base[1]),
   ]);
   if (!isStableVersion(release.version)) throw new Error('Tor release index did not return a stable version');
   return [
