@@ -76,6 +76,8 @@ describe('browser settings lifecycle', () => {
     expect(wrapper.text()).toContain('旧版 Tor 组件')
     await button(wrapper, '修复连接').trigger('click')
     expect(wrapper.get('[role="alert"]').text()).toContain('结束当前会话')
+    await button(wrapper, '修复连接').trigger('click')
+    expect(api.browser.componentAction).not.toHaveBeenCalled()
     await button(wrapper, '取消').trigger('click')
     expect(api.browser.componentAction).not.toHaveBeenCalled()
     await button(wrapper, '修复连接').trigger('click')
