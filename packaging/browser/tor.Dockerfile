@@ -1,8 +1,13 @@
 # The optional Tor component is built locally; no unpublished image is required.
 FROM golang:1.27.4-alpine@sha256:0a5f7fe796599ff487605987432e7619ae45beeb2fba4c2ce0b907879932aebf AS helper-toolchain
 
-FROM jlesage/baseimage-gui:ubuntu-24.04-v4@sha256:e7c54da3446b4c65b6755bf00a874463c640a1f579f25bed99532051e81649ef AS download
-RUN mkdir -p /config/log && apt-get -o Acquire::Retries=3 -o APT::Update::Error-Mode=any update && apt-get -o Acquire::Retries=3 upgrade -y && apt-get -o Acquire::Retries=3 install -y --no-install-recommends ca-certificates curl gnupg xz-utils \
+FROM ubuntu:24.04@sha256:73b999393d07f2bf65a40373778a44dc9a6d54ad7718d29247d8ff9413c4d6a8 AS ubuntu-base
+# Bootstrap HTTPS for the official apt sources before installing Ubuntu's CA package.
+COPY --from=helper-toolchain /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+RUN sed -i 's|http://|https://|g' /etc/apt/sources.list.d/ubuntu.sources
+
+FROM ubuntu-base AS download
+RUN apt-get -o Acquire::Retries=3 -o APT::Update::Error-Mode=any update && apt-get -o Acquire::Retries=3 upgrade -y && apt-get -o Acquire::Retries=3 install -y --no-install-recommends ca-certificates curl gnupg xz-utils \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /download
 COPY tor-browser.tar.xz browser.tar.xz
@@ -38,22 +43,22 @@ RUN curl --fail --show-error --silent --location --proto '=https' --max-redirs 3
     && tar -xzf /build/lyrebird.tar.gz --strip-components=1 -C /build/src/lyrebird \
     && /build/tor-helpers-build.sh
 
-FROM jlesage/baseimage-gui:ubuntu-24.04-v4@sha256:e7c54da3446b4c65b6755bf00a874463c640a1f579f25bed99532051e81649ef
-RUN mkdir -p /config/log && apt-get -o Acquire::Retries=3 -o APT::Update::Error-Mode=any update && apt-get -o Acquire::Retries=3 upgrade -y && apt-get -o Acquire::Retries=3 install -y --no-install-recommends libgtk-3-0t64 libdbus-glib-1-2 libx11-xcb1 libxt6t64 libasound2t64 fonts-noto-cjk curl procps \
-    && rm -rf /var/lib/apt/lists/*
-COPY --from=download /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+FROM ubuntu-base
+RUN apt-get -o Acquire::Retries=3 -o APT::Update::Error-Mode=any update && apt-get -o Acquire::Retries=3 upgrade -y && apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
+        libgtk-3-0t64 libdbus-glib-1-2 libx11-xcb1 libxt6t64 libasound2t64 fonts-noto-cjk \
+        ca-certificates curl openssl procps tigervnc-standalone-server xfonts-base xauth openbox websockify tini \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 65532 tor-browser \
+    && useradd --uid 65532 --gid 65532 --no-create-home --home-dir /config --shell /usr/sbin/nologin tor-browser \
+    && mkdir -p /opt/kpanel-tor-health \
+    && printf 'ok\n' > /opt/kpanel-tor-health/index.html
 COPY --from=download /tor-browser /opt/tor-browser
 COPY --from=download /tor-data /opt/tor-data
 COPY --from=helpers /out/conjure-client /opt/tor-browser/Browser/TorBrowser/Tor/PluggableTransports/conjure-client
 COPY --from=helpers /out/lyrebird /opt/tor-browser/Browser/TorBrowser/Tor/PluggableTransports/lyrebird
 COPY --from=helpers /out/provenance /opt/kpanel-tor-helpers
-COPY --chmod=0555 tor-start.sh /startapp.sh
-# Package post-install scripts replace the baseimage's writable-state symlinks.
-# Restore them so initialization works with the read-only root filesystem.
-RUN ln -sf /tmp/.passwd /etc/passwd && ln -sf /tmp/.group /etc/group \
-    && ln -sf /tmp/.shadow /etc/shadow && ln -sf /tmp/.gshadow /etc/gshadow \
-    && rm -rf /run && ln -s /tmp/run /run
-ENV APP_NAME="Tor Browser" USER_ID=65532 GROUP_ID=65532 KEEP_APP_RUNNING=1 \
-    DISPLAY_WIDTH=1280 DISPLAY_HEIGHT=720 WEB_LISTENING_PORT=8092 \
-    VNC_LISTENING_PORT=-1 WEB_AUDIO=0 WEB_FILE_MANAGER=0 WEB_TERMINAL=0 WEB_NOTIFICATION=0
+COPY --chmod=0555 tor-start.sh /usr/local/bin/tor-start
+ENV HOME=/config
 LABEL io.kpanel.browser.kind="tor" io.kpanel.tor.version="16.0.1" io.kpanel.tor.helpers="kpanel.1"
+USER 65532:65532
+ENTRYPOINT ["/usr/bin/tini", "-g", "--", "/usr/local/bin/tor-start"]

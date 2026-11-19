@@ -29,6 +29,17 @@ func TestEmbeddedDeploymentAssetsMatchCanonicalPackaging(t *testing.T) {
 	}
 }
 
+func TestTorAssetsKeepRootlessRuntime(t *testing.T) {
+	if !bytes.Contains(bytes.ReplaceAll(torDockerfile, []byte("\r\n"), []byte("\n")), []byte("\nUSER 65532:65532\n")) {
+		t.Fatal("Tor image must run as UID/GID 65532")
+	}
+	if !bytes.Contains(torComposeTemplate, []byte("cap_drop: [ALL]")) ||
+		!bytes.Contains(torComposeTemplate, []byte("no-new-privileges:true")) ||
+		bytes.Contains(torComposeTemplate, []byte("cap_add:")) {
+		t.Fatal("Tor Compose must run without capabilities or privilege escalation")
+	}
+}
+
 func TestTorHelperLockArchiveMatchesReviewedCanonicalInputs(t *testing.T) {
 	names := []string{"conjure/go.mod", "conjure/go.sum", "lyrebird/go.mod", "lyrebird/go.sum", "manifest.json"}
 	expected := make(map[string][]byte)

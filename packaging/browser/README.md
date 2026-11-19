@@ -11,8 +11,8 @@ Agent 从 Tor 官方固定 URL 流式下载 16.0.1，单文件上限 256 MiB，�
 `5b36ad610c20c81faa72caf27d1cd3a11f14a327c320b4cec581400016ba78b0`；构建阶段再次检查摘要，
 用随候选保存的官方签名和公钥执行 `gpgv`，限定主密钥指纹
 `EF6E286DDA85EA2A4BA7DE684E2C6E8793298290`。2026-11-14 已核验安装包签名。
-`tor.Dockerfile` 固定 jlesage Ubuntu 24.04 GUI 基座摘要，运行时安装 Ubuntu 签名仓库的 GTK、字体与图形依赖；
-镜像在宿主机构建为 `kpanel-browser-tor:16.0.1-kpanel.1`，不依赖尚未发布的 KPanel Tor 镜像。
+`tor.Dockerfile` 固定 Ubuntu 24.04 官方镜像摘要，构建时从 Ubuntu 签名仓库安装 GTK、字体、TigerVNC、Openbox 与 websockify。
+镜像在宿主机构建为 `kpanel-browser-tor:16.0.1-kpanel.2`。已有 Tor 安装可在浏览器设置中执行「修复连接」换用新镜像，旧临时会话随容器替换丢弃。
 Docker 构建上下文只允许配方、启动脚本、安装包、签名、公钥及下述助手锁定包/构建脚本，不包含 Agent 的 token/任务状态。
 
 两个网桥助手由 KPanel 重建，不再是 Tor 官方签名包内的原始助手字节：保留该版本上游使用的
@@ -24,13 +24,10 @@ Conjure `14e660f0a64bcbb2b55f01f69c1aafdfd5a6dcfa` 与 Lyrebird
 最终镜像 `/opt/kpanel-tor-helpers` 保留来源说明、模块清单、许可证与二进制摘要。
 这增加了 KPanel 对重建助手及其依赖升级的维护责任；网桥由原生 Tor 界面配置，不能将扫描通过解释为匿名性保证。
 
-`tor-compose.yml` 不发布端口、不挂载宿主数据或 Docker Socket；浏览器进程 UID/GID 65532，根文件系统只读。
-内存 1536 MiB、CPU 1.5、PID 512，临时配置 512 MiB、临时目录 256 MiB、共享内存 256 MiB，日志 2×5 MiB。
-GUI 初始化保留所需的 CHOWN/SETUID/SETGID/FOWNER/DAC_OVERRIDE/KILL/NET_BIND_SERVICE；不使用 privileged、host network 或无沙箱参数。
-GUI 基座先以 root 初始化内部用户，再以 UID/GID 65532 启动浏览器；root 初始化/监督进程仍存在，不能将它称为完全 rootless 容器。
-2026-11-14 的受限启动实测中，直接强制 `--user 65532:65532` 会在 `10-init-users.sh` 的 `/etc/shadow` 所有权调整处失败；正常方式的 GUI 返回 200，Firefox 有效 capability 为零。
-Trivy `AVD-DS-0002` 因此只对两份相同 Tor Dockerfile 有路径限定的临时例外，2026-11-21 到期；其他漏洞、秘密及配置规则继续扫描。
-浏览器组件维护者须在到期前复核；经过原生桌面与生命周期验证的 rootless 基座可用，或初始化特权被移除时，删除该例外。
+`tor-compose.yml` 从 PID 1 起以 UID/GID 65532 运行，根文件系统只读，使用 `cap_drop: [ALL]` 和 `no-new-privileges`。
+TigerVNC 通过私有 Unix socket 提供画面，WebSocket 仅监听 Panel 控制网络；容器不发布宿主端口，也不挂载宿主数据或 Docker Socket。
+内存 1536 MiB、CPU 1.5、PID 512，临时配置 512 MiB、临时目录 256 MiB、X11 socket 目录 1 MiB、共享内存 256 MiB，日志 2×5 MiB。
+两份 Tor 配方均适用默认 Trivy `AVD-DS-0002` 规则。
 Tor 的连接/网桥设置在原生界面内完成，容器健康和画面可用不等于 Tor 已连接。
 发行版兼容、ARM64、公开产物及生产验收仍须单独完成；本地原型证据不能替代发布门禁。
 

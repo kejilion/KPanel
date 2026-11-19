@@ -21,6 +21,7 @@ type fakeRunner struct {
 	unsafeNetwork                                  bool
 	runtimeParent                                  string
 	project, networkProject                        string
+	imageOverride                                  string
 	calls                                          []string
 }
 
@@ -69,6 +70,9 @@ func (f *fakeRunner) Run(_ context.Context, name string, args ...string) ([]byte
 		if f.kind == "tor" {
 			image = componentTorImage
 		}
+		if f.imageOverride != "" {
+			image = f.imageOverride
+		}
 		state := "exited"
 		health := "unhealthy"
 		run := "false"
@@ -77,7 +81,7 @@ func (f *fakeRunner) Run(_ context.Context, name string, args ...string) ([]byte
 			health = "healthy"
 			run = "true"
 		}
-		return []byte(`[{"Id":"abcdef012345","Image":"sha256:fixed","Config":{"Image":"` + image + `"},"RestartCount":0,"State":{"Running":` + run + `,"Status":"` + state + `","Health":{"Status":"` + health + `"}}}]`), nil
+		return []byte(fmt.Sprintf(`[{"Id":"abcdef012345","Image":"sha256:fixed","Config":{"Image":%q,"Labels":{"io.kpanel.browser.kind":%q}},"RestartCount":0,"State":{"Running":%s,"Status":%q,"Health":{"Status":%q}}}]`, image, f.kind, run, state, health)), nil
 	}
 	if strings.Contains(a, " up ") {
 		if f.failInstall {
@@ -85,6 +89,7 @@ func (f *fakeRunner) Run(_ context.Context, name string, args ...string) ([]byte
 		}
 		f.installed = true
 		f.running = true
+		f.imageOverride = ""
 		data, _ := os.ReadFile(filepath.Join(f.runtimeParent, "state", "compose.yml"))
 		f.kind = "chromium"
 		if strings.Contains(string(data), componentTorImage) {

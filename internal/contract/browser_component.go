@@ -41,6 +41,7 @@ type BrowserComponent struct {
 	Installed       bool                 `json:"installed"`
 	Running         bool                 `json:"running"`
 	Healthy         bool                 `json:"healthy"`
+	NeedsUpgrade    bool                 `json:"needsUpgrade,omitempty"`
 	Image           string               `json:"image"`
 	ResourceVersion string               `json:"resourceVersion"`
 	Job             *BrowserComponentJob `json:"job,omitempty"`

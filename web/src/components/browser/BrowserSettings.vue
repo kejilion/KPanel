@@ -88,9 +88,13 @@ async function save(): Promise<void> {
   } catch { if (current === epoch) error.value = t('settingsSaveFailed') }
   finally { if (current === epoch) saving.value = false }
 }
-async function run(action: BrowserComponentAction): Promise<void> {
+async function run(action: BrowserComponentAction, confirmed = false): Promise<void> {
   if (!component.value || busy.value) return
-  if (['stop', 'restart', 'uninstall'].includes(action) && confirmAction.value !== action) { confirmAction.value = action; return }
+  const torRepair = action === 'install' && component.value.installed && selectedKind.value === 'tor'
+  if ((torRepair || ['stop', 'restart', 'uninstall'].includes(action)) && (!confirmed || confirmAction.value !== action)) {
+    confirmAction.value = action
+    return
+  }
   confirmAction.value = undefined; submitting.value = true; error.value = ''
   const current = epoch
   try {
@@ -122,6 +126,7 @@ onBeforeUnmount(() => { epoch++; controller?.abort(); clearTimeout(timer) })
             <option value="tor" :disabled="!component.torSupported">Tor Browser</option>
           </select>
           <p>{{ t(component.installed ? 'switchKindHint' : selectedKind === 'tor' ? 'torInstallHint' : 'chooseKindHint') }}</p>
+          <p v-if="component.needsUpgrade" role="status">{{ t('torUpgradeHint') }}</p>
           <p v-if="!component.torSupported">{{ t('torArchitecture') }}</p>
           <p v-if="!component.supported" role="status">{{ t(component.reason === 'panel_compose_upgrade_required' ? 'composeUpgradeRequired' : 'runtimeRequired') }}</p>
           <div v-else class="browser-settings__actions">
@@ -135,8 +140,8 @@ onBeforeUnmount(() => { epoch++; controller?.abort(); clearTimeout(timer) })
             </template>
           </div>
           <div v-if="confirmAction" class="browser-settings__confirm" role="alert">
-            <p>{{ t(confirmAction === 'uninstall' ? 'uninstallConfirm' : 'stopConfirm') }}</p>
-            <div class="browser-settings__actions"><button class="button button--secondary" @click="confirmAction = undefined">{{ t('cancel') }}</button><button class="button button--danger" @click="run(confirmAction!)">{{ t('accept') }}</button></div>
+            <p>{{ t(confirmAction === 'install' ? 'torRepairConfirm' : confirmAction === 'uninstall' ? 'uninstallConfirm' : 'stopConfirm') }}</p>
+            <div class="browser-settings__actions"><button class="button button--secondary" @click="confirmAction = undefined">{{ t('cancel') }}</button><button class="button button--danger" @click="run(confirmAction!, true)">{{ t('accept') }}</button></div>
           </div>
           <div v-if="component.job" role="status" class="browser-settings__job">
             <strong>{{ t(busy ? 'serviceWorking' : component.job.state === 'succeeded' ? 'serviceSucceeded' : 'serviceFailed') }}</strong>
