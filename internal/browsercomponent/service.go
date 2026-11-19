@@ -160,7 +160,7 @@ func (s *Service) snapshot(ctx context.Context) (contract.BrowserComponent, erro
 		x := items[0]
 		v.Kind = "chromium"
 		if x.Config.Image == componentTorImage || x.Config.Labels["io.kpanel.browser.kind"] == "tor" {
-			v.Kind, v.Image = "tor", componentTorImage
+			v.Kind, v.Image = "tor", x.Config.Image
 		}
 		v.ContainerID = x.ID
 		v.Installed = true

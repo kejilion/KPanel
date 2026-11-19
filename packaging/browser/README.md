@@ -12,7 +12,7 @@ Agent 从 Tor 官方固定 URL 流式下载 16.0.1，单文件上限 256 MiB，�
 用随候选保存的官方签名和公钥执行 `gpgv`，限定主密钥指纹
 `EF6E286DDA85EA2A4BA7DE684E2C6E8793298290`。2026-11-14 已核验安装包签名。
 `tor.Dockerfile` 固定 Ubuntu 24.04 官方镜像摘要，构建时从 Ubuntu 签名仓库安装 GTK、字体、TigerVNC、Openbox 与 websockify。
-镜像在宿主机构建为 `kpanel-browser-tor:16.0.1-kpanel.2`。已有 Tor 安装可在浏览器设置中执行「修复服务」换用新镜像，旧临时会话随容器替换丢弃。
+镜像在宿主机构建为 `kpanel-browser-tor:16.0.1-kpanel.2`。已有 Tor 安装可在浏览器设置中执行「修复连接」换用新镜像，旧临时会话随容器替换丢弃。
 Docker 构建上下文只允许配方、启动脚本、安装包、签名、公钥及下述助手锁定包/构建脚本，不包含 Agent 的 token/任务状态。
 
 两个网桥助手由 KPanel 重建，不再是 Tor 官方签名包内的原始助手字节：保留该版本上游使用的

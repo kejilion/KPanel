@@ -30,7 +30,7 @@ func TestEmbeddedDeploymentAssetsMatchCanonicalPackaging(t *testing.T) {
 }
 
 func TestTorAssetsKeepRootlessRuntime(t *testing.T) {
-	if !bytes.Contains(torDockerfile, []byte("\nUSER 65532:65532\n")) {
+	if !bytes.Contains(bytes.ReplaceAll(torDockerfile, []byte("\r\n"), []byte("\n")), []byte("\nUSER 65532:65532\n")) {
 		t.Fatal("Tor image must run as UID/GID 65532")
 	}
 	if !bytes.Contains(torComposeTemplate, []byte("cap_drop: [ALL]")) ||

@@ -59,7 +59,7 @@ test('Tor runtime and its base image are both checked against primary sources', 
   t.after(() => rmSync(repo, { recursive: true, force: true }));
   mkdirSync(join(repo, 'packaging/browser'), { recursive: true });
   const digest = 'sha256:73b999393d07f2bf65a40373778a44dc9a6d54ad7718d29247d8ff9413c4d6a8';
-  writeFileSync(join(repo, 'packaging/browser/tor.Dockerfile'), 'FROM ubuntu:24.04@' + digest + ' AS ubuntu-base\nLABEL io.kpanel.tor.version="16.0.1"\n');
+  writeFileSync(join(repo, 'packaging/browser/tor.Dockerfile'), 'FROM ubuntu:24.04@' + digest + ' AS ubuntu-base\r\nLABEL io.kpanel.tor.version="16.0.1"\r\n');
   const same = await collectTorBrowser(repo, async () => ({ version: '16.0.1' }), async (repository, tag) => {
     assert.equal(repository, 'library/ubuntu');
     assert.equal(tag, '24.04');

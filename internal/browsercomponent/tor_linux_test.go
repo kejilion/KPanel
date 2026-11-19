@@ -47,9 +47,15 @@ func TestTorSelectionRequiresUninstallAndSurvivesRuntimeRecovery(t *testing.T) {
 	if _, err = s.Start(ctx, contract.BrowserComponentRequest{Action: "install", Kind: "chromium", ExpectedResourceVersion: v.ResourceVersion}); !errors.Is(err, ErrConflict) {
 		t.Fatal(err)
 	}
+	f.imageOverride = "kpanel-browser-tor:16.0.1-kpanel.1"
+	v, err = s.Snapshot(ctx)
+	if err != nil || v.Kind != "tor" || v.Image != f.imageOverride {
+		t.Fatalf("legacy image must remain visible until repair: %+v, %v", v, err)
+	}
 	run("install", "") // Repair retains the actual installed kind for legacy clients.
-	if f.kind != "tor" {
-		t.Fatal(f.kind)
+	v, err = s.Snapshot(ctx)
+	if err != nil || v.Kind != "tor" || v.Image != componentTorImage {
+		t.Fatalf("repair must select the current Tor image: %+v, %v", v, err)
 	}
 	recipe, _ := os.ReadFile(filepath.Join(s.config.StateDir, "tor.Dockerfile"))
 	ignore, _ := os.ReadFile(filepath.Join(s.config.StateDir, ".dockerignore"))
