@@ -179,7 +179,9 @@ test('binary build info enforces main module/platform and upstream identity; Age
   }
 });
 
-function binaryRunner(failure) {
+const childDigest = digest('child-manifest'), configDigest = digest('image-config');
+
+function binaryRunner(failure, store = 'classic') {
   const calls = [];
   let directory, nonce;
   const id = 'd'.repeat(64);
@@ -195,7 +197,26 @@ function binaryRunner(failure) {
     if (program === 'docker' && argv[0] === 'inspect') {
       const labels = { 'io.kejilion.provenance-extraction': failure === 'unowned' ? 'different' : nonce };
       if (argv[2] === '{{json .Config.Labels}}') return JSON.stringify(labels);
-      return JSON.stringify({ Image: options.digest, Config: { Image: options.image + '@' + options.digest, Labels: labels }, State: { Running: false } });
+      const inspected = { Image: store === 'classic' ? configDigest : childDigest,
+        Config: { Image: options.image + '@' + childDigest, Labels: labels }, State: { Running: false } };
+      if (store === 'containerd') inspected.ImageManifestDescriptor = { digest: childDigest, platform: { os: 'linux', architecture: 'arm64' } };
+      if (failure === 'container-image') inspected.Image = options.digest;
+      if (failure === 'reference') inspected.Config.Image = options.image + '@' + options.digest;
+      if (failure === 'running') inspected.State.Running = true;
+      if (failure === 'descriptor') inspected.ImageManifestDescriptor.digest = options.digest;
+      if (failure === 'descriptor-platform') inspected.ImageManifestDescriptor.platform.architecture = 'amd64';
+      if (failure === 'missing-descriptor') delete inspected.ImageManifestDescriptor;
+      return JSON.stringify(inspected);
+    }
+    if (program === 'docker' && argv[0] === 'image') {
+      const localImage = { Id: store === 'classic' ? configDigest : childDigest, Os: 'linux', Architecture: 'arm64',
+        RepoDigests: [options.image.replace(/^docker\.io\//, '') + '@' + childDigest] };
+      if (store === 'containerd') localImage.Descriptor = { digest: childDigest };
+      if (failure === 'image-id') localImage.Id = options.digest;
+      if (failure === 'image-platform') localImage.Architecture = 'amd64';
+      if (failure === 'repo-digest') localImage.RepoDigests = [options.image + '@' + options.digest];
+      if (failure === 'image-descriptor') localImage.Descriptor.digest = options.digest;
+      return JSON.stringify(localImage);
     }
     if (program === 'docker' && argv[0] === 'cp') {
       if (failure === 'cp') throw new Error('copy failed');
@@ -211,21 +232,37 @@ function binaryRunner(failure) {
   return { run, calls, directory: () => directory, id };
 }
 
-test('binary extraction never runs the image and cleans only its created container and temporary files', () => {
-  const mock = binaryRunner();
-  const binaries = extractBinaries(options, 'arm64', options.digest, options.digest, mock.run);
+for (const store of ['classic', 'containerd']) {
+test(store + ' extraction binds distinct index/manifest/config identities without running the image', () => {
+  const mock = binaryRunner(undefined, store);
+  const binaries = extractBinaries(options, 'arm64', childDigest, configDigest, mock.run);
   assert.equal(binaries.length, 2);
   assert.equal(binaries[1].buildInfo.torrentStatus, 'not-linked');
   assert.equal(existsSync(mock.directory()), false);
   assert.deepEqual(mock.calls.filter(call => call.program === 'docker' && call.argv[0] === 'rm').map(call => call.argv), [['rm', mock.id]]);
   assert.ok(mock.calls.every(call => !['run', 'start', 'exec', 'prune'].includes(call.argv[0])));
-  assert.ok(mock.calls.find(call => call.argv[0] === 'create').argv.includes(options.image + '@' + options.digest));
+  assert.ok(mock.calls.find(call => call.argv[0] === 'create').argv.includes(options.image + '@' + childDigest));
+  assert.ok(mock.calls.find(call => call.argv[0] === 'image').argv.includes(options.image + '@' + childDigest));
 });
+}
+
+for (const store of ['classic', 'containerd']) {
+  for (const failure of ['container-image', 'reference', 'running', 'image-id', 'image-platform', 'repo-digest',
+    ...(store === 'containerd' ? ['descriptor', 'descriptor-platform', 'missing-descriptor', 'image-descriptor'] : [])]) {
+    test(store + ' extraction rejects ' + failure + ' before copying binaries', () => {
+      const mock = binaryRunner(failure, store);
+      assert.throws(() => extractBinaries(options, 'arm64', childDigest, configDigest, mock.run), /identity mismatch/);
+      assert.equal(mock.calls.filter(call => call.argv[0] === 'cp').length, 0);
+      assert.equal(mock.calls.filter(call => call.argv[0] === 'rm').length, 1);
+      assert.equal(existsSync(mock.directory()), false);
+    });
+  }
+}
 
 for (const failure of ['create', 'cp', 'go', 'rm', 'unowned']) {
   test('extraction cleanup after ' + failure + ' failure is bounded and fail-closed', () => {
     const mock = binaryRunner(failure);
-    assert.throws(() => extractBinaries(options, 'arm64', options.digest, options.digest, mock.run));
+    assert.throws(() => extractBinaries(options, 'arm64', childDigest, configDigest, mock.run));
     assert.equal(existsSync(mock.directory()), false);
     assert.equal(mock.calls.filter(call => call.argv[0] === 'rm').length, failure === 'unowned' ? 0 : 1);
   });

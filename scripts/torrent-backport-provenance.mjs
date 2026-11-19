@@ -177,7 +177,18 @@ export function extractBinaries(options, arch, childDigest, configDigest, run = 
     container = output.trim();
     requireValue(/^[a-f0-9]{64}$/.test(container), 'Invalid created container ID');
     const inspected = JSON.parse(run('docker', ['inspect', '--format', '{{json .}}', container], options.repo));
-    requireValue(inspected.Image === configDigest && inspected.Config?.Image === options.image + '@' + childDigest
+    const localImage = JSON.parse(run('docker', ['image', 'inspect', '--format', '{{json .}}', options.image + '@' + childDigest], options.repo));
+    const reference = options.image + '@' + childDigest;
+    // Classic uses the config ID; containerd uses the verified child manifest and exposes its platform descriptor.
+    const manifestIdentity = localImage.Id === childDigest && localImage.Descriptor?.digest === childDigest
+      && inspected.ImageManifestDescriptor?.digest === childDigest
+      && inspected.ImageManifestDescriptor?.platform?.os === 'linux'
+      && inspected.ImageManifestDescriptor?.platform?.architecture === arch;
+    requireValue(localImage.Id === inspected.Image && (localImage.Id === configDigest || manifestIdentity)
+      && localImage.Os === 'linux' && localImage.Architecture === arch
+      && Array.isArray(localImage.RepoDigests)
+      && localImage.RepoDigests.some(value => value === reference || value === reference.replace(/^docker\.io\//, ''))
+      && inspected.Config?.Image === reference
       && inspected.State?.Running === false && inspected.Config?.Labels?.['io.kejilion.provenance-extraction'] === nonce,
     'Created container image identity mismatch');
     const binaries = [];
