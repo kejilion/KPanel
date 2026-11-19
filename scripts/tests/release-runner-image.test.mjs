@@ -6,7 +6,7 @@ import test from 'node:test';
 const dockerfile = readFileSync(resolve(import.meta.dirname, '..', '..', 'packaging', 'release-runner', 'Dockerfile'), 'utf8');
 
 test('release runner pins bases and direct packages and keeps npm executable', () => {
-  assert.match(dockerfile, /^FROM node:24\.22\.1-alpine@sha256:[0-9a-f]{64} AS node-runtime$/m);
+  assert.match(dockerfile, /^FROM node:26\.13\.1-alpine@sha256:[0-9a-f]{64} AS node-runtime$/m);
   assert.match(dockerfile, /^FROM golang:1\.27\.4-alpine@sha256:[0-9a-f]{64}$/m);
   assert.match(dockerfile, /docker-cli=29\.9\.3-r1/);
   assert.match(dockerfile, /ca-certificates=20261020-r0/);

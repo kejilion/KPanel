@@ -383,30 +383,6 @@
         "latestVueTsc": "3.3.13",
         "upstreamCompatibilityIssue": "https://github.com/vuejs/language-tools/issues/6124"
       }
-    },
-    {
-      "component": "@types/node",
-      "currentVersion": "24.19.0",
-      "candidateVersion": "26.6.6",
-      "reason": "2026-10-29 re-evaluation: Node.js 26.13.0 entered LTS on 2026-10-28, while Node.js 24 remains LTS and the KPanel builder is pinned to Node 24. Keep @types/node on the matching runtime major and evaluate runtime/types migration together in a separate L2/L3 candidate.",
-      "securityAndProductImpact": "No emergency-security dependency signal in the complete 2026-10-29 report. This is a development-time declaration major; keeping runtime and declarations aligned avoids unsupported API assumptions.",
-      "mitigation": "Keep @types/node 24.19.0 paired with the Node 24 builder; track Node 24 patch/digest candidates separately and retain Node 26.13.0 / @types/node 26.6.6 as an explicit major-toolchain migration.",
-      "owner": "KPanel base maintenance",
-      "reviewDate": "2026-11-28",
-      "exitCondition": "A separately reviewed Node 26 LTS runtime and matching @types/node candidate pass full Web typecheck, tests, scene-pack checks, production build and Linux amd64/arm64 image gates.",
-      "rollbackPoint": "9c5be9c293f98ad9bce260a4562e28743951b105",
-      "previousReviewDate": "2026-10-23",
-      "reviewedAt": "2026-10-29T15:37:35Z",
-      "reviewEvidence": {
-        "source": "https://nodejs.org/en/about/previous-releases",
-        "index": "https://nodejs.org/dist/index.json",
-        "indexSha256": "b52f521b8e24898364b74f03596afef1f97c1448014df7c2b5ebdcd2b69ca4a9",
-        "currentLatestLts": "24.22.2",
-        "node26Latest": "26.13.0",
-        "node26Lts": true,
-        "node26LtsSince": "2026-10-28",
-        "candidateTypes": "26.6.6"
-      }
     }
   ],
   "automationBoundary": {

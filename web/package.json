@@ -51,7 +51,7 @@
   },
   "devDependencies": {
     "@types/markdown-it": "14.2.0",
-    "@types/node": "24.19.0",
+    "@types/node": "26.6.6",
     "@types/qrcode": "1.5.6",
     "@types/three": "0.186.0",
     "@vitejs/plugin-vue": "6.0.9",

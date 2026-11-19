@@ -16,7 +16,7 @@ test ! -e "$proof"
 mkdir -m 755 "$proof" "$proof/evidence" "$proof/build" "$proof/http"
 evidence="$proof/evidence"
 controller="$GITHUB_WORKSPACE/controller"
-image='node:24.22.1-alpine@sha256:6a1c190e17215d844926b0677f4bf87273ff7d5e54db06d3b5b5863ab0b09a3d'
+image='node:26.13.1-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5'
 network="kpanel-native-$key"; server="kpanel-native-http-$key"
 install_dir="/usr/local/libexec/kpanel-release-qualification-$key"
 state_dir="/var/lib/kpanel-release-qualification-$key"

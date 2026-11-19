@@ -7,8 +7,8 @@
   "sourceManifestEncoding": "SHA256 of UTF-8 MODULE@VERSION followed by a space and the Go h1 module content checksum; go mod verify checks the downloaded archive and extracted module.",
   "selectedGraphSha256": "114cf13cd84467ef198222440e5c17ee68f94d0026f1273a120f4c5f4c2c1a6e",
   "buildTargetFilesSha256": {
-    "Dockerfile": "f24ed5ab60c873b6ef6f56540d675efeb3222cde1174d8b2a3f0a901e1afcbd7",
-    ".github/workflows/release.yml": "ef41c78784d37219709f6a32eb273d50ac395a7f5e3979c1299af0fc483bddf1",
+    "Dockerfile": "0fb7f22b6a2c8c49f948041a2861417706e7895fb9231b430dbf189857c5f102",
+    ".github/workflows/release.yml": "8496b64039e21e715ff199723485d50b84adf27b252525281eb78942e68d4ee3",
     "scripts/build-mcp-clients.sh": "29b0e82668f585aa46d10432912e1050954430cfac6a0550dd408d728979e113",
     "Makefile": "f651d8ce2f10adc487118e1ccb476615347661922a8c8ef529f1b8013da5d53e"
   },

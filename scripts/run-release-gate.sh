@@ -10,7 +10,7 @@ if [ "${1:-}" = --github-hosted ]; then
   test -z "$(git status --short --untracked-files=all)"
   git merge-base --is-ancestor "$3" HEAD
   go version | grep -F 'go1.27.4 '
-  test "$(node --version)" = v24.22.1
+  test "$(node --version)" = v26.13.1
   export VERIFY_BASE_REF="$3"
   make verify-release
   bash packaging/tests/app-conf-legacy-migration.sh "$PWD"
