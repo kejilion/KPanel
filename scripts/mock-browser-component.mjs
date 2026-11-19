@@ -1,5 +1,6 @@
 // UI Mock only: lifecycle state and task recovery, without Docker or Chromium.
-let installed = false, running = false, revision = 1, job, kind = 'chromium'
+let needsUpgrade = process.env.KPANEL_MOCK_TOR_LEGACY === '1'
+let installed = needsUpgrade, running = needsUpgrade, revision = 1, job, kind = needsUpgrade ? 'tor' : 'chromium'
 const resourceVersion = () => `sha256:${String(revision).padStart(64, '0')}`
 export async function mockBrowserComponent(request, response, url, send, readJSON) {
   if (url.pathname === '/api/v1/browser/status') {
@@ -8,10 +9,13 @@ export async function mockBrowserComponent(request, response, url, send, readJSO
   if (url.pathname === '/api/v1/browser/component' && request.method === 'GET') {
     if (job?.state === 'queued' && Date.now() - job.started > 800) {
       installed = job.action !== 'uninstall'; running = installed && job.action !== 'stop'; revision++
-      if (job.action === 'install') kind = job.kind || kind
+      if (job.action === 'install') {
+        kind = job.kind || kind
+        needsUpgrade = false
+      }
       job = { ...job, state: 'succeeded', stage: 'complete' }
     }
-    send(response, 200, { supported: true, torSupported: true, kind, installed, running, healthy: running, resourceVersion: resourceVersion(), image: 'UI Mock', job }); return true
+    send(response, 200, { supported: true, torSupported: true, kind, installed, running, healthy: running, needsUpgrade: installed && needsUpgrade, resourceVersion: resourceVersion(), image: 'UI Mock', job }); return true
   }
   if (url.pathname === '/api/v1/browser/component/actions' && request.method === 'POST') {
     const input = await readJSON(request)
