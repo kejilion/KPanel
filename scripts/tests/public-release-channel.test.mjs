@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { expectedReleaseAssetNames } from '../stable-release-recovery.mjs';
 
 const repoRoot = new URL('../../', import.meta.url);
@@ -21,6 +22,7 @@ function runControllerOverlay(options = {}) {
   const runner = 'packaging/release-runner/Dockerfile';
   const fixturePath = 'packaging/tests/release-browser/real-feature-public.sh';
   const browserPath = 'packaging/tests/release-browser/real-feature-browser-public.cjs';
+  const entrypoint = 'packaging/tests/release-browser/run.sh';
   const git = (...args) => {
     const result = spawnSync('git', ['-C', root, ...args], { encoding: 'utf8' });
     assert.equal(result.status, 0, result.stderr);
@@ -28,7 +30,7 @@ function runControllerOverlay(options = {}) {
   };
   try {
     git('init', '--quiet');
-    for (const path of [runner, fixturePath, browserPath]) {
+    for (const path of [runner, fixturePath, browserPath, entrypoint]) {
       mkdirSync(join(root, path, '..'), { recursive: true });
       writeFileSync(join(root, path), 'original verifier\n');
     }
@@ -40,9 +42,11 @@ function runControllerOverlay(options = {}) {
     commit('published candidate');
     const candidate = git('rev-parse', 'HEAD');
     writeFileSync(join(root, fixturePath), 'corrected verifier\n');
+    if (options.missingEntrypoint) git('rm', entrypoint);
+    else writeFileSync(join(root, entrypoint), 'corrected explicit environment\n');
     if (options.missingBrowser) git('rm', browserPath);
     else writeFileSync(join(root, browserPath), 'corrected browser companion\n');
-    git('add', fixturePath, ...(options.missingBrowser ? [] : [browserPath])); commit('trusted verifier');
+    git('add', fixturePath, ...(options.missingBrowser ? [] : [browserPath]), ...(options.missingEntrypoint ? [] : [entrypoint])); commit('trusted verifier');
     const controller = git('rev-parse', 'HEAD');
     git('update-ref', 'refs/remotes/origin/main', options.untrusted ? candidate : controller);
     git('checkout', '--quiet', '--detach', candidate);
@@ -54,16 +58,18 @@ function runControllerOverlay(options = {}) {
       cwd: root, encoding: 'utf8', env: { ...process.env, GITHUB_SHA: controller, EXPECTED_SHA: candidate,
         EXPECTED_VERSION: '1.28.0-rc.3', GITHUB_RUN_ID: '123', GITHUB_RUN_ATTEMPT: '1', PUBLIC_EVIDENCE: evidence },
     });
-    if (options.dirty || options.untrusted || options.missingBrowser) {
+    if (options.dirty || options.untrusted || options.missingBrowser || options.missingEntrypoint) {
       assert.notEqual(result.status, 0);
       assert.equal(existsSync(join(evidence, 'test-fixture-source.json')), false);
       assert.equal(readFileSync(join(root, fixturePath), 'utf8'), 'original verifier\n');
       assert.equal(readFileSync(join(root, browserPath), 'utf8'), 'original verifier\n');
       assert.equal(existsSync(join(evidence, 'test-browser-source.json')), false);
+      assert.equal(readFileSync(join(root, entrypoint), 'utf8'), 'original verifier\n');
+      assert.equal(existsSync(join(evidence, 'test-entrypoint-source.json')), false);
     } else {
       assert.equal(result.status, 0, result.stderr);
       assert.equal(git('rev-parse', 'HEAD'), candidate);
-      assert.deepEqual(git('diff', '--name-only').split('\n').sort(), [fixturePath, browserPath].sort());
+      assert.deepEqual(git('diff', '--name-only').split('\n').sort(), [fixturePath, browserPath, entrypoint].sort());
       assert.equal(readFileSync(join(root, 'Dockerfile'), 'utf8'), 'immutable product\n');
       assert.equal(readFileSync(join(root, 'VERSION'), 'utf8'), '1.28.0-rc.3\n');
       const record = JSON.parse(readFileSync(join(evidence, 'test-fixture-source.json')));
@@ -81,6 +87,13 @@ function runControllerOverlay(options = {}) {
       assert.equal(browserRecord.originalSha256, sha256(Buffer.from(browserRecord.original)));
       assert.equal(browserRecord.recipeSha256, sha256(Buffer.from(browserRecord.recipe)));
       assert.match(browserRecord.diff, /corrected browser companion/);
+      const entryRecord = JSON.parse(readFileSync(join(evidence, 'test-entrypoint-source.json')));
+      assert.equal(entryRecord.path, entrypoint); assert.equal(entryRecord.candidate, candidate);
+      assert.equal(entryRecord.controller, controller); assert.equal(entryRecord.productImageUnchanged, true);
+      assert.equal(entryRecord.original, 'original verifier\n'); assert.equal(entryRecord.recipe, 'corrected explicit environment\n');
+      assert.equal(entryRecord.originalSha256, sha256(Buffer.from(entryRecord.original)));
+      assert.equal(entryRecord.recipeSha256, sha256(Buffer.from(entryRecord.recipe)));
+      assert.match(entryRecord.diff, /corrected explicit environment/);
     }
   } finally {
     rmSync(root, { recursive: true, force: true }); rmSync(evidence, { recursive: true, force: true });
@@ -92,6 +105,74 @@ test('read-only controller fixture overlay rejects dirty product source', () => 
 test('read-only controller fixture overlay rejects a controller outside trusted main', () => runControllerOverlay({ untrusted: true }));
 
 test('read-only controller fixture overlay rejects a missing browser companion before any overlay', () => runControllerOverlay({ missingBrowser: true }));
+test('read-only controller fixture overlay rejects a missing entrypoint before any overlay', () => runControllerOverlay({ missingEntrypoint: true }));
+
+test('public acceptance passes only explicit required inputs through an environment-clearing sudo', () => {
+  const root = mkdtempSync(join(tmpdir(), 'kpanel-verifier-env-'));
+  const harness = join(root, 'harness.sh');
+  const entrypoint = fileURLToPath(new URL('../../packaging/tests/release-browser/run.sh', import.meta.url));
+  const required = {
+    GITHUB_ACTIONS: 'true', RUNNER_ENVIRONMENT: 'github-hosted', RUNNER_TEMP: '',
+    EXPECTED_VERSION: '1.31.0-rc.2', EXPECTED_SHA: 'a'.repeat(40), IMAGE_DIGEST: 'sha256:' + 'b'.repeat(64),
+    PREVIOUS_PREVIEW_VERSION: '1.31.0-rc.1', PREVIOUS_PREVIEW_IMAGE: 'docker.io/example@sha256:' + 'c'.repeat(64),
+    EXPECTED_NOTES: '2\n literal $value `command` "quotes"', EXPECTED_UPGRADE_NOTES: '0', EXPECTED_STABLE_VERSION: '1.30.0',
+  };
+  try {
+    writeFileSync(harness, `#!/usr/bin/env bash
+set -Eeuo pipefail
+probe=$2; count=0
+npm() { printf 'npm\\n' >> "$probe.activity"; }
+docker() { printf 'docker\\n' >> "$probe.activity"; }
+sudo() {
+  if [[ "$1" = chown ]]; then return; fi
+  test "$1" = env && test "$2" = -i
+  shift 2
+  local assignments=()
+  while [[ "$1" == *=* ]]; do assignments+=("$1"); shift; done
+  test "$1" = timeout && test "$2" = --kill-after=30s && test "$3" = 15m && test "$4" = bash
+  shift 4
+  count=$((count + 1))
+  env -i "\${assignments[@]}" bash -c 'env -0 > "$1"; printf "%s\\0" "\${@:3}" >> "$2"' _ "$probe-$count.env" "$probe.calls" "$@"
+}
+source "$1"
+`);
+    for (const missing of [null, ...Object.keys(required)]) {
+      const owned = join(root, missing ?? 'complete inputs'); mkdirSync(owned);
+      const probe = join(owned, 'probe');
+      const env = { ...process.env, ...required, RUNNER_TEMP: owned.replaceAll('\\', '/'),
+        GITHUB_RUN_ID: '123', GITHUB_RUN_ATTEMPT: '1', PUBLIC_EVIDENCE: join(owned, 'evidence'),
+        GITHUB_STEP_SUMMARY: join(owned, 'summary'), GH_TOKEN: 'secret-must-not-pass',
+        GITHUB_TOKEN: 'another-secret', UNRELATED_KEEP: 'sudo-env-keep-must-not-pass', BASH_ENV: '' };
+      // No real package installation, Docker operation, sudo or browser journey runs in this fixture.
+      if (missing) delete env[missing];
+      mkdirSync(env.PUBLIC_EVIDENCE);
+      const result = spawnSync(process.execPath, [fileURLToPath(new URL('../run-repo-bash.mjs', import.meta.url)), harness, entrypoint, probe],
+        { encoding: 'utf8', env, timeout: 15_000 });
+      assert.ifError(result.error);
+      if (missing) {
+        assert.notEqual(result.status, 0, missing);
+        assert.equal(existsSync(probe + '.activity'), false, missing + ' must fail before dependencies');
+        assert.equal(existsSync(probe + '.calls'), false, missing + ' must fail before sudo');
+        continue;
+      }
+      assert.equal(result.status, 0, result.stderr);
+      for (let index = 1; index <= 3; index++) {
+        const observed = Object.fromEntries(readFileSync(probe + '-' + index + '.env', 'utf8').split('\0').filter(Boolean)
+          .map(assignment => { const at = assignment.indexOf('='); return [assignment.slice(0, at), assignment.slice(at + 1)]; }));
+        for (const name of Object.keys(required)) assert.equal(observed[name], env[name], name);
+        assert.equal(observed.RELEASE_TEST_RUNNER, 'kpanel-release-test:123-1');
+        assert.equal(observed.RELEASE_BROWSER_RUNTIME, owned.replaceAll('\\', '/') + '/kpanel-browser-runtime');
+        assert.equal(observed.PATH, '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin');
+        for (const name of ['GH_TOKEN', 'GITHUB_TOKEN', 'UNRELATED_KEEP', 'PUBLIC_EVIDENCE', 'BASH_ENV']) assert.equal(observed[name], undefined, name);
+      }
+      const calls = readFileSync(probe + '.calls', 'utf8').replaceAll('\\', '/').split('\0');
+      assert.ok(calls.some(value => value.endsWith('/real-feature-public.sh')));
+      assert.equal(calls.filter(value => value.endsWith('/public-browser-complete.sh')).length, 2);
+      for (const mode of ['public', 'published', 'upgrade']) assert.ok(calls.includes(mode), mode);
+      assert.equal(existsSync(probe + '-4.env'), false);
+    }
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
 
 test('real public fixture binds script checks to the canonical frozen-source contract', () => {
   const source = readFileSync(new URL('../../packaging/tests/release-browser/real-feature-public.sh', import.meta.url), 'utf8');

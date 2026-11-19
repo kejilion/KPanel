@@ -113,9 +113,11 @@ Release 已公开而验收失败时，继续使用上述只读 `Verify published
 受限恢复工作流在公开验收后终止，不自动执行稳定候选归档；恢复负责人还须按发布工作流手册调用既有唯一归档入口，
 核对原tag/candidate和公开验收成功后保存精确tip并移除活跃候选。不能将恢复验收成功直接称为全部归档收尾完成。
 
-公开验收的产品始终绑定原 tag/SHA/digest；测试 runner 的 Dockerfile 则取当前可信控制面
-`GITHUB_SHA` 的固定路径，要求该提交已纳入 main。只允许覆盖这一个测试配方，不改变版本、
-HEAD 或产品镜像；JSON 回执保存产品/控制面/run/attempt、原新配方全文、摘要与差异。
+公开验收的产品始终绑定原 tag/SHA/digest；测试资源取当前可信控制面 `GITHUB_SHA` 的固定路径，
+要求该提交已纳入 main。白名单仅含 `packaging/release-runner/Dockerfile` 和
+`packaging/tests/release-browser/` 下的 `real-feature-public.sh`、`real-feature-browser-public.cjs`、
+`run.sh`，不改变版本、HEAD 或产品镜像；四份 JSON 回执分别保存产品/控制面/run/attempt、
+原新文件全文、摘要与差异。`run.sh` 仅以显式白名单将必需验收变量传给 `sudo env -i`，缺项拒绝执行。
 这允许在 Alpine 修订版退出仓库后更新固定验收环境并只读恢复历史产物，不放宽 APK 固定版本、
 公开断言或隔离限制。恢复记录必须区分原产品与新测试环境，保留原失败，不能声称冻结源树 clean
 或原发布流水线全绿；未来发布也使用其已审查控制面的测试配方。

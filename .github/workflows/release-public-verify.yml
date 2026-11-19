@@ -136,8 +136,8 @@ jobs:
           const git = (...args) => execFileSync('git', args, { encoding: 'utf8' }).trim();
           const { GITHUB_SHA: controller, EXPECTED_SHA: candidate, EXPECTED_VERSION: version,
             GITHUB_RUN_ID: runId, GITHUB_RUN_ATTEMPT: attempt, PUBLIC_EVIDENCE: evidence } = process.env;
-          const paths = ['packaging/release-runner/Dockerfile', 'packaging/tests/release-browser/real-feature-public.sh', 'packaging/tests/release-browser/real-feature-browser-public.cjs'];
-          const receipts = ['test-runner-recipe.json', 'test-fixture-source.json', 'test-browser-source.json'];
+          const paths = ['packaging/release-runner/Dockerfile', 'packaging/tests/release-browser/real-feature-public.sh', 'packaging/tests/release-browser/real-feature-browser-public.cjs', 'packaging/tests/release-browser/run.sh'];
+          const receipts = ['test-runner-recipe.json', 'test-fixture-source.json', 'test-browser-source.json', 'test-entrypoint-source.json'];
           const sha = bytes => createHash('sha256').update(bytes).digest('hex');
           if (!/^[a-f0-9]{40}$/.test(controller ?? '') || !/^[a-f0-9]{40}$/.test(candidate ?? '')
             || !/^[1-9][0-9]*$/.test(runId ?? '') || !/^[1-9][0-9]*$/.test(attempt ?? '') || !evidence) {
@@ -146,7 +146,7 @@ jobs:
           git('merge-base', '--is-ancestor', controller, 'origin/main');
           if (git('rev-parse', 'HEAD') !== candidate || readFileSync('VERSION', 'utf8').trim() !== version
             || git('status', '--porcelain')) throw Error('Frozen product source must start clean');
-          // Only these three named verifier resources come from the trusted controller; the
+          // Only these four named verifier resources come from the trusted controller; the
           // product Dockerfile, binaries, version and immutable image remain frozen.
           const overlays = paths.map(path => {
             const original = readFileSync(path);
