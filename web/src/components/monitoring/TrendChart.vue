@@ -63,7 +63,8 @@ const emit = defineEmits<{
 
 const defaultWidth = 720
 const height = 184
-const padding = { top: 14, right: 12, bottom: 25, left: 64 }
+const sidePadding = 64
+const padding = { top: 14, right: sidePadding, bottom: 25, left: sidePadding }
 const clipId = `trend-chart-plot-${++chartSequence}`
 const canvas = ref<HTMLDivElement>()
 const width = ref(defaultWidth)
@@ -487,7 +488,7 @@ onBeforeUnmount(() => {
           <strong>{{ formatter(point.value) }}<small v-if="point.high !== undefined && hoveredPoints.length <= 6" class="trend-chart__range">{{ formatter(point.low as number) }}–{{ formatter(point.high) }}</small></strong>
         </span>
       </div>
-      <div class="trend-chart__axis">
+      <div class="trend-chart__axis" :style="{ paddingInline: `${sidePadding / width * 100}%` }">
         <span>{{ timeLabel(bounds.minimumTime) }}</span>
         <span>{{ timeLabel(bounds.maximumTime) }}</span>
       </div>
@@ -544,7 +545,7 @@ onBeforeUnmount(() => {
 .trend-chart__tooltip time { color: var(--muted); font-size: .72rem; }
 .trend-chart__tooltip span { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 7px; font-size: .76rem; }
 .trend-chart__tooltip strong { color: var(--text); }
-.trend-chart__axis { display: flex; justify-content: space-between; padding: 0 12px 0 64px; color: var(--muted); font-size: .72rem; }
+.trend-chart__axis { display: flex; justify-content: space-between; color: var(--muted); font-size: .72rem; }
 .trend-chart__empty { min-height: 212px; display: grid; place-items: center; color: var(--muted); font-size: .86rem; }
 @media (max-width: 560px) {
   .trend-chart__tooltip.is-dense:not(.is-left) { left: 10px !important; transform: none; }
