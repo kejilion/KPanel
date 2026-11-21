@@ -742,6 +742,36 @@ describe('FilesView remote download', () => {
     expect(view.remoteDownloadSubmitting.value).toBe(false)
   })
 
+  it('creates one job per nonempty line and retries only the remaining links after a failure', async () => {
+    const view = setupView()
+    view.openRemoteDownloadDialog()
+    const first = 'https://downloads.example.com/first.zip'
+    const second = 'http://downloads.example.com/second.torrent'
+    const magnet = 'magnet:?xt=urn:btih:0123456789012345678901234567890123456789'
+    const firstJob = testRemoteDownloadJob()
+    view.remoteDownloadName.value = 'single.zip'
+    view.remoteDownloadURL.value = ` ${first} \r\n\r\n${second}\r\n${magnet} `
+    expect(view.remoteDownloadUsesPlainHTTP.value).toBe(true)
+    mocks.createRemoteDownloadJob.mockResolvedValueOnce(firstJob).mockRejectedValueOnce(new Error('busy'))
+    mocks.remoteDownloadJobs.mockResolvedValueOnce({ items: [firstJob] })
+    await view.submitRemoteDownload()
+
+    expect(view.remoteDownloadDialogOpen.value).toBe(true)
+    expect(view.remoteDownloadURL.value).toBe(`${second}\n${magnet}`)
+    expect(view.remoteDownloadName.value).toBe('')
+    mocks.createRemoteDownloadJob
+      .mockResolvedValueOnce(testRemoteDownloadJob({ id: 'b'.repeat(32) }))
+      .mockResolvedValueOnce(testRemoteDownloadJob({ id: 'c'.repeat(32) }))
+    await view.submitRemoteDownload()
+
+    const requests = mocks.createRemoteDownloadJob.mock.calls.map(([request]) => request)
+    expect(requests.map((request) => request.url)).toEqual([first, second, second, magnet])
+    expect(requests.every((request) => request.name === undefined)).toBe(true)
+    expect(requests[2].sourceKind).toBe('torrent')
+    expect(view.remoteDownloadJobs.value).toHaveLength(3)
+    expect(view.remoteDownloadDialogOpen.value).toBe(false)
+  })
+
   it('reconciles a newly created matching job after the create response is lost', async () => {
     const view = setupView()
     const known = testRemoteDownloadJob({ name: 'release.zip' })
@@ -798,7 +828,7 @@ describe('FilesView remote download', () => {
   it('rejects an unsupported URL before calling the API', async () => {
     const view = setupView()
     view.openRemoteDownloadDialog()
-    view.remoteDownloadURL.value = 'file:///etc/passwd'
+    view.remoteDownloadURL.value = 'https://downloads.example.com/valid.zip\nfile:///etc/passwd'
 
     await view.submitRemoteDownload()
 

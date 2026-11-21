@@ -387,7 +387,7 @@ export const zhTWMessages = {
   "files.remoteDownload.error.receiveUnsupported": "目標 Agent 尚不支援此接收方式，請更新後重試。",
   "files.remoteDownload.tooltip": "從連結下載，關閉頁面後仍會繼續",
   "files.remoteDownload.dialogDescription": "從連結下載到 {target}，關閉頁面後仍會繼續。",
-  "files.remoteDownload.urlLabel": "下載網址",
+  "files.remoteDownload.urlLabel": "下載網址（每行一個）",
   "files.remoteDownload.httpWarning": "HTTP 連線未加密；下載內容可能在傳輸途中遭到修改，請優先使用 HTTPS。",
   "files.remoteDownload.nameLabel": "儲存名稱",
   "files.remoteDownload.optional": "選填",
