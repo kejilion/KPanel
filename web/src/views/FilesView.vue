@@ -5613,20 +5613,23 @@ onBeforeUnmount(() => {
 .operation-form textarea,
 .operation-form select {
   width: 100%;
-  height: 42px;
-  padding: 0 12px;
   border: 1px solid var(--border);
-  border-radius: 10px;
   color: var(--text);
   background: var(--surface);
   outline: none;
 }
 
+.operation-form input,
+.operation-form select {
+  height: 42px;
+  padding: 0 12px;
+  border-radius: 10px;
+}
+
 .operation-form textarea {
-  height: auto;
   min-height: 5em;
-  padding-block: 8px;
-  font: inherit;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
   line-height: 1.5;
   resize: vertical;
 }
