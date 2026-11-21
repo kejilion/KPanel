@@ -62,8 +62,8 @@ const emit = defineEmits<{
 }>()
 
 const defaultWidth = 720
-const height = 210
-const padding = { top: 16, right: 12, bottom: 28, left: 64 }
+const height = 184
+const padding = { top: 14, right: 12, bottom: 25, left: 64 }
 const clipId = `trend-chart-plot-${++chartSequence}`
 const canvas = ref<HTMLDivElement>()
 const width = ref(defaultWidth)
@@ -396,6 +396,7 @@ onBeforeUnmount(() => {
     <div v-if="bounds.hasData" ref="canvas" class="trend-chart__canvas">
       <svg
         :viewBox="`0 0 ${width} ${height}`"
+        :height="height"
         :class="{ 'is-selectable': selectable }"
         role="img"
         aria-label="资源历史趋势，移动鼠标查看准确刻度，横向拖动可框选放大"
@@ -505,7 +506,7 @@ onBeforeUnmount(() => {
 .trend-chart__legend i, .trend-chart__tooltip i { width: 8px; height: 8px; border-radius: 999px; }
 .trend-chart__legend strong { color: var(--text); font-size: .86rem; }
 .trend-chart__canvas { position: relative; overflow: hidden; margin-top: 4px; }
-.trend-chart svg { display: block; width: 100%; height: 184px; touch-action: pan-y; }
+.trend-chart svg { display: block; width: 100%; touch-action: pan-y; }
 .trend-chart svg.is-selectable { cursor: crosshair; }
 .trend-chart__grid { stroke: var(--border); stroke-width: 1; stroke-dasharray: 4 6; }
 .trend-chart__tick { fill: var(--muted); font-size: 10.5px; }
@@ -523,6 +524,7 @@ onBeforeUnmount(() => {
 }
 .trend-chart__cursor { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 4; vector-effect: non-scaling-stroke; }
 .trend-chart__point { fill: var(--surface); stroke-width: 2.5; vector-effect: non-scaling-stroke; }
+.trend-chart__cursor, .trend-chart__point { pointer-events: none; }
 .trend-chart__tooltip {
   position: absolute; z-index: 2; top: 12px; display: grid; min-width: 150px; gap: 7px;
   padding: 10px 11px; border: 1px solid var(--border); border-radius: 10px;
@@ -542,7 +544,7 @@ onBeforeUnmount(() => {
 .trend-chart__tooltip time { color: var(--muted); font-size: .72rem; }
 .trend-chart__tooltip span { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 7px; font-size: .76rem; }
 .trend-chart__tooltip strong { color: var(--text); }
-.trend-chart__axis { display: flex; justify-content: space-between; padding-left: 64px; color: var(--muted); font-size: .72rem; }
+.trend-chart__axis { display: flex; justify-content: space-between; padding: 0 12px 0 64px; color: var(--muted); font-size: .72rem; }
 .trend-chart__empty { min-height: 212px; display: grid; place-items: center; color: var(--muted); font-size: .86rem; }
 @media (max-width: 560px) {
   .trend-chart__tooltip.is-dense:not(.is-left) { left: 10px !important; transform: none; }
