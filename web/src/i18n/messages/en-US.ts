@@ -444,7 +444,7 @@ export const enUSMessages = {
   "files.remoteDownload.error.receiveUnsupported": "Update the target Agent to enable this receive method.",
   'files.remoteDownload.tooltip': 'Download from a link; it continues after you close this page',
   'files.remoteDownload.dialogDescription': 'Download from a link to {target}; it continues after you close this page.',
-  'files.remoteDownload.urlLabel': 'Download URL',
+  'files.remoteDownload.urlLabel': 'Download URLs (one per line)',
   'files.remoteDownload.httpWarning': 'HTTP is not encrypted, so the download could be modified in transit. Prefer HTTPS.',
   'files.remoteDownload.nameLabel': 'Save name',
   'files.remoteDownload.optional': 'Optional',

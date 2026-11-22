@@ -433,9 +433,10 @@ const selected = ref(new Set<string>())
 const selectionAnchor = ref<string>()
 const uploadInput = ref<HTMLInputElement>()
 const uploadTasks = ref<UploadTask[]>([])
-const remoteDownloadURLInput = ref<HTMLInputElement>()
+const remoteDownloadURLInput = ref<HTMLTextAreaElement>()
 const remoteDownloadDialogOpen = ref(false)
 const remoteDownloadURL = ref('')
+const remoteDownloadLinks = computed(() => remoteDownloadURL.value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean))
 const remoteDownloadAcceleration = ref(true)
 const remoteDownloadTorrent = ref('')
 const remoteDownloadTorrentName = ref('')
@@ -447,7 +448,7 @@ const remoteDownloadFormErrorCode = ref<'url' | 'name' | 'torrent'>()
 const remoteDownloadHTTPWarningID = 'remote-download-http-warning'
 const remoteDownloadFormErrorID = 'remote-download-form-error'
 const remoteDownloadUsesPlainHTTP = computed(() =>
-  remoteDownloadURL.value.trim().toLowerCase().startsWith('http://'),
+  remoteDownloadLinks.value.some((url) => /^http:\/\//i.test(url)),
 )
 const remoteDownloadURLDescription = computed(() => {
   const descriptions = []
@@ -2469,19 +2470,22 @@ async function pickRemoteDownloadTorrent(event: Event): Promise<void> {
   }
 }
 
+function validRemoteDownloadURL(url: string): boolean {
+  try {
+    return !/\s/.test(url) && ['http:', 'https:', 'magnet:'].includes(new URL(url).protocol)
+  } catch {
+    return false
+  }
+}
+
 function validRemoteDownloadForm(): boolean {
   if (remoteDownloadTorrentLoading.value) return false
-  const rawURL = remoteDownloadURL.value.trim()
-  try {
-    if (!remoteDownloadTorrent.value) {
-      const parsed = new URL(rawURL)
-      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:' && parsed.protocol !== 'magnet:') throw new Error('scheme')
-    }
-  } catch {
+  const links = remoteDownloadLinks.value
+  if (!remoteDownloadTorrent.value && (!links.length || !links.every(validRemoteDownloadURL))) {
     remoteDownloadFormErrorCode.value = 'url'
     return false
   }
-  const name = remoteDownloadName.value.trim()
+  const name = links.length > 1 ? '' : remoteDownloadName.value.trim()
   if (
     name && (
       name === '.' || name === '..' || /[/\\\u0000-\u001f\u007f]/.test(name)
@@ -2654,18 +2658,11 @@ async function reconcileFailedRemoteDownloadSubmission(
   }
 }
 
-async function submitRemoteDownload(): Promise<void> {
-  if (remoteDownloadSubmitting.value || !validRemoteDownloadForm()) return
-  const sourceURL = remoteDownloadURL.value.trim()
-  const requestedName = remoteDownloadName.value.trim()
-  const target = remoteDownloadTarget.value
+async function createRemoteDownload(sourceURL: string, requestedName: string, target: string): Promise<void> {
   const torrentLink = /^https?:/i.test(sourceURL) && new URL(sourceURL).pathname.toLowerCase().endsWith('.torrent')
   const sourceOrigin = remoteDownloadTorrent.value || torrentLink ? 'bittorrent' : normalizedRemoteDownloadOrigin(sourceURL)
   const knownJobIDs = new Set(remoteDownloadJobs.value.map((job) => job.id))
   const submittedAt = Date.now()
-  remoteDownloadSubmitting.value = true
-  remoteDownloadJobsError.value = undefined
-  stopRemoteDownloadPolling()
   try {
     const job = await api.files.createRemoteDownloadJob({
       ...(directory.value?.fileConflictVersion === 1 ? {conflictPolicies:{file:'ask' as const,directory:'ask' as const}} : {}),
@@ -2674,22 +2671,40 @@ async function submitRemoteDownload(): Promise<void> {
       ...(remoteDownloadTorrent.value ? { torrent: remoteDownloadTorrent.value } : {}),
       ...(torrentLink ? { sourceKind: 'torrent' as const } : {}),
     })
-    if (unmounted) return
-    upsertRemoteDownloadJob(job)
-    closeRemoteDownloadDialog()
-    scheduleRemoteDownloadPoll(800)
+    if (!unmounted && remoteDownloadDialogOpen.value) upsertRemoteDownloadJob(job)
   } catch (error) {
-    if (unmounted) return
+    if (unmounted || !remoteDownloadDialogOpen.value) return
     const recovered = await reconcileFailedRemoteDownloadSubmission(
       knownJobIDs, sourceOrigin, target, requestedName, submittedAt,
     )
-    if (unmounted) return
-    if (recovered) {
-      remoteDownloadJobsError.value = undefined
-      closeRemoteDownloadDialog()
-      if (isRemoteDownloadJobActive(recovered)) scheduleRemoteDownloadPoll(800)
-      else reconcileRemoteDownloadTarget(recovered.targetDirectory, completedRemoteDownloadPath(recovered))
-      return
+    if (!recovered) throw error
+    if (!unmounted && remoteDownloadDialogOpen.value && !isRemoteDownloadJobActive(recovered)) {
+      reconcileRemoteDownloadTarget(recovered.targetDirectory, completedRemoteDownloadPath(recovered))
+    }
+  }
+}
+
+async function submitRemoteDownload(): Promise<void> {
+  if (remoteDownloadSubmitting.value || !validRemoteDownloadForm()) return
+  const links = remoteDownloadTorrent.value ? [''] : remoteDownloadLinks.value
+  const requestedName = links.length === 1 ? remoteDownloadName.value.trim() : ''
+  const target = remoteDownloadTarget.value
+  let index = 0
+  remoteDownloadSubmitting.value = true
+  remoteDownloadJobsError.value = undefined
+  stopRemoteDownloadPolling()
+  try {
+    for (; index < links.length; index++) {
+      await createRemoteDownload(links[index]!, requestedName, target)
+      if (unmounted || !remoteDownloadDialogOpen.value) return
+    }
+    closeRemoteDownloadDialog()
+    scheduleRemoteDownloadPoll(800)
+  } catch (error) {
+    if (unmounted || !remoteDownloadDialogOpen.value) return
+    if (links.length > 1) {
+      remoteDownloadURL.value = links.slice(index).join('\n')
+      remoteDownloadName.value = ''
     }
     setRemoteDownloadJobsError(error)
     toast.danger(i18n.t('files.remoteDownload.createFailed'), remoteDownloadJobsErrorMessage.value)
@@ -4078,17 +4093,16 @@ onBeforeUnmount(() => {
       :open="remoteDownloadDialogOpen"
       :title="i18n.t('files.remoteDownload.label')"
       :description="i18n.t('files.remoteDownload.dialogDescription', { target: remoteDownloadTarget })"
-      size="small"
+      :close-disabled="remoteDownloadSubmitting"
       @close="closeRemoteDownloadDialog"
     >
       <form class="operation-form remote-download-form" @submit.prevent="submitRemoteDownload">
         <label>
           <span>{{ i18n.t('files.remoteDownload.urlLabel') }}</span>
-          <input
+          <textarea
             ref="remoteDownloadURLInput"
             v-model="remoteDownloadURL"
-            type="url"
-            inputmode="url"
+            rows="5"
             autocomplete="off"
             autocapitalize="off"
             spellcheck="false"
@@ -4096,17 +4110,17 @@ onBeforeUnmount(() => {
             :aria-invalid="remoteDownloadFormErrorCode === 'url'"
             :aria-describedby="remoteDownloadURLDescription"
             :required="!remoteDownloadTorrent"
-            :disabled="Boolean(remoteDownloadTorrent) || remoteDownloadTorrentLoading"
+            :disabled="remoteDownloadSubmitting || Boolean(remoteDownloadTorrent) || remoteDownloadTorrentLoading"
           />
         </label>
         <div class="remote-download-torrent">
           <label v-if="!remoteDownloadTorrent" class="button button--secondary">
             {{ remoteDownloadTorrentLoading ? i18n.t('files.remoteDownload.readingTorrent') : i18n.t('files.remoteDownload.importTorrent') }}
-            <input type="file" accept=".torrent,application/x-bittorrent" :disabled="remoteDownloadTorrentLoading" @change="pickRemoteDownloadTorrent" />
+            <input type="file" accept=".torrent,application/x-bittorrent" :disabled="remoteDownloadSubmitting || remoteDownloadTorrentLoading" @change="pickRemoteDownloadTorrent" />
           </label>
           <template v-else>
             <span :title="remoteDownloadTorrentName">{{ remoteDownloadTorrentName }}</span>
-            <button class="button button--secondary" type="button" @click="clearRemoteDownloadTorrent">{{ i18n.t('files.remoteDownload.removeTorrent') }}</button>
+            <button class="button button--secondary" type="button" :disabled="remoteDownloadSubmitting" @click="clearRemoteDownloadTorrent">{{ i18n.t('files.remoteDownload.removeTorrent') }}</button>
           </template>
         </div>
         <p
@@ -4119,10 +4133,11 @@ onBeforeUnmount(() => {
         >
           {{ i18n.t('files.remoteDownload.httpWarning') }}
         </p>
-        <label>
+        <label v-if="remoteDownloadLinks.length <= 1">
           <span>{{ i18n.t('files.remoteDownload.nameLabel') }} <small>{{ i18n.t('files.remoteDownload.optional') }}</small></span>
           <input
             v-model="remoteDownloadName"
+            :disabled="remoteDownloadSubmitting"
             autocomplete="off"
             :placeholder="i18n.t('files.remoteDownload.namePlaceholder')"
             :aria-invalid="remoteDownloadFormErrorCode === 'name'"
@@ -4130,7 +4145,7 @@ onBeforeUnmount(() => {
           />
         </label>
         <label class="remote-download-acceleration">
-          <input v-model="remoteDownloadAcceleration" type="checkbox" />
+          <input v-model="remoteDownloadAcceleration" type="checkbox" :disabled="remoteDownloadSubmitting" />
           <span>{{ i18n.t('files.remoteDownload.smartAcceleration') }}<small>{{ i18n.t('files.remoteDownload.smartHint') }}</small></span>
         </label>
         <div class="remote-download-note">
@@ -4141,7 +4156,7 @@ onBeforeUnmount(() => {
           {{ remoteDownloadFormError }}
         </p>
         <div class="dialog-actions">
-          <button class="button button--secondary" type="button" @click="closeRemoteDownloadDialog">{{ i18n.t('common.cancel') }}</button>
+          <button class="button button--secondary" type="button" :disabled="remoteDownloadSubmitting" @click="closeRemoteDownloadDialog">{{ i18n.t('common.cancel') }}</button>
           <button
             class="button button--primary"
             type="submit"
@@ -5595,17 +5610,31 @@ onBeforeUnmount(() => {
 }
 
 .operation-form input,
+.operation-form textarea,
 .operation-form select {
   width: 100%;
-  height: 42px;
-  padding: 0 12px;
   border: 1px solid var(--border);
-  border-radius: 10px;
   color: var(--text);
   background: var(--surface);
   outline: none;
 }
 
+.operation-form input,
+.operation-form select {
+  height: 42px;
+  padding: 0 12px;
+  border-radius: 10px;
+}
+
+.operation-form textarea {
+  min-height: 5em;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.operation-form textarea:focus,
 .operation-form input:focus,
 .operation-form select:focus {
   border-color: var(--brand);

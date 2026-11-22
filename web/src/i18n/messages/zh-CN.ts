@@ -443,7 +443,7 @@ export const zhCNMessages = {
   "files.remoteDownload.error.receiveUnsupported": "目标 Agent 尚不支持此接收方式，请更新后重试。",
   'files.remoteDownload.tooltip': '从链接下载，关闭页面后仍会继续',
   'files.remoteDownload.dialogDescription': '从链接下载到 {target}，关闭页面后仍会继续。',
-  'files.remoteDownload.urlLabel': '下载地址',
+  'files.remoteDownload.urlLabel': '下载地址（每行一个）',
   'files.remoteDownload.httpWarning': 'HTTP 连接未加密；下载内容可能被途中修改，优先使用 HTTPS。',
   'files.remoteDownload.nameLabel': '保存名称',
   'files.remoteDownload.optional': '选填',
