@@ -9,6 +9,7 @@ import { resetDesktopModeForTest, useDesktopMode } from '@/stores/desktopMode'
 import { resetDesktopIconsForTest } from '@/stores/desktopIcons'
 import { resetThemeForTest, useTheme } from '@/stores/theme'
 import type { DesktopEntries } from '@/lib/desktopEntries'
+import { desktopIconPositionForGridSlot } from '@/lib/desktopIconLayout'
 import {
   beginDesktopFileDrag,
   clearDesktopFileDrag,
@@ -1423,9 +1424,17 @@ describe('DesktopView dynamic entries', () => {
     wrapper.unmount()
   })
 
-  it('pastes a screenshot onto the desktop and creates a server-file icon through the upload pipeline', async () => {
+  it('uploads a pasted screenshot and appends its icon without moving existing icons', async () => {
+    const bounds = { width: window.innerWidth - 24, height: window.innerHeight - 88 }
+    const existingKey = 'site:blog'
+    const existingPosition = desktopIconPositionForGridSlot({ column: 5, row: 1 }, bounds)
+    mockedWorkspace.mockResolvedValue(makeWorkspace({ positions: { [existingKey]: existingPosition } }))
     const wrapper = mount(DesktopView, { attachTo: document.body })
     await flushPromises()
+    const iconStyles = () => new Map(wrapper.findAll('[data-icon-key]').map(slot => [
+      slot.attributes('data-icon-key'), slot.attributes('style'),
+    ]))
+    const before = iconStyles()
     const event = new Event('paste', { bubbles: true, cancelable: true })
     Object.defineProperty(event, 'clipboardData', { value: {
       files: [new File(['pixels'], 'image.png', { type: 'image/png' })], items: [],
@@ -1439,6 +1448,13 @@ describe('DesktopView dynamic entries', () => {
     expect(mockedWorkspaceUpdate.mock.calls.at(-1)?.[0]?.shortcuts).toEqual(expect.arrayContaining([
       expect.objectContaining({ path: `/home/KPanel Desktop/${uploaded.name}`, targetType: 'file' }),
     ]))
+    const saved = mockedWorkspaceUpdate.mock.calls.at(-1)![0]
+    expect(saved.positions).toEqual({
+      [existingKey]: existingPosition,
+      [`shortcut:${saved.shortcuts[0]!.id}`]: desktopIconPositionForGridSlot({ column: 5, row: 2 }, bounds),
+    })
+    const after = iconStyles()
+    for (const [key, style] of before) expect(after.get(key)).toBe(style)
     expect(wrapper.get('.desktop-transfer').text()).toContain('已传到桌面')
     wrapper.unmount()
   })

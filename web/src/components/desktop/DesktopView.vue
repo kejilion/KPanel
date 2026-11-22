@@ -3249,17 +3249,17 @@ function desktopDropPosition(event: DragEvent): DesktopIconPosition | undefined 
   return desktopPositionAt(event.clientX, event.clientY)
 }
 
-async function addDroppedFileEntries(
+async function addDesktopFileEntries(
   sourceEntries: Parameters<typeof addFileEntriesToDesktop>[0],
-  destination: DesktopIconPosition,
+  destination?: DesktopIconPosition,
 ): Promise<Awaited<ReturnType<typeof addFileEntriesToDesktop>>> {
   return addFileEntriesToDesktop(sourceEntries, (draft, added) => {
-    if (!added.length) return
+    if (!added.length || (!destination && compactIconLayout.value)) return
     const addedKeys = added.map((shortcut) => `shortcut:${shortcut.id}`)
     const layout = deriveDesktopGridLayout(
       [
         ...allDesktopLayoutItems.value,
-        ...addedKeys.map((key) => ({ key })),
+        ...addedKeys.map((key) => ({ key, append: !destination })),
       ],
       [
         ...Object.entries(draft.positions).map(([key, position]) => ({ key, position })),
@@ -3271,6 +3271,12 @@ async function addDroppedFileEntries(
     const placeableKeys = addedKeys.filter((key) => layout.placements.some((placement) => placement.key === key))
     if (!placeableKeys.length) return
     const placeableKeySet = new Set(placeableKeys)
+    if (!destination) {
+      for (const { key, position } of layout.placements) {
+        if (placeableKeySet.has(key)) draft.positions[key] = position
+      }
+      return
+    }
     const initial = new Map(layout.placements.map((placement) => [placement.key, placement.position]))
     const start = desktopIconGridSlotForPosition(destination, iconBounds.value)
     let placements = layout.placements
@@ -3406,7 +3412,7 @@ async function addInternalFileDrop(event: DragEvent, destination: DesktopIconPos
   clearDesktopFileDrag()
   if (!sourceEntries.length) return
   try {
-    const result = await addDroppedFileEntries(sourceEntries, destination)
+    const result = await addDesktopFileEntries(sourceEntries, destination)
     if (result.added.length) {
       toast.success(
         result.added.length === 1 ? i18n.t('desktop.fileShortcutAdded') : i18n.t('desktop.fileShortcutsAdded', { count: result.added.length }),
@@ -3441,12 +3447,12 @@ function onDesktopPaste(event: ClipboardEvent): void {
   if (!files.length) return
   event.preventDefault()
   event.stopPropagation()
-  void addExternalFiles(async () => collectExternalFiles(files), { x: 0, y: 0 })
+  void addExternalFiles(async () => collectExternalFiles(files))
 }
 
 async function addExternalFiles(
   collect: (signal: AbortSignal) => Promise<ReturnType<typeof collectExternalFiles>>,
-  destination: DesktopIconPosition,
+  destination?: DesktopIconPosition,
   dropEvent?: DragEvent,
 ): Promise<void> {
   if (desktopTransfer.value && ['preparing', 'uploading'].includes(desktopTransfer.value.phase)) {
@@ -3482,7 +3488,7 @@ async function addExternalFiles(
     let shortcutDetail = ''
     let shortcutSaveFailed = false
     try {
-      const shortcutResult = await addDroppedFileEntries(result.entries, destination)
+      const shortcutResult = await addDesktopFileEntries(result.entries, destination)
       addedCount = shortcutResult.added.length
       if (shortcutResult.duplicates.length) shortcutDetail = i18n.t('desktop.fileShortcutDuplicate')
     } catch (error) {
@@ -3592,7 +3598,7 @@ async function addCrossPanelFileDrop(event: DragEvent, destination: DesktopIconP
     let shortcutDetail = ''
     if (copiedEntries.length) {
       try {
-        const shortcuts = await addDroppedFileEntries(copiedEntries, destination)
+        const shortcuts = await addDesktopFileEntries(copiedEntries, destination)
         shortcutCount = shortcuts.added.length + shortcuts.duplicates.length
         if (shortcuts.duplicates.length) shortcutDetail = i18n.t('desktop.fileShortcutDuplicate')
       } catch (error) {
@@ -3766,7 +3772,7 @@ async function createNewItem(): Promise<void> {
     if (result.cancelled || result.skipped?.length) { toast.show(i18n.t('files.conflict.skip')); newItem.value = undefined; return }
     if (result.failed.length) throw new Error(result.failed[0]!.detail)
     const destination = desktopPositionAt(pending.origin.x, pending.origin.y) ?? { x: 0, y: 0 }
-    const created = await addDroppedFileEntries(result.entries, destination)
+    const created = await addDesktopFileEntries(result.entries, destination)
     newItem.value = undefined
     if (created.added[0]) setIconSelection([`shortcut:${created.added[0].id}`])
     toast.success(i18n.t('desktop.newItemCreated'), result.entries[0]?.name ?? name)
