@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { mount, flushPromises } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ref } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { desktopWindowLaunchKey, desktopWindowCloseGuardKey, desktopWindowTitleKey } from '@/lib/desktopRouteKeys'
+import { desktopWindowLaunchKey, desktopWindowCloseGuardKey, desktopWindowTitleKey, desktopWindowVisibleKey } from '@/lib/desktopRouteKeys'
 import ShortcutCommandWorkspace from './ShortcutCommandWorkspace.vue'
 
 const mocks = vi.hoisted(() => ({ workspace: vi.fn(), hosts: vi.fn(), title: vi.fn(), list: vi.fn() }))
@@ -11,12 +12,13 @@ const id = 'a'.repeat(32)
 const shortcut = { id, name: 'Load', targetType: 'command', command: 'uptime' }
 let closeGuard: () => boolean | Promise<boolean>
 const wrappers: ReturnType<typeof mount>[] = []
-async function create(launch = true) {
+async function create(launch = true, visible = ref(true)) {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/command-shortcut/:shortcutId', component: {} }] })
   await router.push('/command-shortcut/' + id)
   const wrapper = mount(ShortcutCommandWorkspace, { global: { plugins: [router], provide: {
     [desktopWindowTitleKey as symbol]: mocks.title,
     [desktopWindowLaunchKey as symbol]: () => launch,
+    [desktopWindowVisibleKey as symbol]: visible,
     [desktopWindowCloseGuardKey as symbol]: { register: (guard: () => boolean | Promise<boolean>) => { closeGuard = guard; return () => undefined } },
   }, stubs: { ShortcutCommandTerminal: { name: 'ShortcutCommandTerminal', props: ['name', 'command', 'hostName', 'hostId', 'existingSession', 'shortcutId', 'shortcutVersion'], template: '<div data-testid="terminal">{{ command }}</div>' } } } })
   wrappers.push(wrapper)
@@ -31,6 +33,15 @@ describe('command shortcut desktop workspace', () => {
     expect(w.get('[data-testid="terminal"]').text()).toBe('uptime')
     expect(mocks.title).toHaveBeenLastCalledWith('Load · 本机 · 终端命令')
     expect(mocks.workspace).toHaveBeenCalledWith(expect.any(AbortSignal))
+  })
+  it('does not show the run action while a closing window is still mounted', async () => {
+    const visible = ref(true)
+    const w = await create(true, visible)
+    w.getComponent({ name: 'ShortcutCommandTerminal' }).vm.$emit('close')
+    visible.value = false
+    await w.vm.$nextTick()
+
+    expect(w.find('button').exists()).toBe(false)
   })
   it('restores idle and requires an explicit run with freshly read command data', async () => {
     const w = await create(false)
