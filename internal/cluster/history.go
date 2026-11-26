@@ -234,7 +234,8 @@ func validHistoryRelayCommand(command FileRelayCommand, now time.Time) error {
 		if err := validateFileRelayCommand(command, now); err != nil {
 			return err
 		}
-		if command.Offset+int64(len(command.Data)) > monitoring.MaxCheckUpdateBytes {
+		if command.Offset < 0 || command.Offset > monitoring.MaxCheckUpdateBytes ||
+			int64(len(command.Data)) > monitoring.MaxCheckUpdateBytes-command.Offset {
 			return ErrAuthentication
 		}
 		return nil

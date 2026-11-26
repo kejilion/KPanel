@@ -3,6 +3,7 @@ package cluster
 import (
 	"context"
 	"errors"
+	"math"
 	"net/http"
 	"strings"
 	"testing"
@@ -58,6 +59,8 @@ func TestHistoryRelayBodyChunksStayWithinOneChecksUpdate(t *testing.T) {
 		{"empty final", body(monitoring.MaxCheckUpdateBytes, 0, true), true},
 		{"past the update limit", body(lightFileChunkBytes, monitoring.MaxCheckUpdateBytes-lightFileChunkBytes+1, true), false},
 		{"far offset", body(1<<20, 1, true), false},
+		{"offset overflows a sum", body(math.MaxInt64, 1, true), false},
+		{"last byte of the update", body(monitoring.MaxCheckUpdateBytes-1, 1, true), true},
 		{"oversized chunk", body(0, lightFileChunkBytes+1, false), false},
 		{"empty non-final", body(0, 0, false), false},
 	} {
