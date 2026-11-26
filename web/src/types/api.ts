@@ -2069,6 +2069,24 @@ export interface MonitoringCheckUpdate {
   items: MonitoringCheck[]
 }
 
+export type MonitoringChecksDistributionState = 'synced' | 'pending' | 'waiting' | 'unsupported' | 'failed'
+
+export interface MonitoringChecksDistributionNode {
+  hostId: string
+  name: string
+  state: MonitoringChecksDistributionState
+  errorCode?: string
+  syncedAt?: string
+}
+
+/** The center's own checks list pushed to every light node; the center is the only source. */
+export interface MonitoringChecksDistribution {
+  enabled: boolean
+  centerChecksAvailable: boolean
+  desiredResourceVersion?: string
+  nodes: MonitoringChecksDistributionNode[]
+}
+
 export interface MonitoringStorageStatus {
   enabled: boolean
   retentionDays: number

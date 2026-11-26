@@ -72,6 +72,9 @@ func (s *Server) StartBackground(ctx context.Context) {
 	}
 	s.startBackupSchedule(ctx)
 	s.cluster.Start(ctx)
+	if s.checksDistribution != nil {
+		s.checksDistribution.Start(ctx)
+	}
 	if s.clusterTraffic != nil {
 		s.clusterTraffic.Start(ctx)
 	}

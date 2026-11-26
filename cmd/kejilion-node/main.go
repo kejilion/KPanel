@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -55,6 +56,7 @@ type nodeConfig struct {
 	SSHLogin            bool     `json:"sshLogin,omitempty"`
 	Health              bool     `json:"-"`
 	ServiceChecks       bool     `json:"-"`
+	ChecksSync          bool     `json:"-"`
 }
 
 type tokenWire struct {
@@ -91,9 +93,10 @@ type enrollResponse struct {
 }
 
 type reportRequest struct {
-	Platform  string                    `json:"platform,omitempty"`
-	Telemetry contract.HostTelemetry    `json:"telemetry"`
-	Health    *contract.LightNodeHealth `json:"health,omitempty"`
+	Platform     string                    `json:"platform,omitempty"`
+	Telemetry    contract.HostTelemetry    `json:"telemetry"`
+	Health       *contract.LightNodeHealth `json:"health,omitempty"`
+	Capabilities []string                  `json:"capabilities,omitempty"`
 }
 
 type reportResponse struct {
@@ -270,6 +273,7 @@ func runEnroll(arguments []string) error {
 		SSHLogin:      hasResponseCapability(responseHeaders, cluster.SSHLoginCapability),
 		Health:        hasResponseCapability(responseHeaders, cluster.LightHealthCapability),
 		ServiceChecks: hasResponseCapability(responseHeaders, cluster.ServiceChecksCapability),
+		ChecksSync:    hasResponseCapability(responseHeaders, cluster.MonitoringChecksSyncCapability),
 	}
 	if runtime.GOOS == "windows" {
 		digest := sha256.Sum256([]byte(strings.TrimSpace(*token)))
@@ -410,6 +414,7 @@ func collectAndReport(
 	if config.ServiceChecks {
 		payload.Telemetry.ServiceChecks = readNodeCheckStatus()
 	}
+	payload.Capabilities = nodeReportCapabilities(config)
 	return sendLightReport(ctx, config, secret, payload, previousReportLatency)
 }
 
@@ -424,6 +429,9 @@ func sendLightReport(ctx context.Context, config nodeConfig, secret []byte, payl
 	if !config.Health {
 		payload.Health = nil
 	}
+	if !config.ChecksSync {
+		payload.Capabilities = nil
+	}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return config, 0, err
@@ -435,10 +443,11 @@ func sendLightReport(ctx context.Context, config nodeConfig, secret []byte, payl
 	var response reportResponse
 	requestStartedAt := time.Now()
 	status, responseHeaders, err := postRawJSONWithHTTPClient(ctx, httpClient, config.Origin+lightReportPath, body, headers, &response)
-	if err != nil && (config.SSHLogin || config.Health || config.ServiceChecks) && shouldRetryLightReportWithoutSSHLogin(status) {
+	if err != nil && (config.SSHLogin || config.Health || config.ServiceChecks || config.ChecksSync) && shouldRetryLightReportWithoutSSHLogin(status) {
 		payload.Telemetry.SSHLogin = nil
 		payload.Telemetry.ServiceChecks = nil
 		payload.Health = nil
+		payload.Capabilities = nil
 		body, err = json.Marshal(payload)
 		if err == nil {
 			headers, err = signedLightNodeHeaders(config, lightReportPath, body, secret, previousReportLatency)
@@ -458,7 +467,18 @@ func enableSSHLoginCapability(config nodeConfig, headers http.Header) nodeConfig
 	config.SSHLogin = hasResponseCapability(headers, cluster.SSHLoginCapability)
 	config.Health = hasResponseCapability(headers, cluster.LightHealthCapability)
 	config.ServiceChecks = hasResponseCapability(headers, cluster.ServiceChecksCapability)
+	config.ChecksSync = hasResponseCapability(headers, cluster.MonitoringChecksSyncCapability)
 	return config
+}
+
+// nodeReportCapabilities lists the optional features this node tells the
+// center about. Checks sync rides the root broker's history relay, which a
+// Windows node runs only when file management was enabled at installation.
+func nodeReportCapabilities(config nodeConfig) []string {
+	if !config.ChecksSync || (runtime.GOOS == "windows" && !slices.Contains(config.Capabilities, "files")) {
+		return nil
+	}
+	return []string{cluster.MonitoringChecksSyncCapability}
 }
 
 func shouldRetryLightReportWithoutSSHLogin(status int) bool {

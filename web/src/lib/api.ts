@@ -104,6 +104,7 @@ import type {
   MonitoringRange,
   MonitoringCheckSnapshot,
   MonitoringCheckUpdate,
+  MonitoringChecksDistribution,
   NetworkInterfacesSnapshot,
   TrafficInterfacesSnapshot,
   TrafficInterfacesUpdate,
@@ -2777,6 +2778,10 @@ export const api = {
       request<MonitoringCheckSnapshot>('/monitoring/checks', { signal }),
     updateChecks: (body: MonitoringCheckUpdate): Promise<MonitoringCheckSnapshot> =>
       request<MonitoringCheckSnapshot>('/monitoring/checks', { method: 'PUT', body }),
+    checksDistribution: (signal?: AbortSignal): Promise<MonitoringChecksDistribution> =>
+      request<MonitoringChecksDistribution>('/monitoring/checks/distribution', { signal }),
+    updateChecksDistribution: (enabled: boolean): Promise<MonitoringChecksDistribution> =>
+      request<MonitoringChecksDistribution>('/monitoring/checks/distribution', { method: 'PUT', body: { enabled } }),
   },
   jobs: {
     list: async (query?: { limit?: number }, signal?: AbortSignal): Promise<JobList> => {

@@ -59,6 +59,7 @@ import type {
   MonitoringOperatorLatencySeries,
   MonitoringRange,
   MonitoringCheckKind,
+  MonitoringChecksDistributionNode,
 } from '@/types/api'
 
 const ranges: Array<{ value: MonitoringRange; label: string }> = [
@@ -146,6 +147,37 @@ function monitoringCategoryVisible(category: Exclude<MonitoringCategoryId, 'all'
   return activeMonitoringCategory.value === 'all' || activeMonitoringCategory.value === category
 }
 const checksDialogOpen = ref(false)
+// A light node's checks come from this center; show whether they are in sync.
+const isLightNodeHost = computed(() => isRemoteHost.value && selectedHost.value?.kind === 'light_node')
+const lightNodeChecksSync = ref<{ enabled: boolean; node?: MonitoringChecksDistributionNode }>()
+let lightNodeChecksSyncController: AbortController | undefined
+const lightNodeChecksSyncLabel = computed(() => {
+  const value = lightNodeChecksSync.value
+  if (!isLightNodeHost.value || !value) return ''
+  if (!value.enabled) return phrase('中心未开启检测项下发')
+  switch (value.node?.state) {
+    case 'synced': return phrase('检测项已与中心同步')
+    case 'waiting': return phrase('节点上线后同步检测项')
+    case 'unsupported': return phrase('节点版本过旧，升级后同步检测项')
+    case 'failed': return phrase('检测项同步失败，可在本机“管理检测项”中查看')
+    default: return phrase('检测项等待同步')
+  }
+})
+
+async function loadLightNodeChecksSync(): Promise<void> {
+  lightNodeChecksSyncController?.abort()
+  lightNodeChecksSync.value = undefined
+  if (!isLightNodeHost.value) return
+  const hostId = selectedHostId.value
+  lightNodeChecksSyncController = new AbortController()
+  try {
+    const result = await api.monitoring.checksDistribution(lightNodeChecksSyncController.signal)
+    if (hostId !== selectedHostId.value) return
+    lightNodeChecksSync.value = { enabled: result.enabled, node: result.nodes.find((node) => node.hostId === hostId) }
+  } catch {
+    // The sync note is optional; history still loads without it.
+  }
+}
 const activeWindow = ref<MonitoringHistoryQuery>()
 const rootHistory = shallowRef<MonitoringHistory>()
 const updating = ref(false)
@@ -879,9 +911,12 @@ onMounted(() => {
   void loadHosts()
   unsubscribeOrder = subscribeClusterHostOrder(() => { orderRevision.value++ })
 })
+watch(() => [selectedHostId.value, selectedHost.value?.kind], () => { void loadLightNodeChecksSync() }, { immediate: true })
+
 onBeforeUnmount(() => {
   controller?.abort()
   hostsController?.abort()
+  lightNodeChecksSyncController?.abort()
   unsubscribeOrder?.()
 })
 </script>
@@ -1173,11 +1208,12 @@ onBeforeUnmount(() => {
               {{ Math.max(1, Math.round((history.storage.operatorLatencyIntervalSeconds || 300) / 60)) }} 分钟
             </span>
             <span v-else-if="operatorLatencyRoutes.length">等待首次检测采样</span>
+            <span v-if="lightNodeChecksSyncLabel" class="service-check-sync" role="status">{{ lightNodeChecksSyncLabel }}</span>
             <button
               class="button button--secondary button--small"
               type="button"
               :disabled="isRemoteHost"
-              :title="isRemoteHost ? '请在该节点所属面板管理检测项' : '管理检测项'"
+              :title="isLightNodeHost ? '检测项由中心统一下发，请在本机管理' : isRemoteHost ? '请在该节点所属面板管理检测项' : '管理检测项'"
               @click="checksDialogOpen = true"
             ><Settings2 :size="15" />管理检测项</button>
           </div>

@@ -196,4 +196,11 @@ export default [
   ["无数据", "No data"],
   ["成功", "Successful"],
   ["取消", "Cancel"],
+  ["中心未开启检测项下发", "This center does not push checks"],
+  ["检测项已与中心同步", "Checks synced with this center"],
+  ["节点上线后同步检测项", "Checks sync when the node reconnects"],
+  ["节点版本过旧，升级后同步检测项", "Node is outdated; checks sync after upgrade"],
+  ["检测项同步失败，可在本机“管理检测项”中查看", "Checks sync failed; see Manage checks on this center"],
+  ["检测项等待同步", "Checks pending sync"],
+  ["检测项由中心统一下发，请在本机管理", "Checks are pushed by this center; manage them here"],
 ] as const satisfies PhraseCatalog

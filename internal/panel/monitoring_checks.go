@@ -62,5 +62,8 @@ func (s *Server) handleMonitoringChecks(w http.ResponseWriter, r *http.Request) 
 		outcome = "success"
 	}
 	_ = s.audit(r, session.User.ID, "monitoring.checks.update", "monitoring-checks", "collection", outcome, change)
+	if outcome == "success" && s.checksDistribution != nil {
+		s.checksDistribution.Kick()
+	}
 	s.writeAgentResponse(w, r, response)
 }

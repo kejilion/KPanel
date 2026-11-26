@@ -5,12 +5,21 @@ import (
 	"net/http"
 )
 
-// NewMonitoringHandler exposes only the existing history reader to an
-// authenticated node relay. It has no system, file or terminal action routes.
+// NewMonitoringHandler exposes the history reader and the service checks a
+// center distributes to an authenticated node relay. It has no system, file
+// or terminal action routes.
 func NewMonitoringHandler(provider monitoringHistoryProvider) http.Handler {
 	s := &Server{monitoring: provider}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/monitoring/history" || r.URL.RawPath != "" {
+		if r.URL.RawPath != "" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.URL.Path == "/v1/monitoring/checks" {
+			s.monitoringChecks(w, r, requestIDFrom(w))
+			return
+		}
+		if r.URL.Path != "/v1/monitoring/history" {
 			http.NotFound(w, r)
 			return
 		}
