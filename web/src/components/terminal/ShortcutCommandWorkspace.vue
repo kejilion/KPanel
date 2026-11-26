@@ -7,7 +7,7 @@ import ShortcutCommandTerminal from '@/components/terminal/ShortcutCommandTermin
 import { useI18n } from '@/i18n'
 import { api } from '@/lib/api'
 import { isUnsupportedLightNode } from '@/lib/nodeFeatureHosts'
-import { desktopWindowCloseGuardKey, desktopWindowLaunchKey, desktopWindowTitleKey } from '@/lib/desktopRouteKeys'
+import { desktopWindowCloseGuardKey, desktopWindowLaunchKey, desktopWindowTitleKey, desktopWindowVisibleKey } from '@/lib/desktopRouteKeys'
 import type { DesktopShortcut, TerminalSession } from '@/types/api'
 
 const route = useRoute()
@@ -15,6 +15,7 @@ const { t } = useI18n()
 const consumeLaunch = inject(desktopWindowLaunchKey, () => false)
 const setWindowTitle = inject(desktopWindowTitleKey, undefined)
 const closeGuards = inject(desktopWindowCloseGuardKey, undefined)
+const windowVisible = inject(desktopWindowVisibleKey, ref(true))
 const shortcut = ref<DesktopShortcut>()
 const loading = ref(false)
 const error = ref('')
@@ -97,7 +98,7 @@ onBeforeUnmount(() => {
       <button class="button" @click="load()"><RefreshCw :size="16" />{{ t('common.retry') }}</button>
     </div>
     <ShortcutCommandTerminal v-else-if="running && shortcut" :name="shortcut.name" :shortcut-id="shortcut.id" :shortcut-version="shortcutVersion" :existing-session="existingSession" @close="running = false; existingSession = undefined" :command="shortcut.command || ''" :host-id="targetHost?.id" :host-name="targetHost?.name || t('terminal.hostKind.local')" />
-    <div v-else class="shortcut-command-page__state">
+    <div v-else-if="windowVisible" class="shortcut-command-page__state">
       <strong>{{ shortcut?.name }}</strong>
       <p>{{ t('desktop.shortcutCommandIdle') }}</p>
       <button class="button button--primary" @click="load(true)"><Play :size="16" />{{ t('terminal.quickCommandsRun', { name: shortcut?.name || '' }) }}</button>
