@@ -90,7 +90,7 @@ func completeHistoryFixture(now time.Time, count int) contract.MonitoringHistory
 		}
 		result.Containers = append(result.Containers, series)
 	}
-	for j := 0; j < 9; j++ {
+	for j := 0; j < monitoring.MaxChecks; j++ {
 		series := contract.MonitoringOperatorLatencySeries{ID: fmt.Sprint(j), Operator: "telecom", Region: "beijing", Address: "192.0.2.1"}
 		latency := 12.3456
 		for _, point := range result.Host {
@@ -161,7 +161,7 @@ func TestClusterHistoryFullParityLargeEncryptedResponse(t *testing.T) {
 	if len(encoded) <= MaxSummaryBytes || int64(len(encoded)) > monitoring.MaxHistoryResponseBytes {
 		t.Fatalf("unexpected maximum fixture size %d", len(encoded))
 	}
-	t.Logf("32 containers, 9 latency series, 720 points each: %d JSON bytes", len(encoded))
+	t.Logf("32 containers, %d latency series, 720 points each: %d JSON bytes", monitoring.MaxChecks, len(encoded))
 	installHistoryTransport(t, remote, target, want, false)
 	got, err := center.History(context.Background(), host.ID, "6h", time.Time{}, time.Time{})
 	if err != nil {
@@ -184,6 +184,22 @@ func TestClusterHistoryFullParityLargeEncryptedResponse(t *testing.T) {
 	center.storeV2.mu.Unlock()
 	if _, err := center.History(context.Background(), host.ID, "6h", time.Time{}, time.Time{}); err != nil {
 		t.Fatalf("legacy scope: %v", err)
+	}
+}
+
+// A host may store up to MaxChecks service checks; the center must accept
+// every series it can configure and still reject one beyond that bound.
+func TestClusterHistoryAcceptsEveryConfigurableCheckSeries(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	query := monitoring.Query{Range: "6h"}
+	value := completeHistoryFixture(now, 2)
+	value.Range = "6h"
+	if len(value.OperatorLatency) != monitoring.MaxChecks || !validHistoryResponse(value, query) {
+		t.Fatalf("history with %d check series rejected", len(value.OperatorLatency))
+	}
+	value.OperatorLatency = append(value.OperatorLatency, value.OperatorLatency[0])
+	if validHistoryResponse(value, query) {
+		t.Fatal("history beyond the check limit accepted")
 	}
 }
 

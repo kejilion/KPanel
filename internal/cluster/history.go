@@ -172,7 +172,7 @@ func validHistoryResponse(value contract.MonitoringHistory, query monitoring.Que
 	}
 	if value.Range != wantRange || value.BucketSeconds < 1 || !value.StartedAt.Before(value.EndedAt) ||
 		value.Host == nil || value.Containers == nil ||
-		len(value.Host) > 720 || len(value.Containers) > 32 || len(value.OperatorLatency) > 9 {
+		len(value.Host) > 720 || len(value.Containers) > 32 || len(value.OperatorLatency) > monitoring.MaxChecks {
 		return false
 	}
 	for _, series := range value.Containers {
