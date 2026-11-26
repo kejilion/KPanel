@@ -232,6 +232,9 @@ func (s *Service) AcceptLightReport(auth LightReportAuth, rawBody []byte, input 
 	if err := validateLightPlatform(input); err != nil {
 		return LightReportResponse{}, err
 	}
+	if !validLightReportFeatures(input.Capabilities) {
+		return LightReportResponse{}, ErrProtocolMismatch
+	}
 	if err := validateLightPlatformChoice(record.Platform); err != nil {
 		return LightReportResponse{}, err
 	}
@@ -260,6 +263,7 @@ func (s *Service) AcceptLightReport(auth LightReportAuth, rawBody []byte, input 
 	if _, err := s.light.UpdateReport(auth.NodeID, snapshot, input.Telemetry.AgentVersion, now); err != nil {
 		return LightReportResponse{}, err
 	}
+	s.lightChecks.record(auth.NodeID, hasLightReportFeature(input.Capabilities, MonitoringChecksSyncCapability), now)
 	return LightReportResponse{AcceptedAt: now, NextReport: lightReportInterval}, nil
 }
 
@@ -353,6 +357,7 @@ func (s *Service) deleteLightHostLocked(id string, input DeleteHostInput) (Delet
 		s.lightFile.deleteNode(id)
 		s.lightHistory.deleteNode(id)
 	}
+	s.lightChecks.forget(id)
 	return DeleteHostResult{Deleted: true, CredentialRemoved: credentialRemoved}, nil
 }
 

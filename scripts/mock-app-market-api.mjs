@@ -1902,6 +1902,23 @@ async function readJSON(request, maxBytes = 65_536) {
 }
 
 let mockMonitoringCheckRevision = 1
+let mockChecksDistributionEnabled = false
+// Same node ids the monitoring fixture adds with KPANEL_MOCK_MONITORING=1.
+const mockChecksDistributionStates = {
+  ['a'.repeat(32)]: 'synced', ['c'.repeat(32)]: 'waiting', ['d'.repeat(32)]: 'pending', ['f'.repeat(32)]: 'unsupported',
+}
+function mockChecksDistribution() {
+  return {
+    enabled: mockChecksDistributionEnabled,
+    centerChecksAvailable: mockChecksDistributionEnabled,
+    desiredResourceVersion: mockChecksDistributionEnabled ? mockMonitoringCheckSnapshot().resourceVersion : undefined,
+    nodes: mockChecksDistributionEnabled
+      ? visualClusterHosts.filter((host) => mockChecksDistributionStates[host.id]).map((host) => ({
+        hostId: host.id, name: host.name, state: mockChecksDistributionStates[host.id],
+      }))
+      : [],
+  }
+}
 let mockMonitoringChecks = [
   ...['telecom', 'unicom', 'mobile'].flatMap((operator, operatorIndex) =>
     ['beijing', 'shanghai', 'guangzhou'].map((region, regionIndex) => ({
@@ -2115,6 +2132,14 @@ createServer(async (request, response) => {
     }
     mockTrafficRevision += 1
     send(response, 200, mockTrafficInterfacesSnapshot())
+    return
+  }
+  if (url.pathname === '/api/v1/monitoring/checks/distribution') {
+    if (request.method === 'PUT') {
+      const input = await readJSON(request)
+      mockChecksDistributionEnabled = input.enabled === true
+    }
+    send(response, 200, mockChecksDistribution())
     return
   }
   if (url.pathname === '/api/v1/monitoring/checks' && request.method === 'GET') {

@@ -190,6 +190,9 @@ type LightReportRequest struct {
 	Platform  string                    `json:"platform,omitempty"`
 	Telemetry contract.HostTelemetry    `json:"telemetry"`
 	Health    *contract.LightNodeHealth `json:"health,omitempty"`
+	// Capabilities lists optional node features. A node sends it only after
+	// the center advertised a capability that asks for it.
+	Capabilities []string `json:"capabilities,omitempty"`
 }
 
 type LightReportResponse struct {

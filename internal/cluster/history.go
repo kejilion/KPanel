@@ -15,6 +15,7 @@ import (
 
 const (
 	HistoryPath        = "/v1/monitoring/history"
+	ChecksPath         = "/v1/monitoring/checks"
 	HistoryV1Path      = "/api/v1/federation/monitoring/history"
 	HistoryV2Path      = "/api/v2/federation/monitoring/history"
 	HistoryRelayV2Path = "/api/v2/federation/monitoring/relay"
@@ -188,12 +189,24 @@ func validHistoryResponse(value contract.MonitoringHistory, query monitoring.Que
 	return true
 }
 
+// The history relay carries exactly three requests: reading history, and
+// reading or replacing the node's service checks. It is not a general proxy.
 func validHistoryRelayRequest(input LightFileRequest) bool {
-	if input.Path != HistoryPath || input.Method != http.MethodGet || input.BodyLength != 0 || len(input.Headers) != 0 {
+	switch {
+	case input.Path == HistoryPath:
+		if input.Method != http.MethodGet || input.BodyLength != 0 || len(input.Headers) != 0 {
+			return false
+		}
+		_, err := monitoring.ParseQuery(input.RawQuery)
+		return err == nil
+	case input.Path == ChecksPath && input.Method == http.MethodGet:
+		return input.RawQuery == "" && input.BodyLength == 0 && len(input.Headers) == 0
+	case input.Path == ChecksPath && input.Method == http.MethodPut:
+		return input.RawQuery == "" && input.BodyLength > 0 && input.BodyLength <= monitoring.MaxCheckUpdateBytes &&
+			len(input.Headers) == 1 && input.Headers["Content-Type"] == "application/json"
+	default:
 		return false
 	}
-	_, err := monitoring.ParseQuery(input.RawQuery)
-	return err == nil
 }
 
 func newLightHistoryRelay(now func() time.Time) *lightFileRelay {
@@ -215,6 +228,16 @@ func NewHistoryRelayClient(client *http.Client) (*FileRelayClient, error) {
 func validHistoryRelayCommand(command FileRelayCommand, now time.Time) error {
 	if command.Kind == "cancel" {
 		return validateFileRelayCommand(command, now)
+	}
+	// Only a checks update has a body, so a body chunk never extends past it.
+	if command.Kind == "body" {
+		if err := validateFileRelayCommand(command, now); err != nil {
+			return err
+		}
+		if command.Offset+int64(len(command.Data)) > monitoring.MaxCheckUpdateBytes {
+			return ErrAuthentication
+		}
+		return nil
 	}
 	if command.Kind != "request" || !validID(command.ID) || !validID(command.RequestID) || command.ExpiresAt <= now.Unix() || command.ExpiresAt > now.Add(5*time.Minute).Unix() || command.Offset != 0 || len(command.Data) != 0 || command.Final {
 		return ErrAuthentication

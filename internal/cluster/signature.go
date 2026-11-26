@@ -23,12 +23,16 @@ const (
 )
 
 const (
-	FederationCapabilitiesHeader    = "X-KPanel-Response-Capabilities"
-	SecurityEntrancePathCapability  = "security-entrance-path-v1"
-	SSHLoginCapability              = "ssh-login-v1"
-	ServiceChecksCapability         = "service-checks-v1"
-	LightHealthCapability           = "light-health-v1"
-	FileRelayV1Capability           = "file-relay-v1"
+	FederationCapabilitiesHeader   = "X-KPanel-Response-Capabilities"
+	SecurityEntrancePathCapability = "security-entrance-path-v1"
+	SSHLoginCapability             = "ssh-login-v1"
+	ServiceChecksCapability        = "service-checks-v1"
+	LightHealthCapability          = "light-health-v1"
+	FileRelayV1Capability          = "file-relay-v1"
+	// MonitoringChecksSyncCapability lets a center push its service checks to a
+	// light node over the history relay. A node advertises it back in reports
+	// only after the center did, so neither side sends the other unknown data.
+	MonitoringChecksSyncCapability  = "monitoring-checks-sync-v1"
 	LightResponseCapabilitiesHeader = "X-KPanel-Light-Response-Capabilities"
 	LightReportLatencyHeader        = "X-KPanel-Light-Report-Latency-Milliseconds"
 )

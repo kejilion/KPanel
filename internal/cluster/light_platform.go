@@ -16,7 +16,7 @@ type LightCapabilitiesResponse struct {
 }
 
 func LightCenterCapabilities() []string {
-	return []string{SSHLoginCapability, LightHealthCapability, ServiceChecksCapability, "windows-command-v1"}
+	return []string{SSHLoginCapability, LightHealthCapability, ServiceChecksCapability, "windows-command-v1", MonitoringChecksSyncCapability}
 }
 
 // ProbeLightCapabilities is read-only. It must never provision a privileged

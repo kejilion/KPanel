@@ -116,6 +116,7 @@ type Service struct {
 	light                 *lightStore
 	lightBatches          *lightBatchStore
 	lightHistory          *lightFileRelay
+	lightChecks           lightChecksCapabilities
 	historyQueries        chan struct{}
 	historyStreams        *fileStreamLimiter
 	historyRelayRequests  *fixedWindowLimiter

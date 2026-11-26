@@ -91,6 +91,7 @@ type Server struct {
 	store                   *store.Store
 	agent                   agentAPI
 	hostOps                 *HostOperationService
+	checksDistribution      *checksDistribution
 	trustedProxies          []*net.IPNet
 	auditMu                 sync.Mutex
 	lastAuthAudit           map[string]time.Time
@@ -332,6 +333,7 @@ func NewServer(config Config, authService *auth.Service, storage *store.Store, a
 		return nil, fmt.Errorf("initialize terminal batches: %w", err)
 	}
 	server.hostOps = newHostOperationService(server)
+	server.checksDistribution = openChecksDistribution(filepath.Join(config.DataDir, "monitoring-checks-distribution.json"), clusterService, server.localChecksSnapshot)
 	downloadClient := remotedownload.NewClient(remotedownload.Config{MaxConnections: 4})
 	server.remoteDownloadOpen, server.remoteDownloadRangeOpen = downloadClient.Open, downloadClient.OpenRange
 	accelerationBudget := make(chan struct{}, 2)
@@ -454,7 +456,7 @@ func (s *Server) updateFrozen() bool {
 }
 
 func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
-	if s.backups != nil && s.backups.Busy() && r.Method != http.MethodGet && (strings.HasPrefix(r.URL.Path, "/api/v1/settings/") || strings.HasPrefix(r.URL.Path, "/api/v1/desktop/") || strings.HasPrefix(r.URL.Path, "/api/v1/cluster/") || r.URL.Path == terminalCommandsPath || r.URL.Path == "/api/v1/monitoring/checks" || strings.HasPrefix(r.URL.Path, "/api/v1/ai/providers") || strings.HasPrefix(r.URL.Path, "/api/v1/ai/models")) {
+	if s.backups != nil && s.backups.Busy() && r.Method != http.MethodGet && (strings.HasPrefix(r.URL.Path, "/api/v1/settings/") || strings.HasPrefix(r.URL.Path, "/api/v1/desktop/") || strings.HasPrefix(r.URL.Path, "/api/v1/cluster/") || r.URL.Path == terminalCommandsPath || r.URL.Path == "/api/v1/monitoring/checks" || r.URL.Path == checksDistributionPath || strings.HasPrefix(r.URL.Path, "/api/v1/ai/providers") || strings.HasPrefix(r.URL.Path, "/api/v1/ai/models")) {
 		s.writeProblem(w, r, http.StatusConflict, "backup_busy", "备份恢复正在执行，请稍后重试", "")
 		return
 	}
@@ -567,6 +569,8 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		s.handleClusterHistory(w, r)
 	case r.URL.Path == "/api/v1/monitoring/checks":
 		s.handleMonitoringChecks(w, r)
+	case r.URL.Path == checksDistributionPath:
+		s.handleChecksDistribution(w, r)
 	case r.URL.Path == trafficInterfacesPath:
 		s.handleTrafficInterfaces(w, r)
 	case r.URL.Path == "/api/v1/terminal-batches" || strings.HasPrefix(r.URL.Path, "/api/v1/terminal-batches/"):

@@ -7,7 +7,7 @@ import LoadingState from '@/components/feedback/LoadingState.vue'
 import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
 import { ApiError, api } from '@/lib/api'
 import { validMonitoringCheckTarget } from '@/lib/monitoringCheckTargets'
-import type { MonitoringCheck, MonitoringCheckKind, MonitoringCheckSnapshot } from '@/types/api'
+import type { MonitoringCheck, MonitoringCheckKind, MonitoringCheckSnapshot, MonitoringChecksDistribution, MonitoringChecksDistributionNode } from '@/types/api'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: []; saved: [snapshot: MonitoringCheckSnapshot] }>()
@@ -20,6 +20,11 @@ const saving = ref(false)
 const error = ref('')
 const status = ref('')
 let controller: AbortController | undefined
+const distribution = ref<MonitoringChecksDistribution>()
+const distributionError = ref('')
+const distributionSaving = ref(false)
+const distributionExpanded = ref(false)
+let distributionController: AbortController | undefined
 
 function phrase(value: string): string {
   phraseCatalogVersion.value
@@ -70,6 +75,61 @@ function validationHint(item: MonitoringCheck): string {
   return phrase('HTTP 支持 IP 或域名，需填写完整 URL；IPv6 使用 http://[地址]/。')
 }
 
+const distributionStateOrder = ['failed', 'pending', 'waiting', 'unsupported', 'synced'] as const
+const distributionStateLabels: Record<(typeof distributionStateOrder)[number], string> = {
+  synced: '已同步', pending: '待同步', waiting: '等待上线', unsupported: '版本过旧', failed: '同步失败',
+}
+
+const distributionSummary = computed(() => {
+  const nodes = distribution.value?.nodes || []
+  if (!nodes.length) return phrase('暂无轻量节点')
+  return distributionStateOrder
+    .map((state) => [state, nodes.filter((node) => node.state === state).length] as const)
+    .filter(([, count]) => count > 0)
+    .map(([state, count]) => phrase(`${distributionStateLabels[state]} ${count}`))
+    .join(' · ')
+})
+
+function distributionNodeLabel(node: MonitoringChecksDistributionNode): string {
+  switch (node.state) {
+    case 'synced': return phrase('已同步')
+    case 'waiting': return phrase('等待上线，上线后自动同步')
+    case 'unsupported': return phrase('版本过旧，升级节点后同步')
+    case 'pending': return node.errorCode ? phrase('上次同步失败，稍后自动重试') : phrase('待同步')
+    default:
+      if (node.errorCode === 'rejected') return phrase('同步失败：节点拒绝了这份检测项')
+      if (node.errorCode === 'node_checks_unavailable') return phrase('同步失败：节点的检测配置文件异常')
+      return phrase('同步失败：已重试 3 次，节点重新连接后再试')
+  }
+}
+
+async function loadDistribution(): Promise<void> {
+  distributionController?.abort()
+  distributionController = new AbortController()
+  distributionError.value = ''
+  try {
+    distribution.value = await api.monitoring.checksDistribution(distributionController.signal)
+  } catch (reason) {
+    if (reason instanceof DOMException && reason.name === 'AbortError') return
+    distributionError.value = reason instanceof ApiError ? reason.message : phrase('无法读取轻量节点的下发状态。')
+  }
+}
+
+async function toggleDistribution(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement
+  const enabled = input.checked
+  distributionSaving.value = true
+  distributionError.value = ''
+  try {
+    distribution.value = await api.monitoring.updateChecksDistribution(enabled)
+  } catch (reason) {
+    input.checked = !enabled
+    distributionError.value = reason instanceof ApiError ? reason.message : phrase('下发设置保存失败。')
+  } finally {
+    distributionSaving.value = false
+  }
+}
+
 async function load(): Promise<void> {
   if (!props.open) return
   controller?.abort()
@@ -77,6 +137,7 @@ async function load(): Promise<void> {
   loading.value = true
   error.value = ''
   status.value = ''
+  void loadDistribution()
   try {
     const result = await api.monitoring.checks(controller.signal)
     snapshot.value = result
@@ -102,8 +163,11 @@ async function save(): Promise<void> {
     })
     snapshot.value = result
     items.value = result.items.map((item) => ({ ...item }))
-    status.value = phrase('检测项已保存，将在下一轮采样生效。')
+    status.value = distribution.value?.enabled
+      ? phrase('检测项已保存，将在下一轮采样生效，并自动下发到轻量节点。')
+      : phrase('检测项已保存，将在下一轮采样生效。')
     emit('saved', result)
+    void loadDistribution()
   } catch (reason) {
     if (reason instanceof ApiError && reason.code === 'monitoring_checks_changed') {
       await load()
@@ -118,10 +182,16 @@ async function save(): Promise<void> {
 
 watch(() => props.open, (open) => {
   if (open) void load()
-  else controller?.abort()
+  else {
+    controller?.abort()
+    distributionController?.abort()
+  }
 }, { immediate: true })
 
-onBeforeUnmount(() => controller?.abort())
+onBeforeUnmount(() => {
+  controller?.abort()
+  distributionController?.abort()
+})
 </script>
 
 <template>
@@ -157,6 +227,32 @@ onBeforeUnmount(() => controller?.abort())
         <strong>{{ phrase('暂无检测项') }}</strong>
         <span>{{ phrase('可保持为空，或添加 Ping、TCP、HTTP 检测。') }}</span>
       </div>
+
+      <section class="check-distribution" aria-labelledby="check-distribution-title">
+        <label class="check-distribution__switch">
+          <input type="checkbox" :checked="distribution?.enabled" :disabled="!distribution || distributionSaving || saving" @change="toggleDistribution" />
+          <span>
+            <strong id="check-distribution-title">{{ phrase('下发到轻量节点') }}</strong>
+            <span>{{ phrase('开启后，所有轻量节点统一使用这里已保存的检测项，节点上原有的检测项会被覆盖；离线节点上线后自动补齐。') }}</span>
+          </span>
+        </label>
+        <p v-if="distributionError" class="check-distribution__error" role="alert">{{ distributionError }}</p>
+        <template v-if="distribution?.enabled">
+          <div class="check-distribution__summary">
+            <span>{{ distributionSummary }}</span>
+            <button v-if="distribution.nodes.length" class="button button--secondary button--small" type="button" :aria-expanded="distributionExpanded" aria-controls="check-distribution-nodes" @click="distributionExpanded = !distributionExpanded">
+              {{ distributionExpanded ? phrase('收起节点') : phrase('查看节点') }}
+            </button>
+            <button class="button button--secondary button--small" type="button" :disabled="distributionSaving" @click="loadDistribution"><RefreshCw :size="15" />{{ phrase('刷新状态') }}</button>
+          </div>
+          <ul v-if="distributionExpanded" id="check-distribution-nodes" class="check-distribution__nodes">
+            <li v-for="node in distribution.nodes" :key="node.hostId" :data-state="node.state">
+              <span class="check-distribution__name">{{ node.name }}</span>
+              <span class="check-distribution__state">{{ distributionNodeLabel(node) }}</span>
+            </li>
+          </ul>
+        </template>
+      </section>
     </div>
     <template #footer>
       <button class="button button--secondary" type="button" :disabled="saving" @click="emit('close')">{{ phrase('取消') }}</button>
@@ -192,6 +288,21 @@ onBeforeUnmount(() => controller?.abort())
 .check-manager__empty { display: grid; min-height: 180px; place-content: center; gap: 6px; color: var(--muted); text-align: center; }
 .check-manager__empty strong { color: var(--text); font-size: 15px; }
 .check-manager__empty span { font-size: 14px; }
+.check-distribution { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.check-distribution__switch { display: grid; grid-template-columns: auto 1fr; align-items: start; gap: 10px; cursor: pointer; }
+.check-distribution__switch input { width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--brand); }
+.check-distribution__switch > span { display: grid; gap: 4px; }
+.check-distribution__switch strong { color: var(--text); font-size: 14px; }
+.check-distribution__switch > span > span { color: var(--muted); font-size: 13px; line-height: 1.55; }
+.check-distribution__error { margin: 0; color: var(--danger); font-size: 13px; }
+.check-distribution__summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.check-distribution__summary > span { flex: 1; min-width: 12em; color: var(--text); font-size: 14px; }
+.check-distribution__nodes { display: grid; gap: 6px; max-height: 220px; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+.check-distribution__nodes li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 14px; }
+.check-distribution__name { color: var(--text); overflow-wrap: anywhere; }
+.check-distribution__state { color: var(--muted); }
+.check-distribution__nodes li[data-state="synced"] .check-distribution__state { color: var(--brand-strong); }
+.check-distribution__nodes li[data-state="failed"] .check-distribution__state { color: var(--danger); }
 @media (max-width: 760px) {
   .check-manager__toolbar { align-items: stretch; flex-wrap: wrap; }
   .check-manager__toolbar > span { width: 100%; flex-basis: 100%; }

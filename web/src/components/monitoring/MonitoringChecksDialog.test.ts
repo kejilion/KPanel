@@ -12,12 +12,17 @@ const mocks = vi.hoisted(() => {
       this.code = code
     }
   }
-  return { checks: vi.fn(), updateChecks: vi.fn(), ApiError }
+  return { checks: vi.fn(), updateChecks: vi.fn(), checksDistribution: vi.fn(), updateChecksDistribution: vi.fn(), ApiError }
 })
 
 vi.mock('@/lib/api', () => ({
   ApiError: mocks.ApiError,
-  api: { monitoring: { checks: mocks.checks, updateChecks: mocks.updateChecks } },
+  api: {
+    monitoring: {
+      checks: mocks.checks, updateChecks: mocks.updateChecks,
+      checksDistribution: mocks.checksDistribution, updateChecksDistribution: mocks.updateChecksDistribution,
+    },
+  },
 }))
 vi.mock('@/i18n/phrase', () => ({ phraseCatalogVersion: { value: 0 }, translatePhrase: (value: string) => value }))
 
@@ -31,6 +36,11 @@ beforeEach(() => {
   vi.clearAllMocks()
   mocks.checks.mockResolvedValue(snapshot)
   mocks.updateChecks.mockImplementation(async (input) => ({ ...snapshot, resourceVersion: `sha256:${'b'.repeat(64)}`, items: input.items }))
+  mocks.checksDistribution.mockResolvedValue({ enabled: false, centerChecksAvailable: false, nodes: [] })
+  mocks.updateChecksDistribution.mockImplementation(async (enabled) => ({
+    enabled, centerChecksAvailable: true,
+    nodes: enabled ? [{ hostId: 'edge', name: '边缘', state: 'waiting' }, { hostId: 'old', name: '旧节点', state: 'unsupported' }] : [],
+  }))
 })
 
 describe('MonitoringChecksDialog', () => {
@@ -106,5 +116,21 @@ describe('MonitoringChecksDialog', () => {
     await wrapper.findAll('button').find((button) => button.text().includes('保存变更'))!.trigger('click')
     await flushPromises()
     expect(mocks.checks).toHaveBeenCalledTimes(2)
+  })
+
+  it('turns light node distribution on and lists each node state', async () => {
+    const wrapper = mount(MonitoringChecksDialog, { props: { open: true }, global: { stubs: { teleport: true } } })
+    await flushPromises()
+    const toggle = wrapper.get('.check-distribution__switch input')
+    expect(wrapper.find('.check-distribution__summary').exists()).toBe(false)
+    await toggle.setValue(true)
+    await flushPromises()
+    expect(mocks.updateChecksDistribution).toHaveBeenCalledWith(true)
+    expect(wrapper.get('.check-distribution__summary').text()).toContain('等待上线 1')
+    expect(wrapper.get('.check-distribution__summary').text()).toContain('版本过旧 1')
+    await wrapper.findAll('button').find((button) => button.text().includes('查看节点'))!.trigger('click')
+    const rows = wrapper.findAll('.check-distribution__nodes li')
+    expect(rows.map((row) => row.attributes('data-state'))).toEqual(['waiting', 'unsupported'])
+    wrapper.unmount()
   })
 })

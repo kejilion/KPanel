@@ -124,6 +124,36 @@ func DefaultChecks() []Check {
 
 func ValidCheckResourceVersion(value string) bool { return checkResourcePattern.MatchString(value) }
 
+// ChecksResourceVersion is the resourceVersion any host reports while it
+// stores exactly these items, so a center can compare lists across hosts.
+func ChecksResourceVersion(items []Check) string {
+	return checkResourceVersion(persistedChecks{SchemaVersion: CheckSchemaVersion, Items: items})
+}
+
+// ValidateCheckSnapshot verifies a snapshot received from another host before
+// it is trusted: same schema and bounds, valid items and a matching version.
+func ValidateCheckSnapshot(snapshot CheckSnapshot) error {
+	if snapshot.SchemaVersion != CheckSchemaVersion || snapshot.MaxItems != MaxChecks || snapshot.Items == nil {
+		return errChecksInvalidDisk
+	}
+	if !snapshot.Available {
+		if len(snapshot.Items) != 0 || snapshot.Warning != "monitoring_checks_unavailable" {
+			return errChecksInvalidDisk
+		}
+		return nil
+	}
+	if snapshot.Warning != "" {
+		return errChecksInvalidDisk
+	}
+	if err := validateChecks(persistedChecks{SchemaVersion: CheckSchemaVersion, Items: snapshot.Items}); err != nil {
+		return err
+	}
+	if snapshot.ResourceVersion != ChecksResourceVersion(snapshot.Items) {
+		return errChecksInvalidDisk
+	}
+	return nil
+}
+
 func (s *checkStore) snapshot() CheckSnapshot {
 	state := s.state
 	if !s.available {
