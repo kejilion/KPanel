@@ -2198,6 +2198,7 @@ export interface DockerContainerCreateEnvironment {
 
 export type DockerMaintenanceAction =
   | 'container_create'
+  | 'container_upgrade'
   | 'compose_deploy'
   | 'compose_redeploy'
   | 'compose_start'

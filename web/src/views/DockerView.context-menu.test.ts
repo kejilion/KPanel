@@ -291,4 +291,29 @@ describe('Docker context menu', () => {
       containerId: container.id, containerResourceVersion: container.resourceVersion,
     })
   })
+
+  it('submits the independent container task with the selected identity and version', async () => {
+    const container = inventory().containers[0]!
+    mocks.task.mockResolvedValue({ id: 'b'.repeat(32), action: 'container_upgrade', status: 'queued', progress: 0 })
+    wrapper = mount(DockerView, { attachTo: windowBody })
+    await flushPromises()
+    await wrapper.get<HTMLButtonElement>('.docker-context-trigger').trigger('click')
+    const upgrade = [...document.body.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+      .find(item => item.textContent?.trim() === '升级容器')!
+    upgrade.click()
+    await flushPromises()
+    const dialog = document.body.querySelector('[role="dialog"]')!
+    expect(dialog.textContent).toContain('web · nginx:alpine')
+    const targetImage = dialog.querySelector('input')!
+    expect(targetImage.placeholder).toContain('拉取当前标签')
+    targetImage.value = 'nginx:stable'
+    targetImage.dispatchEvent(new Event('input'))
+    expect(mocks.task).not.toHaveBeenCalled()
+    const confirm = [...dialog.querySelectorAll('button')].find(item => item.textContent?.trim() === '确认执行')!
+    confirm.click()
+    await flushPromises()
+    expect(mocks.task).toHaveBeenCalledWith({
+      action: 'container_upgrade', target: container.id, expectedResourceVersion: container.resourceVersion, image: 'nginx:stable',
+    })
+  })
 })

@@ -38,7 +38,7 @@ var (
 )
 
 var maintenanceActions = []string{
-	"container_create", "compose_deploy", "compose_redeploy", "compose_start", "compose_stop", "compose_restart",
+	"container_create", "container_upgrade", "compose_deploy", "compose_redeploy", "compose_start", "compose_stop", "compose_restart",
 	"compose_update", "compose_update_service", "compose_remove",
 	"container_access", "image_pull", "image_remove",
 	"network_create", "network_remove", "network_connect", "network_disconnect",
@@ -254,6 +254,10 @@ func (c *Client) validateMaintenanceInput(ctx context.Context, input Maintenance
 		if _, err := c.containerCreatePayload(ctx, input); err != nil {
 			return err
 		}
+	case "container_upgrade":
+		if _, err := c.standaloneUpgradeTarget(ctx, input); err != nil {
+			return err
+		}
 	case "compose_deploy":
 		if err := c.validateComposeDeploymentInput(ctx, input); err != nil {
 			return err
@@ -378,6 +382,8 @@ func (c *Client) runMaintenance(record dockerJobRecord) {
 	switch record.Action {
 	case "container_create":
 		err = c.createManagedContainer(ctx, record.Input)
+	case "container_upgrade":
+		err = c.upgradeStandaloneContainer(ctx, record.Input, record.ID)
 	case "compose_deploy":
 		err = c.deployComposeProject(ctx, record.Input)
 	case "compose_redeploy":
@@ -1089,6 +1095,8 @@ func dockerActionProgress(action string) string {
 	switch action {
 	case "container_create":
 		return "正在创建并启动 Docker 容器"
+	case "container_upgrade":
+		return "正在拉取镜像并升级 Docker 容器"
 	case "compose_deploy":
 		return "正在校验并启动 Docker Compose 项目"
 	case "compose_redeploy":
@@ -1144,6 +1152,8 @@ func dockerActionCompleted(action string) string {
 	switch action {
 	case "container_create":
 		return "Docker 容器已创建并启动"
+	case "container_upgrade":
+		return "Docker 容器已使用本次拉取的镜像"
 	case "compose_deploy":
 		return "Docker Compose 项目已部署"
 	case "compose_redeploy":

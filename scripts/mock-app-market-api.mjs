@@ -3730,6 +3730,17 @@ createServer(async (request, response) => {
       newJob(input.target || input.image, 'Mock · Docker 任务已进入后台队列', () => mockDockerTaskEffect(input), input.action === 'image_pull' ? 1_600 : 700)
       return
     }
+    if (input?.action === 'container_upgrade') {
+      const container = mockDockerContainers.find(item => item.id === input.target && !item.composeProject)
+      if (!container || container.resourceVersion !== input.expectedResourceVersion) {
+        send(response, 409, { title: 'Mock · 容器已变化，请刷新后重试' })
+        return
+      }
+      newJob(container.name, 'Mock · 正在拉取镜像并升级容器', () => container.name === 'legacy-worker'
+        ? { failure: 'Mock · 镜像拉取失败，原容器保留' }
+        : { message: 'Mock · Docker 容器已使用本次拉取的镜像' }, 1_600)
+      return
+    }
     const project = mockDockerComposeProjects.get(input?.name)
     if (!['compose_remove', 'compose_update', 'compose_update_service'].includes(input?.action) || !project) { send(response, 400, { title: 'Mock · Compose 项目任务输入无效' }); return }
     if (input.expectedResourceVersion !== project.resourceVersion) { send(response, 409, { title: 'Mock · 项目配置已变化，请刷新后重试' }); return }

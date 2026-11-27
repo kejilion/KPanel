@@ -1516,6 +1516,13 @@ function askComposeLifecycle(action: 'compose_start' | 'compose_stop' | 'compose
   }, action === 'compose_stop')
 }
 
+function askStandaloneUpgrade(container: DockerContainer): void {
+  closeContextMenu(true)
+  askTask('确认升级容器', `${container.name} · ${container.image}`, {
+    action: 'container_upgrade', target: container.id, expectedResourceVersion: container.resourceVersion,
+  })
+}
+
 function askComposeRemoval(): void {
   const project = composeProject.value
   if (!project) return
@@ -2391,6 +2398,9 @@ onBeforeUnmount(() => {
         <button v-if="contextComposeGroup && contextContainer.service && contextContainer.resourceVersion" type="button" role="menuitem" :disabled="panel.isReadOnly.value || dockerJobActive" @click="openComposeProject(contextComposeGroup, contextContainer)">
           <RefreshCw :size="16" /> {{ phrase('升级容器') }}
         </button>
+        <button v-else-if="!contextContainer.project && contextContainer.resourceVersion && ['running', 'exited', 'created'].includes(contextContainer.state)" type="button" role="menuitem" :disabled="panel.isReadOnly.value || dockerJobActive" @click="askStandaloneUpgrade(contextContainer)">
+          <RefreshCw :size="16" /> {{ phrase('升级容器') }}
+        </button>
         <button v-if="permits(contextContainer, 'pause')" type="button" role="menuitem" @click="askAction(contextContainer, 'pause')">
           <Pause :size="15" />{{ phrase('暂停') }}
         </button>
@@ -2719,6 +2729,15 @@ onBeforeUnmount(() => {
       <div v-else-if="pendingMaintenance?.input.action === 'compose_update_service'" class="inline-alert inline-alert--warning">
         {{ phrase('升级所选容器对应的 Compose 服务，包括该服务的全部副本。服务可能短暂中断，数据卷和挂载保留，容器内未持久化的数据可能丢失。') }}
       </div>
+      <template v-else-if="pendingMaintenance?.input.action === 'container_upgrade'">
+        <label class="field">
+          <span>{{ phrase('目标镜像') }}</span>
+          <input v-model.trim="pendingMaintenance.input.image" class="text-input" type="text" :placeholder="phrase('留空则拉取当前标签')" />
+        </label>
+        <div class="inline-alert inline-alert--warning">
+          {{ phrase('镜像有变化时重建这个容器，保留数据卷和挂载。服务可能短暂中断，容器内未持久化的数据可能丢失。') }}
+        </div>
+      </template>
       <section v-if="pendingMaintenance?.input.action === 'compose_remove'" class="compose-remove-options">
         <p>{{ phrase('停止并删除此项目的全部容器及非外部网络，容器内未持久化的数据将丢失。') }}</p>
         <label class="inline-check"><input v-model="pendingMaintenance.input.removeComposeFiles" type="checkbox" /> {{ phrase('移除 Compose 配置（保留备份）') }}</label>
