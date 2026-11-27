@@ -25,7 +25,7 @@ function button(text: string): HTMLButtonElement {
   return found
 }
 
-describe('Compose project removal', () => {
+describe('Compose project maintenance', () => {
   let wrapper: VueWrapper
   beforeEach(async () => {
     vi.clearAllMocks()
@@ -41,6 +41,18 @@ describe('Compose project removal', () => {
     await flushPromises()
   })
   afterEach(() => { wrapper.unmount(); document.body.innerHTML = ''; vi.restoreAllMocks() })
+
+  it('submits an upgrade only after confirmation and uses the current project version', async () => {
+    mocks.task.mockResolvedValue({ id: '3'.repeat(32), action: 'compose_update', status: 'queued', progress: 0 })
+    button('升级项目').click()
+    await flushPromises()
+    expect(mocks.task).not.toHaveBeenCalled()
+    button('确认执行').click()
+    await flushPromises()
+    expect(mocks.task).toHaveBeenCalledWith({
+      action: 'compose_update', name: 'demo', expectedResourceVersion: 'sha256:config',
+    })
+  })
 
   it('requires an ordinary confirmation and defaults to preserving data', async () => {
     button('删除项目').click()

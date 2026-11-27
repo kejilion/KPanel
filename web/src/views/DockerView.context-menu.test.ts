@@ -255,4 +255,27 @@ describe('Docker context menu', () => {
     expect(document.body.querySelector('.run-command')).toBeNull()
     expect(mocks.composeProject).toHaveBeenCalledWith('blog', expect.any(AbortSignal))
   })
+
+  it('opens the project upgrade confirmation from a Compose container', async () => {
+    const data = inventory()
+    data.containers[0] = { ...data.containers[0]!, project: 'blog' }
+    mocks.inventory.mockResolvedValue(data)
+    mocks.composeProject.mockResolvedValue({
+      name: 'blog', workingDirectory: '/home/docker/blog', configFiles: [], services: ['web'],
+      resourceVersion: 'sha256:project',
+    })
+    wrapper = mount(DockerView, { attachTo: windowBody })
+    await flushPromises()
+
+    await wrapper.get<HTMLButtonElement>('.docker-context-trigger').trigger('click')
+    const upgrade = [...document.body.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+      .find(item => item.textContent?.trim() === '升级 Compose 项目')
+    expect(upgrade).toBeDefined()
+    upgrade!.click()
+    await flushPromises()
+
+    expect(mocks.composeProject).toHaveBeenCalledWith('blog', expect.any(AbortSignal))
+    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('确认升级 Compose 项目')
+    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('升级作用于整个项目')
+  })
 })

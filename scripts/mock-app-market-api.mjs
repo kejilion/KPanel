@@ -3731,8 +3731,14 @@ createServer(async (request, response) => {
       return
     }
     const project = mockDockerComposeProjects.get(input?.name)
-    if (input?.action !== 'compose_remove' || !project) { send(response, 400, { title: 'Mock · 删除项目输入无效' }); return }
+    if (!['compose_remove', 'compose_update'].includes(input?.action) || !project) { send(response, 400, { title: 'Mock · Compose 项目任务输入无效' }); return }
     if (input.expectedResourceVersion !== project.resourceVersion) { send(response, 409, { title: 'Mock · 项目配置已变化，请刷新后重试' }); return }
+    if (input.action === 'compose_update') {
+      newJob(input.name, 'Mock · 正在拉取镜像并升级 Compose 项目', () => ({
+        message: 'Mock · Compose 项目已按拉取后的镜像部署',
+      }), 1_600)
+      return
+    }
     newJob(input.name, 'Mock · 正在删除 Compose 项目', () => {
       for (let index = mockDockerContainers.length - 1; index >= 0; index--) {
         if (mockDockerContainers[index].composeProject === input.name) mockDockerContainers.splice(index, 1)

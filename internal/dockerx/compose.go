@@ -777,6 +777,28 @@ func (c *Client) runComposeProjectLifecycle(ctx context.Context, input Maintenan
 	return nil
 }
 
+func (c *Client) updateComposeProject(ctx context.Context, input MaintenanceInput) error {
+	state, err := c.resolveComposeProject(ctx, input.Name)
+	if err != nil {
+		return err
+	}
+	if input.ExpectedResourceVersion != state.ResourceVersion {
+		return ErrResourceConflict
+	}
+	base := composeProjectBase(state.ComposeProject)
+	if _, err := c.runCompose(ctx, append(base, "pull", "--policy", "always", "--ignore-buildable")...); err != nil {
+		return fmt.Errorf("Compose image pull failed; project containers were not recreated: %w", err)
+	}
+	// Pulling can take minutes; do not apply a Compose source changed by an external editor.
+	if err := c.validateExistingComposeProjectInput(ctx, input); err != nil {
+		return err
+	}
+	if _, err := c.runCompose(ctx, append(base, "up", "--detach", "--pull", "never", "--no-build")...); err != nil {
+		return fmt.Errorf("Compose update did not complete; check service status before retrying: %w", err)
+	}
+	return nil
+}
+
 // Move only the configuration files, never the project directory or bind-mounted data.
 // Both paths remain in the same directory; the guard preserves external edits.
 func (guard *composeEditGuard) move(source, target string) error {
