@@ -1441,7 +1441,9 @@ watch(createSource, () => {
 
 async function openComposeProject(group: DockerContainerGroup, upgrade = false): Promise<void> {
   if (group.kind !== 'compose') return
+  const opener = upgrade ? contextMenuOpener : null
   closeContextMenu()
+  opener?.focus({ preventScroll: true })
   composeController?.abort()
   const controller = new AbortController()
   composeController = controller
@@ -1456,6 +1458,8 @@ async function openComposeProject(group: DockerContainerGroup, upgrade = false):
     if (controller.signal.aborted) return
     composeProject.value = project
     if (upgrade) {
+      // The confirmation's opener must outlive the Compose loading dialog.
+      opener?.focus({ preventScroll: true })
       askComposeLifecycle('compose_update')
       return
     }
