@@ -327,8 +327,6 @@ export default [
   ['确认升级 Compose 项目', 'Confirm Compose project update'],
   ['拉取项目当前配置引用的镜像', 'Pull the images referenced by the current project configuration'],
   ['升级作用于整个项目，服务可能短暂中断，已停止的服务也可能启动。数据卷和挂载保留，容器内未持久化的数据可能丢失。跳过本地构建，只使用配置中的镜像版本。', 'The update applies to the whole project. Services may be briefly interrupted, and stopped services may start. Volumes and mounts are preserved, but data stored only in the container can be lost. Local builds are skipped and image versions come from the current configuration.'],
-  ['正在拉取镜像并升级 Docker Compose 项目', 'Pulling images and updating the Docker Compose project'],
-  ['Docker Compose 项目已按拉取后的镜像部署', 'Docker Compose project deployed with the pulled images'],
   ['复制存储卷名称', 'Copy volume name'],
   ['复制容器 ID', 'Copy container ID'],
   ['复制挂载点', 'Copy mount point'],
