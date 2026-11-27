@@ -426,6 +426,47 @@ func TestComposeUpdatePullsBeforeApplyingUnchangedConfiguration(t *testing.T) {
 	}
 }
 
+func TestComposeServiceUpdateUsesVerifiedContainerAndSkipsDependencies(t *testing.T) {
+	client, _ := composeProjectTestClient(t, "services:\n  web:\n    image: nginx:alpine\n")
+	ctx := context.Background()
+	project, err := client.ComposeProject(ctx, "demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := strings.Repeat("a", 64)
+	container, err := client.inspect(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := MaintenanceInput{
+		Action: "compose_update_service", Name: project.Name, ExpectedResourceVersion: project.ResourceVersion,
+		ContainerID: id, ContainerResourceVersion: "stale",
+	}
+	var commands []string
+	base := composeProjectBase(project)
+	client.composeCommand = func(_ context.Context, arguments ...string) ([]byte, error) {
+		commands = append(commands, strings.Join(arguments[len(base):], " "))
+		return nil, nil
+	}
+	if err := client.validateMaintenanceInput(ctx, input); !errors.Is(err, ErrResourceConflict) {
+		t.Fatalf("stale service input was accepted: %v", err)
+	}
+	if err := client.updateComposeProject(ctx, input); !errors.Is(err, ErrResourceConflict) || len(commands) != 0 {
+		t.Fatalf("stale service input ran commands %v: %v", commands, err)
+	}
+	input.ContainerResourceVersion = client.summaryFromInspect(container).ResourceVersion
+	if err := client.validateMaintenanceInput(ctx, input); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.updateComposeProject(ctx, input); err != nil {
+		t.Fatal(err)
+	}
+	want := "pull --policy always --ignore-buildable -- web\nup --detach --pull never --no-build --no-deps --remove-orphans=false -- web"
+	if strings.Join(commands, "\n") != want {
+		t.Fatalf("unexpected Compose commands: %v", commands)
+	}
+}
+
 func composeProjectTestClient(t *testing.T, source string) (*Client, string) {
 	t.Helper()
 	root := t.TempDir()

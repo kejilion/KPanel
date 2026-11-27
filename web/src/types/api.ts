@@ -2204,6 +2204,7 @@ export type DockerMaintenanceAction =
   | 'compose_stop'
   | 'compose_restart'
   | 'compose_update'
+  | 'compose_update_service'
   | 'compose_remove'
   | 'container_access'
   | 'image_pull'

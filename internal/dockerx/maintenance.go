@@ -38,7 +38,8 @@ var (
 )
 
 var maintenanceActions = []string{
-	"container_create", "compose_deploy", "compose_redeploy", "compose_start", "compose_stop", "compose_restart", "compose_update", "compose_remove",
+	"container_create", "compose_deploy", "compose_redeploy", "compose_start", "compose_stop", "compose_restart",
+	"compose_update", "compose_update_service", "compose_remove",
 	"container_access", "image_pull", "image_remove",
 	"network_create", "network_remove", "network_connect", "network_disconnect",
 	"volume_create", "volume_remove", "prune", "container_prune", "image_prune",
@@ -257,7 +258,7 @@ func (c *Client) validateMaintenanceInput(ctx context.Context, input Maintenance
 		if err := c.validateComposeDeploymentInput(ctx, input); err != nil {
 			return err
 		}
-	case "compose_redeploy", "compose_start", "compose_stop", "compose_restart", "compose_update", "compose_remove":
+	case "compose_redeploy", "compose_start", "compose_stop", "compose_restart", "compose_update", "compose_update_service", "compose_remove":
 		if err := c.validateExistingComposeProjectInput(ctx, input); err != nil {
 			return err
 		}
@@ -387,7 +388,7 @@ func (c *Client) runMaintenance(record dockerJobRecord) {
 		err = c.runComposeProjectLifecycle(ctx, record.Input, "stop")
 	case "compose_restart":
 		err = c.runComposeProjectLifecycle(ctx, record.Input, "restart")
-	case "compose_update":
+	case "compose_update", "compose_update_service":
 		err = c.updateComposeProject(ctx, record.Input)
 	case "compose_remove":
 		record.ResultPath, err = c.removeComposeProject(ctx, record.Input, record.ID)
@@ -1100,6 +1101,8 @@ func dockerActionProgress(action string) string {
 		return "正在重启 Docker Compose 项目"
 	case "compose_update":
 		return "正在拉取镜像并升级 Docker Compose 项目"
+	case "compose_update_service":
+		return "正在拉取镜像并升级 Docker Compose 服务"
 	case "compose_remove":
 		return "正在删除 Docker Compose 项目部署"
 	case "container_access":
@@ -1153,6 +1156,8 @@ func dockerActionCompleted(action string) string {
 		return "Docker Compose 项目已重启"
 	case "compose_update":
 		return "Docker Compose 项目已按拉取后的镜像部署"
+	case "compose_update_service":
+		return "Docker Compose 服务已按拉取后的镜像部署"
 	case "compose_remove":
 		return "Docker Compose 项目部署已删除"
 	case "container_access":

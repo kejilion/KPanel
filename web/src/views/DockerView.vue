@@ -1439,7 +1439,7 @@ watch(createSource, () => {
   syncCreateComposeEnvironment()
 })
 
-async function openComposeProject(group: DockerContainerGroup, upgrade = false): Promise<void> {
+async function openComposeProject(group: DockerContainerGroup, upgrade?: DockerContainer): Promise<void> {
   if (group.kind !== 'compose') return
   const opener = upgrade ? contextMenuOpener : null
   closeContextMenu()
@@ -1457,10 +1457,14 @@ async function openComposeProject(group: DockerContainerGroup, upgrade = false):
     const project = await api.docker.composeProject(group.name, controller.signal)
     if (controller.signal.aborted) return
     composeProject.value = project
-    if (upgrade) {
+    if (upgrade?.service && upgrade.resourceVersion) {
       // The confirmation's opener must outlive the Compose loading dialog.
       opener?.focus({ preventScroll: true })
-      askComposeLifecycle('compose_update')
+      closeComposeProject()
+      askTask('确认升级容器', `${project.name} · ${upgrade.service}`, {
+        action: 'compose_update_service', name: project.name, expectedResourceVersion: project.resourceVersion,
+        containerId: upgrade.id, containerResourceVersion: upgrade.resourceVersion,
+      })
       return
     }
     composeEnvironmentSource.value = project.environmentFile?.source || ''
@@ -2384,8 +2388,8 @@ onBeforeUnmount(() => {
         <button v-if="permits(contextContainer, 'restart')" type="button" role="menuitem" @click="askAction(contextContainer, 'restart')">
           <RotateCw :size="15" />{{ phrase('重启') }}
         </button>
-        <button v-if="contextComposeGroup" type="button" role="menuitem" :disabled="panel.isReadOnly.value || dockerJobActive" @click="openComposeProject(contextComposeGroup, true)">
-          <RefreshCw :size="16" /> {{ phrase('升级 Compose 项目') }}
+        <button v-if="contextComposeGroup && contextContainer.service && contextContainer.resourceVersion" type="button" role="menuitem" :disabled="panel.isReadOnly.value || dockerJobActive" @click="openComposeProject(contextComposeGroup, contextContainer)">
+          <RefreshCw :size="16" /> {{ phrase('升级容器') }}
         </button>
         <button v-if="permits(contextContainer, 'pause')" type="button" role="menuitem" @click="askAction(contextContainer, 'pause')">
           <Pause :size="15" />{{ phrase('暂停') }}
@@ -2711,6 +2715,9 @@ onBeforeUnmount(() => {
       </div>
       <div v-if="pendingMaintenance?.input.action === 'compose_update'" class="inline-alert inline-alert--warning">
         {{ phrase('升级作用于整个项目，服务可能短暂中断，已停止的服务也可能启动。数据卷和挂载保留，容器内未持久化的数据可能丢失。跳过本地构建，只使用配置中的镜像版本。') }}
+      </div>
+      <div v-else-if="pendingMaintenance?.input.action === 'compose_update_service'" class="inline-alert inline-alert--warning">
+        {{ phrase('升级所选容器对应的 Compose 服务，包括该服务的全部副本。服务可能短暂中断，数据卷和挂载保留，容器内未持久化的数据可能丢失。') }}
       </div>
       <section v-if="pendingMaintenance?.input.action === 'compose_remove'" class="compose-remove-options">
         <p>{{ phrase('停止并删除此项目的全部容器及非外部网络，容器内未持久化的数据将丢失。') }}</p>

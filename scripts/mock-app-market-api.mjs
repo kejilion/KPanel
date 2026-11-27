@@ -3731,8 +3731,19 @@ createServer(async (request, response) => {
       return
     }
     const project = mockDockerComposeProjects.get(input?.name)
-    if (!['compose_remove', 'compose_update'].includes(input?.action) || !project) { send(response, 400, { title: 'Mock · Compose 项目任务输入无效' }); return }
+    if (!['compose_remove', 'compose_update', 'compose_update_service'].includes(input?.action) || !project) { send(response, 400, { title: 'Mock · Compose 项目任务输入无效' }); return }
     if (input.expectedResourceVersion !== project.resourceVersion) { send(response, 409, { title: 'Mock · 项目配置已变化，请刷新后重试' }); return }
+    if (input.action === 'compose_update_service') {
+      const container = mockDockerContainers.find(item => item.id === input.containerId && item.composeProject === input.name)
+      if (!container?.composeService || container.resourceVersion !== input.containerResourceVersion) {
+        send(response, 409, { title: 'Mock · 容器已变化，请刷新后重试' })
+        return
+      }
+      newJob(container.composeService, 'Mock · 正在拉取镜像并升级 Compose 服务', () => ({
+        message: 'Mock · Compose 服务已按拉取后的镜像部署',
+      }), 1_600)
+      return
+    }
     if (input.action === 'compose_update') {
       newJob(input.name, 'Mock · 正在拉取镜像并升级 Compose 项目', () => ({
         message: 'Mock · Compose 项目已按拉取后的镜像部署',

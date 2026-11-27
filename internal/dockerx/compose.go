@@ -743,6 +743,10 @@ func (c *Client) validateExistingComposeProjectInput(ctx context.Context, input 
 		input.ExpectedResourceVersion != state.ResourceVersion {
 		return ErrResourceConflict
 	}
+	if input.Action == "compose_update_service" {
+		_, err := c.composeUpdateService(ctx, input)
+		return err
+	}
 	if input.Action != "compose_redeploy" {
 		return nil
 	}
@@ -777,6 +781,23 @@ func (c *Client) runComposeProjectLifecycle(ctx context.Context, input Maintenan
 	return nil
 }
 
+func (c *Client) composeUpdateService(ctx context.Context, input MaintenanceInput) (string, error) {
+	if !containerIDPattern.MatchString(input.ContainerID) || input.ContainerResourceVersion == "" {
+		return "", ErrInvalidDockerJob
+	}
+	container, err := c.inspectVerifiedContainer(ctx, input.ContainerID, input.ContainerResourceVersion)
+	if err != nil {
+		return "", err
+	}
+	labels := container.Config.Labels
+	service := labels["com.docker.compose.service"]
+	if labels["com.docker.compose.project"] != input.Name || service == "" ||
+		strings.EqualFold(labels["com.docker.compose.oneoff"], "true") {
+		return "", ErrResourceConflict
+	}
+	return service, nil
+}
+
 func (c *Client) updateComposeProject(ctx context.Context, input MaintenanceInput) error {
 	state, err := c.resolveComposeProject(ctx, input.Name)
 	if err != nil {
@@ -786,14 +807,24 @@ func (c *Client) updateComposeProject(ctx context.Context, input MaintenanceInpu
 		return ErrResourceConflict
 	}
 	base := composeProjectBase(state.ComposeProject)
-	if _, err := c.runCompose(ctx, append(base, "pull", "--policy", "always", "--ignore-buildable")...); err != nil {
+	pull := []string{"pull", "--policy", "always", "--ignore-buildable"}
+	up := []string{"up", "--detach", "--pull", "never", "--no-build"}
+	if input.Action == "compose_update_service" {
+		service, err := c.composeUpdateService(ctx, input)
+		if err != nil {
+			return err
+		}
+		pull = append(pull, "--", service)
+		up = append(up, "--no-deps", "--remove-orphans=false", "--", service)
+	}
+	if _, err := c.runCompose(ctx, append(base, pull...)...); err != nil {
 		return fmt.Errorf("Compose image pull failed; project containers were not recreated: %w", err)
 	}
 	// Pulling can take minutes; do not apply a Compose source changed by an external editor.
 	if err := c.validateExistingComposeProjectInput(ctx, input); err != nil {
 		return err
 	}
-	if _, err := c.runCompose(ctx, append(base, "up", "--detach", "--pull", "never", "--no-build")...); err != nil {
+	if _, err := c.runCompose(ctx, append(base, up...)...); err != nil {
 		return fmt.Errorf("Compose update did not complete; check service status before retrying: %w", err)
 	}
 	return nil
