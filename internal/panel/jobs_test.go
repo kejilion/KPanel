@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,11 +14,98 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kejilion/kejilion-panel/internal/agent"
 	"github.com/kejilion/kejilion-panel/internal/appmarket"
 	"github.com/kejilion/kejilion-panel/internal/contract"
+	"github.com/kejilion/kejilion-panel/internal/dockerx"
+	"github.com/kejilion/kejilion-panel/internal/filemanager"
 	"github.com/kejilion/kejilion-panel/internal/store"
 	"github.com/kejilion/kejilion-panel/internal/webenv"
 )
+
+func TestAppJobListFitsAgentLimitWithPersistedLogs(t *testing.T) {
+	panel, tokenPath := newTestServer(t)
+	session, csrf := bootstrapCookies(t, panel, tokenPath)
+	client := panel.agent.(*AgentClient)
+	if err := os.MkdirAll(filepath.Dir(client.tokenFile), 0700); err != nil {
+		t.Fatal(err)
+	}
+	token := strings.Repeat("x", 32)
+	if err := os.WriteFile(client.tokenFile, []byte(token), 0600); err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	state := t.TempDir()
+	jobLog := []byte(strings.Repeat("x", 1<<20))
+	const count = 9 // A full log tail for each task exceeds the default 8 MiB Panel limit.
+	for i := 1; i <= count; i++ {
+		job := appmarket.AppJob{
+			ID: fmt.Sprintf("%032x", i), AppID: "builtin-4", AppName: "Test app",
+			Action: "manage", Status: "succeeded", Interactive: true,
+			CreatedAt: time.Unix(int64(i), 0).UTC(),
+		}
+		data, err := json.Marshal(job)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(state, job.ID+".json"), data, 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(state, job.ID+".log"), jobLog, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	docker := dockerx.New(filepath.Join(root, "unused.sock"), root, root)
+	market, err := appmarket.New(docker, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := market.ConfigureJobs(state, filepath.Join(root, "agent")); err != nil {
+		t.Fatal(err)
+	}
+	files, err := filemanager.New(filemanager.Config{Root: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = files.Close() })
+	host, err := agent.NewServer(agent.Config{
+		Token: []byte(token), Version: "test", ProtocolVersion: "test",
+		WebRoot: root, Docker: docker, AppMarket: market, Files: files,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(host.Close)
+	endpoint := httptest.NewServer(host)
+	t.Cleanup(endpoint.Close)
+	transport := client.client.Transport.(*http.Transport)
+	t.Cleanup(transport.CloseIdleConnections)
+	transport.DialContext = func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "tcp", endpoint.Listener.Addr().String())
+	}
+
+	const path = "/api/v1/app-jobs"
+	list := authenticatedRequest(panel, http.MethodGet, path, nil, session, csrf, nil)
+	var page contract.PageResult[appmarket.AppJob]
+	if list.Code != http.StatusOK || json.Unmarshal(list.Body.Bytes(), &page) != nil || len(page.Items) != count {
+		t.Fatalf("app job list: HTTP %d, %d jobs, %d response bytes", list.Code, len(page.Items), list.Body.Len())
+	}
+	latestID := fmt.Sprintf("%032x", count)
+	if page.Items[0].ID != latestID || page.Items[0].Status != "succeeded" {
+		t.Fatalf("latest job metadata lost: %s (%s)", page.Items[0].ID, page.Items[0].Status)
+	}
+	for _, job := range page.Items {
+		if job.Logs == nil || len(job.Logs) != 0 {
+			t.Fatalf("list must return an empty logs array for job %s", job.ID)
+		}
+	}
+	detail := authenticatedRequest(panel, http.MethodGet, path+"/"+latestID, nil, session, csrf, nil)
+	var job appmarket.AppJob
+	if detail.Code != http.StatusOK || json.Unmarshal(detail.Body.Bytes(), &job) != nil ||
+		len(job.Logs) != 1 || job.Logs[0] != string(jobLog) {
+		t.Fatalf("persisted log missing from job detail: HTTP %d, %d response bytes", detail.Code, detail.Body.Len())
+	}
+}
 
 type webEnvironmentHistoryAgent struct {
 	*stubAgent

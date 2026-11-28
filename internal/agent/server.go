@@ -1545,9 +1545,6 @@ func (s *Server) appJobList(w http.ResponseWriter, r *http.Request) {
 	}
 	jobs := s.appMarket.AppJobs()
 	if taskDisplayQuery(r) {
-		for i := range jobs {
-			jobs[i].Logs = nil
-		}
 		writeTaskDisplay(w, r, contract.PageResult[appmarket.AppJob]{Items: jobs}, s.appMarket.AppJobOutput)
 		return
 	}

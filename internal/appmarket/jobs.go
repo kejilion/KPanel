@@ -596,7 +596,10 @@ func (s *Service) AppJobs() []AppJob {
 	records := s.jobs.list()
 	jobs := make([]AppJob, 0, len(records))
 	for _, record := range records {
-		jobs = append(jobs, s.jobs.public(record))
+		job := record.AppJob
+		// List consumers need state; attach logs only when reading an individual job.
+		job.Logs = []string{}
+		jobs = append(jobs, job)
 	}
 	return jobs
 }
