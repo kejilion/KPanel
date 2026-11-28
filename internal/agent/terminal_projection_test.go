@@ -238,9 +238,9 @@ func TestTerminalDisplayNonInteractiveSummaryAndListKeepContextBeforeTail(t *tes
 			t.Fatalf("%s: %d %s", path, w.Code, w.Body.String())
 		}
 	}
-	// The administrator's original summary deliberately retains its raw tail.
-	if w := request("/v1/app-jobs/" + id); w.Code != 200 || !strings.Contains(w.Body.String(), "synthetic-body") {
-		t.Fatalf("raw admin summary changed: %d %s", w.Code, w.Body.String())
+	// The administrator-facing summary must redact secrets from its log tail too.
+	if w := request("/v1/app-jobs/" + id); w.Code != 200 || strings.Contains(w.Body.String(), "synthetic-") || !strings.Contains(w.Body.String(), `"***"`) || !strings.Contains(w.Body.String(), "status: ready") {
+		t.Fatalf("admin summary did not redact its log tail: %d %s", w.Code, w.Body.String())
 	}
 	if err := os.Rename(filepath.Join(dir, id+".log"), filepath.Join(dir, id+".log.1")); err != nil {
 		t.Fatal(err)
