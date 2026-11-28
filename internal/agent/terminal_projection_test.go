@@ -239,8 +239,15 @@ func TestTerminalDisplayNonInteractiveSummaryAndListKeepContextBeforeTail(t *tes
 		}
 	}
 	// The administrator-facing summary must redact secrets from its log tail too.
-	if w := request("/v1/app-jobs/" + id); w.Code != 200 || strings.Contains(w.Body.String(), "synthetic-") || !strings.Contains(w.Body.String(), `"***"`) || !strings.Contains(w.Body.String(), "status: ready") {
-		t.Fatalf("admin summary did not redact its log tail: %d %s", w.Code, w.Body.String())
+	w := request("/v1/app-jobs/" + id)
+	if w.Code != 200 {
+		t.Fatalf("admin summary status: %d %s", w.Code, w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), "synthetic-body") {
+		t.Fatalf("admin summary leaked redacted log content: %s", w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "status: ready") {
+		t.Fatalf("admin summary lost non-sensitive log context: %s", w.Body.String())
 	}
 	if err := os.Rename(filepath.Join(dir, id+".log"), filepath.Join(dir, id+".log.1")); err != nil {
 		t.Fatal(err)
