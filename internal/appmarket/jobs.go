@@ -603,6 +603,7 @@ func (s *Service) AppJobs() []AppJob {
 	for _, record := range records {
 		job := record.AppJob
 		// List consumers need state; attach logs only when reading an individual job.
+		job.Message = publicAppJobMessage(job.Message)
 		job.Logs = []string{}
 		jobs = append(jobs, job)
 	}
@@ -1086,6 +1087,13 @@ func safeAppJobMessage(err error) string {
 	return value
 }
 
+func publicAppJobMessage(value string) string {
+	if value == "" {
+		return ""
+	}
+	return safeAppJobMessage(errors.New(value))
+}
+
 func (registry *appJobRegistry) fail(record appJobRecord, stage string, cause error) error {
 	finished := time.Now().UTC()
 	record.Status = "failed"
@@ -1194,9 +1202,7 @@ func (registry *appJobRegistry) hasActive() bool {
 
 func (registry *appJobRegistry) public(record appJobRecord) AppJob {
 	job := record.AppJob
-	if job.Message != "" {
-		job.Message = safeAppJobMessage(errors.New(job.Message))
-	}
+	job.Message = publicAppJobMessage(job.Message)
 	job.Logs = registry.logTail(record.ID, 120)
 	return job
 }

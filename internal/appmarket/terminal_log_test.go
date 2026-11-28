@@ -98,7 +98,7 @@ func TestAppJobTerminalStreamsARotatedLogAndReportsSkippedOutput(t *testing.T) {
 
 func TestAppJobLogRedactionCoversNewAndLegacyLogs(t *testing.T) {
 	const id = "0123456789abcdef0123456789abcdef"
-	_, registry := newTerminalLogTestService(t, id, "succeeded")
+	service, registry := newTerminalLogTestService(t, id, "succeeded")
 	raw := []byte("password=synthetic-secret\nAuthorization: Bearer synthetic-token\nstatus: ready\n")
 
 	redacted := redactAppJobLog(raw)
@@ -118,9 +118,17 @@ func TestAppJobLogRedactionCoversNewAndLegacyLogs(t *testing.T) {
 		t.Fatalf("redacted task log lost expected fields: %#v", lines)
 	}
 	legacy := appJobRecord{AppJob: AppJob{ID: id, Message: "KPANEL_PROGRESS 35 password=old-secret"}}
+	if err := registry.put(legacy); err != nil {
+		t.Fatal(err)
+	}
 	public := registry.public(legacy)
 	if strings.Contains(public.Message, "old-secret") || !strings.Contains(public.Message, "[REDACTED]") {
 		t.Fatalf("legacy task message was not redacted in public projection: %q", public.Message)
+	}
+	listed := service.AppJobs()
+	if len(listed) != 1 || strings.Contains(listed[0].Message, "old-secret") ||
+		!strings.Contains(listed[0].Message, "[REDACTED]") || len(listed[0].Logs) != 0 {
+		t.Fatalf("legacy task list message was not redacted independently of logs: %#v", listed)
 	}
 }
 
