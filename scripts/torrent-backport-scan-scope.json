@@ -13,7 +13,7 @@
     "Makefile": "f651d8ce2f10adc487118e1ccb476615347661922a8c8ef529f1b8013da5d53e"
   },
   "closureSha256": "4a9ba1c2226cbd09dc69dbc33f9ac44f610d29a5a549f4823b76b4987633caea",
-  "firstPartySourceSha256": "74da1b1d9e528b45b4762645b0257d7385e4d5d8acd433b964da9f3788ae9b45",
+  "firstPartySourceSha256": "2c9c15f48b3dcdc67193371203f2a25d4be3a7e206d1c5f92260fe9c3eeb118b",
   "buildTargetHashEncoding": "UTF-8 with LF line endings",
   "closureEncoding": "SHA256 of JSON.stringify of ordered OS/architecture rows; packages sorted by import path; path, module and selected version; stdlib go1.27.4; main-module packages additionally bind relative sourceDirectory and sorted actual GoFiles.",
   "firstPartySourceEncoding": "SHA256 of JSON.stringify of all cmd/internal Go source path and SHA256 pairs sorted by relative path; contents normalized to UTF-8 LF. All actual main-module production GoFiles must be covered. Generated .pb.go and .proto files or symlinks require a new review.",
@@ -609,5 +609,8 @@
   "rc131Rc4IdentitySummary": "RC4 merges reviewed desktop close-flash fix (3dbc3ec4) and light-node checks distribution (4e460507, including remote history check limit and relay chunk bound fix) over RC3, upgrades indirect github.com/gorilla/websocket to v1.5.4-0.20240701034025-d67f41855da4 for GO-2026-6278, and bumps version metadata to 1.31.0-rc.4. First-party source (1349 files), selected graph, and six-target Go 1.27.4 closure identities rebound; exact RC4 hosted CI/L3 verification required. Current Nov22-Dec6 observation retained.",
   "rc131Rc5IdentitySummary": "RC5 release candidate source/closure identity qualification: canonical Go 1.27.4 inventory observed 1,351 first-party Go files and 113 production modules. Independent review verified the inventory probe differs from the repository helper only by candidate repoRoot binding and final policy-validation bypass; all six actual/original closures match (683/682/239/238/342/341 packages), with source manifest, selected graph, build-target hashes and module graph unchanged. Rebind only closure and first-party source identities; preserve the 38 findings/dispositions and 2026-11-22/2026-12-06 observation window. This identity record is not a vulnerability scan, CI/L2/L3, publication or deployment result; exact-candidate hosted gates remain required.",
   "rc131Rc5IdentityEvidenceSha256": "d52f20abf454ff7bc8795e7e9ed60bb46744e053668cbe08f653f3c2c18d8aac",
-  "rc131Rc5InventoryEvidenceSha256": "1fd022e130534759c709819b88c307ac454ab6cc78c7b67c2aaf33cfb273fcb9"
+  "rc131Rc5InventoryEvidenceSha256": "1fd022e130534759c709819b88c307ac454ab6cc78c7b67c2aaf33cfb273fcb9",
+  "rc131Rc5FinalRebindSummary": "RC5 source rebind after the legacy third-party selector runtime guard, bounded live appmarket task-log redaction and Compose pull-policy filtering. Canonical Go 1.27.4 inventory observes 1,351 first-party Go files and 113 production modules; source manifest, selected graph, build-target hashes and all six actual/original closure identities remain unchanged. The first-party source identity is 2c9c15f48b3dcdc67193371203f2a25d4be3a7e206d1c5f92260fe9c3eeb118b; source-file comparison shows only internal/appmarket/jobs.go and terminal_log_test.go changed from the preceding RC5 binding. The 38 findings/dispositions and Nov22-Dec6 observation window remain unchanged. This receipt is not a vulnerability scan, CI/L2/L3, publication or deployment result.",
+  "rc131Rc5FinalInventoryProbeEvidenceSha256": "4c98f1eacb704165d4dde6797fd781eed626a438f47e8e20da88d53c1809504c",
+  "rc131Rc5FinalInventoryProbeLogSha256": "a4be9563c4ec45b62cf18b98b599a3991a9ebe9a002b47ff09da5db78c1be6be"
 }
