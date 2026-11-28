@@ -51,8 +51,9 @@ export function analyzeDockerDeployment(source: string): DockerDeploymentAnalysi
       '请删除不需要的注释或拆分为更小的 Compose 项目。')
   }
   if (looksLikeDockerRun(value)) return parseDockerRun(source)
-  if (/^\s*(?:name\s*:|version\s*:|services\s*:)/m.test(value)) {
-    const composeSyntax = analyzeComposeSyntax(source)
+  const flow = value.startsWith('{')
+  if (flow || /^\s*(?:name\s*:|version\s*:|services\s*:)/m.test(value)) {
+    const composeSyntax = analyzeComposeSyntax(source, flow)
     if (composeSyntax.diagnostics.length) return invalidDiagnostics(composeSyntax.diagnostics)
     const services = composeSyntax.services
     if (!services.length) {
@@ -60,13 +61,13 @@ export function analyzeDockerDeployment(source: string): DockerDeploymentAnalysi
       return invalid(source, 'compose_services_missing', '没有识别到 Compose services，请粘贴完整的 Compose YAML。',
         servicesOffset, lineEndOffset(source, servicesOffset), '请在 services: 下至少定义一个服务，例如 web:。')
     }
-    const nameMatch = value.match(/^name\s*:\s*["']?([^\s"'#]+)["']?\s*(?:#.*)?$/m)
-    if (nameMatch && !/^[a-z0-9][a-z0-9_-]{0,62}$/.test(nameMatch[1] || '')) {
-      const from = Math.max(0, source.indexOf(nameMatch[1] || ''))
+    const nameMatch = flow ? undefined : value.match(/^name\s*:\s*["']?([^\s"'#]+)["']?\s*(?:#.*)?$/m)
+    const explicitName = composeSyntax.flowName?.value ?? nameMatch?.[1]
+    if (explicitName !== undefined && !/^[a-z0-9][a-z0-9_-]{0,62}$/.test(explicitName)) {
+      const from = composeSyntax.flowName?.from ?? Math.max(0, source.indexOf(explicitName))
       return invalid(source, 'compose_project_name_invalid', 'Compose 项目名称格式无效。', from,
-        from + (nameMatch[1]?.length || 1), 'name 仅支持小写字母、数字、连字符和下划线，最长 63 个字符。')
+        composeSyntax.flowName?.to ?? from + explicitName.length, 'name 仅支持小写字母、数字、连字符和下划线，最长 63 个字符。')
     }
-    const explicitName = nameMatch?.[1]
     return {
       kind: 'compose',
       compose: source,
@@ -351,11 +352,12 @@ function tokenizeShell(source: string): TokenizeResult {
   return { tokens }
 }
 
-function analyzeComposeSyntax(source: string): {
+function analyzeComposeSyntax(source: string, flow: boolean): {
   diagnostics: DockerDeploymentDiagnostic[]
   services: string[]
+  flowName?: { value: string; from: number; to: number }
 } {
-  const tabOffset = source.search(/^\s*\t\s*\S/m)
+  const tabOffset = flow ? -1 : source.search(/^\s*\t\s*\S/m)
   if (tabOffset >= 0) {
     const actualTab = source.indexOf('\t', tabOffset)
     return {
@@ -376,9 +378,18 @@ function analyzeComposeSyntax(source: string): {
       if (diagnostics.length >= 8) break
     }
   } while (cursor.next())
+  if (diagnostics.length) return { diagnostics: deduplicateDiagnostics(diagnostics), services: [] }
+  const document = tree.topNode.getChild('Document')
+  const flowRoot = document?.getChild('FlowMapping')
+  const namePair = flowRoot?.getChildren('Pair').find((pair) => {
+    const key = pair.getChild('Key')
+    return key && yamlKey(source.slice(key.from, key.to)) === 'name'
+  })
+  const name = namePair?.getChild('QuotedLiteral') ?? namePair?.getChild('Literal')
   return {
-    diagnostics: deduplicateDiagnostics(diagnostics),
-    services: diagnostics.length ? [] : composeServices(source, tree.topNode),
+    diagnostics: [],
+    services: composeServices(source, flowRoot ?? document?.getChild('BlockMapping')),
+    flowName: name ? { value: yamlKey(source.slice(name.from, name.to)), from: name.from, to: name.to } : undefined,
   }
 }
 
@@ -515,9 +526,7 @@ function parseMount(value: string): DockerContainerCreateMount | string {
   return { type, source, target, readOnly }
 }
 
-function composeServices(source: string, topNode: ReturnType<typeof yamlLanguage.parser.parse>['topNode']): string[] {
-  const document = topNode.getChild('Document')
-  const root = document?.getChild('BlockMapping')
+function composeServices(source: string, root: ReturnType<typeof yamlLanguage.parser.parse>['topNode'] | null | undefined): string[] {
   if (!root) return []
   for (const pair of root.getChildren('Pair')) {
     const key = pair.getChild('Key')
