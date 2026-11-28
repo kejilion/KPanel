@@ -117,6 +117,46 @@ func TestAppJobLogRedactionCoversNewAndLegacyLogs(t *testing.T) {
 	if !strings.Contains(joined, "[REDACTED]") || !strings.Contains(joined, "status: ready") {
 		t.Fatalf("redacted task log lost expected fields: %#v", lines)
 	}
+	legacy := appJobRecord{AppJob: AppJob{ID: id, Message: "KPANEL_PROGRESS 35 password=old-secret"}}
+	public := registry.public(legacy)
+	if strings.Contains(public.Message, "old-secret") || !strings.Contains(public.Message, "[REDACTED]") {
+		t.Fatalf("legacy task message was not redacted in public projection: %q", public.Message)
+	}
+}
+
+func TestWriteRedactedAppJobLogUpdatesRunningSnapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "job.log")
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+
+	first := []byte("status: preparing\n")
+	if err := writeRedactedAppJobLog(file, first); err != nil {
+		t.Fatal(err)
+	}
+	written, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(written), "status: preparing") {
+		t.Fatalf("running task log was not published: %q", written)
+	}
+
+	complete := append(first, []byte("password=synthetic-secret\nstatus: working\n")...)
+	if err := writeRedactedAppJobLog(file, complete); err != nil {
+		t.Fatal(err)
+	}
+	written, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(written), "synthetic-secret") ||
+		!strings.Contains(string(written), "status: preparing") ||
+		!strings.Contains(string(written), "status: working") {
+		t.Fatalf("running task log snapshot was not safely updated: %q", written)
+	}
 }
 
 func TestPrunedAppJobsRemoveEveryLogSegment(t *testing.T) {

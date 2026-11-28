@@ -26,11 +26,14 @@ import (
 )
 
 const (
-	appJobUnitPrefix  = "kejilion-panel-app-"
-	maxAppJobBytes    = 256 << 10
-	maxAppJobLog      = 1 << 20
-	appJobLaunchGrace = 15 * time.Second
+	appJobUnitPrefix    = "kejilion-panel-app-"
+	maxAppJobBytes      = 256 << 10
+	maxAppJobLog        = 1 << 20
+	appJobLogFlushBytes = 16 << 10
+	appJobLaunchGrace   = 15 * time.Second
 )
+
+const appJobLogFlushInterval = 250 * time.Millisecond
 
 var (
 	appJobIDPattern           = regexp.MustCompile(`^[a-f0-9]{32}$`)
@@ -968,6 +971,8 @@ func RunAppJob(ctx context.Context, stateDir, id string) error {
 		return registry.fail(record, "log_unavailable", logErr)
 	}
 	output := make([]byte, 0, maxAppJobLog)
+	persistedOutputBytes := 0
+	lastLogFlush := time.Time{}
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 64<<10), 1<<20)
 	for scanner.Scan() {
@@ -979,6 +984,15 @@ func RunAppJob(ctx context.Context, stateDir, id string) error {
 				payload = payload[:remaining]
 			}
 			output = append(output, payload...)
+		}
+		if len(output) > persistedOutputBytes &&
+			(persistedOutputBytes == 0 ||
+				len(output)-persistedOutputBytes >= appJobLogFlushBytes ||
+				time.Since(lastLogFlush) >= appJobLogFlushInterval) {
+			if writeRedactedAppJobLog(logFile, output) == nil {
+				persistedOutputBytes = len(output)
+				lastLogFlush = time.Now()
+			}
 		}
 		if matches := appProgressPattern.FindStringSubmatch(line); len(matches) == 3 {
 			progress, _ := strconv.Atoi(matches[1])
@@ -995,9 +1009,8 @@ func RunAppJob(ctx context.Context, stateDir, id string) error {
 		}
 	}
 	_ = reader.Close()
-	if len(output) > 0 {
-		_, _ = logFile.Write(redactAppJobLog(output))
-		_, _ = logFile.Write([]byte("\n"))
+	if len(output) > persistedOutputBytes {
+		_ = writeRedactedAppJobLog(logFile, output)
 	}
 	_ = logFile.Sync()
 	_ = logFile.Close()
@@ -1181,6 +1194,9 @@ func (registry *appJobRegistry) hasActive() bool {
 
 func (registry *appJobRegistry) public(record appJobRecord) AppJob {
 	job := record.AppJob
+	if job.Message != "" {
+		job.Message = safeAppJobMessage(errors.New(job.Message))
+	}
 	job.Logs = registry.logTail(record.ID, 120)
 	return job
 }
@@ -1194,7 +1210,31 @@ func (registry *appJobRegistry) logTail(id string, maxLines int) []string {
 }
 
 func redactAppJobLog(data []byte) []byte {
-	return []byte(strings.Join(redact.Lines(data, -1, 0), "\n"))
+	projected := []byte(strings.Join(redact.Lines(data, -1, 0), "\n"))
+	if len(projected) > maxAppJobLog {
+		projected = projected[:maxAppJobLog]
+	}
+	return projected
+}
+
+func writeRedactedAppJobLog(file *os.File, data []byte) error {
+	projected := redactAppJobLog(data)
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+	if err := file.Truncate(0); err != nil {
+		return err
+	}
+	if len(projected) == 0 {
+		return nil
+	}
+	if _, err := file.Write(projected); err != nil {
+		return err
+	}
+	if _, err := file.Write([]byte("\n")); err != nil {
+		return err
+	}
+	return file.Sync()
 }
 
 func (registry *appJobRegistry) logTailBytes(id string) ([]byte, error) {
