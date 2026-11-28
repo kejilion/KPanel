@@ -498,9 +498,9 @@ func TestBuiltinSelectorRequiresExplicitScriptSupport(t *testing.T) {
 	}
 }
 
-func TestThirdPartyAppsCannotUseBackupOrRestoreScriptSelectors(t *testing.T) {
+func TestThirdPartyAppsCannotUseReservedScriptSelectors(t *testing.T) {
 	service := &Service{}
-	for _, selector := range []string{"b", "r"} {
+	for _, selector := range []string{"b", "r", "1", "16", "115", "999"} {
 		if got, ok := service.scriptSelectorFor(Summary{App: App{ID: "thirdparty-example", Source: "thirdparty", Token: selector}}); ok || got != "" {
 			t.Fatalf("third-party selector %q was accepted: %q, %v", selector, got, ok)
 		}
@@ -510,7 +510,7 @@ func TestThirdPartyAppsCannotUseBackupOrRestoreScriptSelectors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, selector := range []string{"b", "r"} {
+	for _, selector := range []string{"b", "r", "1", "16", "115", "999"} {
 		payload := remotePayloadFromCatalog(embedded)
 		for index := range payload.Apps {
 			if payload.Apps[index].Source == "thirdparty" {

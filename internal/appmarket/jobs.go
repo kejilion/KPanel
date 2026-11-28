@@ -32,11 +32,12 @@ const (
 )
 
 var (
-	appJobIDPattern    = regexp.MustCompile(`^[a-f0-9]{32}$`)
-	appSelectorPattern = regexp.MustCompile(`^(?:[1-9][0-9]{0,2}|(?:local:)?[A-Za-z0-9][A-Za-z0-9_-]{0,63})$`)
-	containerIDPattern = regexp.MustCompile(`^[a-f0-9]{12,64}$`)
-	appProgressPattern = regexp.MustCompile(`^KPANEL_PROGRESS ([0-9]{1,3}) (.+)$`)
-	appLicensePattern  = regexp.MustCompile(`(?m)^permission_granted="true"\r?$`)
+	appJobIDPattern           = regexp.MustCompile(`^[a-f0-9]{32}$`)
+	appSelectorPattern        = regexp.MustCompile(`^(?:[1-9][0-9]{0,2}|(?:local:)?[A-Za-z0-9][A-Za-z0-9_-]{0,63})$`)
+	numericAppSelectorPattern = regexp.MustCompile(`^[1-9][0-9]{0,2}$`)
+	containerIDPattern        = regexp.MustCompile(`^[a-f0-9]{12,64}$`)
+	appProgressPattern        = regexp.MustCompile(`^KPANEL_PROGRESS ([0-9]{1,3}) (.+)$`)
+	appLicensePattern         = regexp.MustCompile(`(?m)^permission_granted="true"\r?$`)
 )
 
 type AppJob struct {
@@ -693,7 +694,12 @@ func (s *Service) scriptSelectorFor(item Summary) (string, bool) {
 }
 
 func reservedThirdPartyScriptSelector(value string) bool {
-	return value == "b" || value == "r"
+	if value == "b" || value == "r" {
+		return true
+	}
+	// Numeric kejilion.sh selectors address builtin applications directly. A
+	// third-party catalog token must never be allowed to dispatch those actions.
+	return numericAppSelectorPattern.MatchString(value)
 }
 
 func (s *Service) scriptInstallAvailable() bool {
