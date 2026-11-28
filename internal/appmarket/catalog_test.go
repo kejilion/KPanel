@@ -524,6 +524,18 @@ func TestThirdPartyAppsCannotUseReservedScriptSelectors(t *testing.T) {
 	}
 }
 
+func TestThirdPartyScriptCompatibilityRejectsLegacyReservedSelectors(t *testing.T) {
+	base := []byte("permission_granted=\"true\"\nKJ_APP_NONINTERACTIVE\nkpanel_run_docker_app_install\n")
+	for _, selector := range []string{"1", "16", "115", "999", "b", "r"} {
+		if appScriptCompatible(isKPanelCompatibleScript, "thirdparty-example", selector)(base) {
+			t.Fatalf("legacy third-party selector %q passed the final script boundary", selector)
+		}
+	}
+	if !appScriptCompatible(isKPanelCompatibleScript, "thirdparty-example", "example")(base) {
+		t.Fatal("valid third-party selector was rejected")
+	}
+}
+
 func TestRemoteCatalogFallsBackToLastKnownGood(t *testing.T) {
 	embedded, _, _, err := LoadCatalog()
 	if err != nil {

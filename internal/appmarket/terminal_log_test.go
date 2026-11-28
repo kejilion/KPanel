@@ -96,6 +96,29 @@ func TestAppJobTerminalStreamsARotatedLogAndReportsSkippedOutput(t *testing.T) {
 	}
 }
 
+func TestAppJobLogRedactionCoversNewAndLegacyLogs(t *testing.T) {
+	const id = "0123456789abcdef0123456789abcdef"
+	_, registry := newTerminalLogTestService(t, id, "succeeded")
+	raw := []byte("password=synthetic-secret\nAuthorization: Bearer synthetic-token\nstatus: ready\n")
+
+	redacted := redactAppJobLog(raw)
+	if bytes.Contains(redacted, []byte("synthetic-secret")) ||
+		bytes.Contains(redacted, []byte("synthetic-token")) {
+		t.Fatalf("persisted task log contains a secret: %q", redacted)
+	}
+	if err := os.WriteFile(registry.logPath(id), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	lines := registry.logTail(id, 120)
+	joined := strings.Join(lines, "\n")
+	if strings.Contains(joined, "synthetic-secret") || strings.Contains(joined, "synthetic-token") {
+		t.Fatalf("API task log contains a secret: %#v", lines)
+	}
+	if !strings.Contains(joined, "[REDACTED]") || !strings.Contains(joined, "status: ready") {
+		t.Fatalf("redacted task log lost expected fields: %#v", lines)
+	}
+}
+
 func TestPrunedAppJobsRemoveEveryLogSegment(t *testing.T) {
 	const id = "fedcba9876543210fedcba9876543210"
 	_, registry := newTerminalLogTestService(t, id, "succeeded")

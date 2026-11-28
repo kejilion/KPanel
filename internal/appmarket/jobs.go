@@ -22,6 +22,7 @@ import (
 
 	"github.com/kejilion/kejilion-panel/internal/hostpty"
 	"github.com/kejilion/kejilion-panel/internal/jobcontrol"
+	"github.com/kejilion/kejilion-panel/internal/redact"
 )
 
 const (
@@ -819,6 +820,9 @@ func appScriptCompatible(
 		if token, local := strings.CutPrefix(appID, localAppIDPrefix); local {
 			return selector == localAppSelectorPrefix+token && localAppProtocol.Match(content)
 		}
+		if strings.HasPrefix(appID, "thirdparty-") && reservedThirdPartyScriptSelector(selector) {
+			return false
+		}
 		if !strings.HasPrefix(appID, "builtin-") {
 			return true
 		}
@@ -963,19 +967,18 @@ func RunAppJob(ctx context.Context, stateDir, id string) error {
 		<-wait
 		return registry.fail(record, "log_unavailable", logErr)
 	}
-	written := int64(0)
+	output := make([]byte, 0, maxAppJobLog)
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 64<<10), 1<<20)
 	for scanner.Scan() {
 		line := scanner.Text()
-		if written < maxAppJobLog {
+		if len(output) < maxAppJobLog {
 			payload := []byte(line + "\n")
-			remaining := int64(maxAppJobLog) - written
-			if int64(len(payload)) > remaining {
+			remaining := maxAppJobLog - len(output)
+			if len(payload) > remaining {
 				payload = payload[:remaining]
 			}
-			count, _ := logFile.Write(payload)
-			written += int64(count)
+			output = append(output, payload...)
 		}
 		if matches := appProgressPattern.FindStringSubmatch(line); len(matches) == 3 {
 			progress, _ := strconv.Atoi(matches[1])
@@ -992,6 +995,10 @@ func RunAppJob(ctx context.Context, stateDir, id string) error {
 		}
 	}
 	_ = reader.Close()
+	if len(output) > 0 {
+		_, _ = logFile.Write(redactAppJobLog(output))
+		_, _ = logFile.Write([]byte("\n"))
+	}
 	_ = logFile.Sync()
 	_ = logFile.Close()
 	commandErr := <-wait
@@ -1056,7 +1063,7 @@ func safeAppJobMessage(err error) string {
 	if err == nil {
 		return ""
 	}
-	value := strings.TrimSpace(err.Error())
+	value := strings.TrimSpace(redact.Text(err.Error()))
 	if len(value) > 400 {
 		value = value[:400]
 	}
@@ -1183,14 +1190,11 @@ func (registry *appJobRegistry) logTail(id string, maxLines int) []string {
 	if err != nil {
 		return []string{}
 	}
-	lines := strings.Split(strings.TrimRight(string(data), "\r\n"), "\n")
-	if len(lines) == 1 && lines[0] == "" {
-		return []string{}
-	}
-	if len(lines) > maxLines {
-		lines = lines[len(lines)-maxLines:]
-	}
-	return lines
+	return redact.Lines(data, maxLines, 0)
+}
+
+func redactAppJobLog(data []byte) []byte {
+	return []byte(strings.Join(redact.Lines(data, -1, 0), "\n"))
 }
 
 func (registry *appJobRegistry) logTailBytes(id string) ([]byte, error) {
