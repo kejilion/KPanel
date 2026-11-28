@@ -252,7 +252,7 @@ func TestTerminalDisplayNonInteractiveSummaryAndListKeepContextBeforeTail(t *tes
 	if err := os.Rename(filepath.Join(dir, id+".log"), filepath.Join(dir, id+".log.1")); err != nil {
 		t.Fatal(err)
 	}
-	w := request("/v1/app-jobs/" + id + "?projection=model-v1")
+	w = request("/v1/app-jobs/" + id + "?projection=model-v1")
 	if w.Code != 200 || strings.Contains(w.Body.String(), "synthetic-") || !strings.Contains(w.Body.String(), "logsContextUnavailable") {
 		t.Fatalf("rotated context: %d %s", w.Code, w.Body.String())
 	}
