@@ -3,6 +3,7 @@ package dockerx
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -807,18 +808,33 @@ func (c *Client) updateComposeProject(ctx context.Context, input MaintenanceInpu
 		return ErrResourceConflict
 	}
 	base := composeProjectBase(state.ComposeProject)
-	pull := []string{"pull", "--policy", "always", "--ignore-buildable"}
-	up := []string{"up", "--detach", "--pull", "never", "--no-build"}
+	service := ""
 	if input.Action == "compose_update_service" {
-		service, err := c.composeUpdateService(ctx, input)
+		service, err = c.composeUpdateService(ctx, input)
 		if err != nil {
 			return err
 		}
-		pull = append(pull, "--", service)
+	}
+	config, err := c.runCompose(ctx, append(append([]string(nil), base...), "config", "--format", "json")...)
+	if err != nil {
+		// Compose config can contain resolved environment values. Do not include
+		// its output or command diagnostics in the user-visible error.
+		return errors.New("Compose update could not resolve the project configuration")
+	}
+	pullServices, err := composeUpdatePullServices(config, service)
+	if err != nil {
+		return err
+	}
+	pull := []string{"pull", "--policy", "always", "--ignore-buildable", "--"}
+	pull = append(pull, pullServices...)
+	up := []string{"up", "--detach", "--pull", "never", "--no-build"}
+	if input.Action == "compose_update_service" {
 		up = append(up, "--no-deps", "--remove-orphans=false", "--", service)
 	}
-	if _, err := c.runCompose(ctx, append(base, pull...)...); err != nil {
-		return fmt.Errorf("Compose image pull failed; project containers were not recreated: %w", err)
+	if len(pullServices) > 0 {
+		if _, err := c.runCompose(ctx, append(base, pull...)...); err != nil {
+			return fmt.Errorf("Compose image pull failed; project containers were not recreated: %w", err)
+		}
 	}
 	// Pulling can take minutes; do not apply a Compose source changed by an external editor.
 	if err := c.validateExistingComposeProjectInput(ctx, input); err != nil {
@@ -828,6 +844,41 @@ func (c *Client) updateComposeProject(ctx context.Context, input MaintenanceInpu
 		return fmt.Errorf("Compose update did not complete; check service status before retrying: %w", err)
 	}
 	return nil
+}
+
+func composeUpdatePullServices(config []byte, selected string) ([]string, error) {
+	const maxComposeResolvedConfigBytes = 2 << 20
+	if len(config) == 0 || len(config) > maxComposeResolvedConfigBytes {
+		return nil, ErrRuntimeContract
+	}
+	var resolved struct {
+		Services map[string]struct {
+			Image      string `json:"image"`
+			PullPolicy string `json:"pull_policy"`
+		} `json:"services"`
+	}
+	if err := json.Unmarshal(config, &resolved); err != nil || len(resolved.Services) == 0 || len(resolved.Services) > 500 {
+		return nil, ErrRuntimeContract
+	}
+	if selected != "" {
+		if _, exists := resolved.Services[selected]; !exists {
+			return nil, ErrResourceConflict
+		}
+	}
+	services := make([]string, 0, len(resolved.Services))
+	for name, service := range resolved.Services {
+		if selected != "" && name != selected {
+			continue
+		}
+		// A service with pull_policy: never explicitly opts out of registry
+		// pulls. Build-only services also have no image for `compose pull`.
+		if service.Image == "" || service.PullPolicy == "never" {
+			continue
+		}
+		services = append(services, name)
+	}
+	sort.Strings(services)
+	return services, nil
 }
 
 // Move only the configuration files, never the project directory or bind-mounted data.

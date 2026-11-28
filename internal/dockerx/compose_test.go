@@ -355,7 +355,7 @@ func TestComposeRedeployRestoresPreviousConfigurationAfterStartFailure(t *testin
 
 func TestComposeUpdatePullsBeforeApplyingUnchangedConfiguration(t *testing.T) {
 	const source = "services:\n  web:\n    image: nginx:alpine\n"
-	for _, scenario := range []string{"success", "stale", "pull fails", "configuration changes", "recreate fails"} {
+	for _, scenario := range []string{"success", "stale", "pull fails", "configuration changes", "recreate fails", "never pull policy"} {
 		t.Run(scenario, func(t *testing.T) {
 			client, path := composeProjectTestClient(t, source)
 			ctx := context.Background()
@@ -376,7 +376,12 @@ func TestComposeUpdatePullsBeforeApplyingUnchangedConfiguration(t *testing.T) {
 				actual := strings.Join(arguments[len(base):], " ")
 				commands = append(commands, actual)
 				switch actual {
-				case "pull --policy always --ignore-buildable":
+				case "config --format json":
+					if scenario == "never pull policy" {
+						return []byte(`{"services":{"web":{"image":"nginx:alpine","pull_policy":"never"}}}`), nil
+					}
+					return []byte(`{"services":{"web":{"image":"nginx:alpine"}}}`), nil
+				case "pull --policy always --ignore-buildable -- web":
 					if scenario == "pull fails" {
 						return nil, errors.New("registry unavailable")
 					}
@@ -393,31 +398,46 @@ func TestComposeUpdatePullsBeforeApplyingUnchangedConfiguration(t *testing.T) {
 				return nil, nil
 			}
 			err = client.updateComposeProject(ctx, input)
-			wantCalls, wantSource := 2, source
+			wantCalls, wantSource := 3, source
 			switch scenario {
 			case "success":
 				if err != nil {
 					t.Fatal(err)
 				}
-			case "stale", "configuration changes":
+			case "stale":
 				if !errors.Is(err, ErrResourceConflict) {
 					t.Fatalf("expected resource conflict, got %v", err)
 				}
 				wantCalls = 0
-				if scenario == "configuration changes" {
-					wantCalls, wantSource = 1, source+"# external edit\n"
+			case "configuration changes":
+				if !errors.Is(err, ErrResourceConflict) {
+					t.Fatalf("expected resource conflict, got %v", err)
 				}
+				wantCalls, wantSource = 2, source+"# external edit\n"
 			case "pull fails":
 				if err == nil || !strings.Contains(err.Error(), "registry unavailable") {
 					t.Fatalf("expected pull failure, got %v", err)
 				}
-				wantCalls = 1
+				wantCalls = 2
 			case "recreate fails":
 				if err == nil || !strings.Contains(err.Error(), "container start failed") {
 					t.Fatalf("expected recreate failure, got %v", err)
 				}
+				wantCalls = 3
+			case "never pull policy":
+				if err != nil {
+					t.Fatal(err)
+				}
+				wantCalls = 2
 			}
-			wantCommands := []string{"pull --policy always --ignore-buildable", "up --detach --pull never --no-build"}
+			wantCommands := []string{
+				"config --format json",
+				"pull --policy always --ignore-buildable -- web",
+				"up --detach --pull never --no-build",
+			}
+			if scenario == "never pull policy" {
+				wantCommands = []string{"config --format json", "up --detach --pull never --no-build"}
+			}
 			if strings.Join(commands, "\n") != strings.Join(wantCommands[:wantCalls], "\n") {
 				t.Fatalf("unexpected Compose commands: %v", commands)
 			}
@@ -445,7 +465,11 @@ func TestComposeServiceUpdateUsesVerifiedContainerAndSkipsDependencies(t *testin
 	var commands []string
 	base := composeProjectBase(project)
 	client.composeCommand = func(_ context.Context, arguments ...string) ([]byte, error) {
-		commands = append(commands, strings.Join(arguments[len(base):], " "))
+		actual := strings.Join(arguments[len(base):], " ")
+		commands = append(commands, actual)
+		if actual == "config --format json" {
+			return []byte(`{"services":{"web":{"image":"nginx:alpine"}}}`), nil
+		}
 		return nil, nil
 	}
 	if err := client.validateMaintenanceInput(ctx, input); !errors.Is(err, ErrResourceConflict) {
@@ -461,9 +485,27 @@ func TestComposeServiceUpdateUsesVerifiedContainerAndSkipsDependencies(t *testin
 	if err := client.updateComposeProject(ctx, input); err != nil {
 		t.Fatal(err)
 	}
-	want := "pull --policy always --ignore-buildable -- web\nup --detach --pull never --no-build --no-deps --remove-orphans=false -- web"
+	want := "config --format json\npull --policy always --ignore-buildable -- web\nup --detach --pull never --no-build --no-deps --remove-orphans=false -- web"
 	if strings.Join(commands, "\n") != want {
 		t.Fatalf("unexpected Compose commands: %v", commands)
+	}
+}
+
+func TestComposeUpdatePullServicesHonorsServicePolicies(t *testing.T) {
+	config := []byte(`{"services":{"web":{"image":"nginx:alpine"},"local":{"image":"local/app:dev","pull_policy":"never"},"worker":{"build":"."}}}`)
+	services, err := composeUpdatePullServices(config, "")
+	if err != nil || strings.Join(services, ",") != "web" {
+		t.Fatalf("pull services = %v, %v; want [web]", services, err)
+	}
+	services, err = composeUpdatePullServices(config, "local")
+	if err != nil || len(services) != 0 {
+		t.Fatalf("never-policy service pull = %v, %v; want none", services, err)
+	}
+	if _, err := composeUpdatePullServices(config, "missing"); !errors.Is(err, ErrResourceConflict) {
+		t.Fatalf("missing service error = %v, want resource conflict", err)
+	}
+	if _, err := composeUpdatePullServices([]byte(`{"services":[]}`), ""); !errors.Is(err, ErrRuntimeContract) {
+		t.Fatalf("invalid config error = %v, want runtime contract", err)
 	}
 }
 
