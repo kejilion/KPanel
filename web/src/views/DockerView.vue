@@ -438,6 +438,9 @@ const visibleManagedComposeProjects = computed(() => {
 const containerGroups = computed(() =>
   groupDockerContainers(filteredContainers.value, containerSort.value, visibleManagedComposeProjects.value),
 )
+const contextComposeGroup = computed(() =>
+  containerGroups.value.find((group) => group.kind === 'compose' && group.name === contextContainer.value?.project),
+)
 const monitoring = computed(() => containerViewMode.value === 'monitor')
 // The Compose dialog this container's run command can hand over to, when the
 // project is listed here and Compose management is currently usable.
@@ -1436,10 +1439,14 @@ watch(createSource, () => {
   syncCreateComposeEnvironment()
 })
 
-async function openComposeProject(group: DockerContainerGroup): Promise<void> {
+async function openComposeProject(group: DockerContainerGroup, upgrade?: DockerContainer): Promise<void> {
   if (group.kind !== 'compose') return
+  const opener = upgrade ? contextMenuOpener : null
+  closeContextMenu()
+  opener?.focus({ preventScroll: true })
   composeController?.abort()
-  composeController = new AbortController()
+  const controller = new AbortController()
+  composeController = controller
   composeOpen.value = true
   composeLoading.value = true
   composeError.value = ''
@@ -1447,8 +1454,19 @@ async function openComposeProject(group: DockerContainerGroup): Promise<void> {
   composeFilePath.value = ''
   composeSource.value = ''
   try {
-    const project = await api.docker.composeProject(group.name, composeController.signal)
+    const project = await api.docker.composeProject(group.name, controller.signal)
+    if (controller.signal.aborted) return
     composeProject.value = project
+    if (upgrade?.service && upgrade.resourceVersion) {
+      // The confirmation's opener must outlive the Compose loading dialog.
+      opener?.focus({ preventScroll: true })
+      closeComposeProject()
+      askTask('确认升级容器', `${project.name} · ${upgrade.service}`, {
+        action: 'compose_update_service', name: project.name, expectedResourceVersion: project.resourceVersion,
+        containerId: upgrade.id, containerResourceVersion: upgrade.resourceVersion,
+      })
+      return
+    }
     composeEnvironmentSource.value = project.environmentFile?.source || ''
     composeEnvironmentOpen.value = false
     composeEnvironmentRevealed.value = false
@@ -1458,10 +1476,10 @@ async function openComposeProject(group: DockerContainerGroup): Promise<void> {
       composeSource.value = firstFile.source
     }
   } catch (reason) {
-    if ((reason as Error).name === 'AbortError') return
+    if (controller.signal.aborted || (reason as Error).name === 'AbortError') return
     composeError.value = reason instanceof ApiError ? reason.message : '无法读取 Compose 项目配置。'
   } finally {
-    composeLoading.value = false
+    if (composeController === controller) composeLoading.value = false
   }
 }
 
@@ -1483,18 +1501,26 @@ function closeComposeProject(): void {
   composeEnvironmentRevealed.value = false
 }
 
-function askComposeLifecycle(action: 'compose_start' | 'compose_stop' | 'compose_restart'): void {
+function askComposeLifecycle(action: 'compose_start' | 'compose_stop' | 'compose_restart' | 'compose_update'): void {
   const project = composeProject.value
   if (!project) return
   const labels = {
     compose_start: ['确认启动 Compose 项目', '启动项目中已有的全部服务'],
     compose_stop: ['确认停止 Compose 项目', '停止项目服务，容器和配置继续保留'],
     compose_restart: ['确认重启 Compose 项目', '按当前配置重启项目中的全部服务'],
+    compose_update: ['确认升级 Compose 项目', '拉取项目当前配置引用的镜像'],
   } as const
   closeComposeProject()
-  askTask(labels[action][0], `${project.name} · ${labels[action][1]}`, {
+  askTask(labels[action][0], `${project.name} · ${phrase(labels[action][1])}`, {
     action, name: project.name, expectedResourceVersion: project.resourceVersion,
   }, action === 'compose_stop')
+}
+
+function askStandaloneUpgrade(container: DockerContainer): void {
+  closeContextMenu(true)
+  askTask('确认升级容器', `${container.name} · ${container.image}`, {
+    action: 'container_upgrade', target: container.id, expectedResourceVersion: container.resourceVersion,
+  })
 }
 
 function askComposeRemoval(): void {
@@ -2369,6 +2395,12 @@ onBeforeUnmount(() => {
         <button v-if="permits(contextContainer, 'restart')" type="button" role="menuitem" @click="askAction(contextContainer, 'restart')">
           <RotateCw :size="15" />{{ phrase('重启') }}
         </button>
+        <button v-if="contextComposeGroup && contextContainer.service && contextContainer.resourceVersion" type="button" role="menuitem" :disabled="panel.isReadOnly.value || dockerJobActive" @click="openComposeProject(contextComposeGroup, contextContainer)">
+          <RefreshCw :size="16" /> {{ phrase('升级容器') }}
+        </button>
+        <button v-else-if="!contextContainer.project && contextContainer.resourceVersion && ['running', 'exited', 'created'].includes(contextContainer.state)" type="button" role="menuitem" :disabled="panel.isReadOnly.value || dockerJobActive" @click="askStandaloneUpgrade(contextContainer)">
+          <RefreshCw :size="16" /> {{ phrase('升级容器') }}
+        </button>
         <button v-if="permits(contextContainer, 'pause')" type="button" role="menuitem" @click="askAction(contextContainer, 'pause')">
           <Pause :size="15" />{{ phrase('暂停') }}
         </button>
@@ -2613,6 +2645,7 @@ onBeforeUnmount(() => {
          <button class="button button--secondary" type="button" :disabled="!composeProject" @click="askComposeLifecycle('compose_start')"><Play :size="15" /> {{ phrase('启动项目') }}</button>
          <button class="button button--secondary" type="button" :disabled="!composeProject" @click="askComposeLifecycle('compose_restart')"><RotateCw :size="15" /> {{ phrase('重启项目') }}</button>
          <button class="button button--secondary" type="button" :disabled="!composeProject" @click="askComposeLifecycle('compose_stop')"><CircleStop :size="15" /> {{ phrase('停止项目') }}</button>
+         <button class="button button--secondary" type="button" :disabled="!composeProject || dockerJobActive" @click="askComposeLifecycle('compose_update')"><RefreshCw :size="15" /> {{ phrase('升级项目') }}</button>
          <button class="button button--primary" type="button" :disabled="!composeCanRedeploy" @click="submitComposeRedeploy"><RefreshCw :size="15" /> {{ phrase('保存并重新部署') }}</button>
        </div>
       </template>
@@ -2690,6 +2723,21 @@ onBeforeUnmount(() => {
         <span class="confirm-content__icon" :class="{ 'is-danger': pendingMaintenance?.danger }"><Trash2 v-if="pendingMaintenance?.danger" :size="23" /><ShieldCheck v-else :size="23" /></span>
         <p>{{ phrase('Agent 会在执行前重新校验输入和 Docker 实际状态；任务进入后台后可以离开当前页面。') }}</p>
       </div>
+      <div v-if="pendingMaintenance?.input.action === 'compose_update'" class="inline-alert inline-alert--warning">
+        {{ phrase('升级作用于整个项目，服务可能短暂中断，已停止的服务也可能启动。数据卷和挂载保留，容器内未持久化的数据可能丢失。跳过本地构建，只使用配置中的镜像版本。') }}
+      </div>
+      <div v-else-if="pendingMaintenance?.input.action === 'compose_update_service'" class="inline-alert inline-alert--warning">
+        {{ phrase('升级所选容器对应的 Compose 服务，包括该服务的全部副本。服务可能短暂中断，数据卷和挂载保留，容器内未持久化的数据可能丢失。') }}
+      </div>
+      <template v-else-if="pendingMaintenance?.input.action === 'container_upgrade'">
+        <label class="field">
+          <span>{{ phrase('目标镜像') }}</span>
+          <input v-model.trim="pendingMaintenance.input.image" class="text-input" type="text" :placeholder="phrase('留空则拉取当前标签')" />
+        </label>
+        <div class="inline-alert inline-alert--warning">
+          {{ phrase('镜像有变化时重建这个容器，保留数据卷和挂载。服务可能短暂中断，容器内未持久化的数据可能丢失。') }}
+        </div>
+      </template>
       <section v-if="pendingMaintenance?.input.action === 'compose_remove'" class="compose-remove-options">
         <p>{{ phrase('停止并删除此项目的全部容器及非外部网络，容器内未持久化的数据将丢失。') }}</p>
         <label class="inline-check"><input v-model="pendingMaintenance.input.removeComposeFiles" type="checkbox" /> {{ phrase('移除 Compose 配置（保留备份）') }}</label>

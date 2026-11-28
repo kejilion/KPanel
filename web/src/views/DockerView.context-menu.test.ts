@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   checkUpdate: vi.fn(),
   runCommand: vi.fn(),
   composeProject: vi.fn(),
+  task: vi.fn(),
 }))
 
 vi.mock('@/lib/api', () => ({
@@ -39,7 +40,7 @@ vi.mock('@/lib/api', () => ({
       exec: vi.fn(),
       logs: vi.fn(),
       stats: vi.fn(),
-      task: vi.fn(),
+      task: mocks.task,
     },
     system: { publicNetwork: mocks.publicNetwork, action: vi.fn() },
   },
@@ -254,5 +255,65 @@ describe('Docker context menu', () => {
 
     expect(document.body.querySelector('.run-command')).toBeNull()
     expect(mocks.composeProject).toHaveBeenCalledWith('blog', expect.any(AbortSignal))
+  })
+
+  it('submits a scoped upgrade from a Compose container only after confirmation', async () => {
+    const data = inventory()
+    const container = { ...data.containers[0]!, project: 'blog', service: 'web' }
+    data.containers[0] = container
+    mocks.inventory.mockResolvedValue(data)
+    mocks.composeProject.mockResolvedValue({
+      name: 'blog', workingDirectory: '/home/docker/blog', configFiles: [], services: ['web'],
+      resourceVersion: 'sha256:project',
+    })
+    mocks.task.mockResolvedValue({ id: 'a'.repeat(32), action: 'compose_update_service', status: 'queued', progress: 0 })
+    wrapper = mount(DockerView, { attachTo: windowBody })
+    await flushPromises()
+
+    await wrapper.get<HTMLButtonElement>('.docker-context-trigger').trigger('click')
+    const upgrade = [...document.body.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+      .find(item => item.textContent?.trim() === '升级容器')
+    expect(upgrade).toBeDefined()
+    upgrade!.click()
+    await flushPromises()
+
+    expect(mocks.composeProject).toHaveBeenCalledWith('blog', expect.any(AbortSignal))
+    const dialog = document.body.querySelector('[role="dialog"]')!
+    expect(dialog.textContent).toContain('确认升级容器')
+    expect(dialog.textContent).toContain('blog · web')
+    expect(dialog.textContent).toContain('该服务的全部副本')
+    expect(mocks.task).not.toHaveBeenCalled()
+    const confirm = [...dialog.querySelectorAll('button')].find(item => item.textContent?.trim() === '确认执行')!
+    confirm.click()
+    await flushPromises()
+    expect(mocks.task).toHaveBeenCalledWith({
+      action: 'compose_update_service', name: 'blog', expectedResourceVersion: 'sha256:project',
+      containerId: container.id, containerResourceVersion: container.resourceVersion,
+    })
+  })
+
+  it('submits the independent container task with the selected identity and version', async () => {
+    const container = inventory().containers[0]!
+    mocks.task.mockResolvedValue({ id: 'b'.repeat(32), action: 'container_upgrade', status: 'queued', progress: 0 })
+    wrapper = mount(DockerView, { attachTo: windowBody })
+    await flushPromises()
+    await wrapper.get<HTMLButtonElement>('.docker-context-trigger').trigger('click')
+    const upgrade = [...document.body.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+      .find(item => item.textContent?.trim() === '升级容器')!
+    upgrade.click()
+    await flushPromises()
+    const dialog = document.body.querySelector('[role="dialog"]')!
+    expect(dialog.textContent).toContain('web · nginx:alpine')
+    const targetImage = dialog.querySelector('input')!
+    expect(targetImage.placeholder).toContain('拉取当前标签')
+    targetImage.value = 'nginx:stable'
+    targetImage.dispatchEvent(new Event('input'))
+    expect(mocks.task).not.toHaveBeenCalled()
+    const confirm = [...dialog.querySelectorAll('button')].find(item => item.textContent?.trim() === '确认执行')!
+    confirm.click()
+    await flushPromises()
+    expect(mocks.task).toHaveBeenCalledWith({
+      action: 'container_upgrade', target: container.id, expectedResourceVersion: container.resourceVersion, image: 'nginx:stable',
+    })
   })
 })

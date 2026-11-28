@@ -353,6 +353,120 @@ func TestComposeRedeployRestoresPreviousConfigurationAfterStartFailure(t *testin
 	}
 }
 
+func TestComposeUpdatePullsBeforeApplyingUnchangedConfiguration(t *testing.T) {
+	const source = "services:\n  web:\n    image: nginx:alpine\n"
+	for _, scenario := range []string{"success", "stale", "pull fails", "configuration changes", "recreate fails"} {
+		t.Run(scenario, func(t *testing.T) {
+			client, path := composeProjectTestClient(t, source)
+			ctx := context.Background()
+			project, err := client.ComposeProject(ctx, "demo")
+			if err != nil {
+				t.Fatal(err)
+			}
+			input := MaintenanceInput{Action: "compose_update", Name: project.Name, ExpectedResourceVersion: project.ResourceVersion}
+			if scenario == "stale" {
+				input.ExpectedResourceVersion = "stale"
+			}
+			var commands []string
+			base := composeProjectBase(project)
+			client.composeCommand = func(_ context.Context, arguments ...string) ([]byte, error) {
+				if !containsArgumentSequence(arguments, base...) {
+					t.Fatalf("Compose source arguments changed: %v", arguments)
+				}
+				actual := strings.Join(arguments[len(base):], " ")
+				commands = append(commands, actual)
+				switch actual {
+				case "pull --policy always --ignore-buildable":
+					if scenario == "pull fails" {
+						return nil, errors.New("registry unavailable")
+					}
+					if scenario == "configuration changes" {
+						writeComposeTestFile(t, path, source+"# external edit\n")
+					}
+				case "up --detach --pull never --no-build":
+					if scenario == "recreate fails" {
+						return nil, errors.New("container start failed")
+					}
+				default:
+					t.Fatalf("unexpected Compose command: %v", arguments)
+				}
+				return nil, nil
+			}
+			err = client.updateComposeProject(ctx, input)
+			wantCalls, wantSource := 2, source
+			switch scenario {
+			case "success":
+				if err != nil {
+					t.Fatal(err)
+				}
+			case "stale", "configuration changes":
+				if !errors.Is(err, ErrResourceConflict) {
+					t.Fatalf("expected resource conflict, got %v", err)
+				}
+				wantCalls = 0
+				if scenario == "configuration changes" {
+					wantCalls, wantSource = 1, source+"# external edit\n"
+				}
+			case "pull fails":
+				if err == nil || !strings.Contains(err.Error(), "registry unavailable") {
+					t.Fatalf("expected pull failure, got %v", err)
+				}
+				wantCalls = 1
+			case "recreate fails":
+				if err == nil || !strings.Contains(err.Error(), "container start failed") {
+					t.Fatalf("expected recreate failure, got %v", err)
+				}
+			}
+			wantCommands := []string{"pull --policy always --ignore-buildable", "up --detach --pull never --no-build"}
+			if strings.Join(commands, "\n") != strings.Join(wantCommands[:wantCalls], "\n") {
+				t.Fatalf("unexpected Compose commands: %v", commands)
+			}
+			assertComposeTestFile(t, path, wantSource)
+		})
+	}
+}
+
+func TestComposeServiceUpdateUsesVerifiedContainerAndSkipsDependencies(t *testing.T) {
+	client, _ := composeProjectTestClient(t, "services:\n  web:\n    image: nginx:alpine\n")
+	ctx := context.Background()
+	project, err := client.ComposeProject(ctx, "demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := strings.Repeat("a", 64)
+	container, err := client.inspect(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := MaintenanceInput{
+		Action: "compose_update_service", Name: project.Name, ExpectedResourceVersion: project.ResourceVersion,
+		ContainerID: id, ContainerResourceVersion: "stale",
+	}
+	var commands []string
+	base := composeProjectBase(project)
+	client.composeCommand = func(_ context.Context, arguments ...string) ([]byte, error) {
+		commands = append(commands, strings.Join(arguments[len(base):], " "))
+		return nil, nil
+	}
+	if err := client.validateMaintenanceInput(ctx, input); !errors.Is(err, ErrResourceConflict) {
+		t.Fatalf("stale service input was accepted: %v", err)
+	}
+	if err := client.updateComposeProject(ctx, input); !errors.Is(err, ErrResourceConflict) || len(commands) != 0 {
+		t.Fatalf("stale service input ran commands %v: %v", commands, err)
+	}
+	input.ContainerResourceVersion = client.summaryFromInspect(container).ResourceVersion
+	if err := client.validateMaintenanceInput(ctx, input); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.updateComposeProject(ctx, input); err != nil {
+		t.Fatal(err)
+	}
+	want := "pull --policy always --ignore-buildable -- web\nup --detach --pull never --no-build --no-deps --remove-orphans=false -- web"
+	if strings.Join(commands, "\n") != want {
+		t.Fatalf("unexpected Compose commands: %v", commands)
+	}
+}
+
 func composeProjectTestClient(t *testing.T, source string) (*Client, string) {
 	t.Helper()
 	root := t.TempDir()

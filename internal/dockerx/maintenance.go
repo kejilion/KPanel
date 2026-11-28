@@ -38,7 +38,8 @@ var (
 )
 
 var maintenanceActions = []string{
-	"container_create", "compose_deploy", "compose_redeploy", "compose_start", "compose_stop", "compose_restart", "compose_remove",
+	"container_create", "container_upgrade", "compose_deploy", "compose_redeploy", "compose_start", "compose_stop", "compose_restart",
+	"compose_update", "compose_update_service", "compose_remove",
 	"container_access", "image_pull", "image_remove",
 	"network_create", "network_remove", "network_connect", "network_disconnect",
 	"volume_create", "volume_remove", "prune", "container_prune", "image_prune",
@@ -253,11 +254,15 @@ func (c *Client) validateMaintenanceInput(ctx context.Context, input Maintenance
 		if _, err := c.containerCreatePayload(ctx, input); err != nil {
 			return err
 		}
+	case "container_upgrade":
+		if _, err := c.standaloneUpgradeTarget(ctx, input); err != nil {
+			return err
+		}
 	case "compose_deploy":
 		if err := c.validateComposeDeploymentInput(ctx, input); err != nil {
 			return err
 		}
-	case "compose_redeploy", "compose_start", "compose_stop", "compose_restart", "compose_remove":
+	case "compose_redeploy", "compose_start", "compose_stop", "compose_restart", "compose_update", "compose_update_service", "compose_remove":
 		if err := c.validateExistingComposeProjectInput(ctx, input); err != nil {
 			return err
 		}
@@ -377,6 +382,8 @@ func (c *Client) runMaintenance(record dockerJobRecord) {
 	switch record.Action {
 	case "container_create":
 		err = c.createManagedContainer(ctx, record.Input)
+	case "container_upgrade":
+		err = c.upgradeStandaloneContainer(ctx, record.Input, record.ID)
 	case "compose_deploy":
 		err = c.deployComposeProject(ctx, record.Input)
 	case "compose_redeploy":
@@ -387,6 +394,8 @@ func (c *Client) runMaintenance(record dockerJobRecord) {
 		err = c.runComposeProjectLifecycle(ctx, record.Input, "stop")
 	case "compose_restart":
 		err = c.runComposeProjectLifecycle(ctx, record.Input, "restart")
+	case "compose_update", "compose_update_service":
+		err = c.updateComposeProject(ctx, record.Input)
 	case "compose_remove":
 		record.ResultPath, err = c.removeComposeProject(ctx, record.Input, record.ID)
 	case "container_access":
@@ -1086,6 +1095,8 @@ func dockerActionProgress(action string) string {
 	switch action {
 	case "container_create":
 		return "正在创建并启动 Docker 容器"
+	case "container_upgrade":
+		return "正在拉取镜像并升级 Docker 容器"
 	case "compose_deploy":
 		return "正在校验并启动 Docker Compose 项目"
 	case "compose_redeploy":
@@ -1096,6 +1107,10 @@ func dockerActionProgress(action string) string {
 		return "正在停止 Docker Compose 项目"
 	case "compose_restart":
 		return "正在重启 Docker Compose 项目"
+	case "compose_update":
+		return "正在拉取镜像并升级 Docker Compose 项目"
+	case "compose_update_service":
+		return "正在拉取镜像并升级 Docker Compose 服务"
 	case "compose_remove":
 		return "正在删除 Docker Compose 项目部署"
 	case "container_access":
@@ -1137,6 +1152,8 @@ func dockerActionCompleted(action string) string {
 	switch action {
 	case "container_create":
 		return "Docker 容器已创建并启动"
+	case "container_upgrade":
+		return "Docker 容器已使用本次拉取的镜像"
 	case "compose_deploy":
 		return "Docker Compose 项目已部署"
 	case "compose_redeploy":
@@ -1147,6 +1164,10 @@ func dockerActionCompleted(action string) string {
 		return "Docker Compose 项目已停止"
 	case "compose_restart":
 		return "Docker Compose 项目已重启"
+	case "compose_update":
+		return "Docker Compose 项目已按拉取后的镜像部署"
+	case "compose_update_service":
+		return "Docker Compose 服务已按拉取后的镜像部署"
 	case "compose_remove":
 		return "Docker Compose 项目部署已删除"
 	case "container_access":
